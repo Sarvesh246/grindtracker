@@ -592,6 +592,13 @@ export default function ActiveWorkout({ day }: { day: string }) {
     setSwapTarget(null)
   }
 
+  async function handleDiscard() {
+    if (!sessionId) { router.push('/log'); return }
+    await supabase.from('session_logs').delete().eq('session_id', sessionId)
+    await supabase.from('sessions').delete().eq('id', sessionId)
+    router.push('/log')
+  }
+
   async function handleFinish() {
     if (!sessionId || finishing) return
     if (checkedSets() === 0) {
@@ -806,9 +813,9 @@ export default function ActiveWorkout({ day }: { day: string }) {
               END WORKOUT?
             </div>
             <div style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '24px' }}>
-              Sets you&apos;ve checked are saved. You can resume later.
+              Save &amp; Exit keeps your progress so you can resume later. Discard permanently deletes this workout.
             </div>
-            <div style={{ display: 'flex', gap: '8px' }}>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
               <button
                 onClick={() => setShowExitConfirm(false)}
                 style={{
@@ -821,20 +828,28 @@ export default function ActiveWorkout({ day }: { day: string }) {
                 Cancel
               </button>
               <button
-                onClick={() => {
-                  // Keep the session and its logs. User can resume on next visit.
-                  router.push('/log')
-                }}
+                onClick={() => router.push('/log')}
                 style={{
-                  flex: 1, height: '44px', backgroundColor: 'rgba(239,68,68,0.15)',
-                  border: '1px solid rgba(239,68,68,0.3)', borderRadius: '8px',
-                  color: 'var(--danger)', fontFamily: "'DM Sans', sans-serif",
+                  flex: 1, height: '44px', backgroundColor: 'var(--surface-elevated)',
+                  border: '1px solid var(--border)', borderRadius: '8px',
+                  color: 'var(--text-primary)', fontFamily: "'DM Sans', sans-serif",
                   fontSize: '14px', fontWeight: 600, cursor: 'pointer',
                 }}
               >
-                Exit
+                Save &amp; Exit
               </button>
             </div>
+            <button
+              onClick={handleDiscard}
+              style={{
+                width: '100%', height: '44px', backgroundColor: 'rgba(239,68,68,0.15)',
+                border: '1px solid rgba(239,68,68,0.3)', borderRadius: '8px',
+                color: 'var(--danger)', fontFamily: "'DM Sans', sans-serif",
+                fontSize: '14px', fontWeight: 600, cursor: 'pointer',
+              }}
+            >
+              Discard Workout
+            </button>
           </div>
         </div>
       )}
@@ -1063,10 +1078,13 @@ export default function ActiveWorkout({ day }: { day: string }) {
       {/* Finish button */}
       <div style={{
         position: 'fixed',
-        bottom: 'env(safe-area-inset-bottom)',
+        bottom: 0,
         left: 0,
         right: 0,
-        padding: '12px 16px',
+        paddingTop: '12px',
+        paddingLeft: '16px',
+        paddingRight: '16px',
+        paddingBottom: 'calc(12px + env(safe-area-inset-bottom))',
         backgroundColor: 'var(--bg)',
         borderTop: '1px solid var(--border)',
         zIndex: 50,
