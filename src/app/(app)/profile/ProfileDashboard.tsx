@@ -1,4 +1,5 @@
 'use client'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { getLevel, getXpInCurrentLevel } from '@/lib/utils/gamification'
@@ -58,6 +59,8 @@ function BadgeIcon({ badgeId, size = 28, earned }: { badgeId: string; size?: num
       return <svg {...props}><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
     case 'pr_25':
       return <svg {...props}><path d="M12 2L9.1 8.6 2 9.6l5 4.9-1.2 6.9L12 18l6.2 3.4L17 14.5l5-4.9-7.1-1L12 2z"/><path d="M9 9l2 2 4-4" stroke={color} strokeWidth="1.4"/></svg>
+    case 'level_5':
+      return <svg {...props}><polygon points="12 2 20 12 12 22 4 12 12 2"/><line x1="4" y1="12" x2="20" y2="12"/></svg>
     default:
       return <svg {...props} style={s}><circle cx="12" cy="12" r="10"/></svg>
   }
@@ -94,6 +97,7 @@ export default function ProfileDashboard({
 }: Props) {
   const router = useRouter()
   const supabase = createClient()
+  const [tooltipBadgeId, setTooltipBadgeId] = useState<string | null>(null)
 
   const xpTotal = stats.xp_total
   const level = getLevel(xpTotal)
@@ -333,6 +337,7 @@ export default function ProfileDashboard({
         }}>
           {allBadges.map((badge) => {
             const earned = earnedSet.has(badge.id)
+            const showTooltip = tooltipBadgeId === badge.id
             return (
               <div
                 key={badge.id}
@@ -347,8 +352,13 @@ export default function ProfileDashboard({
                   alignItems: 'center',
                   gap: '8px',
                   position: 'relative',
-                  overflow: 'hidden',
+                  overflow: 'visible',
+                  cursor: 'pointer',
+                  zIndex: showTooltip ? 2 : 'auto',
                 }}
+                onMouseEnter={() => setTooltipBadgeId(badge.id)}
+                onMouseLeave={() => setTooltipBadgeId(null)}
+                onClick={() => setTooltipBadgeId(v => v === badge.id ? null : badge.id)}
               >
                 {/* Subtle glow bg for earned */}
                 {earned && (
@@ -356,6 +366,7 @@ export default function ProfileDashboard({
                     position: 'absolute', inset: 0,
                     backgroundColor: 'rgba(200, 241, 53, 0.04)',
                     pointerEvents: 'none',
+                    borderRadius: '12px',
                   }} />
                 )}
 
@@ -395,6 +406,31 @@ export default function ProfileDashboard({
                 }}>
                   {badge.label}
                 </div>
+
+                {/* Tooltip */}
+                {showTooltip && (
+                  <div style={{
+                    position: 'absolute',
+                    top: 'calc(100% + 6px)',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    backgroundColor: '#242424',
+                    border: '1px solid #3a3a3a',
+                    borderRadius: '8px',
+                    padding: '8px 10px',
+                    width: '140px',
+                    zIndex: 50,
+                    pointerEvents: 'none',
+                    boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+                  }}>
+                    <div style={{ fontSize: '11px', fontWeight: 700, color: '#f0f0f0', marginBottom: '3px' }}>
+                      {badge.label}
+                    </div>
+                    <div style={{ fontSize: '10px', color: '#888888', lineHeight: 1.4 }}>
+                      {badge.description}
+                    </div>
+                  </div>
+                )}
               </div>
             )
           })}

@@ -50,6 +50,8 @@ export default function ActiveWorkout({ day }: { day: 'push' | 'pull' | 'legs' }
   const [finishing, setFinishing] = useState(false)
   const [completionData, setCompletionData] = useState<CompletionData | null>(null)
   const [showExitConfirm, setShowExitConfirm] = useState(false)
+  const [allExercises, setAllExercises] = useState<Exercise[]>([])
+  const [swapTarget, setSwapTarget] = useState<string | null>(null)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
@@ -76,6 +78,13 @@ export default function ActiveWorkout({ day }: { day: 'push' | 'pull' | 'legs' }
 
     if (!exs || exs.length === 0) { setLoading(false); return }
     setExercises(exs)
+
+    const { data: allExsData } = await supabase
+      .from('exercises')
+      .select('*')
+      .order('day_type', { ascending: true })
+      .order('sort_order', { ascending: true })
+    setAllExercises(allExsData ?? [])
 
     const bests: PreviousBest = {}
     for (const ex of exs) {
@@ -231,6 +240,66 @@ export default function ActiveWorkout({ day }: { day: 'push' | 'pull' | 'legs' }
     }
   }
 
+  async function handleSwapExercise(newExercise: Exercise) {
+    if (!swapTarget || !sessionId) return
+    const oldExercise = exercises.find(e => e.id === swapTarget)
+
+    await supabase
+      .from('session_logs')
+      .delete()
+      .eq('session_id', sessionId)
+      .eq('exercise_id', swapTarget)
+
+    let prevBest: number | null = previousBests[newExercise.id] !== undefined
+      ? previousBests[newExercise.id]
+      : null
+
+    if (previousBests[newExercise.id] === undefined) {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data } = await supabase
+          .from('session_logs')
+          .select('weight, sessions!inner(user_id, completed_at)')
+          .eq('exercise_id', newExercise.id)
+          .eq('sessions.user_id', user.id)
+          .not('sessions.completed_at', 'is', null)
+          .order('weight', { ascending: false })
+          .limit(1)
+          .single()
+        prevBest = data?.weight ?? null
+        setPreviousBests(prev => ({ ...prev, [newExercise.id]: prevBest }))
+      }
+    }
+
+    setExercises(prev => {
+      const idx = prev.findIndex(e => e.id === swapTarget)
+      if (idx === -1) return prev
+      const next = [...prev]
+      next[idx] = newExercise
+      return next
+    })
+
+    setLogs(prev => {
+      const next = { ...prev }
+      if (oldExercise) {
+        for (let s = 1; s <= oldExercise.sets_target; s++) {
+          delete next[`${swapTarget}-${s}`]
+        }
+      }
+      for (let s = 1; s <= newExercise.sets_target; s++) {
+        next[`${newExercise.id}-${s}`] = {
+          weight: prevBest !== null ? String(prevBest) : '',
+          reps: '',
+          checked: false,
+          isPR: false,
+        }
+      }
+      return next
+    })
+
+    setSwapTarget(null)
+  }
+
   async function handleFinish() {
     if (!sessionId || !allSetsComplete() || finishing) return
     setFinishing(true)
@@ -350,6 +419,16 @@ export default function ActiveWorkout({ day }: { day: 'push' | 'pull' | 'legs' }
         />
       )}
 
+      {swapTarget && (
+        <ExerciseSwapModal
+          currentExerciseId={swapTarget}
+          allExercises={allExercises}
+          currentExercises={exercises}
+          onSelect={handleSwapExercise}
+          onClose={() => setSwapTarget(null)}
+        />
+      )}
+
       {showExitConfirm && (
         <div style={{
           position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.8)',
@@ -461,6 +540,7 @@ export default function ActiveWorkout({ day }: { day: 'push' | 'pull' | 'legs' }
               previousBest={previousBests[ex.id] ?? null}
               onCheck={handleCheck}
               onUpdate={updateLog}
+              onSwap={() => setSwapTarget(ex.id)}
             />
           ))}
         </div>
@@ -509,9 +589,10 @@ interface ExerciseCardProps {
   previousBest: number | null
   onCheck: (exerciseId: string, setNumber: number) => void
   onUpdate: (key: string, field: 'weight' | 'reps', value: string) => void
+  onSwap: () => void
 }
 
-function ExerciseCard({ exercise, logs, previousBest, onCheck, onUpdate }: ExerciseCardProps) {
+function ExerciseCard({ exercise, logs, previousBest, onCheck, onUpdate, onSwap }: ExerciseCardProps) {
   return (
     <div style={{
       backgroundColor: '#1a1a1a',
@@ -520,8 +601,27 @@ function ExerciseCard({ exercise, logs, previousBest, onCheck, onUpdate }: Exerc
       overflow: 'hidden',
     }}>
       <div style={{ padding: '14px 16px 10px' }}>
-        <div style={{ fontSize: '16px', fontWeight: 700, color: '#f0f0f0', marginBottom: '4px' }}>
-          {exercise.name}
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px', marginBottom: '4px' }}>
+          <div style={{ fontSize: '16px', fontWeight: 700, color: '#f0f0f0', flex: 1 }}>
+            {exercise.name}
+          </div>
+          <button
+            onClick={onSwap}
+            title="Swap exercise"
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              padding: '2px', flexShrink: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              opacity: 0.5,
+            }}
+            onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
+            onMouseLeave={e => (e.currentTarget.style.opacity = '0.5')}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#888888" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+            </svg>
+          </button>
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={{ fontSize: '13px', color: '#555555' }}>
@@ -550,6 +650,142 @@ function ExerciseCard({ exercise, logs, previousBest, onCheck, onUpdate }: Exerc
             />
           )
         })}
+      </div>
+    </div>
+  )
+}
+
+// ─── Exercise Swap Modal ───────────────────────────────────────────────────────
+
+interface ExerciseSwapModalProps {
+  currentExerciseId: string
+  allExercises: Exercise[]
+  currentExercises: Exercise[]
+  onSelect: (exercise: Exercise) => void
+  onClose: () => void
+}
+
+const DAY_SECTION_LABEL: Record<string, string> = {
+  push: 'PUSH — Chest · Shoulders · Triceps',
+  pull: 'PULL — Back · Biceps · Rear Delts',
+  legs: 'LEGS — Quads · Hamstrings · Glutes',
+}
+
+function ExerciseSwapModal({ currentExerciseId, allExercises, currentExercises, onSelect, onClose }: ExerciseSwapModalProps) {
+  const available = allExercises.filter(
+    ex => ex.id === currentExerciseId || !currentExercises.find(ce => ce.id === ex.id)
+  )
+
+  const grouped: Record<string, Exercise[]> = {
+    push: available.filter(e => e.day_type === 'push'),
+    pull: available.filter(e => e.day_type === 'pull'),
+    legs: available.filter(e => e.day_type === 'legs'),
+  }
+
+  return (
+    <div
+      style={{
+        position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)',
+        zIndex: 300, display: 'flex', alignItems: 'flex-end',
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          width: '100%', backgroundColor: '#1a1a1a',
+          borderRadius: '16px 16px 0 0',
+          maxHeight: '72vh', display: 'flex', flexDirection: 'column',
+          border: '1px solid #2e2e2e', borderBottom: 'none',
+        }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div style={{
+          padding: '20px 16px 14px',
+          borderBottom: '1px solid #2e2e2e',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          flexShrink: 0,
+        }}>
+          <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '22px', color: '#f0f0f0', letterSpacing: '1px' }}>
+            SWAP EXERCISE
+          </span>
+          <button
+            onClick={onClose}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              width: '32px', height: '32px',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#888888" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+
+        {/* List */}
+        <div style={{ overflowY: 'auto', flex: 1, paddingBottom: 'env(safe-area-inset-bottom)' }}>
+          {(['push', 'pull', 'legs'] as const).map(dayType => {
+            const exs = grouped[dayType]
+            if (exs.length === 0) return null
+            return (
+              <div key={dayType}>
+                <div style={{
+                  padding: '12px 16px 6px',
+                  fontSize: '10px', color: '#555555',
+                  textTransform: 'uppercase', letterSpacing: '1.5px',
+                }}>
+                  {DAY_SECTION_LABEL[dayType]}
+                </div>
+                {exs.map(ex => {
+                  const isCurrent = ex.id === currentExerciseId
+                  return (
+                    <button
+                      key={ex.id}
+                      onClick={() => !isCurrent && onSelect(ex)}
+                      style={{
+                        width: '100%', textAlign: 'left',
+                        background: isCurrent ? 'rgba(200, 241, 53, 0.05)' : 'none',
+                        border: 'none',
+                        borderBottom: '1px solid #2e2e2e',
+                        padding: '14px 16px',
+                        cursor: isCurrent ? 'default' : 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        gap: '12px',
+                      }}
+                    >
+                      <div>
+                        <div style={{
+                          fontSize: '15px', fontWeight: 600,
+                          color: isCurrent ? '#c8f135' : '#f0f0f0',
+                          fontFamily: "'DM Sans', sans-serif",
+                          marginBottom: '2px',
+                        }}>
+                          {ex.name}
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#555555', fontFamily: "'DM Sans', sans-serif" }}>
+                          {ex.sets_target} sets × {ex.reps_target} reps
+                        </div>
+                      </div>
+                      {isCurrent && (
+                        <span style={{
+                          fontSize: '10px', color: '#c8f135',
+                          backgroundColor: 'rgba(200, 241, 53, 0.1)',
+                          border: '1px solid rgba(200, 241, 53, 0.25)',
+                          borderRadius: '9999px', padding: '2px 8px',
+                          fontFamily: "'DM Sans', sans-serif", fontWeight: 600,
+                          flexShrink: 0,
+                        }}>
+                          CURRENT
+                        </span>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            )
+          })}
+        </div>
       </div>
     </div>
   )

@@ -20,6 +20,7 @@ export const ALL_BADGES: BadgeDefinition[] = [
   { id: 'all_three_days', label: 'Full Split', emoji: '📅', description: 'Log Push, Pull, and Legs in one week' },
   { id: 'pr_5', label: 'Getting Stronger', emoji: '📈', description: '5 total PRs logged' },
   { id: 'pr_25', label: 'Beast Mode', emoji: '🦁', description: '25 total PRs logged' },
+  { id: 'level_5', label: 'Grind Mode', emoji: '💎', description: 'Reach Level 5 (2,000 XP)' },
 ]
 
 export async function checkAndAwardBadges(
@@ -64,6 +65,7 @@ export async function checkAndAwardBadges(
     all_three_days: hasFullSplit,
     pr_5: totalPRs >= 5,
     pr_25: totalPRs >= 25,
+    level_5: stats.xp_total >= 2000,
   }
 
   const newlyEarned: string[] = []
