@@ -1,5 +1,6 @@
 import { SupabaseClient } from '@supabase/supabase-js'
 import { UserStats } from '@/lib/types'
+import { getLevel } from '@/lib/utils/gamification'
 
 export interface BadgeDefinition {
   id: string
@@ -20,7 +21,9 @@ export const ALL_BADGES: BadgeDefinition[] = [
   { id: 'all_three_days', label: 'Full Split', emoji: '📅', description: 'Log Push, Pull, and Legs in one week' },
   { id: 'pr_5', label: 'Getting Stronger', emoji: '📈', description: '5 total PRs logged' },
   { id: 'pr_25', label: 'Beast Mode', emoji: '🦁', description: '25 total PRs logged' },
-  { id: 'level_5', label: 'Grind Mode', emoji: '💎', description: 'Reach Level 5 (2,000 XP)' },
+  { id: 'level_5', label: 'Grind Mode', emoji: '💎', description: 'Reach Level 5' },
+  { id: 'level_10', label: 'Grind God', emoji: '🔱', description: 'Reach Level 10' },
+  { id: 'level_20', label: 'Immortal', emoji: '⚜️', description: 'Reach Level 20' },
 ]
 
 export async function checkAndAwardBadges(
@@ -52,6 +55,7 @@ export async function checkAndAwardBadges(
   const hasFullSplit = weekDayTypes.has('push') && weekDayTypes.has('pull') && weekDayTypes.has('legs')
 
   const totalPRs = totalPRCount ?? 0
+  const currentLevel = getLevel(stats.xp_total)
 
   const conditions: Record<string, boolean> = {
     first_workout: stats.total_workouts >= 1,
@@ -65,7 +69,9 @@ export async function checkAndAwardBadges(
     all_three_days: hasFullSplit,
     pr_5: totalPRs >= 5,
     pr_25: totalPRs >= 25,
-    level_5: stats.xp_total >= 2000,
+    level_5: currentLevel >= 5,
+    level_10: currentLevel >= 10,
+    level_20: currentLevel >= 20,
   }
 
   const newlyEarned: string[] = []
