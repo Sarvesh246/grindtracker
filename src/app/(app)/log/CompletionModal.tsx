@@ -86,8 +86,12 @@ export default function CompletionModal({
             <div style={{
               fontFamily: "'Bebas Neue', sans-serif",
               fontSize: '28px', color: '#c8f135', letterSpacing: '1px',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
             }}>
-              ⚡ LEVEL UP → LVL {data.newLevel}
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#c8f135" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+              </svg>
+              LEVEL UP → LVL {data.newLevel}
             </div>
           </div>
         )}

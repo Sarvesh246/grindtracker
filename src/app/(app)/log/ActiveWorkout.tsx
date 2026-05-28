@@ -96,7 +96,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         .not('sessions.completed_at', 'is', null)
         .order('weight', { ascending: false })
         .limit(1)
-        .single()
+        .maybeSingle()
       bests[ex.id] = data?.weight ?? null
     }
     setPreviousBests(bests)
@@ -113,7 +113,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       .gte('started_at', todayStart.toISOString())
       .order('started_at', { ascending: false })
       .limit(1)
-      .single()
+      .maybeSingle()
 
     let sid: string
     let sessionStart: Date
@@ -156,10 +156,11 @@ export default function ActiveWorkout({ day }: { day: string }) {
         .from('sessions')
         .insert({ user_id: user.id, day_type: day })
         .select()
-        .single()
+        .maybeSingle()
 
-      sid = newSession!.id
-      sessionStart = new Date(newSession!.started_at)
+      if (!newSession) { setLoading(false); return }
+      sid = newSession.id
+      sessionStart = new Date(newSession.started_at)
 
       const prefilled: LogMap = {}
       for (const ex of exs) {
@@ -320,7 +321,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
           .not('sessions.completed_at', 'is', null)
           .order('weight', { ascending: false })
           .limit(1)
-          .single()
+          .maybeSingle()
         prevBest = data?.weight ?? null
         setPreviousBests(prev => ({ ...prev, [newExercise.id]: prevBest }))
       }
@@ -361,7 +362,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
     setFinishing(true)
 
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    if (!user) { setFinishing(false); router.push('/login'); return }
 
     const prSets = Object.values(logs).filter(l => l.isPR && !l.skipped)
     const prCount = prSets.length
@@ -381,12 +382,20 @@ export default function ActiveWorkout({ day }: { day: string }) {
 
     let xpEarned = 100 + (prCount * 25)
 
-    const { data: currentStats } = await supabase
+    let { data: currentStats } = await supabase
       .from('user_stats')
       .select('*')
       .eq('user_id', user.id)
-      .single()
+      .maybeSingle()
 
+    if (!currentStats) {
+      const { data: created } = await supabase
+        .from('user_stats')
+        .insert({ user_id: user.id })
+        .select()
+        .maybeSingle()
+      currentStats = created
+    }
     if (!currentStats) { setFinishing(false); return }
 
     const today = new Date()
@@ -462,6 +471,46 @@ export default function ActiveWorkout({ day }: { day: string }) {
     return (
       <div style={{ padding: '24px 16px', color: '#555555', fontFamily: "'DM Sans', sans-serif", fontSize: '14px' }}>
         Loading workout...
+      </div>
+    )
+  }
+
+  if (exercises.length === 0) {
+    return (
+      <div style={{
+        padding: '64px 24px',
+        fontFamily: "'DM Sans', sans-serif",
+        textAlign: 'center',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: '16px',
+      }}>
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#3a3a3a" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <line x1="6" y1="12" x2="18" y2="12" />
+          <rect x="2" y="9" width="4" height="6" rx="1.5" />
+          <rect x="18" y="9" width="4" height="6" rx="1.5" />
+        </svg>
+        <div style={{
+          fontFamily: "'Bebas Neue', sans-serif",
+          fontSize: '24px', color: '#f0f0f0', letterSpacing: '1px',
+        }}>
+          NO EXERCISES FOR THIS DAY
+        </div>
+        <div style={{ fontSize: '14px', color: '#555555', lineHeight: 1.5, maxWidth: '280px' }}>
+          Add some exercises to <span style={{ color: '#888888', textTransform: 'uppercase' }}>{day.replace(/-/g, ' ')}</span> from the workout manager.
+        </div>
+        <button
+          onClick={() => router.push('/log')}
+          style={{
+            marginTop: '8px', height: '48px', padding: '0 28px',
+            backgroundColor: '#c8f135', color: '#0f0f0f', border: 'none',
+            borderRadius: '12px', fontFamily: "'Bebas Neue', sans-serif",
+            fontSize: '18px', letterSpacing: '1px', cursor: 'pointer',
+          }}
+        >
+          BACK TO DAYS
+        </button>
       </div>
     )
   }

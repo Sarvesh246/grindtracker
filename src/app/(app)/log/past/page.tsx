@@ -228,12 +228,20 @@ function LogPastContent() {
       }
     }
 
-    const { data: statsData } = await supabase
+    let { data: statsData } = await supabase
       .from('user_stats')
       .select('*')
       .eq('user_id', user.id)
-      .single()
+      .maybeSingle()
 
+    if (!statsData) {
+      const { data: created } = await supabase
+        .from('user_stats')
+        .insert({ user_id: user.id })
+        .select()
+        .maybeSingle()
+      statsData = created
+    }
     if (!statsData) { setError('Could not load stats.'); setSubmitting(false); return }
 
     // Get prior sessions for PR detection (before this day only)
@@ -375,7 +383,7 @@ function LogPastContent() {
       .from('user_stats')
       .select('*')
       .eq('user_id', user.id)
-      .single()
+      .maybeSingle()
 
     if (!statsData) { setError('Could not load stats.'); setDeleting(false); return }
 

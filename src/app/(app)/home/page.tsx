@@ -13,14 +13,14 @@ export default async function HomePage() {
     .from('user_stats')
     .select('*')
     .eq('user_id', user.id)
-    .single()
+    .maybeSingle()
 
   if (!stats) {
     const { data: newStats } = await supabase
       .from('user_stats')
       .insert({ user_id: user.id })
       .select()
-      .single()
+      .maybeSingle()
     stats = newStats
   }
 
@@ -45,7 +45,7 @@ export default async function HomePage() {
     .not('completed_at', 'is', null)
     .order('completed_at', { ascending: false })
     .limit(1)
-    .single()
+    .maybeSingle()
 
   // Session logs for last session (with exercise names)
   let lastSessionLogs: { exercise_name: string; weight: number | null }[] = []

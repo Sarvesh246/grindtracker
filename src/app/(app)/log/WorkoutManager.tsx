@@ -65,25 +65,36 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
   async function saveExercise() {
     const currentScreen = screen
     if (currentScreen.id !== 'exercise-form') return
-    if (!formName.trim()) { setFormError('Exercise name is required.'); return }
+    const trimmedName = formName.trim()
+    if (!trimmedName) { setFormError('Exercise name is required.'); return }
     const sets = parseInt(formSets)
     if (!sets || sets < 1 || sets > 20) { setFormError('Sets must be between 1 and 20.'); return }
     if (!formReps.trim()) { setFormError('Reps is required.'); return }
 
+    const { dayKey, exercise } = currentScreen
+
+    // Prevent duplicate names within the same day
+    const duplicate = (grouped[dayKey] ?? []).some(
+      e => e.id !== exercise?.id && e.name.trim().toLowerCase() === trimmedName.toLowerCase()
+    )
+    if (duplicate) {
+      setFormError('An exercise with this name already exists for this day.')
+      return
+    }
+
     setSaving(true)
     setFormError('')
-    const { dayKey, exercise } = currentScreen
 
     if (exercise) {
       await supabase.from('exercises').update({
-        name: formName.trim(),
+        name: trimmedName,
         sets_target: sets,
         reps_target: formReps.trim(),
       }).eq('id', exercise.id)
     } else {
       const maxOrder = (grouped[dayKey] ?? []).reduce((m, e) => Math.max(m, e.sort_order), 0)
       await supabase.from('exercises').insert({
-        name: formName.trim(),
+        name: trimmedName,
         day_type: dayKey,
         sets_target: sets,
         reps_target: formReps.trim(),

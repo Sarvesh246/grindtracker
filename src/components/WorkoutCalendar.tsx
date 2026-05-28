@@ -169,11 +169,16 @@ export default function WorkoutCalendar() {
 
           const textColor = dotColor ?? (isFuture ? '#333333' : isToday ? '#f0f0f0' : '#666666')
 
-          const isClickable = !isFuture && !isToday
+          const isClickable = !isFuture
           return (
             <div
               key={idx}
-              onClick={() => { if (isClickable) router.push(`/log/past?date=${dateKey}`) }}
+              onClick={() => {
+                if (!isClickable) return
+                // Today's record is editable from /log (active session) — past page locks to yesterday
+                if (isToday) router.push('/log')
+                else router.push(`/log/past?date=${dateKey}`)
+              }}
               style={{
                 display: 'flex',
                 flexDirection: 'column',
