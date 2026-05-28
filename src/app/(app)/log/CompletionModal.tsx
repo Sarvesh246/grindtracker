@@ -41,9 +41,9 @@ export default function CompletionModal({
     }}>
       <div style={{
         width: '100%',
-        backgroundColor: '#1a1a1a',
+        backgroundColor: 'var(--surface)',
         borderRadius: '20px 20px 0 0',
-        border: '1px solid #2e2e2e',
+        border: '1px solid var(--border)',
         borderBottom: 'none',
         padding: '32px 24px 48px',
         transform: visible ? 'translateY(0)' : 'translateY(100%)',
@@ -54,7 +54,7 @@ export default function CompletionModal({
 
         <div style={{
           fontFamily: "'Bebas Neue', sans-serif",
-          fontSize: '40px', color: '#c8f135',
+          fontSize: '40px', color: 'var(--accent)',
           textAlign: 'center', letterSpacing: '2px',
           marginBottom: '8px',
         }}>
@@ -65,11 +65,11 @@ export default function CompletionModal({
           <span style={{
             fontFamily: "'Bebas Neue', sans-serif",
             fontSize: '72px', lineHeight: 1,
-            color: '#f0f0f0',
+            color: 'var(--text-primary)',
           }}>
-            <span style={{ color: '#c8f135' }}>+</span>{data.xpEarned}
+            <span style={{ color: 'var(--accent)' }}>+</span>{data.xpEarned}
           </span>
-          <div style={{ fontSize: '14px', color: '#888888', marginTop: '4px', fontFamily: "'Bebas Neue', sans-serif", letterSpacing: '2px' }}>
+          <div style={{ fontSize: '14px', color: 'var(--text-secondary)', marginTop: '4px', fontFamily: "'Bebas Neue', sans-serif", letterSpacing: '2px' }}>
             XP EARNED
           </div>
         </div>
@@ -85,10 +85,10 @@ export default function CompletionModal({
           }}>
             <div style={{
               fontFamily: "'Bebas Neue', sans-serif",
-              fontSize: '28px', color: '#c8f135', letterSpacing: '1px',
+              fontSize: '28px', color: 'var(--accent)', letterSpacing: '1px',
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
             }}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#c8f135" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent)' }}>
                 <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
               </svg>
               LEVEL UP → LVL {data.newLevel}
@@ -104,19 +104,19 @@ export default function CompletionModal({
           ].map(stat => (
             <div key={stat.label} style={{
               flex: 1,
-              backgroundColor: '#242424',
-              border: '1px solid #2e2e2e',
+              backgroundColor: 'var(--surface-elevated)',
+              border: '1px solid var(--border)',
               borderRadius: '12px',
               padding: '12px 8px',
               textAlign: 'center',
             }}>
               <div style={{
                 fontFamily: "'Bebas Neue', sans-serif",
-                fontSize: '26px', color: '#f0f0f0', lineHeight: 1, marginBottom: '4px',
+                fontSize: '26px', color: 'var(--text-primary)', lineHeight: 1, marginBottom: '4px',
               }}>
                 {stat.value}
               </div>
-              <div style={{ fontSize: '10px', color: '#555555', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                 {stat.label}
               </div>
             </div>
@@ -125,26 +125,26 @@ export default function CompletionModal({
 
         {data.prExercises.length > 0 && (
           <div style={{ marginBottom: '20px' }}>
-            <div style={{ fontSize: '12px', color: '#555555', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '10px' }}>
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '10px' }}>
               PERSONAL RECORDS
             </div>
             {data.prExercises.map((pr, i) => (
               <div key={i} style={{
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                 padding: '10px 12px',
-                backgroundColor: '#242424',
+                backgroundColor: 'var(--surface-elevated)',
                 borderRadius: '8px',
                 marginBottom: '6px',
               }}>
-                <span style={{ fontSize: '14px', color: '#f0f0f0' }}>{pr.name}</span>
+                <span style={{ fontSize: '14px', color: 'var(--text-primary)' }}>{pr.name}</span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span style={{
                     fontFamily: "'JetBrains Mono', monospace",
-                    fontSize: '14px', color: '#c8f135',
+                    fontSize: '14px', color: 'var(--accent)',
                   }}>
                     {pr.weight} lbs
                   </span>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#c8f135" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent)' }}>
                     <polyline points="8 6 12 2 16 6"/><path d="M12 2v10"/><path d="M5 17l1.5-5h11L19 17"/><path d="M3 22h18"/>
                   </svg>
                 </span>
@@ -155,7 +155,7 @@ export default function CompletionModal({
 
         {data.newBadges.length > 0 && (
           <div style={{ marginBottom: '24px' }}>
-            <div style={{ fontSize: '12px', color: '#555555', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '10px' }}>
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '10px' }}>
               BADGES EARNED
             </div>
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -170,10 +170,10 @@ export default function CompletionModal({
                     padding: '6px 14px',
                     display: 'flex', alignItems: 'center', gap: '6px',
                   }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#c8f135" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent)' }}>
                       <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
                     </svg>
-                    <span style={{ fontSize: '13px', color: '#c8f135', fontWeight: 600 }}>{badge.label}</span>
+                    <span style={{ fontSize: '13px', color: 'var(--accent)', fontWeight: 600 }}>{badge.label}</span>
                   </div>
                 )
               })}
@@ -185,8 +185,8 @@ export default function CompletionModal({
           onClick={onDone}
           style={{
             width: '100%', height: '56px',
-            backgroundColor: '#c8f135',
-            color: '#0f0f0f',
+            backgroundColor: 'var(--accent)',
+            color: 'var(--bg)',
             border: 'none', borderRadius: '12px',
             fontFamily: "'Bebas Neue', sans-serif",
             fontSize: '22px', letterSpacing: '1px',

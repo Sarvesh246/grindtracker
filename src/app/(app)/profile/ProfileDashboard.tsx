@@ -4,8 +4,9 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { getLevel, getXpInCurrentLevel, getXpRequiredForLevel, getXpToNextLevel } from '@/lib/utils/gamification'
 import { BadgeDefinition } from '@/lib/utils/badges'
+import BodyWeightCard from './BodyWeightCard'
 
-function FlameIcon({ size = 24, color = '#c8f135' }: { size?: number; color?: string }) {
+function FlameIcon({ size = 24, color = 'var(--accent)' }: { size?: number; color?: string }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 2c0 4-4 6-4 10a4 4 0 0 0 8 0c0-4-4-6-4-10z" />
@@ -14,7 +15,7 @@ function FlameIcon({ size = 24, color = '#c8f135' }: { size?: number; color?: st
   )
 }
 
-function BoltIcon({ size = 24, color = '#c8f135' }: { size?: number; color?: string }) {
+function BoltIcon({ size = 24, color = 'var(--accent)' }: { size?: number; color?: string }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
@@ -24,7 +25,7 @@ function BoltIcon({ size = 24, color = '#c8f135' }: { size?: number; color?: str
 
 function LockIcon({ size = 14 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#888888" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-secondary)' }}>
       <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
       <path d="M7 11V7a5 5 0 0 1 10 0v4" />
     </svg>
@@ -32,7 +33,7 @@ function LockIcon({ size = 14 }: { size?: number }) {
 }
 
 function BadgeIcon({ badgeId, size = 28, earned }: { badgeId: string; size?: number; earned: boolean }) {
-  const color = earned ? '#c8f135' : '#444444'
+  const color = earned ? 'var(--accent)' : '#444444'
   const s = { width: size, height: size }
   const props = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none' as const, stroke: color, strokeWidth: '1.8', strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
 
@@ -133,18 +134,19 @@ export default function ProfileDashboard({
 
       {/* Header */}
       <div style={{ paddingTop: '24px', marginBottom: '20px' }}>
-        <span style={{
+        <h1 style={{
           fontFamily: "'Bebas Neue', sans-serif",
-          fontSize: '32px', color: '#f0f0f0', letterSpacing: '1px',
+          fontSize: '32px', color: 'var(--text-primary)', letterSpacing: '1px',
+          fontWeight: 'normal',
         }}>
           PROFILE
-        </span>
+        </h1>
       </div>
 
       {/* User card */}
       <div style={{
-        backgroundColor: '#1a1a1a',
-        border: '1px solid #2e2e2e',
+        backgroundColor: 'var(--surface)',
+        border: '1px solid var(--border)',
         borderRadius: '12px',
         padding: '16px',
         marginBottom: '16px',
@@ -159,7 +161,7 @@ export default function ProfileDashboard({
                 width: '56px', height: '56px',
                 borderRadius: '9999px',
                 objectFit: 'cover',
-                border: '2px solid #2e2e2e',
+                border: '2px solid var(--border)',
                 flexShrink: 0,
               }}
             />
@@ -167,15 +169,15 @@ export default function ProfileDashboard({
             <div style={{
               width: '56px', height: '56px',
               borderRadius: '9999px',
-              backgroundColor: '#242424',
-              border: '2px solid #2e2e2e',
+              backgroundColor: 'var(--surface-elevated)',
+              border: '2px solid var(--border)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               flexShrink: 0,
             }}>
               <span style={{
                 fontFamily: "'Bebas Neue', sans-serif",
                 fontSize: '22px',
-                color: '#c8f135',
+                color: 'var(--accent)',
                 letterSpacing: '1px',
                 lineHeight: 1,
               }}>
@@ -186,13 +188,13 @@ export default function ProfileDashboard({
 
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{
-              fontSize: '16px', fontWeight: 700, color: '#f0f0f0',
+              fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)',
               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
               marginBottom: '3px',
             }}>
               {displayName}
             </div>
-            <div style={{ fontSize: '14px', color: '#888888' }}>
+            <div style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>
               Level {level}
             </div>
           </div>
@@ -200,7 +202,7 @@ export default function ProfileDashboard({
           {/* Level badge */}
           <div style={{
             fontFamily: "'Bebas Neue', sans-serif",
-            fontSize: '40px', color: '#c8f135',
+            fontSize: '40px', color: 'var(--accent)',
             lineHeight: 1, flexShrink: 0,
           }}>
             {level}
@@ -210,7 +212,7 @@ export default function ProfileDashboard({
         {/* XP bar */}
         <div style={{
           width: '100%', height: '8px',
-          backgroundColor: '#2e2e2e',
+          backgroundColor: 'var(--border)',
           borderRadius: '9999px',
           overflow: 'hidden',
           marginBottom: '6px',
@@ -218,14 +220,14 @@ export default function ProfileDashboard({
           <div style={{
             height: '100%',
             width: `${xpPercent}%`,
-            backgroundColor: '#c8f135',
+            backgroundColor: 'var(--accent)',
             borderRadius: '9999px',
             transition: 'width 600ms ease',
           }} />
         </div>
         <div style={{
           display: 'flex', justifyContent: 'space-between',
-          fontSize: '12px', color: '#555555',
+          fontSize: '12px', color: 'var(--text-muted)',
         }}>
           <span>{xpInLevel} / {levelSize} XP</span>
           <span>{xpToNext} XP to Level {level + 1}</span>
@@ -235,7 +237,7 @@ export default function ProfileDashboard({
       {/* Streak section */}
       <div style={{ marginBottom: '16px' }}>
         <div style={{
-          fontSize: '12px', color: '#555555',
+          fontSize: '12px', color: 'var(--text-muted)',
           textTransform: 'uppercase', letterSpacing: '1.5px',
           marginBottom: '10px',
         }}>
@@ -249,8 +251,8 @@ export default function ProfileDashboard({
           ].map((item) => (
             <div key={item.label} style={{
               flex: 1,
-              backgroundColor: '#1a1a1a',
-              border: '1px solid #2e2e2e',
+              backgroundColor: 'var(--surface)',
+              border: '1px solid var(--border)',
               borderRadius: '12px',
               padding: '16px 12px',
               textAlign: 'center',
@@ -263,13 +265,13 @@ export default function ProfileDashboard({
               </div>
               <div style={{
                 fontFamily: "'Bebas Neue', sans-serif",
-                fontSize: '40px', color: '#f0f0f0',
+                fontSize: '40px', color: 'var(--text-primary)',
                 lineHeight: 1, marginBottom: '4px',
               }}>
                 {item.value}
               </div>
               <div style={{
-                fontSize: '10px', color: '#555555',
+                fontSize: '10px', color: 'var(--text-muted)',
                 textTransform: 'uppercase', letterSpacing: '0.5px',
                 lineHeight: 1.3,
               }}>
@@ -283,7 +285,7 @@ export default function ProfileDashboard({
       {/* Lifetime stats */}
       <div style={{ marginBottom: '20px' }}>
         <div style={{
-          fontSize: '12px', color: '#555555',
+          fontSize: '12px', color: 'var(--text-muted)',
           textTransform: 'uppercase', letterSpacing: '1.5px',
           marginBottom: '10px',
         }}>
@@ -302,22 +304,22 @@ export default function ProfileDashboard({
             { label: 'DAYS ACTIVE', value: distinctDays, accent: false },
           ].map((stat) => (
             <div key={stat.label} style={{
-              backgroundColor: '#1a1a1a',
-              border: '1px solid #2e2e2e',
+              backgroundColor: 'var(--surface)',
+              border: '1px solid var(--border)',
               borderRadius: '12px',
               padding: '16px 14px',
             }}>
               <div style={{
                 fontFamily: "'Bebas Neue', sans-serif",
                 fontSize: '36px',
-                color: stat.accent ? '#c8f135' : '#f0f0f0',
+                color: stat.accent ? 'var(--accent)' : 'var(--text-primary)',
                 lineHeight: 1,
                 marginBottom: '4px',
               }}>
                 {stat.value}
               </div>
               <div style={{
-                fontSize: '11px', color: '#555555',
+                fontSize: '11px', color: 'var(--text-muted)',
                 textTransform: 'uppercase', letterSpacing: '0.5px',
               }}>
                 {stat.label}
@@ -326,6 +328,8 @@ export default function ProfileDashboard({
           ))}
         </div>
       </div>
+
+      <BodyWeightCard />
 
       {/* Badges */}
       <div style={{ marginBottom: '32px' }}>
@@ -338,18 +342,17 @@ export default function ProfileDashboard({
           }}
         >
           <div style={{
-            fontSize: '12px', color: '#555555',
+            fontSize: '12px', color: 'var(--text-muted)',
             textTransform: 'uppercase', letterSpacing: '1.5px',
           }}>
             BADGES
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '12px', color: '#555555' }}>{earnedCount}/{allBadges.length}</span>
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{earnedCount}/{allBadges.length}</span>
             <svg
               width="14" height="14" viewBox="0 0 24 24" fill="none"
-              stroke="#555555" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-              style={{ transition: 'transform 150ms ease', transform: badgesOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}
-            >
+              stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+              style={{ transition: 'transform 150ms ease', transform: badgesOpen ? 'rotate(180deg)' : 'rotate(0deg)', color: 'var(--text-muted)' }}>
               <polyline points="6 9 12 15 18 9" />
             </svg>
           </div>
@@ -367,8 +370,8 @@ export default function ProfileDashboard({
               <div
                 key={badge.id}
                 style={{
-                  backgroundColor: '#1a1a1a',
-                  border: `1px solid ${earned ? 'rgba(200, 241, 53, 0.4)' : '#2e2e2e'}`,
+                  backgroundColor: 'var(--surface)',
+                  border: `1px solid ${earned ? 'rgba(200, 241, 53, 0.4)' : 'var(--border)'}`,
                   borderRadius: '12px',
                   padding: '14px 8px',
                   textAlign: 'center',
@@ -411,7 +414,7 @@ export default function ProfileDashboard({
                     <div style={{
                       position: 'absolute',
                       bottom: '-4px', right: '-4px',
-                      backgroundColor: '#1a1a1a',
+                      backgroundColor: 'var(--surface)',
                       borderRadius: '9999px',
                       padding: '2px',
                       opacity: 1,
@@ -424,7 +427,7 @@ export default function ProfileDashboard({
                 {/* Label */}
                 <div style={{
                   fontSize: '11px',
-                  color: earned ? '#f0f0f0' : '#555555',
+                  color: earned ? 'var(--text-primary)' : 'var(--text-muted)',
                   lineHeight: 1.3,
                   fontWeight: earned ? 600 : 400,
                   textAlign: 'center',
@@ -440,8 +443,8 @@ export default function ProfileDashboard({
                     top: 'calc(100% + 6px)',
                     left: '50%',
                     transform: 'translateX(-50%)',
-                    backgroundColor: '#242424',
-                    border: '1px solid #3a3a3a',
+                    backgroundColor: 'var(--surface-elevated)',
+                    border: '1px solid var(--border-strong)',
                     borderRadius: '8px',
                     padding: '8px 10px',
                     width: '140px',
@@ -449,10 +452,10 @@ export default function ProfileDashboard({
                     pointerEvents: 'none',
                     boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
                   }}>
-                    <div style={{ fontSize: '11px', fontWeight: 700, color: '#f0f0f0', marginBottom: '3px' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '3px' }}>
                       {badge.label}
                     </div>
-                    <div style={{ fontSize: '10px', color: '#888888', lineHeight: 1.4 }}>
+                    <div style={{ fontSize: '10px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
                       {badge.description}
                     </div>
                   </div>
@@ -471,7 +474,7 @@ export default function ProfileDashboard({
           backgroundColor: 'rgba(239, 68, 68, 0.08)',
           border: '1px solid rgba(239, 68, 68, 0.25)',
           borderRadius: '12px',
-          color: '#ef4444',
+          color: 'var(--danger)',
           fontFamily: "'DM Sans', sans-serif",
           fontSize: '14px', fontWeight: 600,
           cursor: 'pointer',

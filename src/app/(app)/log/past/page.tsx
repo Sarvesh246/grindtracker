@@ -414,35 +414,35 @@ function LogPastContent() {
 
   // ── Success / delete state ─────────────────────────────────────────────────
   if (done) {
-    const accentColor = done.isDelete ? '#ef4444' : '#c8f135'
+    const accentColor = done.isDelete ? 'var(--danger)' : 'var(--accent)'
     return (
       <div style={{ padding: '24px 16px', fontFamily: "'DM Sans', sans-serif", display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: '64px', gap: '16px' }}>
         {done.isDelete ? (
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--danger)' }}>
             <polyline points="3 6 5 6 21 6" />
             <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
             <path d="M10 11v6M14 11v6" />
             <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
           </svg>
         ) : (
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#c8f135" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent)' }}>
             <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
             <polyline points="22 4 12 14.01 9 11.01" />
           </svg>
         )}
-        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '28px', color: '#f0f0f0', letterSpacing: '1px', textAlign: 'center' }}>
+        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '28px', color: 'var(--text-primary)', letterSpacing: '1px', textAlign: 'center' }}>
           {done.isDelete ? 'WORKOUT DELETED' : done.isEdit ? 'WORKOUT UPDATED' : 'WORKOUT LOGGED'}
         </div>
-        <div style={{ backgroundColor: '#1a1a1a', border: `1px solid ${done.isDelete ? 'rgba(239,68,68,0.2)' : '#2e2e2e'}`, borderRadius: '12px', padding: '20px 24px', textAlign: 'center', width: '100%', maxWidth: '320px' }}>
+        <div style={{ backgroundColor: 'var(--surface)', border: `1px solid ${done.isDelete ? 'rgba(239,68,68,0.2)' : 'var(--border)'}`, borderRadius: '12px', padding: '20px 24px', textAlign: 'center', width: '100%', maxWidth: '320px' }}>
           <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '40px', color: accentColor, lineHeight: 1 }}>
             {done.isDelete ? '-' : done.isEdit ? '±' : '+'}{done.xpEarned} XP
           </div>
           {!done.isDelete && done.prCount > 0 && (
-            <div style={{ fontSize: '14px', color: '#888888', marginTop: '6px' }}>
+            <div style={{ fontSize: '14px', color: 'var(--text-secondary)', marginTop: '6px' }}>
               {done.prCount} PR{done.prCount !== 1 ? 's' : ''} detected
             </div>
           )}
-          <div style={{ fontSize: '13px', color: '#555555', marginTop: '4px' }}>
+          <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '4px' }}>
             {selectedDate} · {selectedDayType?.toUpperCase()}
           </div>
         </div>
@@ -451,7 +451,7 @@ function LogPastContent() {
           style={{
             marginTop: '8px',
             backgroundColor: accentColor,
-            color: '#0f0f0f',
+            color: 'var(--bg)',
             border: 'none',
             borderRadius: '12px',
             padding: '14px 32px',
@@ -477,7 +477,8 @@ function LogPastContent() {
       <div style={{ padding: '24px 16px 20px', display: 'flex', alignItems: 'center', gap: '12px' }}>
         <button
           onClick={() => router.back()}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: '#888888', flexShrink: 0, lineHeight: 1 }}
+          aria-label="Back"
+          style={{ background: 'none', border: 'none', cursor: 'pointer', width: '44px', height: '44px', color: 'var(--text-secondary)', flexShrink: 0, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="15 18 9 12 15 6" />
@@ -486,7 +487,7 @@ function LogPastContent() {
         <h1 style={{
           fontFamily: "'Bebas Neue', sans-serif",
           fontSize: '28px',
-          color: '#f0f0f0',
+          color: 'var(--text-primary)',
           letterSpacing: '1px',
           margin: 0,
         }}>
@@ -497,11 +498,11 @@ function LogPastContent() {
       <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
         {/* Date + Day Type */}
-        <div style={{ backgroundColor: '#1a1a1a', border: '1px solid #2e2e2e', borderRadius: '12px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        <div style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '12px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
 
           {/* Date picker */}
           <div>
-            <div style={{ fontSize: '11px', color: '#555555', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>
               DATE
             </div>
             <input
@@ -514,11 +515,11 @@ function LogPastContent() {
               }}
               style={{
                 width: '100%',
-                backgroundColor: '#242424',
-                border: '1px solid #2e2e2e',
+                backgroundColor: 'var(--surface-elevated)',
+                border: '1px solid var(--border)',
                 borderRadius: '8px',
                 padding: '10px 12px',
-                color: '#f0f0f0',
+                color: 'var(--text-primary)',
                 fontSize: '15px',
                 fontFamily: "'DM Sans', sans-serif",
                 outline: 'none',
@@ -530,11 +531,11 @@ function LogPastContent() {
 
           {/* Day type pills */}
           <div>
-            <div style={{ fontSize: '11px', color: '#555555', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>
               DAY TYPE
             </div>
             {checkingDate ? (
-              <div style={{ fontSize: '13px', color: '#555555', padding: '8px 0' }}>Checking date...</div>
+              <div style={{ fontSize: '13px', color: 'var(--text-muted)', padding: '8px 0' }}>Checking date...</div>
             ) : (
               <div style={{ display: 'flex', gap: '8px' }}>
                 {DAY_TYPES.map(type => {
@@ -547,9 +548,9 @@ function LogPastContent() {
                         flex: 1,
                         height: '36px',
                         borderRadius: '9999px',
-                        border: active ? 'none' : '1px solid #2e2e2e',
-                        backgroundColor: active ? '#c8f135' : '#242424',
-                        color: active ? '#0f0f0f' : '#888888',
+                        border: active ? 'none' : '1px solid var(--border)',
+                        backgroundColor: active ? 'var(--accent)' : 'var(--surface-elevated)',
+                        color: active ? 'var(--bg)' : 'var(--text-secondary)',
                         fontSize: '13px',
                         fontFamily: "'Bebas Neue', sans-serif",
                         letterSpacing: '0.5px',
@@ -574,7 +575,7 @@ function LogPastContent() {
             borderRadius: '10px',
             padding: '10px 14px',
             fontSize: '13px',
-            color: '#8faa24',
+            color: 'var(--accent-dim)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -589,9 +590,9 @@ function LogPastContent() {
             </div>
             <button
               onClick={() => setConfirmDelete(true)}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px', color: '#555555', lineHeight: 1, flexShrink: 0 }}
-              onMouseEnter={e => (e.currentTarget.style.color = '#ef4444')}
-              onMouseLeave={e => (e.currentTarget.style.color = '#555555')}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px', color: 'var(--text-muted)', lineHeight: 1, flexShrink: 0 }}
+              onMouseEnter={e => (e.currentTarget.style.color = 'var(--danger)')}
+              onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
               title="Delete this workout"
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -624,10 +625,10 @@ function LogPastContent() {
                 onClick={() => setConfirmDelete(false)}
                 style={{
                   background: 'none',
-                  border: '1px solid #3a3a3a',
+                  border: '1px solid var(--border-strong)',
                   borderRadius: '6px',
                   padding: '6px 10px',
-                  color: '#888888',
+                  color: 'var(--text-secondary)',
                   fontSize: '11px',
                   fontFamily: "'Bebas Neue', sans-serif",
                   letterSpacing: '0.5px',
@@ -644,7 +645,7 @@ function LogPastContent() {
                   border: '1px solid rgba(239, 68, 68, 0.5)',
                   borderRadius: '6px',
                   padding: '6px 10px',
-                  color: '#ef4444',
+                  color: 'var(--danger)',
                   fontSize: '11px',
                   fontFamily: "'Bebas Neue', sans-serif",
                   letterSpacing: '0.5px',
@@ -696,11 +697,11 @@ function LogPastContent() {
         {/* Exercises */}
         {selectedDayType && (
           loadingExercises ? (
-            <div style={{ color: '#555555', fontSize: '14px', textAlign: 'center', padding: '20px 0' }}>
+            <div style={{ color: 'var(--text-muted)', fontSize: '14px', textAlign: 'center', padding: '20px 0' }}>
               Loading exercises...
             </div>
           ) : exercises.length === 0 ? (
-            <div style={{ color: '#555555', fontSize: '14px', textAlign: 'center', padding: '20px 0' }}>
+            <div style={{ color: 'var(--text-muted)', fontSize: '14px', textAlign: 'center', padding: '20px 0' }}>
               No exercises found for {selectedDayType}.
             </div>
           ) : (
@@ -709,8 +710,8 @@ function LogPastContent() {
                 <div
                   key={ex.id}
                   style={{
-                    backgroundColor: '#1a1a1a',
-                    border: `1px solid ${skippedExercises.has(ex.id) ? 'rgba(239,68,68,0.2)' : '#2e2e2e'}`,
+                    backgroundColor: 'var(--surface)',
+                    border: `1px solid ${skippedExercises.has(ex.id) ? 'rgba(239,68,68,0.2)' : 'var(--border)'}`,
                     borderRadius: '12px',
                     overflow: 'hidden',
                     opacity: skippedExercises.has(ex.id) ? 0.65 : 1,
@@ -720,7 +721,7 @@ function LogPastContent() {
                   {/* Exercise header */}
                   <div style={{
                     padding: '12px 16px',
-                    borderBottom: skippedExercises.has(ex.id) ? 'none' : '1px solid #2e2e2e',
+                    borderBottom: skippedExercises.has(ex.id) ? 'none' : '1px solid var(--border)',
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
@@ -729,7 +730,7 @@ function LogPastContent() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
                       <span style={{
                         fontSize: '15px',
-                        color: skippedExercises.has(ex.id) ? '#555555' : '#f0f0f0',
+                        color: skippedExercises.has(ex.id) ? 'var(--text-muted)' : 'var(--text-primary)',
                         fontWeight: 600,
                         textDecoration: skippedExercises.has(ex.id) ? 'line-through' : 'none',
                         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
@@ -738,7 +739,7 @@ function LogPastContent() {
                       </span>
                       {skippedExercises.has(ex.id) && (
                         <span style={{
-                          fontSize: '10px', color: '#ef4444',
+                          fontSize: '10px', color: 'var(--danger)',
                           backgroundColor: 'rgba(239,68,68,0.1)',
                           border: '1px solid rgba(239,68,68,0.25)',
                           borderRadius: '9999px', padding: '1px 6px',
@@ -751,7 +752,7 @@ function LogPastContent() {
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
                       {!skippedExercises.has(ex.id) && (
-                        <span style={{ fontSize: '12px', color: '#555555' }}>
+                        <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
                           {ex.sets_target} × {ex.reps_target}
                         </span>
                       )}
@@ -773,17 +774,17 @@ function LogPastContent() {
                       >
                         {skippedExercises.has(ex.id) ? (
                           <>
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#c8f135" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent)' }}>
                               <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.37"/>
                             </svg>
-                            <span style={{ fontSize: '10px', color: '#c8f135', fontFamily: "'Bebas Neue', sans-serif", letterSpacing: '0.5px' }}>UNDO</span>
+                            <span style={{ fontSize: '10px', color: 'var(--accent)', fontFamily: "'Bebas Neue', sans-serif", letterSpacing: '0.5px' }}>UNDO</span>
                           </>
                         ) : (
                           <>
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#888888" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-secondary)' }}>
                               <circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
                             </svg>
-                            <span style={{ fontSize: '10px', color: '#888888', fontFamily: "'Bebas Neue', sans-serif", letterSpacing: '0.5px' }}>SKIP</span>
+                            <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontFamily: "'Bebas Neue', sans-serif", letterSpacing: '0.5px' }}>SKIP</span>
                           </>
                         )}
                       </button>
@@ -799,7 +800,7 @@ function LogPastContent() {
                           style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 16px' }}
                         >
                           <span style={{
-                            fontSize: '12px', color: '#555555',
+                            fontSize: '12px', color: 'var(--text-muted)',
                             width: '40px', flexShrink: 0,
                             fontFamily: "'Bebas Neue', sans-serif", letterSpacing: '0.5px',
                           }}>
@@ -815,24 +816,24 @@ function LogPastContent() {
                               onChange={e => updateSet(ex.id, idx, 'weight', e.target.value)}
                               style={{
                                 width: '100%',
-                                backgroundColor: '#242424',
-                                border: '1px solid #2e2e2e',
+                                backgroundColor: 'var(--surface-elevated)',
+                                border: '1px solid var(--border)',
                                 borderRadius: '8px',
                                 padding: '8px 36px 8px 10px',
-                                color: '#f0f0f0',
+                                color: 'var(--text-primary)',
                                 fontSize: '14px',
                                 fontFamily: "'JetBrains Mono', monospace",
                                 outline: 'none',
                                 boxSizing: 'border-box',
                                 textAlign: 'right',
                               }}
-                              onFocus={e => (e.currentTarget.style.borderColor = '#c8f135')}
-                              onBlur={e => (e.currentTarget.style.borderColor = '#2e2e2e')}
+                              onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+                              onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
                             />
                             <span style={{
                               position: 'absolute', right: '8px', top: '50%',
                               transform: 'translateY(-50%)', fontSize: '11px',
-                              color: '#555555', pointerEvents: 'none',
+                              color: 'var(--text-muted)', pointerEvents: 'none',
                             }}>
                               lbs
                             </span>
@@ -846,24 +847,24 @@ function LogPastContent() {
                               onChange={e => updateSet(ex.id, idx, 'reps', e.target.value)}
                               style={{
                                 width: '100%',
-                                backgroundColor: '#242424',
-                                border: '1px solid #2e2e2e',
+                                backgroundColor: 'var(--surface-elevated)',
+                                border: '1px solid var(--border)',
                                 borderRadius: '8px',
                                 padding: '8px 32px 8px 10px',
-                                color: '#f0f0f0',
+                                color: 'var(--text-primary)',
                                 fontSize: '14px',
                                 fontFamily: "'JetBrains Mono', monospace",
                                 outline: 'none',
                                 boxSizing: 'border-box',
                                 textAlign: 'right',
                               }}
-                              onFocus={e => (e.currentTarget.style.borderColor = '#c8f135')}
-                              onBlur={e => (e.currentTarget.style.borderColor = '#2e2e2e')}
+                              onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+                              onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
                             />
                             <span style={{
                               position: 'absolute', right: '7px', top: '50%',
                               transform: 'translateY(-50%)', fontSize: '11px',
-                              color: '#555555', pointerEvents: 'none',
+                              color: 'var(--text-muted)', pointerEvents: 'none',
                             }}>
                               reps
                             </span>
@@ -880,7 +881,7 @@ function LogPastContent() {
 
         {/* Error */}
         {error && (
-          <div style={{ fontSize: '13px', color: '#ef4444', textAlign: 'center' }}>
+          <div style={{ fontSize: '13px', color: 'var(--danger)', textAlign: 'center' }}>
             {error}
           </div>
         )}
@@ -893,8 +894,8 @@ function LogPastContent() {
             style={{
               width: '100%',
               height: '52px',
-              backgroundColor: submitting ? '#555555' : '#c8f135',
-              color: '#0f0f0f',
+              backgroundColor: submitting ? 'var(--text-muted)' : 'var(--accent)',
+              color: 'var(--bg)',
               border: 'none',
               borderRadius: '12px',
               fontFamily: "'Bebas Neue', sans-serif",
@@ -920,7 +921,7 @@ function LogPastContent() {
 export default function LogPastPage() {
   return (
     <Suspense fallback={
-      <div style={{ padding: '24px 16px', color: '#555555', fontFamily: "'DM Sans', sans-serif", fontSize: '14px' }}>
+      <div style={{ padding: '24px 16px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif", fontSize: '14px' }}>
         Loading...
       </div>
     }>

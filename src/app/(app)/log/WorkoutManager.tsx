@@ -167,39 +167,43 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
           {/* Header */}
           <div style={{
             padding: '20px 16px 14px',
-            borderBottom: '1px solid #2e2e2e',
+            borderBottom: '1px solid var(--border)',
             display: 'flex', alignItems: 'center', gap: '12px',
             flexShrink: 0,
           }}>
             {screen.id !== 'days' && (
               <button
                 onClick={goBack}
+                aria-label="Back"
                 style={{
                   background: 'none', border: 'none', cursor: 'pointer',
-                  padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: '44px', height: '44px',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
                   flexShrink: 0,
                 }}
               >
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#888888" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-secondary)' }}>
                   <polyline points="15 18 9 12 15 6" />
                 </svg>
               </button>
             )}
-            <span style={{
+            <h2 style={{
               fontFamily: "'Bebas Neue', sans-serif", fontSize: '22px',
-              color: '#f0f0f0', letterSpacing: '1px', flex: 1,
+              color: 'var(--text-primary)', letterSpacing: '1px', flex: 1,
+              fontWeight: 'normal',
             }}>
               {title}
-            </span>
+            </h2>
             <button
               onClick={onClose}
+              aria-label="Close workout manager"
               style={{
                 background: 'none', border: 'none', cursor: 'pointer',
-                width: '32px', height: '32px',
+                width: '44px', height: '44px',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
               }}
             >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#888888" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-secondary)' }}>
                 <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
               </svg>
             </button>
@@ -212,18 +216,18 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
             {screen.id === 'days' && (
               <>
                 {loading ? (
-                  <div style={{ padding: '24px 16px', color: '#555555', fontSize: '14px', fontFamily: "'DM Sans', sans-serif" }}>
+                  <div style={{ padding: '24px 16px', color: 'var(--text-muted)', fontSize: '14px', fontFamily: "'DM Sans', sans-serif" }}>
                     Loading...
                   </div>
                 ) : dayKeys.length === 0 ? (
-                  <div style={{ padding: '24px 16px', color: '#555555', fontSize: '14px', fontFamily: "'DM Sans', sans-serif" }}>
+                  <div style={{ padding: '24px 16px', color: 'var(--text-muted)', fontSize: '14px', fontFamily: "'DM Sans', sans-serif" }}>
                     No workout days yet. Add one below.
                   </div>
                 ) : (
                   dayKeys.map(key => {
                     const exs = grouped[key]
                     return (
-                      <div key={key} style={{ borderBottom: '1px solid #2e2e2e' }}>
+                      <div key={key} style={{ borderBottom: '1px solid var(--border)' }}>
                         <div style={{
                           display: 'flex', alignItems: 'center',
                           padding: '16px',
@@ -238,11 +242,11 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
                           >
                             <div style={{
                               fontFamily: "'Bebas Neue', sans-serif", fontSize: '20px',
-                              color: '#f0f0f0', letterSpacing: '1px', marginBottom: '2px',
+                              color: 'var(--text-primary)', letterSpacing: '1px', marginBottom: '2px',
                             }}>
                               {key.replace(/-/g, ' ').toUpperCase()}
                             </div>
-                            <div style={{ fontSize: '12px', color: '#555555', fontFamily: "'DM Sans', sans-serif" }}>
+                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
                               {exs.length} exercise{exs.length !== 1 ? 's' : ''}
                             </div>
                           </button>
@@ -256,7 +260,7 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
                             onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
                             onMouseLeave={e => (e.currentTarget.style.opacity = '0.5')}
                           >
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#c8f135" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent)' }}>
                               <polyline points="9 18 15 12 9 6" />
                             </svg>
                           </button>
@@ -270,7 +274,7 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
                             onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
                             onMouseLeave={e => (e.currentTarget.style.opacity = '0.4')}
                           >
-                            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--danger)' }}>
                               <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
                             </svg>
                           </button>
@@ -289,15 +293,15 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
                     padding: '18px 16px',
                     cursor: 'pointer',
                     display: 'flex', alignItems: 'center', gap: '10px',
-                    borderBottom: '1px solid #2e2e2e',
+                    borderBottom: '1px solid var(--border)',
                   }}
                 >
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#c8f135" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent)' }}>
                     <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
                   </svg>
                   <span style={{
                     fontFamily: "'DM Sans', sans-serif", fontSize: '15px',
-                    fontWeight: 600, color: '#c8f135',
+                    fontWeight: 600, color: 'var(--accent)',
                   }}>
                     ADD NEW DAY
                   </span>
@@ -308,7 +312,7 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
             {/* ── New Day ── */}
             {screen.id === 'new-day' && (
               <div style={{ padding: '20px 16px' }}>
-                <div style={{ fontSize: '13px', color: '#888888', fontFamily: "'DM Sans', sans-serif", marginBottom: '8px' }}>
+                <div style={{ fontSize: '13px', color: 'var(--text-secondary)', fontFamily: "'DM Sans', sans-serif", marginBottom: '8px' }}>
                   Day name (e.g. "Abs", "Cardio", "Upper Body")
                 </div>
                 <input
@@ -319,9 +323,9 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
                   placeholder="Day name"
                   style={{
                     width: '100%', height: '48px',
-                    backgroundColor: '#242424',
-                    border: '1px solid #3a3a3a', borderRadius: '8px',
-                    color: '#f0f0f0', fontFamily: "'DM Sans', sans-serif",
+                    backgroundColor: 'var(--surface-elevated)',
+                    border: '1px solid var(--border-strong)', borderRadius: '8px',
+                    color: 'var(--text-primary)', fontFamily: "'DM Sans', sans-serif",
                     fontSize: '16px', padding: '0 14px',
                     outline: 'none', boxSizing: 'border-box',
                   }}
@@ -331,8 +335,8 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
                   disabled={!newDayInput.trim()}
                   style={{
                     marginTop: '14px', width: '100%', height: '48px',
-                    backgroundColor: newDayInput.trim() ? '#c8f135' : '#2e2e2e',
-                    color: newDayInput.trim() ? '#0f0f0f' : '#555555',
+                    backgroundColor: newDayInput.trim() ? 'var(--accent)' : 'var(--border)',
+                    color: newDayInput.trim() ? 'var(--bg)' : 'var(--text-muted)',
                     border: 'none', borderRadius: '8px',
                     fontFamily: "'Bebas Neue', sans-serif", fontSize: '18px',
                     letterSpacing: '1px', cursor: newDayInput.trim() ? 'pointer' : 'default',
@@ -351,7 +355,7 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
               return (
                 <>
                   {exs.length === 0 ? (
-                    <div style={{ padding: '24px 16px', color: '#555555', fontSize: '14px', fontFamily: "'DM Sans', sans-serif" }}>
+                    <div style={{ padding: '24px 16px', color: 'var(--text-muted)', fontSize: '14px', fontFamily: "'DM Sans', sans-serif" }}>
                       No exercises yet. Add one below.
                     </div>
                   ) : (
@@ -361,14 +365,14 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
                         style={{
                           display: 'flex', alignItems: 'center',
                           padding: '14px 16px', gap: '12px',
-                          borderBottom: '1px solid #2e2e2e',
+                          borderBottom: '1px solid var(--border)',
                         }}
                       >
                         <div style={{ flex: 1 }}>
-                          <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '15px', fontWeight: 600, color: '#f0f0f0', marginBottom: '2px' }}>
+                          <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '2px' }}>
                             {ex.name}
                           </div>
-                          <div style={{ fontSize: '12px', color: '#555555', fontFamily: "'DM Sans', sans-serif" }}>
+                          <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
                             {ex.sets_target} sets × {ex.reps_target} reps
                           </div>
                         </div>
@@ -382,7 +386,7 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
                           onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
                           onMouseLeave={e => (e.currentTarget.style.opacity = '0.5')}
                         >
-                          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#c8f135" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent)' }}>
                             <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
                             <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
                           </svg>
@@ -397,7 +401,7 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
                           onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
                           onMouseLeave={e => (e.currentTarget.style.opacity = '0.4')}
                         >
-                          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--danger)' }}>
                             <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
                           </svg>
                         </button>
@@ -413,15 +417,15 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
                       padding: '18px 16px',
                       cursor: 'pointer',
                       display: 'flex', alignItems: 'center', gap: '10px',
-                      borderBottom: '1px solid #2e2e2e',
+                      borderBottom: '1px solid var(--border)',
                     }}
                   >
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#c8f135" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent)' }}>
                       <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
                     </svg>
                     <span style={{
                       fontFamily: "'DM Sans', sans-serif", fontSize: '15px',
-                      fontWeight: 600, color: '#c8f135',
+                      fontWeight: 600, color: 'var(--accent)',
                     }}>
                       ADD EXERCISE
                     </span>
@@ -434,7 +438,7 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
             {screen.id === 'exercise-form' && (
               <div style={{ padding: '20px 16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '12px', color: '#888888', fontFamily: "'DM Sans', sans-serif", marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', fontFamily: "'DM Sans', sans-serif", marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                     Exercise Name
                   </label>
                   <input
@@ -444,9 +448,9 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
                     placeholder="e.g. Bench Press"
                     style={{
                       width: '100%', height: '48px',
-                      backgroundColor: '#242424',
-                      border: '1px solid #3a3a3a', borderRadius: '8px',
-                      color: '#f0f0f0', fontFamily: "'DM Sans', sans-serif",
+                      backgroundColor: 'var(--surface-elevated)',
+                      border: '1px solid var(--border-strong)', borderRadius: '8px',
+                      color: 'var(--text-primary)', fontFamily: "'DM Sans', sans-serif",
                       fontSize: '16px', padding: '0 14px',
                       outline: 'none', boxSizing: 'border-box',
                     }}
@@ -455,7 +459,7 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
 
                 <div style={{ display: 'flex', gap: '12px' }}>
                   <div style={{ flex: 1 }}>
-                    <label style={{ display: 'block', fontSize: '12px', color: '#888888', fontFamily: "'DM Sans', sans-serif", marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', fontFamily: "'DM Sans', sans-serif", marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                       Sets
                     </label>
                     <input
@@ -467,16 +471,16 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
                       min={1} max={20}
                       style={{
                         width: '100%', height: '48px',
-                        backgroundColor: '#242424',
-                        border: '1px solid #3a3a3a', borderRadius: '8px',
-                        color: '#f0f0f0', fontFamily: "'JetBrains Mono', monospace",
+                        backgroundColor: 'var(--surface-elevated)',
+                        border: '1px solid var(--border-strong)', borderRadius: '8px',
+                        color: 'var(--text-primary)', fontFamily: "'JetBrains Mono', monospace",
                         fontSize: '20px', textAlign: 'center',
                         outline: 'none', boxSizing: 'border-box',
                       }}
                     />
                   </div>
                   <div style={{ flex: 1 }}>
-                    <label style={{ display: 'block', fontSize: '12px', color: '#888888', fontFamily: "'DM Sans', sans-serif", marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', fontFamily: "'DM Sans', sans-serif", marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                       Reps / Target
                     </label>
                     <input
@@ -486,9 +490,9 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
                       placeholder="8 or 8-12"
                       style={{
                         width: '100%', height: '48px',
-                        backgroundColor: '#242424',
-                        border: '1px solid #3a3a3a', borderRadius: '8px',
-                        color: '#f0f0f0', fontFamily: "'JetBrains Mono', monospace",
+                        backgroundColor: 'var(--surface-elevated)',
+                        border: '1px solid var(--border-strong)', borderRadius: '8px',
+                        color: 'var(--text-primary)', fontFamily: "'JetBrains Mono', monospace",
                         fontSize: '20px', textAlign: 'center',
                         outline: 'none', boxSizing: 'border-box',
                       }}
@@ -497,7 +501,7 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
                 </div>
 
                 {formError && (
-                  <div style={{ fontSize: '13px', color: '#ef4444', fontFamily: "'DM Sans', sans-serif" }}>
+                  <div style={{ fontSize: '13px', color: 'var(--danger)', fontFamily: "'DM Sans', sans-serif" }}>
                     {formError}
                   </div>
                 )}
@@ -507,8 +511,8 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
                   disabled={saving}
                   style={{
                     height: '52px',
-                    backgroundColor: saving ? '#2e2e2e' : '#c8f135',
-                    color: saving ? '#555555' : '#0f0f0f',
+                    backgroundColor: saving ? 'var(--border)' : 'var(--accent)',
+                    color: saving ? 'var(--text-muted)' : 'var(--bg)',
                     border: 'none', borderRadius: '10px',
                     fontFamily: "'Bebas Neue', sans-serif", fontSize: '20px',
                     letterSpacing: '1px', cursor: saving ? 'default' : 'pointer',
@@ -527,14 +531,14 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
       {deleteTarget && (
         <div className="wm-confirm-overlay">
           <div style={{
-            backgroundColor: '#1a1a1a', borderRadius: '12px',
-            border: '1px solid #2e2e2e', padding: '24px',
+            backgroundColor: 'var(--surface)', borderRadius: '12px',
+            border: '1px solid var(--border)', padding: '24px',
             width: '100%', maxWidth: '320px',
           }}>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '20px', color: '#f0f0f0', marginBottom: '8px' }}>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '20px', color: 'var(--text-primary)', marginBottom: '8px' }}>
               {deleteTarget.type === 'day' ? 'DELETE DAY?' : 'DELETE EXERCISE?'}
             </div>
-            <div style={{ fontSize: '14px', color: '#888888', fontFamily: "'DM Sans', sans-serif", marginBottom: '20px' }}>
+            <div style={{ fontSize: '14px', color: 'var(--text-secondary)', fontFamily: "'DM Sans', sans-serif", marginBottom: '20px' }}>
               {deleteTarget.type === 'day'
                 ? `Remove "${deleteTarget.label}" and all its exercises? This cannot be undone.`
                 : `Remove "${deleteTarget.name}" from this day?`}
@@ -543,9 +547,9 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
               <button
                 onClick={() => setDeleteTarget(null)}
                 style={{
-                  flex: 1, height: '44px', backgroundColor: '#242424',
-                  border: '1px solid #2e2e2e', borderRadius: '8px',
-                  color: '#f0f0f0', fontFamily: "'DM Sans', sans-serif",
+                  flex: 1, height: '44px', backgroundColor: 'var(--surface-elevated)',
+                  border: '1px solid var(--border)', borderRadius: '8px',
+                  color: 'var(--text-primary)', fontFamily: "'DM Sans', sans-serif",
                   fontSize: '14px', fontWeight: 600, cursor: 'pointer',
                 }}
               >
@@ -557,7 +561,7 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
                 style={{
                   flex: 1, height: '44px', backgroundColor: 'rgba(239,68,68,0.15)',
                   border: '1px solid rgba(239,68,68,0.3)', borderRadius: '8px',
-                  color: '#ef4444', fontFamily: "'DM Sans', sans-serif",
+                  color: 'var(--danger)', fontFamily: "'DM Sans', sans-serif",
                   fontSize: '14px', fontWeight: 600, cursor: saving ? 'default' : 'pointer',
                 }}
               >

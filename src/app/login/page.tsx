@@ -27,7 +27,7 @@ export default function LoginPage() {
     <div
       style={{
         minHeight: '100dvh',
-        backgroundColor: '#0f0f0f',
+        backgroundColor: 'var(--bg)',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
@@ -40,7 +40,7 @@ export default function LoginPage() {
           style={{
             fontFamily: "'Bebas Neue', sans-serif",
             fontSize: '72px',
-            color: '#c8f135',
+            color: 'var(--accent)',
             lineHeight: 1,
             letterSpacing: '2px',
           }}
@@ -51,7 +51,7 @@ export default function LoginPage() {
           style={{
             fontFamily: "'DM Sans', sans-serif",
             fontSize: '16px',
-            color: '#888888',
+            color: 'var(--text-secondary)',
             marginTop: '8px',
             letterSpacing: '0.5px',
           }}
@@ -72,7 +72,7 @@ export default function LoginPage() {
           maxWidth: '320px',
           height: '52px',
           backgroundColor: loading ? '#cccccc' : '#ffffff',
-          color: '#0f0f0f',
+          color: 'var(--bg)',
           border: 'none',
           borderRadius: '12px',
           fontSize: '15px',
@@ -113,7 +113,7 @@ export default function LoginPage() {
         <div style={{
           marginTop: '16px',
           fontSize: '13px',
-          color: '#ef4444',
+          color: 'var(--danger)',
           textAlign: 'center',
           fontFamily: "'DM Sans', sans-serif",
           maxWidth: '320px',

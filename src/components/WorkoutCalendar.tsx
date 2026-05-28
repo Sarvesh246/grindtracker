@@ -4,9 +4,9 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
 const DAY_TYPE_COLORS: Record<string, string> = {
-  push: '#c8f135',
-  pull: '#8faa24',
-  legs: '#5a7a1a',
+  push: 'var(--accent)',
+  pull: 'var(--accent-dim)',
+  legs: 'var(--accent-deep)',
 }
 
 const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
@@ -90,8 +90,8 @@ export default function WorkoutCalendar() {
 
   return (
     <div style={{
-      backgroundColor: '#1a1a1a',
-      border: '1px solid #2e2e2e',
+      backgroundColor: 'var(--surface)',
+      border: '1px solid var(--border)',
       borderRadius: '12px',
       padding: '16px',
     }}>
@@ -104,7 +104,8 @@ export default function WorkoutCalendar() {
       }}>
         <button
           onClick={handlePrev}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px 8px', color: '#888888', lineHeight: 1 }}
+          aria-label="Previous month"
+          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px 8px', color: 'var(--text-secondary)', lineHeight: 1 }}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="15 18 9 12 15 6" />
@@ -114,7 +115,7 @@ export default function WorkoutCalendar() {
         <span style={{
           fontFamily: "'Bebas Neue', sans-serif",
           fontSize: '16px',
-          color: '#f0f0f0',
+          color: 'var(--text-primary)',
           letterSpacing: '1px',
         }}>
           {MONTH_NAMES[month]} {year}
@@ -123,11 +124,12 @@ export default function WorkoutCalendar() {
         <button
           onClick={handleNext}
           disabled={isOnCurrentMonth}
+          aria-label="Next month"
           style={{
             background: 'none', border: 'none',
             cursor: isOnCurrentMonth ? 'default' : 'pointer',
             padding: '4px 8px',
-            color: isOnCurrentMonth ? '#3a3a3a' : '#888888',
+            color: isOnCurrentMonth ? 'var(--border-strong)' : 'var(--text-secondary)',
             lineHeight: 1,
           }}
         >
@@ -143,7 +145,7 @@ export default function WorkoutCalendar() {
           <div key={d} style={{
             textAlign: 'center',
             fontSize: '9px',
-            color: '#555555',
+            color: 'var(--text-muted)',
             letterSpacing: '0.5px',
             paddingBottom: '6px',
           }}>
@@ -167,7 +169,7 @@ export default function WorkoutCalendar() {
             (year === todayDate.getFullYear() && month > todayDate.getMonth()) ||
             (isOnCurrentMonth && day > todayDate.getDate())
 
-          const textColor = dotColor ?? (isFuture ? '#333333' : isToday ? '#f0f0f0' : '#666666')
+          const textColor = dotColor ?? (isFuture ? 'var(--text-disabled)' : isToday ? 'var(--text-primary)' : 'var(--text-muted)')
 
           const isClickable = !isFuture
           return (
@@ -187,12 +189,12 @@ export default function WorkoutCalendar() {
                 height: '40px',
                 borderRadius: '8px',
                 cursor: isClickable ? 'pointer' : 'default',
-                border: isToday ? '1px solid #3a3a3a' : '1px solid transparent',
+                border: isToday ? '1px solid var(--border-strong)' : '1px solid transparent',
                 backgroundColor: dotColor ? `${dotColor}15` : 'transparent',
                 transition: 'background-color 150ms ease',
                 gap: '3px',
               }}
-              onMouseEnter={e => { if (isClickable) e.currentTarget.style.backgroundColor = dotColor ? `${dotColor}25` : '#242424' }}
+              onMouseEnter={e => { if (isClickable) e.currentTarget.style.backgroundColor = dotColor ? `${dotColor}25` : 'var(--surface-elevated)' }}
               onMouseLeave={e => { if (isClickable) e.currentTarget.style.backgroundColor = dotColor ? `${dotColor}15` : 'transparent' }}
             >
               <span style={{
@@ -228,7 +230,7 @@ export default function WorkoutCalendar() {
         {Object.entries(DAY_TYPE_COLORS).map(([type, color]) => (
           <div key={type} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
             <div style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: color, flexShrink: 0 }} />
-            <span style={{ fontSize: '10px', color: '#555555', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
               {type}
             </span>
           </div>
