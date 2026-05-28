@@ -6,6 +6,7 @@ Schema changes ship as standalone SQL snippets in [docs/sql/](sql/). Apply each 
 | --- | --- | --- |
 | [02-warmup-and-notes.sql](sql/02-warmup-and-notes.sql) | 2 | `session_logs.is_warmup`, `session_logs.note`, `sessions.note`, partial index for fast PR queries. |
 | [03-body-weights.sql](sql/03-body-weights.sql) | 3 | `body_weights` table with RLS policy + user/date index. |
+| [04-session-delete-rls.sql](sql/04-session-delete-rls.sql) | 4 | RLS `delete` policies on `sessions` and `session_logs` so discard workout works. |
 
 Apply in order. Once `02` is in, warm-up sets are excluded from PR detection and previous-best prefill. Once `03` is in, the profile page's body-weight card starts persisting.
 

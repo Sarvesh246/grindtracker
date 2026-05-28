@@ -6,6 +6,7 @@ import { Exercise } from '@/lib/types'
 import { checkAndAwardBadges } from '@/lib/utils/badges'
 import { getLevel } from '@/lib/utils/gamification'
 import { haptic } from '@/lib/utils/haptics'
+import { deleteIncompleteSessions } from '@/lib/utils/sessions'
 import { useRestTimer } from '@/lib/hooks/useRestTimer'
 import RestTimerBar from '@/components/RestTimerBar'
 import PlateCalculator from '@/components/PlateCalculator'
@@ -76,6 +77,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const [undoState, setUndoState] = useState<UndoState | null>(null)
   const [editingKey, setEditingKey] = useState<string | null>(null)
   const [resumeToast, setResumeToast] = useState<string | null>(null)
+  const [discarding, setDiscarding] = useState(false)
   const [plateCalcTarget, setPlateCalcTarget] = useState<{ key: string; current: number } | null>(null)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   const restTimer = useRestTimer()
@@ -593,10 +595,29 @@ export default function ActiveWorkout({ day }: { day: string }) {
   }
 
   async function handleDiscard() {
-    if (!sessionId) { router.push('/log'); return }
-    await supabase.from('session_logs').delete().eq('session_id', sessionId)
-    await supabase.from('sessions').delete().eq('id', sessionId)
-    router.push('/log')
+    if (discarding) return
+    setDiscarding(true)
+    setShowExitConfirm(false)
+    restTimer.stop()
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      setDiscarding(false)
+      router.replace('/login')
+      return
+    }
+
+    const result = await deleteIncompleteSessions(supabase, user.id, day)
+    if (!result.ok) {
+      setDiscarding(false)
+      setResumeToast('Could not discard workout. Try again.')
+      setTimeout(() => setResumeToast(null), 4000)
+      return
+    }
+
+    setSessionId(null)
+    setDiscarding(false)
+    router.replace('/log')
   }
 
   async function handleFinish() {
@@ -828,7 +849,10 @@ export default function ActiveWorkout({ day }: { day: string }) {
                 Cancel
               </button>
               <button
-                onClick={() => router.push('/log')}
+                onClick={() => {
+                  setShowExitConfirm(false)
+                  router.replace('/log')
+                }}
                 style={{
                   flex: 1, height: '44px', backgroundColor: 'var(--surface-elevated)',
                   border: '1px solid var(--border)', borderRadius: '8px',
@@ -841,14 +865,17 @@ export default function ActiveWorkout({ day }: { day: string }) {
             </div>
             <button
               onClick={handleDiscard}
+              disabled={discarding}
               style={{
                 width: '100%', height: '44px', backgroundColor: 'rgba(239,68,68,0.15)',
                 border: '1px solid rgba(239,68,68,0.3)', borderRadius: '8px',
                 color: 'var(--danger)', fontFamily: "'DM Sans', sans-serif",
-                fontSize: '14px', fontWeight: 600, cursor: 'pointer',
+                fontSize: '14px', fontWeight: 600,
+                cursor: discarding ? 'not-allowed' : 'pointer',
+                opacity: discarding ? 0.6 : 1,
               }}
             >
-              Discard Workout
+              {discarding ? 'Discarding…' : 'Discard Workout'}
             </button>
           </div>
         </div>
