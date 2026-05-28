@@ -20,9 +20,9 @@ export const ALL_BADGES: BadgeDefinition[] = [
   { id: 'workouts_100', label: 'Elite', emoji: '👑', description: '100 total workouts' },
   { id: 'all_three_days', label: 'Full Split', emoji: '📅', description: 'Log Push, Pull, and Legs in one week' },
   { id: 'pr_5', label: 'Getting Stronger', emoji: '📈', description: '5 total PRs logged' },
-  { id: 'pr_25', label: 'Beast Mode', emoji: '🦁', description: '25 total PRs logged' },
-  { id: 'level_5', label: 'Grind Mode', emoji: '💎', description: 'Reach Level 5' },
-  { id: 'level_10', label: 'Grind God', emoji: '🔱', description: 'Reach Level 10' },
+  { id: 'pr_25', label: 'Rising', emoji: '📈', description: '25 total PRs logged' },
+  { id: 'level_5', label: 'Locked In', emoji: '🎯', description: 'Reach Level 5' },
+  { id: 'level_10', label: 'Icon', emoji: '⭐', description: 'Reach Level 10' },
   { id: 'level_20', label: 'Immortal', emoji: '⚜️', description: 'Reach Level 20' },
 ]
 
