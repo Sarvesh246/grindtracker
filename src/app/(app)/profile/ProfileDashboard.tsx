@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { getLevel, getXpInCurrentLevel, getXpRequiredForLevel, getXpToNextLevel } from '@/lib/utils/gamification'
@@ -103,6 +103,13 @@ export default function ProfileDashboard({
   const supabase = createClient()
   const [tooltipBadgeId, setTooltipBadgeId] = useState<string | null>(null)
   const [badgesOpen, setBadgesOpen] = useState(false)
+
+  useEffect(() => {
+    if (!tooltipBadgeId) return
+    const close = () => setTooltipBadgeId(null)
+    document.addEventListener('touchstart', close, { passive: true })
+    return () => document.removeEventListener('touchstart', close)
+  }, [tooltipBadgeId])
 
   const xpTotal = stats.xp_total
   const level = getLevel(xpTotal)
@@ -376,6 +383,7 @@ export default function ProfileDashboard({
                 }}
                 onMouseEnter={() => setTooltipBadgeId(badge.id)}
                 onMouseLeave={() => setTooltipBadgeId(null)}
+                onTouchEnd={(e) => { e.preventDefault(); setTooltipBadgeId(v => v === badge.id ? null : badge.id) }}
                 onClick={() => setTooltipBadgeId(v => v === badge.id ? null : badge.id)}
               >
                 {/* Subtle glow bg for earned */}
