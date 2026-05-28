@@ -3,11 +3,15 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
-const DAY_TYPE_COLORS: Record<string, string> = {
-  push: 'var(--accent)',
-  pull: 'var(--accent-dim)',
-  legs: 'var(--accent-deep)',
+// Distinct, clearly differentiated colors for known day types
+const NAMED_COLORS: Record<string, string> = {
+  push: '#c8f135',  // lime green (matches app accent)
+  pull: '#38bdf8',  // sky blue
+  legs: '#fb923c',  // orange
 }
+
+// Fallback pool for any additional day types the user adds
+const EXTRA_COLORS = ['#a78bfa', '#f472b6', '#34d399', '#fbbf24', '#f87171', '#e879f9']
 
 const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
 const MONTH_NAMES = [
@@ -18,6 +22,12 @@ const MONTH_NAMES = [
 function toLocalDateKey(isoString: string): string {
   const d = new Date(isoString)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function resolveColor(type: string, extraTypes: string[]): string {
+  if (NAMED_COLORS[type]) return NAMED_COLORS[type]
+  const idx = extraTypes.indexOf(type)
+  return EXTRA_COLORS[idx % EXTRA_COLORS.length]
 }
 
 export default function WorkoutCalendar() {
@@ -79,6 +89,12 @@ export default function WorkoutCalendar() {
 
   const isOnCurrentMonth =
     year === todayDate.getFullYear() && month === todayDate.getMonth()
+
+  // Resolve colors dynamically so any extra day types get a unique color
+  const allTypes = Object.values(workoutDays)
+  const extraTypes = [...new Set(allTypes.filter(t => !NAMED_COLORS[t]))]
+  // Always show all named day types; append any unrecognised ones from this month's data
+  const legendTypes = [...Object.keys(NAMED_COLORS), ...extraTypes]
 
   function handlePrev() {
     setCurrentMonth(m => new Date(m.getFullYear(), m.getMonth() - 1, 1))
@@ -161,7 +177,7 @@ export default function WorkoutCalendar() {
 
           const dateKey = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
           const workoutType = workoutDays[dateKey]
-          const dotColor = workoutType ? DAY_TYPE_COLORS[workoutType] : null
+          const dotColor = workoutType ? resolveColor(workoutType, extraTypes) : null
 
           const isToday = isOnCurrentMonth && day === todayDate.getDate()
           const isFuture =
@@ -169,15 +185,36 @@ export default function WorkoutCalendar() {
             (year === todayDate.getFullYear() && month > todayDate.getMonth()) ||
             (isOnCurrentMonth && day > todayDate.getDate())
 
-          const textColor = dotColor ?? (isFuture ? 'var(--text-disabled)' : isToday ? 'var(--text-primary)' : 'var(--text-muted)')
+          const textColor = dotColor
+            ? dotColor
+            : isFuture
+              ? 'var(--text-disabled)'
+              : isToday
+                ? 'var(--text-primary)'
+                : 'var(--text-muted)'
 
           const isClickable = !isFuture
+
+          // Base styles for the cell background and border
+          const baseBg = dotColor ? `${dotColor}28` : 'transparent'
+          const baseBorder = isToday
+            ? '1px solid var(--border-strong)'
+            : dotColor
+              ? `1px solid ${dotColor}55`
+              : '1px solid transparent'
+
+          const hoverBg = dotColor ? `${dotColor}55` : 'rgba(255,255,255,0.06)'
+          const hoverBorder = isToday
+            ? '1px solid var(--border-strong)'
+            : dotColor
+              ? `1px solid ${dotColor}cc`
+              : '1px solid var(--border)'
+
           return (
             <div
               key={idx}
               onClick={() => {
                 if (!isClickable) return
-                // Today's record is editable from /log (active session) — past page locks to yesterday
                 if (isToday) router.push('/log')
                 else router.push(`/log/past?date=${dateKey}`)
               }}
@@ -189,18 +226,26 @@ export default function WorkoutCalendar() {
                 height: '40px',
                 borderRadius: '8px',
                 cursor: isClickable ? 'pointer' : 'default',
-                border: isToday ? '1px solid var(--border-strong)' : '1px solid transparent',
-                backgroundColor: dotColor ? `${dotColor}15` : 'transparent',
-                transition: 'background-color 150ms ease',
+                border: baseBorder,
+                backgroundColor: baseBg,
+                transition: 'background-color 150ms ease, border-color 150ms ease',
                 gap: '3px',
               }}
-              onMouseEnter={e => { if (isClickable) e.currentTarget.style.backgroundColor = dotColor ? `${dotColor}25` : 'var(--surface-elevated)' }}
-              onMouseLeave={e => { if (isClickable) e.currentTarget.style.backgroundColor = dotColor ? `${dotColor}15` : 'transparent' }}
+              onMouseEnter={e => {
+                if (!isClickable) return
+                e.currentTarget.style.backgroundColor = hoverBg
+                e.currentTarget.style.borderColor = hoverBorder.replace('1px solid ', '')
+              }}
+              onMouseLeave={e => {
+                if (!isClickable) return
+                e.currentTarget.style.backgroundColor = baseBg
+                e.currentTarget.style.borderColor = baseBorder.replace('1px solid ', '')
+              }}
             >
               <span style={{
                 fontSize: '13px',
                 color: textColor,
-                fontWeight: isToday ? 700 : 400,
+                fontWeight: isToday ? 700 : dotColor ? 600 : 400,
                 lineHeight: 1,
                 fontFamily: "'DM Sans', sans-serif",
               }}>
@@ -208,8 +253,8 @@ export default function WorkoutCalendar() {
               </span>
               {dotColor && (
                 <div style={{
-                  width: '4px',
-                  height: '4px',
+                  width: '5px',
+                  height: '5px',
                   borderRadius: '50%',
                   backgroundColor: dotColor,
                   flexShrink: 0,
@@ -220,21 +265,26 @@ export default function WorkoutCalendar() {
         })}
       </div>
 
-      {/* Legend */}
-      <div style={{
-        display: 'flex',
-        gap: '14px',
-        marginTop: '12px',
-        justifyContent: 'center',
-      }}>
-        {Object.entries(DAY_TYPE_COLORS).map(([type, color]) => (
-          <div key={type} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-            <div style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: color, flexShrink: 0 }} />
-            <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              {type}
-            </span>
-          </div>
-        ))}
+      {/* Legend — always shows all named types; extra types from data appended */}
+      <div style={{ display: 'flex', gap: '14px', marginTop: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
+        {legendTypes.map(type => {
+          const color = resolveColor(type, extraTypes)
+          return (
+            <div key={type} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <div style={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                backgroundColor: color,
+                flexShrink: 0,
+                boxShadow: `0 0 4px ${color}80`,
+              }} />
+              <span style={{ fontSize: '10px', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                {type}
+              </span>
+            </div>
+          )
+        })}
       </div>
     </div>
   )

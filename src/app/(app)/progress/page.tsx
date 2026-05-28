@@ -303,6 +303,9 @@ export default function ProgressPage() {
         })}
       </div>
 
+      {/* Divider */}
+      <div style={{ margin: '4px 16px 12px', borderTop: '1px solid var(--border)' }} />
+
       {/* Exercise picker (level 2) */}
       <div style={{ padding: '0 16px 12px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
         {exercisesForDay.map(ex => {
