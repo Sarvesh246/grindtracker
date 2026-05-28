@@ -25,7 +25,8 @@ type ExistingSession = { id: string; day_type: string; xp_earned: number }
 async function recalculateStreak(
   supabase: ReturnType<typeof createClient>,
   userId: string,
-): Promise<{ current_streak: number; longest_streak: number; last_workout_date: string | null }> {
+  targetDate?: string,
+): Promise<{ current_streak: number; longest_streak: number; last_workout_date: string | null; streak_at_target: number }> {
   const { data: sessions } = await supabase
     .from('sessions')
     .select('completed_at')
@@ -34,7 +35,7 @@ async function recalculateStreak(
     .order('completed_at', { ascending: true })
 
   if (!sessions || sessions.length === 0) {
-    return { current_streak: 0, longest_streak: 0, last_workout_date: null }
+    return { current_streak: 0, longest_streak: 0, last_workout_date: null, streak_at_target: 0 }
   }
 
   const dateSet = new Set<string>()
@@ -48,6 +49,9 @@ async function recalculateStreak(
 
   let streak = 1
   let longest = 1
+  // Track the running streak count at the specific date being saved
+  let streak_at_target = dates[0] === targetDate ? 1 : 0
+
   for (let i = 1; i < dates.length; i++) {
     const prev = new Date(dates[i - 1] + 'T12:00:00')
     const curr = new Date(dates[i] + 'T12:00:00')
@@ -58,9 +62,10 @@ async function recalculateStreak(
     } else {
       streak = 1
     }
+    if (dates[i] === targetDate) streak_at_target = streak
   }
 
-  return { current_streak: streak, longest_streak: longest, last_workout_date: dates[dates.length - 1] }
+  return { current_streak: streak, longest_streak: longest, last_workout_date: dates[dates.length - 1], streak_at_target }
 }
 
 function LogPastContent() {
@@ -299,10 +304,10 @@ function LogPastContent() {
       .from('session_logs')
       .upsert(logsToInsert, { onConflict: 'session_id,exercise_id,set_number' })
 
-    const streakData = await recalculateStreak(supabase, user.id)
+    const streakData = await recalculateStreak(supabase, user.id, selectedDate)
 
     let xpEarned = 100 + prCount * 25
-    if (streakData.current_streak > 0 && streakData.current_streak % 7 === 0) {
+    if (streakData.streak_at_target > 0 && streakData.streak_at_target % 7 === 0) {
       xpEarned += 50
     }
     await supabase.from('sessions').update({ xp_earned: xpEarned }).eq('id', sessionId)
