@@ -337,9 +337,16 @@ export default function ProfileDashboard({
           onClick={() => setBadgesOpen(v => !v)}
           style={{
             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-            width: '100%', background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-            marginBottom: badgesOpen ? '10px' : 0,
+            width: '100%',
+            backgroundColor: 'var(--surface)',
+            border: '1px solid var(--border)',
+            borderRadius: badgesOpen ? '12px 12px 0 0' : '12px',
+            padding: '14px 16px',
+            cursor: 'pointer',
+            transition: 'border-color 150ms ease',
           }}
+          onMouseEnter={e => (e.currentTarget.style.borderColor = 'rgba(200,241,53,0.5)')}
+          onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}
         >
           <div style={{
             fontSize: '12px', color: 'var(--text-muted)',
@@ -359,6 +366,11 @@ export default function ProfileDashboard({
         </button>
 
         {badgesOpen && <div style={{
+          backgroundColor: 'var(--surface)',
+          border: '1px solid var(--border)',
+          borderTop: 'none',
+          borderRadius: '0 0 12px 12px',
+          padding: '10px',
           display: 'grid',
           gridTemplateColumns: '1fr 1fr 1fr',
           gap: '8px',

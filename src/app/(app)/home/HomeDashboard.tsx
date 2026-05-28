@@ -261,8 +261,10 @@ export default function HomeDashboard({
           marginBottom: '24px',
           transition: 'opacity 150ms ease',
         }}
-        onMouseDown={e => (e.currentTarget.style.opacity = '0.85')}
-        onMouseUp={e => (e.currentTarget.style.opacity = '1')}
+        onMouseEnter={e => (e.currentTarget.style.opacity = '0.88')}
+        onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
+        onMouseDown={e => (e.currentTarget.style.opacity = '0.75')}
+        onMouseUp={e => (e.currentTarget.style.opacity = '0.88')}
         onTouchStart={e => (e.currentTarget.style.opacity = '0.85')}
         onTouchEnd={e => (e.currentTarget.style.opacity = '1')}
       >

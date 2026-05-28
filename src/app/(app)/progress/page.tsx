@@ -133,7 +133,7 @@ export default function ProgressPage() {
       .eq('is_warmup', false)
       .eq('sessions.user_id', user.id)
       .not('sessions.completed_at', 'is', null)
-      .order('sessions(completed_at)', { ascending: true })
+      .order('completed_at', { ascending: true, foreignTable: 'sessions' })
 
     setRawLogs((logs ?? []) as RawLog[])
     setLoadingChart(false)

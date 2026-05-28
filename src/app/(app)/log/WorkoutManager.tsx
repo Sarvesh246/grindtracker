@@ -293,7 +293,6 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
                     padding: '18px 16px',
                     cursor: 'pointer',
                     display: 'flex', alignItems: 'center', gap: '10px',
-                    borderBottom: '1px solid var(--border)',
                   }}
                 >
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent)' }}>
