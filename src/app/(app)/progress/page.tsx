@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Exercise } from '@/lib/types'
 import { formatHeaderDate } from '@/lib/utils/formatting'
@@ -42,6 +42,20 @@ export default function ProgressPage() {
   const [recentSessions, setRecentSessions] = useState<RecentSession[]>([])
   const [loadingExercises, setLoadingExercises] = useState(true)
   const [loadingChart, setLoadingChart] = useState(false)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [canScrollLeft, setCanScrollLeft] = useState(false)
+  const [canScrollRight, setCanScrollRight] = useState(false)
+
+  function checkScroll() {
+    const el = scrollRef.current
+    if (!el) return
+    setCanScrollLeft(el.scrollLeft > 4)
+    setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 4)
+  }
+
+  function scrollBy(delta: number) {
+    scrollRef.current?.scrollBy({ left: delta, behavior: 'smooth' })
+  }
 
   useEffect(() => {
     async function loadExercises() {
@@ -69,6 +83,13 @@ export default function ProgressPage() {
     if (!selectedId) return
     loadChartData(selectedId)
   }, [selectedId])
+
+  useEffect(() => {
+    // Check if the exercise list overflows after loading
+    const el = scrollRef.current
+    if (!el) return
+    setCanScrollRight(el.scrollWidth > el.clientWidth + 4)
+  }, [exercises])
 
   async function loadChartData(exerciseId: string) {
     setLoadingChart(true)
@@ -205,54 +226,96 @@ export default function ProgressPage() {
         </span>
       </div>
 
-      {/* Exercise selector — horizontal scroll */}
-      <div
-        style={{
-          overflowX: 'auto',
-          paddingBottom: '12px',
-          paddingLeft: '16px',
-        }}
-        className="scrollbar-hide"
-      >
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', width: 'max-content', paddingRight: '16px' }}>
-          {(['push', 'pull', 'legs'] as const).map((dayType) => (
-            <div key={dayType} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{
-                fontSize: '11px', color: '#555555',
-                textTransform: 'uppercase', letterSpacing: '1.5px',
-                whiteSpace: 'nowrap', paddingLeft: dayType === 'push' ? '0' : '4px',
-              }}>
-                {dayType}
-              </span>
+      {/* Exercise selector — horizontal scroll with arrows */}
+      <div style={{ position: 'relative', marginBottom: '0' }}>
+        {/* Left fade + arrow */}
+        {canScrollLeft && (
+          <button
+            onClick={() => scrollBy(-180)}
+            style={{
+              position: 'absolute', left: 0, top: 0, bottom: '12px', zIndex: 2,
+              width: '40px',
+              background: 'linear-gradient(to right, #0f0f0f 60%, transparent)',
+              border: 'none', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'flex-start',
+              paddingLeft: '4px',
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#888888" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
+          </button>
+        )}
 
-              {grouped[dayType].map((ex) => {
-                const active = ex.id === selectedId
-                return (
-                  <button
-                    key={ex.id}
-                    onClick={() => setSelectedId(ex.id)}
-                    style={{
-                      height: '36px',
-                      padding: '0 14px',
-                      borderRadius: '9999px',
-                      border: active ? 'none' : '1px solid #2e2e2e',
-                      backgroundColor: active ? '#c8f135' : '#1a1a1a',
-                      color: active ? '#0f0f0f' : '#888888',
-                      fontSize: '13px',
-                      fontFamily: "'DM Sans', sans-serif",
-                      fontWeight: active ? 700 : 400,
-                      cursor: 'pointer',
-                      whiteSpace: 'nowrap',
-                      transition: 'background-color 150ms ease, color 150ms ease',
-                    }}
-                  >
-                    {ex.name}
-                  </button>
-                )
-              })}
-            </div>
-          ))}
+        <div
+          ref={scrollRef}
+          onScroll={checkScroll}
+          style={{
+            overflowX: 'auto',
+            paddingBottom: '12px',
+            paddingLeft: '16px',
+          }}
+          className="scrollbar-hide"
+        >
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', width: 'max-content', paddingRight: '40px' }}>
+            {(['push', 'pull', 'legs'] as const).map((dayType) => (
+              <div key={dayType} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{
+                  fontSize: '11px', color: '#555555',
+                  textTransform: 'uppercase', letterSpacing: '1.5px',
+                  whiteSpace: 'nowrap', paddingLeft: dayType === 'push' ? '0' : '4px',
+                }}>
+                  {dayType}
+                </span>
+
+                {grouped[dayType].map((ex) => {
+                  const active = ex.id === selectedId
+                  return (
+                    <button
+                      key={ex.id}
+                      onClick={() => setSelectedId(ex.id)}
+                      style={{
+                        height: '36px',
+                        padding: '0 14px',
+                        borderRadius: '9999px',
+                        border: active ? 'none' : '1px solid #2e2e2e',
+                        backgroundColor: active ? '#c8f135' : '#1a1a1a',
+                        color: active ? '#0f0f0f' : '#888888',
+                        fontSize: '13px',
+                        fontFamily: "'DM Sans', sans-serif",
+                        fontWeight: active ? 700 : 400,
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                        transition: 'background-color 150ms ease, color 150ms ease',
+                      }}
+                    >
+                      {ex.name}
+                    </button>
+                  )
+                })}
+              </div>
+            ))}
+          </div>
         </div>
+
+        {/* Right fade + arrow */}
+        {canScrollRight && (
+          <button
+            onClick={() => scrollBy(180)}
+            style={{
+              position: 'absolute', right: 0, top: 0, bottom: '12px', zIndex: 2,
+              width: '40px',
+              background: 'linear-gradient(to left, #0f0f0f 60%, transparent)',
+              border: 'none', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+              paddingRight: '4px',
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#888888" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+          </button>
+        )}
       </div>
 
       {/* Stats bar */}
@@ -303,7 +366,14 @@ export default function ProgressPage() {
             <div style={{ color: '#555555', fontSize: '14px' }}>Loading...</div>
           ) : chartData.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '32px 16px' }}>
-              <div style={{ fontSize: '32px', marginBottom: '12px' }}>📊</div>
+              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px' }}>
+                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#3a3a3a" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="20" x2="18" y2="10"/>
+                  <line x1="12" y1="20" x2="12" y2="4"/>
+                  <line x1="6" y1="20" x2="6" y2="14"/>
+                  <line x1="2" y1="20" x2="22" y2="20"/>
+                </svg>
+              </div>
               <div style={{ fontSize: '14px', color: '#555555', lineHeight: 1.5 }}>
                 No data yet for<br />
                 <span style={{ color: '#888888' }}>{selectedExercise?.name}</span>

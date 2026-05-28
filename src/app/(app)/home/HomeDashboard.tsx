@@ -137,13 +137,15 @@ export default function HomeDashboard({
       }}>
         {currentStreak === 0 ? (
           <div style={{ color: '#555555', fontSize: '14px' }}>
-            Start your streak today 💪
+            Start your streak today
           </div>
         ) : (
           <>
             <div style={{ flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                <span style={{ fontSize: '28px', lineHeight: 1 }}>🔥</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#c8f135" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 2c0 4-4 6-4 10a4 4 0 0 0 8 0c0-4-4-6-4-10z"/><path d="M12 12c0 2-1.5 3-1.5 4.5a1.5 1.5 0 0 0 3 0C13.5 15 12 14 12 12z"/>
+                </svg>
                 <span style={{
                   fontFamily: "'Bebas Neue', sans-serif",
                   fontSize: '52px',
@@ -245,7 +247,7 @@ export default function HomeDashboard({
             fontSize: '14px',
             textAlign: 'center',
           }}>
-            No workouts logged yet. Hit that first session! 💪
+            No workouts logged yet. Hit that first session!
           </div>
         ) : (
           <div style={{
