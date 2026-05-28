@@ -65,7 +65,13 @@ async function recalculateStreak(
     if (dates[i] === targetDate) streak_at_target = streak
   }
 
-  return { current_streak: streak, longest_streak: longest, last_workout_date: dates[dates.length - 1], streak_at_target }
+  // Zero out streak if last workout is more than 2 days from today
+  const todayMs = new Date().setHours(0, 0, 0, 0)
+  const lastMs = new Date(dates[dates.length - 1] + 'T12:00:00').setHours(0, 0, 0, 0)
+  const diffFromToday = Math.round((todayMs - lastMs) / (1000 * 60 * 60 * 24))
+  const activeStreak = diffFromToday > 2 ? 0 : streak
+
+  return { current_streak: activeStreak, longest_streak: longest, last_workout_date: dates[dates.length - 1], streak_at_target }
 }
 
 function LogPastContent() {
@@ -307,6 +313,13 @@ function LogPastContent() {
       .from('session_logs')
       .upsert(logsToInsert, { onConflict: 'session_id,exercise_id,set_number' })
 
+    if (isEditing) {
+      // Editing: only update session logs, never touch XP or stats
+      setDone({ xpEarned: 0, prCount, isEdit: true, isDelete: false })
+      setSubmitting(false)
+      return
+    }
+
     const streakData = await recalculateStreak(supabase, user.id, selectedDate)
 
     let xpEarned = 100 + prCount * 25
@@ -315,10 +328,9 @@ function LogPastContent() {
     }
     await supabase.from('sessions').update({ xp_earned: xpEarned }).eq('id', sessionId)
 
-    const xpDelta = isEditing ? xpEarned - oldXp : xpEarned
-    const newXpTotal = statsData.xp_total + xpDelta
+    const newXpTotal = statsData.xp_total + xpEarned
     const newLevel = getLevel(newXpTotal)
-    const newTotalWorkouts = isEditing ? statsData.total_workouts : statsData.total_workouts + 1
+    const newTotalWorkouts = statsData.total_workouts + 1
 
     const updatedStats = {
       ...statsData,
@@ -346,7 +358,7 @@ function LogPastContent() {
 
     await checkAndAwardBadges(supabase, user.id, updatedStats, prCount)
 
-    setDone({ xpEarned: Math.abs(xpEarned), prCount, isEdit: isEditing, isDelete: false })
+    setDone({ xpEarned, prCount, isEdit: false, isDelete: false })
     setSubmitting(false)
   }
 

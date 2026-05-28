@@ -24,6 +24,19 @@ export default async function HomePage() {
     stats = newStats
   }
 
+  // Reset stale streak: if last workout was more than 2 days ago, streak should be 0
+  if (stats && stats.current_streak > 0 && stats.last_workout_date) {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const lastDate = new Date(stats.last_workout_date + 'T12:00:00')
+    lastDate.setHours(0, 0, 0, 0)
+    const diffDays = Math.round((today.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24))
+    if (diffDays > 2) {
+      await supabase.from('user_stats').update({ current_streak: 0 }).eq('user_id', user.id)
+      stats = { ...stats, current_streak: 0 }
+    }
+  }
+
   // Last completed session
   const { data: lastSession } = await supabase
     .from('sessions')
