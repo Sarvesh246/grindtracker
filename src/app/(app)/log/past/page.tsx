@@ -87,9 +87,11 @@ function LogPastContent() {
   const [loadingExercises, setLoadingExercises] = useState(false)
   const [checkingDate, setCheckingDate] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [duplicateWarning, setDuplicateWarning] = useState(false)
-  const [done, setDone] = useState<{ xpEarned: number; prCount: number; isEdit: boolean } | null>(null)
+  const [done, setDone] = useState<{ xpEarned: number; prCount: number; isEdit: boolean; isDelete: boolean } | null>(null)
 
   useEffect(() => {
     checkExistingSession(selectedDate)
@@ -102,6 +104,7 @@ function LogPastContent() {
     setSetInputs({})
     setSkippedExercises(new Set())
     setDuplicateWarning(false)
+    setConfirmDelete(false)
     existingSessionRef.current = null
     setExistingSession(null)
 
@@ -343,26 +346,78 @@ function LogPastContent() {
 
     await checkAndAwardBadges(supabase, user.id, updatedStats, prCount)
 
-    setDone({ xpEarned: Math.abs(xpEarned), prCount, isEdit: isEditing })
+    setDone({ xpEarned: Math.abs(xpEarned), prCount, isEdit: isEditing, isDelete: false })
     setSubmitting(false)
   }
 
-  // ── Success state ──────────────────────────────────────────────────────────
+  async function handleDelete() {
+    const session = existingSessionRef.current
+    if (!session) return
+    setDeleting(true)
+    setError(null)
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { setError('Not logged in.'); setDeleting(false); return }
+
+    const { data: statsData } = await supabase
+      .from('user_stats')
+      .select('*')
+      .eq('user_id', user.id)
+      .single()
+
+    if (!statsData) { setError('Could not load stats.'); setDeleting(false); return }
+
+    await supabase.from('session_logs').delete().eq('session_id', session.id)
+    await supabase.from('sessions').delete().eq('id', session.id)
+
+    const streakData = await recalculateStreak(supabase, user.id)
+    const newXpTotal = Math.max(0, statsData.xp_total - session.xp_earned)
+    const newLevel = getLevel(newXpTotal)
+    const newTotalWorkouts = Math.max(0, statsData.total_workouts - 1)
+
+    await supabase
+      .from('user_stats')
+      .update({
+        xp_total: newXpTotal,
+        level: newLevel,
+        total_workouts: newTotalWorkouts,
+        current_streak: streakData.current_streak,
+        longest_streak: streakData.longest_streak,
+        last_workout_date: streakData.last_workout_date,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('user_id', user.id)
+
+    setDone({ xpEarned: session.xp_earned, prCount: 0, isEdit: false, isDelete: true })
+    setDeleting(false)
+  }
+
+  // ── Success / delete state ─────────────────────────────────────────────────
   if (done) {
+    const accentColor = done.isDelete ? '#ef4444' : '#c8f135'
     return (
       <div style={{ padding: '24px 16px', fontFamily: "'DM Sans', sans-serif", display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: '64px', gap: '16px' }}>
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#c8f135" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-          <polyline points="22 4 12 14.01 9 11.01" />
-        </svg>
+        {done.isDelete ? (
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+            <path d="M10 11v6M14 11v6" />
+            <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+          </svg>
+        ) : (
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#c8f135" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+            <polyline points="22 4 12 14.01 9 11.01" />
+          </svg>
+        )}
         <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '28px', color: '#f0f0f0', letterSpacing: '1px', textAlign: 'center' }}>
-          {done.isEdit ? 'WORKOUT UPDATED' : 'WORKOUT LOGGED'}
+          {done.isDelete ? 'WORKOUT DELETED' : done.isEdit ? 'WORKOUT UPDATED' : 'WORKOUT LOGGED'}
         </div>
-        <div style={{ backgroundColor: '#1a1a1a', border: '1px solid #2e2e2e', borderRadius: '12px', padding: '20px 24px', textAlign: 'center', width: '100%', maxWidth: '320px' }}>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '40px', color: '#c8f135', lineHeight: 1 }}>
-            {done.isEdit ? '±' : '+'}{done.xpEarned} XP
+        <div style={{ backgroundColor: '#1a1a1a', border: `1px solid ${done.isDelete ? 'rgba(239,68,68,0.2)' : '#2e2e2e'}`, borderRadius: '12px', padding: '20px 24px', textAlign: 'center', width: '100%', maxWidth: '320px' }}>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '40px', color: accentColor, lineHeight: 1 }}>
+            {done.isDelete ? '-' : done.isEdit ? '±' : '+'}{done.xpEarned} XP
           </div>
-          {done.prCount > 0 && (
+          {!done.isDelete && done.prCount > 0 && (
             <div style={{ fontSize: '14px', color: '#888888', marginTop: '6px' }}>
               {done.prCount} PR{done.prCount !== 1 ? 's' : ''} detected
             </div>
@@ -375,7 +430,7 @@ function LogPastContent() {
           onClick={() => router.push('/home')}
           style={{
             marginTop: '8px',
-            backgroundColor: '#c8f135',
+            backgroundColor: accentColor,
             color: '#0f0f0f',
             border: 'none',
             borderRadius: '12px',
@@ -492,7 +547,7 @@ function LogPastContent() {
         </div>
 
         {/* Edit mode banner */}
-        {isEditing && (
+        {isEditing && !confirmDelete && (
           <div style={{
             backgroundColor: 'rgba(200, 241, 53, 0.08)',
             border: '1px solid rgba(200, 241, 53, 0.25)',
@@ -502,13 +557,84 @@ function LogPastContent() {
             color: '#8faa24',
             display: 'flex',
             alignItems: 'center',
+            justifyContent: 'space-between',
             gap: '8px',
           }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-            </svg>
-            Editing existing workout — changes will replace the saved data
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+              </svg>
+              Editing existing workout — changes will replace the saved data
+            </div>
+            <button
+              onClick={() => setConfirmDelete(true)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px', color: '#555555', lineHeight: 1, flexShrink: 0 }}
+              onMouseEnter={e => (e.currentTarget.style.color = '#ef4444')}
+              onMouseLeave={e => (e.currentTarget.style.color = '#555555')}
+              title="Delete this workout"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                <path d="M10 11v6M14 11v6" />
+                <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+              </svg>
+            </button>
+          </div>
+        )}
+
+        {/* Delete confirmation */}
+        {isEditing && confirmDelete && (
+          <div style={{
+            backgroundColor: 'rgba(239, 68, 68, 0.08)',
+            border: '1px solid rgba(239, 68, 68, 0.3)',
+            borderRadius: '10px',
+            padding: '12px 14px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '10px',
+          }}>
+            <span style={{ fontSize: '13px', color: '#f87171', lineHeight: 1.4 }}>
+              Delete this workout? This will remove {existingSession?.xp_earned ?? 0} XP.
+            </span>
+            <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+              <button
+                onClick={() => setConfirmDelete(false)}
+                style={{
+                  background: 'none',
+                  border: '1px solid #3a3a3a',
+                  borderRadius: '6px',
+                  padding: '6px 10px',
+                  color: '#888888',
+                  fontSize: '11px',
+                  fontFamily: "'Bebas Neue', sans-serif",
+                  letterSpacing: '0.5px',
+                  cursor: 'pointer',
+                }}
+              >
+                CANCEL
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                style={{
+                  background: 'none',
+                  border: '1px solid rgba(239, 68, 68, 0.5)',
+                  borderRadius: '6px',
+                  padding: '6px 10px',
+                  color: '#ef4444',
+                  fontSize: '11px',
+                  fontFamily: "'Bebas Neue', sans-serif",
+                  letterSpacing: '0.5px',
+                  cursor: deleting ? 'default' : 'pointer',
+                  opacity: deleting ? 0.5 : 1,
+                }}
+              >
+                {deleting ? 'DELETING...' : 'DELETE'}
+              </button>
+            </div>
           </div>
         )}
 
