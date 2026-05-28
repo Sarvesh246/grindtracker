@@ -41,6 +41,20 @@ input[type='number'] {
   -moz-appearance: textfield;
 }
 
+/* Bottom nav — defined here so safe-area-inset-bottom is applied before JS hydration */
+.bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background-color: #1a1a1a;
+  border-top: 1px solid #2e2e2e;
+  display: flex;
+  align-items: stretch;
+  z-index: 100;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
 /* Hide scrollbars */
 .scrollbar-hide {
   -ms-overflow-style: none;

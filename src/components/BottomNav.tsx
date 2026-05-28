@@ -62,18 +62,7 @@ export default function BottomNav() {
   const pathname = usePathname()
 
   return (
-    <nav style={{
-      position: 'fixed',
-      bottom: 0,
-      left: 0,
-      right: 0,
-      backgroundColor: '#1a1a1a',
-      borderTop: '1px solid #2e2e2e',
-      display: 'flex',
-      alignItems: 'stretch',
-      zIndex: 100,
-      paddingBottom: 'env(safe-area-inset-bottom)',
-    }}>
+    <nav className="bottom-nav">
       {tabs.map((tab) => {
         const active = pathname === tab.href || pathname.startsWith(tab.href + '/')
         return (
