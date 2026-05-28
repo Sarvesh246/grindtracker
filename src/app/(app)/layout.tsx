@@ -8,6 +8,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       position: 'relative',
     }}>
       <main style={{
+        paddingTop: 'env(safe-area-inset-top)',
         paddingBottom: 'calc(64px + env(safe-area-inset-bottom))',
         minHeight: '100dvh',
         overflowX: 'hidden',
