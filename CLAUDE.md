@@ -7,13 +7,12 @@ Next.js 14 App Router, TypeScript, Tailwind CSS, Supabase (@supabase/ssr), Recha
 - Phase 1: Project setup, Supabase auth, Google login ✅
 - Phase 2: App shell with bottom nav + Home dashboard ✅
 - Phase 3: Workout logger — session management, set logging, PR detection, XP, streaks, badges, completion modal ✅
+- Phase 4: Progress charts — exercise selector, line chart, PR markers, stats bar, recent sessions ✅
 
 ## Current State
-Core loop is fully working. User can start a Push/Pull/Legs workout, log sets with weight 
-and reps, check off each set, see PRs detected in real time, finish the workout, earn XP,
-have their streak updated, earn badges, and see the completion modal. Home screen reflects
-all updated stats after returning from a completed workout.
-/progress and /profile are still placeholder pages.
+Four of five screens are fully built and working. The full core loop works end to end:
+log workout → earn XP → see progress on charts → home dashboard updates.
+/profile is the only placeholder remaining.
 
 ## Design System
 Background: #0f0f0f | Surface: #1a1a1a | Surface elevated: #242424
@@ -31,7 +30,7 @@ Secondary button: bg #242424, text #f0f0f0, border #2e2e2e
 - exercises — pre-seeded, 17 exercises, no RLS
 - sessions — user_id, day_type, started_at, completed_at, xp_earned
 - session_logs — session_id, exercise_id, set_number, weight, reps, is_pr
-  UNIQUE constraint on (session_id, exercise_id, set_number) — required for upsert
+  UNIQUE constraint on (session_id, exercise_id, set_number)
 - user_stats — user_id, xp_total, level, current_streak, longest_streak, last_workout_date, total_workouts
 - user_badges — user_id, badge_id, earned_at
 RLS enabled on sessions, session_logs, user_stats, user_badges.
@@ -39,9 +38,8 @@ RLS enabled on sessions, session_logs, user_stats, user_badges.
 ## Gamification
 XP: +100 completed workout, +25 per PR set, +50 per 7-day streak milestone
 Level: Math.floor(xp_total / 500) + 1
-Streak: resets if gap > 2 days between workouts. If same day, streak unchanged.
+Streak: resets if gap > 2 days. Same day workout does not increment streak.
 PR: weight > max weight in any previous completed session for that exercise.
-    After a PR is logged, previousBests updates live so subsequent sets in same session compare against the new best.
 11 badges defined in src/lib/utils/badges.ts
 
 ## File Structure
@@ -52,17 +50,18 @@ src/
     login/page.tsx
     auth/callback/route.ts
     (app)/
-      layout.tsx                  — shell with BottomNav
+      layout.tsx
       home/
-        page.tsx                  — server component, fetches dashboard data
-        HomeDashboard.tsx         — client component
-        loading.tsx
+        page.tsx + HomeDashboard.tsx + loading.tsx
       log/
-        page.tsx                  — Suspense wrapper, routes to DaySelect or ActiveWorkout
-        DaySelect.tsx             — push/pull/legs selection cards
-        ActiveWorkout.tsx         — session screen with ExerciseCard + SetRow components
-        CompletionModal.tsx       — slide-up modal after finishing
-      progress/page.tsx           — placeholder
+        page.tsx                  — Suspense wrapper
+        DaySelect.tsx
+        ActiveWorkout.tsx         — ExerciseCard + SetRow inline components
+        CompletionModal.tsx
+      progress/
+        page.tsx                  — client component, all data fetching inline
+        ProgressChart.tsx         — Recharts line chart with custom dot + tooltip
+        loading.tsx
       profile/page.tsx            — placeholder
   components/
     BottomNav.tsx
@@ -72,10 +71,10 @@ src/
     utils/
       gamification.ts
       formatting.ts
-      badges.ts                   — ALL_BADGES, checkAndAwardBadges()
+      badges.ts
   middleware.ts
 
 ## Next Phase
-Phase 4: Progress charts. Exercise selector (all 17 exercises grouped by push/pull/legs),
-line chart showing weight over time per exercise (Recharts), PR markers on chart,
-stats bar (best/sessions/last/PRs), recent sessions list.
+Phase 5: Profile screen. Google avatar + display name, XP progress bar, streak stats,
+lifetime stats grid (workouts/PRs/sets/days active), full badge grid (11 badges,
+earned vs locked states), sign out button.
