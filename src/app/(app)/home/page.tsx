@@ -31,7 +31,7 @@ export default async function HomePage() {
     const lastDate = new Date(stats.last_workout_date + 'T12:00:00')
     lastDate.setHours(0, 0, 0, 0)
     const diffDays = Math.round((today.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24))
-    if (diffDays > 2) {
+    if (diffDays > 1) {
       await supabase.from('user_stats').update({ current_streak: 0 }).eq('user_id', user.id)
       stats = { ...stats, current_streak: 0 }
     }

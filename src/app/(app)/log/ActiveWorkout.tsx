@@ -401,7 +401,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       const diffDays = Math.floor((today.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24))
       if (diffDays === 0) {
         newStreak = currentStats.current_streak
-      } else if (diffDays <= 2) {
+      } else if (diffDays === 1) {
         newStreak = currentStats.current_streak + 1
       } else {
         newStreak = 1

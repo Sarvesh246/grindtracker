@@ -56,7 +56,7 @@ async function recalculateStreak(
     const prev = new Date(dates[i - 1] + 'T12:00:00')
     const curr = new Date(dates[i] + 'T12:00:00')
     const diffDays = Math.round((curr.getTime() - prev.getTime()) / (1000 * 60 * 60 * 24))
-    if (diffDays <= 2) {
+    if (diffDays === 1) {
       streak++
       if (streak > longest) longest = streak
     } else {
@@ -69,7 +69,7 @@ async function recalculateStreak(
   const todayMs = new Date().setHours(0, 0, 0, 0)
   const lastMs = new Date(dates[dates.length - 1] + 'T12:00:00').setHours(0, 0, 0, 0)
   const diffFromToday = Math.round((todayMs - lastMs) / (1000 * 60 * 60 * 24))
-  const activeStreak = diffFromToday > 2 ? 0 : streak
+  const activeStreak = diffFromToday > 1 ? 0 : streak
 
   return { current_streak: activeStreak, longest_streak: longest, last_workout_date: dates[dates.length - 1], streak_at_target }
 }
