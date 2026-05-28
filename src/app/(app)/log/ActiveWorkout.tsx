@@ -399,7 +399,7 @@ export default function ActiveWorkout({ day }: { day: 'push' | 'pull' | 'legs' }
         </div>
       )}
 
-      <div style={{ paddingBottom: '100px', fontFamily: "'DM Sans', sans-serif" }}>
+      <div style={{ paddingBottom: 'calc(140px + env(safe-area-inset-bottom))', fontFamily: "'DM Sans', sans-serif" }}>
 
         {/* Header */}
         <div style={{
@@ -468,7 +468,10 @@ export default function ActiveWorkout({ day }: { day: 'push' | 'pull' | 'legs' }
 
       {/* Finish button */}
       <div style={{
-        position: 'fixed', bottom: '64px', left: 0, right: 0,
+        position: 'fixed',
+        bottom: 'calc(64px + env(safe-area-inset-bottom))',
+        left: 0,
+        right: 0,
         padding: '12px 16px',
         backgroundColor: '#0f0f0f',
         borderTop: '1px solid #2e2e2e',
