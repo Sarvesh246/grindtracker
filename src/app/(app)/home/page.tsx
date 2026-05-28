@@ -47,7 +47,8 @@ export default async function HomePage() {
       // One row per exercise — take the max weight logged per exercise
       const byExercise: Record<string, { exercise_name: string; weight: number | null }> = {}
       for (const log of logs) {
-        const name = (log.exercises as { name: string } | null)?.name ?? 'Unknown'
+        const exercises = log.exercises as unknown as { name: string }[] | { name: string } | null
+        const name = (Array.isArray(exercises) ? exercises[0]?.name : exercises?.name) ?? 'Unknown'
         if (!byExercise[log.exercise_id]) {
           byExercise[log.exercise_id] = { exercise_name: name, weight: log.weight }
         } else {

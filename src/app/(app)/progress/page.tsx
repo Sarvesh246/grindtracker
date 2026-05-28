@@ -107,7 +107,9 @@ export default function ProgressPage() {
     }> = {}
 
     for (const log of logs) {
-      const session = log.sessions as { id: string; completed_at: string; user_id: string }
+      const sessionsRaw = log.sessions as unknown as { id: string; completed_at: string; user_id: string }[] | { id: string; completed_at: string; user_id: string } | null
+      const session = Array.isArray(sessionsRaw) ? sessionsRaw[0] : sessionsRaw
+      if (!session) continue
       const sid = session.id
       if (!sessionMap[sid]) {
         sessionMap[sid] = {
