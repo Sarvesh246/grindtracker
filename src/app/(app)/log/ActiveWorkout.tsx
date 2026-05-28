@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Exercise } from '@/lib/types'
 import { checkAndAwardBadges, ALL_BADGES } from '@/lib/utils/badges'
+import { getLevel } from '@/lib/utils/gamification'
 import CompletionModal from './CompletionModal'
 
 interface SetState {
@@ -412,8 +413,8 @@ export default function ActiveWorkout({ day }: { day: string }) {
     }
 
     const newXpTotal = currentStats.xp_total + xpEarned
-    const oldLevel = Math.floor(currentStats.xp_total / 500) + 1
-    const newLevel = Math.floor(newXpTotal / 500) + 1
+    const oldLevel = getLevel(currentStats.xp_total)
+    const newLevel = getLevel(newXpTotal)
     const leveledUp = newLevel > oldLevel
 
     const newLongest = Math.max(currentStats.longest_streak, newStreak)

@@ -167,13 +167,13 @@ export default function WorkoutCalendar() {
             (year === todayDate.getFullYear() && month > todayDate.getMonth()) ||
             (isOnCurrentMonth && day > todayDate.getDate())
 
-          const isPastEmpty = !isFuture && !isToday && !workoutType
           const textColor = dotColor ?? (isFuture ? '#333333' : isToday ? '#f0f0f0' : '#666666')
 
+          const isClickable = !isFuture && !isToday
           return (
             <div
               key={idx}
-              onClick={() => { if (isPastEmpty) router.push(`/log/past?date=${dateKey}`) }}
+              onClick={() => { if (isClickable) router.push(`/log/past?date=${dateKey}`) }}
               style={{
                 display: 'flex',
                 flexDirection: 'column',
@@ -181,14 +181,14 @@ export default function WorkoutCalendar() {
                 justifyContent: 'center',
                 height: '40px',
                 borderRadius: '8px',
-                cursor: isPastEmpty ? 'pointer' : 'default',
+                cursor: isClickable ? 'pointer' : 'default',
                 border: isToday ? '1px solid #3a3a3a' : '1px solid transparent',
                 backgroundColor: dotColor ? `${dotColor}15` : 'transparent',
                 transition: 'background-color 150ms ease',
                 gap: '3px',
               }}
-              onMouseEnter={e => { if (isPastEmpty) e.currentTarget.style.backgroundColor = '#242424' }}
-              onMouseLeave={e => { if (isPastEmpty) e.currentTarget.style.backgroundColor = 'transparent' }}
+              onMouseEnter={e => { if (isClickable) e.currentTarget.style.backgroundColor = dotColor ? `${dotColor}25` : '#242424' }}
+              onMouseLeave={e => { if (isClickable) e.currentTarget.style.backgroundColor = dotColor ? `${dotColor}15` : 'transparent' }}
             >
               <span style={{
                 fontSize: '13px',

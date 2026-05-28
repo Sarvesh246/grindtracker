@@ -1,7 +1,7 @@
 'use client'
 import { useRouter } from 'next/navigation'
 import { Session, UserStats } from '@/lib/types'
-import { getLevel, getXpInCurrentLevel } from '@/lib/utils/gamification'
+import { getLevel, getXpInCurrentLevel, getXpRequiredForLevel, getXpToNextLevel } from '@/lib/utils/gamification'
 import { formatHeaderDate, formatShortDate } from '@/lib/utils/formatting'
 import WorkoutCalendar from '@/components/WorkoutCalendar'
 
@@ -41,7 +41,9 @@ export default function HomeDashboard({
   const xpTotal = stats?.xp_total ?? 0
   const level = getLevel(xpTotal)
   const xpInLevel = getXpInCurrentLevel(xpTotal)
-  const xpPercent = (xpInLevel / 500) * 100
+  const levelSize = getXpRequiredForLevel(level)
+  const xpToNext = getXpToNextLevel(xpTotal)
+  const xpPercent = (xpInLevel / levelSize) * 100
   const currentStreak = stats?.current_streak ?? 0
   const longestStreak = stats?.longest_streak ?? 0
   const totalWorkouts = stats?.total_workouts ?? 0
@@ -101,7 +103,7 @@ export default function HomeDashboard({
               → LVL {level + 1}
             </div>
             <div style={{ fontSize: '12px', color: '#888888', marginTop: '4px' }}>
-              {500 - xpInLevel} XP away
+              {xpToNext} XP away
             </div>
           </div>
         </div>
@@ -123,7 +125,7 @@ export default function HomeDashboard({
           }} />
         </div>
         <div style={{ fontSize: '12px', color: '#555555' }}>
-          {xpInLevel} / 500 XP
+          {xpInLevel} / {levelSize} XP
         </div>
       </div>
 

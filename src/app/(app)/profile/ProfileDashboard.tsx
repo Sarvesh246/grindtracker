@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { getLevel, getXpInCurrentLevel } from '@/lib/utils/gamification'
+import { getLevel, getXpInCurrentLevel, getXpRequiredForLevel, getXpToNextLevel } from '@/lib/utils/gamification'
 import { BadgeDefinition } from '@/lib/utils/badges'
 
 function FlameIcon({ size = 24, color = '#c8f135' }: { size?: number; color?: string }) {
@@ -61,6 +61,10 @@ function BadgeIcon({ badgeId, size = 28, earned }: { badgeId: string; size?: num
       return <svg {...props}><path d="M12 2L9.1 8.6 2 9.6l5 4.9-1.2 6.9L12 18l6.2 3.4L17 14.5l5-4.9-7.1-1L12 2z"/><path d="M9 9l2 2 4-4" stroke={color} strokeWidth="1.4"/></svg>
     case 'level_5':
       return <svg {...props}><polygon points="12 2 20 12 12 22 4 12 12 2"/><line x1="4" y1="12" x2="20" y2="12"/></svg>
+    case 'level_10':
+      return <svg {...props}><polygon points="12 2 20 12 12 22 4 12 12 2"/><polygon points="12 6 17 12 12 18 7 12 12 6" fill={color} fillOpacity="0.15"/></svg>
+    case 'level_20':
+      return <svg {...props}><polygon points="12 2 15.5 8.5 22 9.5 17 14.5 18.2 21 12 17.8 5.8 21 7 14.5 2 9.5 8.5 8.5 12 2"/><circle cx="12" cy="12" r="2.5" fill={color} fillOpacity="0.3"/></svg>
     default:
       return <svg {...props} style={s}><circle cx="12" cy="12" r="10"/></svg>
   }
@@ -98,11 +102,14 @@ export default function ProfileDashboard({
   const router = useRouter()
   const supabase = createClient()
   const [tooltipBadgeId, setTooltipBadgeId] = useState<string | null>(null)
+  const [badgesOpen, setBadgesOpen] = useState(false)
 
   const xpTotal = stats.xp_total
   const level = getLevel(xpTotal)
   const xpInLevel = getXpInCurrentLevel(xpTotal)
-  const xpPercent = (xpInLevel / 500) * 100
+  const levelSize = getXpRequiredForLevel(level)
+  const xpToNext = getXpToNextLevel(xpTotal)
+  const xpPercent = (xpInLevel / levelSize) * 100
   const earnedSet = new Set(earnedBadgeIds)
   const earnedCount = earnedBadgeIds.length
 
@@ -213,8 +220,8 @@ export default function ProfileDashboard({
           display: 'flex', justifyContent: 'space-between',
           fontSize: '12px', color: '#555555',
         }}>
-          <span>{xpInLevel} / 500 XP</span>
-          <span>{500 - xpInLevel} XP to Level {level + 1}</span>
+          <span>{xpInLevel} / {levelSize} XP</span>
+          <span>{xpToNext} XP to Level {level + 1}</span>
         </div>
       </div>
 
@@ -315,22 +322,33 @@ export default function ProfileDashboard({
 
       {/* Badges */}
       <div style={{ marginBottom: '32px' }}>
-        <div style={{
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          marginBottom: '10px',
-        }}>
+        <button
+          onClick={() => setBadgesOpen(v => !v)}
+          style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            width: '100%', background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+            marginBottom: badgesOpen ? '10px' : 0,
+          }}
+        >
           <div style={{
             fontSize: '12px', color: '#555555',
             textTransform: 'uppercase', letterSpacing: '1.5px',
           }}>
             BADGES
           </div>
-          <div style={{ fontSize: '12px', color: '#555555' }}>
-            {earnedCount}/{allBadges.length}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '12px', color: '#555555' }}>{earnedCount}/{allBadges.length}</span>
+            <svg
+              width="14" height="14" viewBox="0 0 24 24" fill="none"
+              stroke="#555555" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+              style={{ transition: 'transform 150ms ease', transform: badgesOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}
+            >
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
           </div>
-        </div>
+        </button>
 
-        <div style={{
+        {badgesOpen && <div style={{
           display: 'grid',
           gridTemplateColumns: '1fr 1fr 1fr',
           gap: '8px',
@@ -434,7 +452,7 @@ export default function ProfileDashboard({
               </div>
             )
           })}
-        </div>
+        </div>}
       </div>
 
       {/* Sign out */}
