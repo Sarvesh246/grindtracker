@@ -55,6 +55,64 @@ input[type='number'] {
   padding-bottom: env(safe-area-inset-bottom);
 }
 
+/* Workout Manager modal — bottom sheet on mobile, centered dialog on desktop */
+.wm-backdrop {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.85);
+  z-index: 500;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.wm-sheet {
+  width: 100%;
+  background-color: #1a1a1a;
+  border-radius: 16px 16px 0 0;
+  max-height: 88dvh;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #2e2e2e;
+  border-bottom: none;
+}
+
+.wm-scroll {
+  overflow-y: auto;
+  flex: 1;
+  padding-bottom: calc(64px + env(safe-area-inset-bottom) + 8px);
+}
+
+@media (min-width: 640px) {
+  .wm-backdrop {
+    align-items: center;
+    padding: 24px;
+  }
+
+  .wm-sheet {
+    max-width: 480px;
+    border-radius: 16px;
+    max-height: min(80dvh, 680px);
+    border-bottom: 1px solid #2e2e2e;
+  }
+
+  .wm-scroll {
+    padding-bottom: 16px;
+  }
+}
+
+/* Delete confirm overlay */
+.wm-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.9);
+  z-index: 501;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
 /* Hide scrollbars */
 .scrollbar-hide {
   -ms-overflow-style: none;

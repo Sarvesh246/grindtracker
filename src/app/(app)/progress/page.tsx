@@ -194,9 +194,11 @@ export default function ProgressPage() {
 
   const selectedExercise = exercises.find(e => e.id === selectedId)
 
-  const grouped: Record<string, Exercise[]> = { push: [], pull: [], legs: [] }
+  const dayTypes = [...new Set(exercises.map(e => e.day_type))].sort()
+  const grouped: Record<string, Exercise[]> = {}
   for (const ex of exercises) {
-    grouped[ex.day_type]?.push(ex)
+    if (!grouped[ex.day_type]) grouped[ex.day_type] = []
+    grouped[ex.day_type].push(ex)
   }
 
   if (loadingExercises) {
@@ -258,17 +260,17 @@ export default function ProgressPage() {
           className="scrollbar-hide"
         >
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', width: 'max-content', paddingRight: '40px' }}>
-            {(['push', 'pull', 'legs'] as const).map((dayType) => (
+            {dayTypes.map((dayType, idx) => (
               <div key={dayType} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{
                   fontSize: '11px', color: '#555555',
                   textTransform: 'uppercase', letterSpacing: '1.5px',
-                  whiteSpace: 'nowrap', paddingLeft: dayType === 'push' ? '0' : '4px',
+                  whiteSpace: 'nowrap', paddingLeft: idx === 0 ? '0' : '4px',
                 }}>
-                  {dayType}
+                  {dayType.replace(/-/g, ' ')}
                 </span>
 
-                {grouped[dayType].map((ex) => {
+                {(grouped[dayType] ?? []).map((ex) => {
                   const active = ex.id === selectedId
                   return (
                     <button

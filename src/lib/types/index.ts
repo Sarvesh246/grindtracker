@@ -1,7 +1,7 @@
 export interface Exercise {
   id: string
   name: string
-  day_type: 'push' | 'pull' | 'legs'
+  day_type: string
   sets_target: number
   reps_target: string
   sort_order: number
@@ -11,7 +11,7 @@ export interface Exercise {
 export interface Session {
   id: string
   user_id: string
-  day_type: 'push' | 'pull' | 'legs'
+  day_type: string
   started_at: string
   completed_at: string | null
   xp_earned: number

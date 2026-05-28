@@ -3,6 +3,7 @@ import { useRouter } from 'next/navigation'
 import { Session, UserStats } from '@/lib/types'
 import { getLevel, getXpInCurrentLevel } from '@/lib/utils/gamification'
 import { formatHeaderDate, formatShortDate } from '@/lib/utils/formatting'
+import WorkoutCalendar from '@/components/WorkoutCalendar'
 
 interface Props {
   stats: UserStats | null
@@ -45,7 +46,9 @@ export default function HomeDashboard({
   const longestStreak = stats?.longest_streak ?? 0
   const totalWorkouts = stats?.total_workouts ?? 0
 
-  const exercisePreview = nextDayExercises.join(', ')
+  const exercisePreview = nextDayExercises.length <= 2
+    ? nextDayExercises.join(', ')
+    : `${nextDayExercises.slice(0, 2).join(', ')} +${nextDayExercises.length - 2} more`
 
   return (
     <div style={{ padding: '0 16px 32px', fontFamily: "'DM Sans', sans-serif" }}>
@@ -215,10 +218,6 @@ export default function HomeDashboard({
           fontWeight: 400,
           color: '#0f0f0f',
           opacity: 0.65,
-          maxWidth: '280px',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
           lineHeight: 1,
         }}>
           {exercisePreview}
@@ -303,7 +302,7 @@ export default function HomeDashboard({
       </div>
 
       {/* Stats Row */}
-      <div style={{ display: 'flex', gap: '8px' }}>
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '24px' }}>
         {[
           { label: 'WORKOUTS', value: totalWorkouts },
           { label: 'THIS WEEK', value: weeklyWorkouts },
@@ -340,6 +339,18 @@ export default function HomeDashboard({
           </div>
         ))}
       </div>
+
+      {/* Workout History Calendar */}
+      <div style={{
+        fontSize: '12px',
+        color: '#555555',
+        textTransform: 'uppercase',
+        letterSpacing: '1.5px',
+        marginBottom: '10px',
+      }}>
+        WORKOUT HISTORY
+      </div>
+      <WorkoutCalendar />
 
     </div>
   )

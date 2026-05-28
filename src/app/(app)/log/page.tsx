@@ -6,9 +6,9 @@ import ActiveWorkout from './ActiveWorkout'
 
 function LogInner() {
   const searchParams = useSearchParams()
-  const day = searchParams.get('day') as 'push' | 'pull' | 'legs' | null
+  const day = searchParams.get('day')
 
-  if (!day || !['push', 'pull', 'legs'].includes(day)) {
+  if (!day || !day.trim()) {
     return <DaySelect />
   }
 

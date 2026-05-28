@@ -10,6 +10,7 @@ interface SetState {
   weight: string
   reps: string
   checked: boolean
+  skipped: boolean
   isPR: boolean
 }
 
@@ -30,13 +31,11 @@ interface CompletionData {
   setsCompleted: number
 }
 
-const DAY_LABEL: Record<string, string> = {
-  push: 'PUSH DAY',
-  pull: 'PULL DAY',
-  legs: 'LEGS DAY',
+function dayLabel(day: string): string {
+  return day.replace(/-/g, ' ').toUpperCase() + ' DAY'
 }
 
-export default function ActiveWorkout({ day }: { day: 'push' | 'pull' | 'legs' }) {
+export default function ActiveWorkout({ day }: { day: string }) {
   const router = useRouter()
   const supabase = createClient()
 
@@ -135,6 +134,7 @@ export default function ActiveWorkout({ day }: { day: 'push' | 'pull' | 'legs' }
             weight: bests[ex.id] !== null ? String(bests[ex.id]) : '',
             reps: '',
             checked: false,
+            skipped: false,
             isPR: false,
           }
         }
@@ -145,6 +145,7 @@ export default function ActiveWorkout({ day }: { day: 'push' | 'pull' | 'legs' }
           weight: log.weight !== null ? String(log.weight) : '',
           reps: log.reps !== null ? String(log.reps) : '',
           checked: true,
+          skipped: false,
           isPR: log.is_pr,
         }
       }
@@ -167,6 +168,7 @@ export default function ActiveWorkout({ day }: { day: 'push' | 'pull' | 'legs' }
             weight: bests[ex.id] !== null ? String(bests[ex.id]) : '',
             reps: '',
             checked: false,
+            skipped: false,
             isPR: false,
           }
         }
@@ -190,17 +192,23 @@ export default function ActiveWorkout({ day }: { day: 'push' | 'pull' | 'legs' }
     return exercises.reduce((sum, ex) => sum + ex.sets_target, 0)
   }
 
-  function completedSets(): number {
+  function checkedSets(): number {
     return Object.values(logs).filter(l => l.checked).length
   }
 
-  function allSetsComplete(): boolean {
-    return completedSets() === totalSets() && totalSets() > 0
+  function skippedSets(): number {
+    return Object.values(logs).filter(l => l.skipped).length
+  }
+
+  function allProcessed(): boolean {
+    if (totalSets() === 0) return false
+    return Object.values(logs).every(l => l.checked || l.skipped)
   }
 
   function progressPercent(): number {
     if (totalSets() === 0) return 0
-    return (completedSets() / totalSets()) * 100
+    const processed = Object.values(logs).filter(l => l.checked || l.skipped).length
+    return (processed / totalSets()) * 100
   }
 
   function updateLog(key: string, field: 'weight' | 'reps', value: string) {
@@ -213,7 +221,7 @@ export default function ActiveWorkout({ day }: { day: 'push' | 'pull' | 'legs' }
   async function handleCheck(exerciseId: string, setNumber: number) {
     const key = `${exerciseId}-${setNumber}`
     const logEntry = logs[key]
-    if (!logEntry || !sessionId) return
+    if (!logEntry || !sessionId || logEntry.checked) return
 
     const weight = logEntry.weight !== '' ? parseFloat(logEntry.weight) : null
     const reps = logEntry.reps !== '' ? parseInt(logEntry.reps) : null
@@ -232,12 +240,58 @@ export default function ActiveWorkout({ day }: { day: 'push' | 'pull' | 'legs' }
 
     setLogs(prev => ({
       ...prev,
-      [key]: { ...prev[key], checked: true, isPR },
+      [key]: { ...prev[key], checked: true, skipped: false, isPR },
     }))
 
     if (isPR && weight !== null) {
       setPreviousBests(prev => ({ ...prev, [exerciseId]: weight }))
     }
+  }
+
+  function handleSkipSet(exerciseId: string, setNumber: number) {
+    const key = `${exerciseId}-${setNumber}`
+    setLogs(prev => ({
+      ...prev,
+      [key]: { ...prev[key], skipped: true, checked: false },
+    }))
+  }
+
+  function handleUnskipSet(exerciseId: string, setNumber: number) {
+    const key = `${exerciseId}-${setNumber}`
+    setLogs(prev => ({
+      ...prev,
+      [key]: { ...prev[key], skipped: false },
+    }))
+  }
+
+  function handleSkipExercise(exerciseId: string) {
+    const ex = exercises.find(e => e.id === exerciseId)
+    if (!ex) return
+    setLogs(prev => {
+      const next = { ...prev }
+      for (let s = 1; s <= ex.sets_target; s++) {
+        const key = `${exerciseId}-${s}`
+        if (!next[key]?.checked) {
+          next[key] = { ...next[key], skipped: true, checked: false }
+        }
+      }
+      return next
+    })
+  }
+
+  function handleUnskipExercise(exerciseId: string) {
+    const ex = exercises.find(e => e.id === exerciseId)
+    if (!ex) return
+    setLogs(prev => {
+      const next = { ...prev }
+      for (let s = 1; s <= ex.sets_target; s++) {
+        const key = `${exerciseId}-${s}`
+        if (next[key]?.skipped) {
+          next[key] = { ...next[key], skipped: false }
+        }
+      }
+      return next
+    })
   }
 
   async function handleSwapExercise(newExercise: Exercise) {
@@ -291,6 +345,7 @@ export default function ActiveWorkout({ day }: { day: 'push' | 'pull' | 'legs' }
           weight: prevBest !== null ? String(prevBest) : '',
           reps: '',
           checked: false,
+          skipped: false,
           isPR: false,
         }
       }
@@ -301,13 +356,13 @@ export default function ActiveWorkout({ day }: { day: 'push' | 'pull' | 'legs' }
   }
 
   async function handleFinish() {
-    if (!sessionId || !allSetsComplete() || finishing) return
+    if (!sessionId || !allProcessed() || finishing) return
     setFinishing(true)
 
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
-    const prSets = Object.values(logs).filter(l => l.isPR)
+    const prSets = Object.values(logs).filter(l => l.isPR && !l.skipped)
     const prCount = prSets.length
 
     const prExercises: { name: string; weight: number }[] = []
@@ -315,7 +370,7 @@ export default function ActiveWorkout({ day }: { day: 'push' | 'pull' | 'legs' }
       for (let s = 1; s <= ex.sets_target; s++) {
         const key = `${ex.id}-${s}`
         const log = logs[key]
-        if (log?.isPR && log.weight !== '') {
+        if (log?.isPR && !log.skipped && log.weight !== '') {
           if (!prExercises.find(p => p.name === ex.name)) {
             prExercises.push({ name: ex.name, weight: parseFloat(log.weight) })
           }
@@ -397,7 +452,7 @@ export default function ActiveWorkout({ day }: { day: 'push' | 'pull' | 'legs' }
       prExercises,
       newBadges,
       duration: elapsed,
-      setsCompleted: completedSets(),
+      setsCompleted: checkedSets(),
     })
     setFinishing(false)
   }
@@ -409,6 +464,10 @@ export default function ActiveWorkout({ day }: { day: 'push' | 'pull' | 'legs' }
       </div>
     )
   }
+
+  const skipped = skippedSets()
+  const checked = checkedSets()
+  const total = totalSets()
 
   return (
     <>
@@ -508,7 +567,7 @@ export default function ActiveWorkout({ day }: { day: 'push' | 'pull' | 'legs' }
               fontFamily: "'Bebas Neue', sans-serif",
               fontSize: '22px', color: '#f0f0f0', letterSpacing: '1px',
             }}>
-              {DAY_LABEL[day]}
+              {dayLabel(day)}
             </span>
 
             <span style={{
@@ -541,6 +600,10 @@ export default function ActiveWorkout({ day }: { day: 'push' | 'pull' | 'legs' }
               onCheck={handleCheck}
               onUpdate={updateLog}
               onSwap={() => setSwapTarget(ex.id)}
+              onSkipSet={handleSkipSet}
+              onUnskipSet={handleUnskipSet}
+              onSkipExercise={handleSkipExercise}
+              onUnskipExercise={handleUnskipExercise}
             />
           ))}
         </div>
@@ -559,22 +622,24 @@ export default function ActiveWorkout({ day }: { day: 'push' | 'pull' | 'legs' }
       }}>
         <button
           onClick={handleFinish}
-          disabled={!allSetsComplete() || finishing}
+          disabled={!allProcessed() || finishing}
           style={{
             width: '100%', height: '56px',
-            backgroundColor: allSetsComplete() ? '#c8f135' : '#2e2e2e',
-            color: allSetsComplete() ? '#0f0f0f' : '#555555',
+            backgroundColor: allProcessed() ? '#c8f135' : '#2e2e2e',
+            color: allProcessed() ? '#0f0f0f' : '#555555',
             border: 'none', borderRadius: '12px',
             fontFamily: "'Bebas Neue', sans-serif",
             fontSize: '22px', letterSpacing: '1px',
-            cursor: allSetsComplete() ? 'pointer' : 'default',
+            cursor: allProcessed() ? 'pointer' : 'default',
             transition: 'background-color 150ms ease, color 150ms ease',
           }}
         >
           {finishing ? 'SAVING...' : 'FINISH WORKOUT'}
         </button>
         <div style={{ textAlign: 'center', marginTop: '6px', fontSize: '12px', color: '#555555' }}>
-          {completedSets()} / {totalSets()} sets complete
+          {skipped > 0
+            ? `${checked} done · ${skipped} skipped · ${total} total`
+            : `${checked} / ${total} sets complete`}
         </div>
       </div>
     </>
@@ -590,38 +655,118 @@ interface ExerciseCardProps {
   onCheck: (exerciseId: string, setNumber: number) => void
   onUpdate: (key: string, field: 'weight' | 'reps', value: string) => void
   onSwap: () => void
+  onSkipSet: (exerciseId: string, setNumber: number) => void
+  onUnskipSet: (exerciseId: string, setNumber: number) => void
+  onSkipExercise: (exerciseId: string) => void
+  onUnskipExercise: (exerciseId: string) => void
 }
 
-function ExerciseCard({ exercise, logs, previousBest, onCheck, onUpdate, onSwap }: ExerciseCardProps) {
+function ExerciseCard({
+  exercise, logs, previousBest,
+  onCheck, onUpdate, onSwap,
+  onSkipSet, onUnskipSet,
+  onSkipExercise, onUnskipExercise,
+}: ExerciseCardProps) {
+  // exercise is "fully skipped" when all unchecked sets are skipped
+  const allSetsProcessed = Array.from({ length: exercise.sets_target }, (_, i) => i + 1)
+    .every(s => {
+      const entry = logs[`${exercise.id}-${s}`]
+      return entry?.checked || entry?.skipped
+    })
+  const anySkipped = Array.from({ length: exercise.sets_target }, (_, i) => i + 1)
+    .some(s => logs[`${exercise.id}-${s}`]?.skipped)
+  const allSkipped = Array.from({ length: exercise.sets_target }, (_, i) => i + 1)
+    .every(s => logs[`${exercise.id}-${s}`]?.skipped)
+
   return (
     <div style={{
       backgroundColor: '#1a1a1a',
-      border: '1px solid #2e2e2e',
+      border: `1px solid ${anySkipped ? 'rgba(239,68,68,0.2)' : '#2e2e2e'}`,
       borderRadius: '12px',
       overflow: 'hidden',
+      opacity: allSkipped ? 0.65 : 1,
+      transition: 'opacity 150ms ease, border-color 150ms ease',
     }}>
       <div style={{ padding: '14px 16px 10px' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px', marginBottom: '4px' }}>
-          <div style={{ fontSize: '16px', fontWeight: 700, color: '#f0f0f0', flex: 1 }}>
-            {exercise.name}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
+            <div style={{
+              fontSize: '16px', fontWeight: 700,
+              color: allSkipped ? '#555555' : '#f0f0f0',
+              textDecoration: allSkipped ? 'line-through' : 'none',
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
+              {exercise.name}
+            </div>
+            {allSkipped && (
+              <span style={{
+                fontSize: '10px',
+                color: '#ef4444',
+                backgroundColor: 'rgba(239,68,68,0.1)',
+                border: '1px solid rgba(239,68,68,0.25)',
+                borderRadius: '9999px',
+                padding: '1px 6px',
+                fontFamily: "'Bebas Neue', sans-serif",
+                letterSpacing: '0.5px',
+                flexShrink: 0,
+              }}>
+                SKIPPED
+              </span>
+            )}
           </div>
-          <button
-            onClick={onSwap}
-            title="Swap exercise"
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              padding: '2px', flexShrink: 0,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              opacity: 0.5,
-            }}
-            onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
-            onMouseLeave={e => (e.currentTarget.style.opacity = '0.5')}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#888888" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-            </svg>
-          </button>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+            {/* Skip/Undo exercise button */}
+            <button
+              onClick={() => allSkipped ? onUnskipExercise(exercise.id) : onSkipExercise(exercise.id)}
+              title={allSkipped ? 'Undo skip' : 'Skip exercise'}
+              style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                padding: '2px 6px', opacity: 0.5,
+                display: 'flex', alignItems: 'center', gap: '3px',
+                borderRadius: '4px',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
+              onMouseLeave={e => (e.currentTarget.style.opacity = '0.5')}
+            >
+              {allSkipped ? (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#c8f135" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.37"/>
+                </svg>
+              ) : (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#888888" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+                </svg>
+              )}
+              <span style={{
+                fontSize: '10px',
+                color: allSkipped ? '#c8f135' : '#888888',
+                fontFamily: "'Bebas Neue', sans-serif",
+                letterSpacing: '0.5px',
+              }}>
+                {allSkipped ? 'UNDO' : 'SKIP'}
+              </span>
+            </button>
+
+            {/* Swap button */}
+            <button
+              onClick={onSwap}
+              title="Swap exercise"
+              style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                padding: '2px', flexShrink: 0,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                opacity: 0.5,
+              }}
+              onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
+              onMouseLeave={e => (e.currentTarget.style.opacity = '0.5')}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#888888" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+              </svg>
+            </button>
+          </div>
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={{ fontSize: '13px', color: '#555555' }}>
@@ -638,7 +783,7 @@ function ExerciseCard({ exercise, logs, previousBest, onCheck, onUpdate, onSwap 
       <div style={{ padding: '8px 0' }}>
         {Array.from({ length: exercise.sets_target }, (_, i) => i + 1).map((setNum) => {
           const key = `${exercise.id}-${setNum}`
-          const logEntry = logs[key] ?? { weight: '', reps: '', checked: false, isPR: false }
+          const logEntry = logs[key] ?? { weight: '', reps: '', checked: false, skipped: false, isPR: false }
           return (
             <SetRow
               key={key}
@@ -647,6 +792,8 @@ function ExerciseCard({ exercise, logs, previousBest, onCheck, onUpdate, onSwap 
               onCheck={() => onCheck(exercise.id, setNum)}
               onWeightChange={(v) => onUpdate(key, 'weight', v)}
               onRepsChange={(v) => onUpdate(key, 'reps', v)}
+              onSkip={() => onSkipSet(exercise.id, setNum)}
+              onUnskip={() => onUnskipSet(exercise.id, setNum)}
             />
           )
         })}
@@ -665,21 +812,15 @@ interface ExerciseSwapModalProps {
   onClose: () => void
 }
 
-const DAY_SECTION_LABEL: Record<string, string> = {
-  push: 'PUSH — Chest · Shoulders · Triceps',
-  pull: 'PULL — Back · Biceps · Rear Delts',
-  legs: 'LEGS — Quads · Hamstrings · Glutes',
-}
-
 function ExerciseSwapModal({ currentExerciseId, allExercises, currentExercises, onSelect, onClose }: ExerciseSwapModalProps) {
   const available = allExercises.filter(
     ex => ex.id === currentExerciseId || !currentExercises.find(ce => ce.id === ex.id)
   )
 
-  const grouped: Record<string, Exercise[]> = {
-    push: available.filter(e => e.day_type === 'push'),
-    pull: available.filter(e => e.day_type === 'pull'),
-    legs: available.filter(e => e.day_type === 'legs'),
+  const dayTypes = [...new Set(available.map(e => e.day_type))].sort()
+  const grouped: Record<string, Exercise[]> = {}
+  for (const dt of dayTypes) {
+    grouped[dt] = available.filter(e => e.day_type === dt)
   }
 
   return (
@@ -725,9 +866,9 @@ function ExerciseSwapModal({ currentExerciseId, allExercises, currentExercises, 
 
         {/* List */}
         <div style={{ overflowY: 'auto', flex: 1, paddingBottom: 'env(safe-area-inset-bottom)' }}>
-          {(['push', 'pull', 'legs'] as const).map(dayType => {
+          {dayTypes.map(dayType => {
             const exs = grouped[dayType]
-            if (exs.length === 0) return null
+            if (!exs || exs.length === 0) return null
             return (
               <div key={dayType}>
                 <div style={{
@@ -735,7 +876,7 @@ function ExerciseSwapModal({ currentExerciseId, allExercises, currentExercises, 
                   fontSize: '10px', color: '#555555',
                   textTransform: 'uppercase', letterSpacing: '1.5px',
                 }}>
-                  {DAY_SECTION_LABEL[dayType]}
+                  {dayType.replace(/-/g, ' ').toUpperCase()}
                 </div>
                 {exs.map(ex => {
                   const isCurrent = ex.id === currentExerciseId
@@ -799,9 +940,11 @@ interface SetRowProps {
   onCheck: () => void
   onWeightChange: (v: string) => void
   onRepsChange: (v: string) => void
+  onSkip: () => void
+  onUnskip: () => void
 }
 
-function SetRow({ setNumber, logEntry, onCheck, onWeightChange, onRepsChange }: SetRowProps) {
+function SetRow({ setNumber, logEntry, onCheck, onWeightChange, onRepsChange, onSkip, onUnskip }: SetRowProps) {
   const [justChecked, setJustChecked] = useState(false)
 
   function handleCheck() {
@@ -811,16 +954,19 @@ function SetRow({ setNumber, logEntry, onCheck, onWeightChange, onRepsChange }: 
     onCheck()
   }
 
+  const isInactive = logEntry.checked || logEntry.skipped
+
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', gap: '10px',
+      display: 'flex', alignItems: 'center', gap: '8px',
       padding: '8px 16px',
-      opacity: logEntry.checked ? 0.6 : 1,
+      opacity: isInactive ? 0.55 : 1,
       transition: 'opacity 150ms ease',
     }}>
       <span style={{
         fontSize: '12px', color: '#555555', fontFamily: "'DM Sans', sans-serif",
         minWidth: '40px', fontWeight: 500,
+        textDecoration: logEntry.skipped ? 'line-through' : 'none',
       }}>
         SET {setNumber}
       </span>
@@ -832,12 +978,12 @@ function SetRow({ setNumber, logEntry, onCheck, onWeightChange, onRepsChange }: 
           value={logEntry.weight}
           onChange={e => onWeightChange(e.target.value)}
           onFocus={e => e.target.select()}
-          disabled={logEntry.checked}
+          disabled={isInactive}
           placeholder="0"
           style={{
             width: '72px', height: '40px',
             backgroundColor: '#242424',
-            border: `1px solid ${logEntry.checked ? '#2e2e2e' : '#3a3a3a'}`,
+            border: `1px solid ${isInactive ? '#2e2e2e' : '#3a3a3a'}`,
             borderRadius: '8px',
             color: '#f0f0f0',
             fontFamily: "'JetBrains Mono', monospace",
@@ -856,12 +1002,12 @@ function SetRow({ setNumber, logEntry, onCheck, onWeightChange, onRepsChange }: 
           value={logEntry.reps}
           onChange={e => onRepsChange(e.target.value)}
           onFocus={e => e.target.select()}
-          disabled={logEntry.checked}
+          disabled={isInactive}
           placeholder="0"
           style={{
             width: '56px', height: '40px',
             backgroundColor: '#242424',
-            border: `1px solid ${logEntry.checked ? '#2e2e2e' : '#3a3a3a'}`,
+            border: `1px solid ${isInactive ? '#2e2e2e' : '#3a3a3a'}`,
             borderRadius: '8px',
             color: '#f0f0f0',
             fontFamily: "'JetBrains Mono', monospace",
@@ -886,15 +1032,41 @@ function SetRow({ setNumber, logEntry, onCheck, onWeightChange, onRepsChange }: 
         </span>
       )}
 
+      {/* Skip / unskip set button */}
+      <button
+        onClick={logEntry.skipped ? onUnskip : (logEntry.checked ? undefined : onSkip)}
+        disabled={logEntry.checked}
+        title={logEntry.skipped ? 'Undo skip' : 'Skip this set'}
+        style={{
+          width: '40px', height: '40px', minWidth: '40px',
+          borderRadius: '9999px',
+          border: `2px solid ${logEntry.skipped ? 'rgba(239,68,68,0.5)' : '#2e2e2e'}`,
+          backgroundColor: logEntry.skipped ? 'rgba(239,68,68,0.1)' : 'transparent',
+          cursor: logEntry.checked ? 'default' : 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          flexShrink: 0,
+          transition: 'border-color 150ms ease, background-color 150ms ease',
+          opacity: logEntry.checked ? 0.3 : 1,
+        }}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+          stroke={logEntry.skipped ? '#ef4444' : '#3a3a3a'}
+          strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+        >
+          <line x1="5" y1="12" x2="19" y2="12" />
+        </svg>
+      </button>
+
+      {/* Check button */}
       <button
         onClick={handleCheck}
-        disabled={logEntry.checked}
+        disabled={logEntry.checked || logEntry.skipped}
         style={{
           width: '40px', height: '40px', minWidth: '40px',
           borderRadius: '9999px',
           border: `2px solid ${logEntry.checked ? '#c8f135' : '#3a3a3a'}`,
           backgroundColor: logEntry.checked ? 'rgba(200, 241, 53, 0.12)' : 'transparent',
-          cursor: logEntry.checked ? 'default' : 'pointer',
+          cursor: (logEntry.checked || logEntry.skipped) ? 'default' : 'pointer',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           transform: justChecked ? 'scale(1.2)' : 'scale(1)',
           transition: 'transform 200ms ease, border-color 150ms ease, background-color 150ms ease',
