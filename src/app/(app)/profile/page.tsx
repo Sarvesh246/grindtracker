@@ -1,7 +1,76 @@
-export default function ProfilePage() {
+import { createClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
+import ProfileDashboard from './ProfileDashboard'
+import { ALL_BADGES } from '@/lib/utils/badges'
+
+export default async function ProfilePage() {
+  const supabase = await createClient()
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
+
+  // User stats
+  const { data: stats } = await supabase
+    .from('user_stats')
+    .select('*')
+    .eq('user_id', user.id)
+    .single()
+
+  // Earned badges
+  const { data: earnedBadges } = await supabase
+    .from('user_badges')
+    .select('badge_id, earned_at')
+    .eq('user_id', user.id)
+
+  const earnedSet = new Set((earnedBadges ?? []).map(b => b.badge_id))
+
+  // Total PR count
+  const { count: totalPRs } = await supabase
+    .from('session_logs')
+    .select('sessions!inner(user_id)', { count: 'exact', head: true })
+    .eq('is_pr', true)
+    .eq('sessions.user_id', user.id)
+
+  // Total sets completed
+  const { count: totalSets } = await supabase
+    .from('session_logs')
+    .select('sessions!inner(user_id, completed_at)', { count: 'exact', head: true })
+    .eq('sessions.user_id', user.id)
+    .not('sessions.completed_at', 'is', null)
+
+  // Distinct active days
+  const { data: activeDays } = await supabase
+    .from('sessions')
+    .select('started_at')
+    .eq('user_id', user.id)
+    .not('completed_at', 'is', null)
+
+  const distinctDays = new Set(
+    (activeDays ?? []).map(s =>
+      new Date(s.started_at).toISOString().split('T')[0]
+    )
+  ).size
+
+  // Google avatar + display name from user metadata
+  const avatarUrl = user.user_metadata?.avatar_url ?? null
+  const displayName = user.user_metadata?.full_name ?? user.email ?? 'Athlete'
+
   return (
-    <div style={{ padding: '24px 16px', fontFamily: "'Bebas Neue', sans-serif", fontSize: '32px', color: '#f0f0f0' }}>
-      PROFILE
-    </div>
+    <ProfileDashboard
+      displayName={displayName}
+      avatarUrl={avatarUrl}
+      stats={stats ?? {
+        xp_total: 0,
+        level: 1,
+        current_streak: 0,
+        longest_streak: 0,
+        total_workouts: 0,
+      }}
+      earnedBadgeIds={Array.from(earnedSet)}
+      totalPRs={totalPRs ?? 0}
+      totalSets={totalSets ?? 0}
+      distinctDays={distinctDays}
+      allBadges={ALL_BADGES}
+    />
   )
 }

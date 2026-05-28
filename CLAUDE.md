@@ -8,11 +8,11 @@ Next.js 14 App Router, TypeScript, Tailwind CSS, Supabase (@supabase/ssr), Recha
 - Phase 2: App shell with bottom nav + Home dashboard ✅
 - Phase 3: Workout logger — session management, set logging, PR detection, XP, streaks, badges, completion modal ✅
 - Phase 4: Progress charts — exercise selector, line chart, PR markers, stats bar, recent sessions ✅
+- Phase 5: Profile screen — avatar, XP bar, streaks, lifetime stats, badge grid, sign out ✅
 
 ## Current State
-Four of five screens are fully built and working. The full core loop works end to end:
-log workout → earn XP → see progress on charts → home dashboard updates.
-/profile is the only placeholder remaining.
+All 5 screens fully built and working. The complete app is functional end to end.
+Phase 6 (PWA manifest, iPhone install, polish) is the final phase.
 
 ## Design System
 Background: #0f0f0f | Surface: #1a1a1a | Surface elevated: #242424
@@ -23,7 +23,7 @@ Danger: #ef4444
 Fonts: Bebas Neue (display/headings), DM Sans (body/UI), JetBrains Mono (numbers/weights)
 Border radius: 12px standard, 8px small, 9999px pill
 Transitions: 150ms ease
-Primary button: bg #c8f135, text #0f0f0f, font bold (dark text on bright bg)
+Primary button: bg #c8f135, text #0f0f0f, font bold
 Secondary button: bg #242424, text #f0f0f0, border #2e2e2e
 
 ## Supabase Tables
@@ -54,15 +54,14 @@ src/
       home/
         page.tsx + HomeDashboard.tsx + loading.tsx
       log/
-        page.tsx                  — Suspense wrapper
+        page.tsx
         DaySelect.tsx
-        ActiveWorkout.tsx         — ExerciseCard + SetRow inline components
+        ActiveWorkout.tsx
         CompletionModal.tsx
       progress/
-        page.tsx                  — client component, all data fetching inline
-        ProgressChart.tsx         — Recharts line chart with custom dot + tooltip
-        loading.tsx
-      profile/page.tsx            — placeholder
+        page.tsx + ProgressChart.tsx + loading.tsx
+      profile/
+        page.tsx + ProfileDashboard.tsx + loading.tsx
   components/
     BottomNav.tsx
   lib/
@@ -75,6 +74,6 @@ src/
   middleware.ts
 
 ## Next Phase
-Phase 5: Profile screen. Google avatar + display name, XP progress bar, streak stats,
-lifetime stats grid (workouts/PRs/sets/days active), full badge grid (11 badges,
-earned vs locked states), sign out button.
+Phase 6: PWA manifest for iPhone install, app icons, viewport polish,
+overscroll fix, input UX improvements, error boundary, final Vercel
+deployment checklist.
