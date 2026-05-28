@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Exercise } from '@/lib/types'
+import { haptic } from '@/lib/utils/haptics'
 import WorkoutManager from './WorkoutManager'
 
 function PushIcon() {
@@ -150,7 +151,10 @@ export default function DaySelect() {
               return (
                 <button
                   key={key}
-                  onClick={() => router.push(`/log?day=${key}`)}
+                  onClick={() => {
+                    haptic('heavy')
+                    router.push(`/log?day=${key}`)
+                  }}
                   style={{
                     backgroundColor: 'var(--surface)',
                     border: '1px solid var(--border)',

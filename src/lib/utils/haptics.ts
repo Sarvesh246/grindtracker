@@ -3,13 +3,18 @@
 // programmatically. This is the only way to trigger a real system haptic
 // in iOS Safari today. Android/Chrome falls back to navigator.vibrate.
 //
+// iOS only ships a single tap intensity from the switch hack, so "heavy"
+// fires a quick double-tap to feel stronger; Android scales via vibration
+// durations.
+//
 // Usage:
 //   import { haptic } from '@/lib/utils/haptics'
 //   haptic('light')   // set check, timer tick
-//   haptic('medium')  // finish workout
+//   haptic('medium')  // finish workout, save edit
+//   haptic('heavy')   // start a workout
 //   haptic('success') // PR
 
-type Intensity = 'light' | 'medium' | 'success'
+type Intensity = 'light' | 'medium' | 'heavy' | 'success'
 
 let switchEl: HTMLInputElement | null = null
 let labelEl: HTMLLabelElement | null = null
@@ -76,8 +81,18 @@ export function haptic(intensity: Intensity = 'light'): void {
   if (typeof window === 'undefined') return
 
   // Try iOS first — when supported it produces a real native tap.
+  // iOS exposes one intensity, so we fake stronger feedback by stacking
+  // taps. "success" pulses three times, "heavy" twice.
   const iosOk = tryIosHaptic()
-  if (iosOk) return
+  if (iosOk) {
+    if (intensity === 'heavy') {
+      setTimeout(tryIosHaptic, 70)
+    } else if (intensity === 'success') {
+      setTimeout(tryIosHaptic, 70)
+      setTimeout(tryIosHaptic, 160)
+    }
+    return
+  }
 
   // Fall back to Android vibrate API.
   switch (intensity) {
@@ -85,7 +100,10 @@ export function haptic(intensity: Intensity = 'light'): void {
       tryVibrate(10)
       break
     case 'medium':
-      tryVibrate(20)
+      tryVibrate(25)
+      break
+    case 'heavy':
+      tryVibrate([18, 40, 40])
       break
     case 'success':
       tryVibrate([10, 60, 30])

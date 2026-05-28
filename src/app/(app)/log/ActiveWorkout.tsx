@@ -410,6 +410,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       [key]: { ...prev[key], isPR },
     }))
     setEditingKey(null)
+    haptic('medium')
   }
 
   function handleAddSet(exerciseId: string) {

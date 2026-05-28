@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Exercise } from '@/lib/types'
 import { getLevel } from '@/lib/utils/gamification'
 import { checkAndAwardBadges } from '@/lib/utils/badges'
+import { haptic } from '@/lib/utils/haptics'
 
 function parseDefaultReps(repsTarget: string): string {
   return repsTarget.split('-')[0].trim()
@@ -323,6 +324,7 @@ function LogPastContent() {
 
     if (isEditing) {
       // Editing: only update session logs, never touch XP or stats
+      haptic('medium')
       setDone({ xpEarned: 0, prCount, isEdit: true, isDelete: false })
       setSubmitting(false)
       return
@@ -366,6 +368,7 @@ function LogPastContent() {
 
     await checkAndAwardBadges(supabase, user.id, updatedStats, prCount)
 
+    haptic('medium')
     setDone({ xpEarned, prCount, isEdit: false, isDelete: false })
     setSubmitting(false)
   }
