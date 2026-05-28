@@ -57,7 +57,12 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [exercises, setExercises] = useState<Exercise[]>([])
   const [logs, setLogs] = useState<LogMap>({})
+  // `previousBests` is the live "bar to beat" for PR detection. It starts
+  // as the prior-session best (from DB) and advances within this workout
+  // as PRs are logged. `baselineBests` keeps the original DB value so we
+  // can recompute the live best when sets are edited or undone.
   const [previousBests, setPreviousBests] = useState<PreviousBest>({})
+  const [baselineBests, setBaselineBests] = useState<PreviousBest>({})
   const [startedAt, setStartedAt] = useState<Date>(new Date())
   const [elapsed, setElapsed] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -144,6 +149,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       bests[ex.id] = data?.weight ?? null
     }
     setPreviousBests(bests)
+    setBaselineBests(bests)
 
     const todayStart = new Date()
     todayStart.setHours(0, 0, 0, 0)
@@ -253,6 +259,25 @@ export default function ActiveWorkout({ day }: { day: string }) {
     setStartedAt(sessionStart)
     setElapsed(Math.floor((Date.now() - sessionStart.getTime()) / 1000))
     setLoading(false)
+  }
+
+  /**
+   * Recompute the live "best" for an exercise from a candidate logs map.
+   * Used after edits and undos so subsequent PR comparisons stay accurate.
+   * Warm-ups and unchecked/skipped sets don't count.
+   */
+  function bestFromLogs(exerciseId: string, logsMap: LogMap): number | null {
+    let best = baselineBests[exerciseId] ?? null
+    for (const key of Object.keys(logsMap)) {
+      if (!key.startsWith(`${exerciseId}-`)) continue
+      const e = logsMap[key]
+      if (!e.checked || e.isWarmup || e.skipped) continue
+      if (e.weight === '') continue
+      const w = parseFloat(e.weight)
+      if (!Number.isFinite(w)) continue
+      if (best === null || w > best) best = w
+    }
+    return best
   }
 
   function formatElapsed(seconds: number): string {
@@ -367,7 +392,11 @@ export default function ActiveWorkout({ day }: { day: string }) {
     setLogs(prev => {
       const cur = prev[key]
       if (!cur) return prev
-      return { ...prev, [key]: { ...cur, checked: false, isPR: false, logId: undefined } }
+      const next = { ...prev, [key]: { ...cur, checked: false, isPR: false, logId: undefined } }
+      // The undone set may have been the live PR. Recompute the best so
+      // future sets in this workout compare against the correct value.
+      setPreviousBests(pb => ({ ...pb, [exerciseId]: bestFromLogs(exerciseId, next) }))
+      return next
     })
   }
 
@@ -405,12 +434,33 @@ export default function ActiveWorkout({ day }: { day: string }) {
       { onConflict: 'session_id,exercise_id,set_number' },
     )
 
-    setLogs(prev => ({
-      ...prev,
-      [key]: { ...prev[key], isPR },
-    }))
+    setLogs(prev => {
+      const next = { ...prev, [key]: { ...prev[key], isPR } }
+      // Editing may have raised or lowered this exercise's best. Recompute
+      // so subsequent PR comparisons in this workout are correct.
+      setPreviousBests(pb => ({ ...pb, [exerciseId]: bestFromLogs(exerciseId, next) }))
+      return next
+    })
     setEditingKey(null)
     haptic('medium')
+  }
+
+  /**
+   * Persist a note edit on an already-saved set. Called on blur from SetRow
+   * when the row is checked and not in editing mode — without this the typed
+   * note lives only in local state and is lost on refresh/resume.
+   */
+  async function persistSetNote(exerciseId: string, setNumber: number) {
+    if (!sessionId) return
+    const key = `${exerciseId}-${setNumber}`
+    const logEntry = logs[key]
+    if (!logEntry || !logEntry.checked) return
+    await supabase
+      .from('session_logs')
+      .update({ note: logEntry.note || null })
+      .eq('session_id', sessionId)
+      .eq('exercise_id', exerciseId)
+      .eq('set_number', setNumber)
   }
 
   function handleAddSet(exerciseId: string) {
@@ -959,6 +1009,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
               onAddSet={() => handleAddSet(ex.id)}
               onStartEdit={handleStartEdit}
               onSaveEdit={handleSaveEdit}
+              onPersistNote={persistSetNote}
               onOpenPlateCalc={(key, current) => setPlateCalcTarget({ key, current })}
             />
           ))}
@@ -1070,6 +1121,7 @@ interface ExerciseCardProps {
   onAddSet: () => void
   onStartEdit: (key: string) => void
   onSaveEdit: (exerciseId: string, setNumber: number) => void
+  onPersistNote: (exerciseId: string, setNumber: number) => void
   onOpenPlateCalc: (key: string, current: number) => void
 }
 
@@ -1078,7 +1130,7 @@ function ExerciseCard({
   onCheck, onUpdate, onSwap,
   onSkipSet, onUnskipSet,
   onSkipExercise, onUnskipExercise,
-  onToggleWarmup, onAddSet, onStartEdit, onSaveEdit,
+  onToggleWarmup, onAddSet, onStartEdit, onSaveEdit, onPersistNote,
   onOpenPlateCalc,
 }: ExerciseCardProps) {
   const totalSets = exercise.sets_target + extraSets
@@ -1212,6 +1264,7 @@ function ExerciseCard({
               onWeightChange={(v) => onUpdate(key, 'weight', v)}
               onRepsChange={(v) => onUpdate(key, 'reps', v)}
               onNoteChange={(v) => onUpdate(key, 'note', v)}
+              onNoteBlur={() => onPersistNote(exercise.id, setNum)}
               onToggleWarmup={() => onToggleWarmup(exercise.id, setNum)}
               onSkip={() => onSkipSet(exercise.id, setNum)}
               onUnskip={() => onUnskipSet(exercise.id, setNum)}
@@ -1426,6 +1479,7 @@ interface SetRowProps {
   onWeightChange: (v: string) => void
   onRepsChange: (v: string) => void
   onNoteChange: (v: string) => void
+  onNoteBlur: () => void
   onToggleWarmup: () => void
   onSkip: () => void
   onUnskip: () => void
@@ -1436,7 +1490,7 @@ function SetRow({
   setNumber, isBonus, editing,
   logEntry,
   onCheck, onSaveEdit, onStartEdit,
-  onWeightChange, onRepsChange, onNoteChange,
+  onWeightChange, onRepsChange, onNoteChange, onNoteBlur,
   onToggleWarmup, onSkip, onUnskip, onOpenPlateCalc,
 }: SetRowProps) {
   const [justChecked, setJustChecked] = useState(false)
@@ -1706,7 +1760,12 @@ function SetRow({
             type="text"
             value={logEntry.note}
             onChange={e => onNoteChange(e.target.value)}
-            onBlur={() => { if (!logEntry.note) setNoteOpen(false) }}
+            onBlur={() => {
+              // Persist to DB if the row is already saved (otherwise the next
+              // check/save will flush the note via upsert).
+              if (logEntry.checked) onNoteBlur()
+              if (!logEntry.note) setNoteOpen(false)
+            }}
             placeholder="Set note (form, feel...)"
             aria-label={`Note for set ${setNumber}`}
             style={{
