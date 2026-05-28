@@ -1,0 +1,193 @@
+'use client'
+import { useEffect, useState } from 'react'
+import { ALL_BADGES } from '@/lib/utils/badges'
+
+interface CompletionData {
+  xpEarned: number
+  leveledUp: boolean
+  newLevel: number
+  prCount: number
+  prExercises: { name: string; weight: number }[]
+  newBadges: string[]
+  duration: number
+  setsCompleted: number
+}
+
+function formatDuration(seconds: number): string {
+  const m = Math.floor(seconds / 60)
+  const s = seconds % 60
+  if (m === 0) return `${s}s`
+  return `${m}m ${s}s`
+}
+
+export default function CompletionModal({
+  data,
+  onDone,
+}: {
+  data: CompletionData
+  onDone: () => void
+}) {
+  const [visible, setVisible] = useState(false)
+
+  useEffect(() => {
+    requestAnimationFrame(() => setVisible(true))
+  }, [])
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 300,
+      backgroundColor: 'rgba(0,0,0,0.7)',
+      display: 'flex', alignItems: 'flex-end',
+    }}>
+      <div style={{
+        width: '100%',
+        backgroundColor: '#1a1a1a',
+        borderRadius: '20px 20px 0 0',
+        border: '1px solid #2e2e2e',
+        borderBottom: 'none',
+        padding: '32px 24px 48px',
+        transform: visible ? 'translateY(0)' : 'translateY(100%)',
+        transition: 'transform 300ms ease',
+        maxHeight: '90dvh',
+        overflowY: 'auto',
+      }}>
+
+        <div style={{
+          fontFamily: "'Bebas Neue', sans-serif",
+          fontSize: '40px', color: '#c8f135',
+          textAlign: 'center', letterSpacing: '2px',
+          marginBottom: '8px',
+        }}>
+          WORKOUT COMPLETE
+        </div>
+
+        <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+          <span style={{
+            fontFamily: "'Bebas Neue', sans-serif",
+            fontSize: '72px', lineHeight: 1,
+            color: '#f0f0f0',
+          }}>
+            <span style={{ color: '#c8f135' }}>+</span>{data.xpEarned}
+          </span>
+          <div style={{ fontSize: '14px', color: '#888888', marginTop: '4px', fontFamily: "'Bebas Neue', sans-serif", letterSpacing: '2px' }}>
+            XP EARNED
+          </div>
+        </div>
+
+        {data.leveledUp && (
+          <div style={{
+            backgroundColor: 'rgba(200, 241, 53, 0.08)',
+            border: '1px solid rgba(200, 241, 53, 0.25)',
+            borderRadius: '12px',
+            padding: '14px',
+            textAlign: 'center',
+            marginBottom: '20px',
+          }}>
+            <div style={{
+              fontFamily: "'Bebas Neue', sans-serif",
+              fontSize: '28px', color: '#c8f135', letterSpacing: '1px',
+            }}>
+              ⚡ LEVEL UP → LVL {data.newLevel}
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+          {[
+            { label: 'DURATION', value: formatDuration(data.duration) },
+            { label: 'SETS', value: String(data.setsCompleted) },
+            { label: 'PRs', value: String(data.prCount) },
+          ].map(stat => (
+            <div key={stat.label} style={{
+              flex: 1,
+              backgroundColor: '#242424',
+              border: '1px solid #2e2e2e',
+              borderRadius: '12px',
+              padding: '12px 8px',
+              textAlign: 'center',
+            }}>
+              <div style={{
+                fontFamily: "'Bebas Neue', sans-serif",
+                fontSize: '26px', color: '#f0f0f0', lineHeight: 1, marginBottom: '4px',
+              }}>
+                {stat.value}
+              </div>
+              <div style={{ fontSize: '10px', color: '#555555', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                {stat.label}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {data.prExercises.length > 0 && (
+          <div style={{ marginBottom: '20px' }}>
+            <div style={{ fontSize: '12px', color: '#555555', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '10px' }}>
+              PERSONAL RECORDS
+            </div>
+            {data.prExercises.map((pr, i) => (
+              <div key={i} style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                padding: '10px 12px',
+                backgroundColor: '#242424',
+                borderRadius: '8px',
+                marginBottom: '6px',
+              }}>
+                <span style={{ fontSize: '14px', color: '#f0f0f0' }}>{pr.name}</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{
+                    fontFamily: "'JetBrains Mono', monospace",
+                    fontSize: '14px', color: '#c8f135',
+                  }}>
+                    {pr.weight} lbs
+                  </span>
+                  <span style={{ fontSize: '14px' }}>🏆</span>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {data.newBadges.length > 0 && (
+          <div style={{ marginBottom: '24px' }}>
+            <div style={{ fontSize: '12px', color: '#555555', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '10px' }}>
+              BADGES EARNED
+            </div>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              {data.newBadges.map(badgeId => {
+                const badge = ALL_BADGES.find(b => b.id === badgeId)
+                if (!badge) return null
+                return (
+                  <div key={badgeId} style={{
+                    backgroundColor: 'rgba(200, 241, 53, 0.08)',
+                    border: '1px solid rgba(200, 241, 53, 0.25)',
+                    borderRadius: '9999px',
+                    padding: '6px 14px',
+                    display: 'flex', alignItems: 'center', gap: '6px',
+                  }}>
+                    <span style={{ fontSize: '16px' }}>{badge.emoji}</span>
+                    <span style={{ fontSize: '13px', color: '#c8f135', fontWeight: 600 }}>{badge.label}</span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        <button
+          onClick={onDone}
+          style={{
+            width: '100%', height: '56px',
+            backgroundColor: '#c8f135',
+            color: '#0f0f0f',
+            border: 'none', borderRadius: '12px',
+            fontFamily: "'Bebas Neue', sans-serif",
+            fontSize: '22px', letterSpacing: '1px',
+            cursor: 'pointer',
+          }}
+        >
+          BACK TO HOME
+        </button>
+      </div>
+    </div>
+  )
+}
