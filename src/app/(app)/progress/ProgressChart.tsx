@@ -12,7 +12,8 @@ import {
 interface ChartPoint {
   date: string
   displayDate: string
-  weight: number
+  value: number
+  label: string
   isPR: boolean
 }
 
@@ -26,32 +27,32 @@ function CustomTooltip({ active, payload }: { active?: boolean; payload?: Toolti
 
   return (
     <div style={{
-      backgroundColor: '#242424',
-      border: '1px solid #2e2e2e',
+      backgroundColor: 'var(--surface-elevated)',
+      border: '1px solid var(--border)',
       borderRadius: '8px',
       padding: '10px 14px',
       fontFamily: "'DM Sans', sans-serif",
     }}>
-      <div style={{ fontSize: '12px', color: '#888888', marginBottom: '4px' }}>
+      <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px' }}>
         {point.displayDate}
       </div>
       <div style={{
         fontFamily: "'JetBrains Mono', monospace",
         fontSize: '16px',
-        color: '#f0f0f0',
+        color: 'var(--text-primary)',
       }}>
-        {point.weight} lbs
+        {point.label}
       </div>
       {point.isPR && (
         <div style={{
           display: 'flex', alignItems: 'center', gap: '5px',
           marginTop: '4px',
         }}>
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#c8f135" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent)' }}>
             <polyline points="8 6 12 2 16 6"/><path d="M12 2v10"/>
             <path d="M5 17l1.5-5h11L19 17"/><path d="M3 22h18"/>
           </svg>
-          <span style={{ fontSize: '11px', color: '#c8f135', fontWeight: 600 }}>PR</span>
+          <span style={{ fontSize: '11px', color: 'var(--accent)', fontWeight: 600 }}>PR</span>
         </div>
       )}
     </div>
@@ -71,21 +72,21 @@ function CustomDot({ cx, cy, payload }: CustomDotProps) {
     return (
       <g>
         <circle cx={cx} cy={cy} r={8} fill="rgba(200, 241, 53, 0.2)" />
-        <circle cx={cx} cy={cy} r={5} fill="#c8f135" />
+        <circle cx={cx} cy={cy} r={5} fill="var(--accent)" />
       </g>
     )
   }
 
-  return <circle cx={cx} cy={cy} r={3} fill="#c8f135" opacity={0.5} />
+  return <circle cx={cx} cy={cy} r={3} fill="var(--accent)" opacity={0.5} />
 }
 
 export default function ProgressChart({ data }: { data: ChartPoint[] }) {
-  const weights = data.map(d => d.weight)
-  const minWeight = Math.min(...weights)
-  const maxWeight = Math.max(...weights)
-  const padding = Math.max((maxWeight - minWeight) * 0.2, 5)
-  const yMin = Math.floor(minWeight - padding)
-  const yMax = Math.ceil(maxWeight + padding)
+  const values = data.map(d => d.value)
+  const minV = Math.min(...values)
+  const maxV = Math.max(...values)
+  const padding = Math.max((maxV - minV) * 0.2, 5)
+  const yMin = Math.floor(minV - padding)
+  const yMax = Math.ceil(maxV + padding)
 
   const showAllLabels = data.length <= 6
   const tickInterval = showAllLabels ? 0 : Math.floor(data.length / 5)
@@ -98,20 +99,20 @@ export default function ProgressChart({ data }: { data: ChartPoint[] }) {
       >
         <CartesianGrid
           strokeDasharray="3 3"
-          stroke="#2e2e2e"
+          stroke="var(--border)"
           vertical={false}
         />
         <XAxis
           dataKey="displayDate"
           stroke="transparent"
-          tick={{ fill: '#555555', fontSize: 10, fontFamily: "'DM Sans', sans-serif" }}
+          tick={{ fill: 'var(--text-muted)', fontSize: 10, fontFamily: "'DM Sans', sans-serif" }}
           tickLine={false}
           axisLine={false}
           interval={tickInterval}
         />
         <YAxis
           stroke="transparent"
-          tick={{ fill: '#555555', fontSize: 10, fontFamily: "'DM Sans', sans-serif" }}
+          tick={{ fill: 'var(--text-muted)', fontSize: 10, fontFamily: "'DM Sans', sans-serif" }}
           tickLine={false}
           axisLine={false}
           domain={[yMin, yMax]}
@@ -120,15 +121,15 @@ export default function ProgressChart({ data }: { data: ChartPoint[] }) {
         />
         <Tooltip
           content={<CustomTooltip />}
-          cursor={{ stroke: '#3a3a3a', strokeWidth: 1 }}
+          cursor={{ stroke: 'var(--border-strong)', strokeWidth: 1 }}
         />
         <Line
           type="monotone"
-          dataKey="weight"
-          stroke="#c8f135"
+          dataKey="value"
+          stroke="var(--accent)"
           strokeWidth={2}
           dot={<CustomDot />}
-          activeDot={{ r: 6, fill: '#c8f135', stroke: '#0f0f0f', strokeWidth: 2 }}
+          activeDot={{ r: 6, fill: 'var(--accent)', stroke: 'var(--bg)', strokeWidth: 2 }}
         />
       </LineChart>
     </ResponsiveContainer>

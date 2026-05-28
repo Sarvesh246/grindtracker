@@ -3,7 +3,7 @@ export default function ProfileLoading() {
     <div style={{ padding: '24px 16px' }}>
       <div className="shimmer" style={{ width: '100px', height: '32px', borderRadius: '8px', marginBottom: '20px' }} />
       <div style={{
-        backgroundColor: '#1a1a1a', border: '1px solid #2e2e2e',
+        backgroundColor: 'var(--surface)', border: '1px solid var(--border)',
         borderRadius: '12px', padding: '16px', marginBottom: '16px',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '16px' }}>

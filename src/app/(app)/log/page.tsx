@@ -18,7 +18,7 @@ function LogInner() {
 export default function LogPage() {
   return (
     <Suspense fallback={
-      <div style={{ padding: '24px 16px', color: '#555555', fontFamily: "'DM Sans', sans-serif" }}>
+      <div style={{ padding: '24px 16px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
         Loading...
       </div>
     }>

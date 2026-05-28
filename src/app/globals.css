@@ -7,6 +7,87 @@
 
 @import 'tailwindcss';
 
+/* ---------------------------------------------------------------------------
+   Design tokens (Tailwind v4 CSS-first config).
+   Every color/size in the app should reference one of these — no hex literals
+   in component code. Mirror values exist as CSS vars below so inline styles
+   and arbitrary values can consume them too.
+   --------------------------------------------------------------------------- */
+@theme {
+  --color-bg: #0f0f0f;
+  --color-surface: #1a1a1a;
+  --color-surface-elevated: #242424;
+  --color-border: #2e2e2e;
+  --color-border-strong: #3a3a3a;
+  --color-accent: #c8f135;
+  --color-accent-dim: #8faa24;
+  --color-accent-deep: #5a7a1a;
+  --color-text-primary: #f0f0f0;
+  --color-text-secondary: #888888;
+  --color-text-muted: #7a7a7a;
+  --color-text-disabled: #555555;
+  --color-danger: #ef4444;
+  --color-danger-bg: rgba(239, 68, 68, 0.08);
+  --color-danger-bg-hover: rgba(239, 68, 68, 0.14);
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-pill: 9999px;
+
+  --spacing-card-sm: 12px;
+  --spacing-card-md: 16px;
+  --spacing-card-lg: 20px;
+
+  --font-display: 'Bebas Neue', sans-serif;
+  --font-sans: 'DM Sans', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --text-display-sm: 22px;
+  --text-display-md: 28px;
+  --text-display-lg: 36px;
+  --text-display-xl: 52px;
+
+  --tracking-label: 1.5px;
+}
+
+/* Same tokens exposed as CSS variables for inline styles & arbitrary use. */
+:root {
+  --bg: #0f0f0f;
+  --surface: #1a1a1a;
+  --surface-elevated: #242424;
+  --border: #2e2e2e;
+  --border-strong: #3a3a3a;
+  --accent: #c8f135;
+  --accent-dim: #8faa24;
+  --accent-deep: #5a7a1a;
+  --text-primary: #f0f0f0;
+  --text-secondary: #888888;
+  --text-muted: #7a7a7a;
+  --text-disabled: #555555;
+  --danger: #ef4444;
+  --danger-bg: rgba(239, 68, 68, 0.08);
+  --danger-bg-hover: rgba(239, 68, 68, 0.14);
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+
+  --card-sm: 12px;
+  --card-md: 16px;
+  --card-lg: 20px;
+
+  --btn-sm: 40px;
+  --btn-md: 48px;
+  --btn-lg: 56px;
+
+  --font-display: 'Bebas Neue', sans-serif;
+  --font-sans: 'DM Sans', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --tracking-label: 1.5px;
+}
+
 *,
 *::before,
 *::after {
@@ -21,9 +102,9 @@ html {
 }
 
 body {
-  background-color: #0f0f0f;
-  color: #f0f0f0;
-  font-family: 'DM Sans', sans-serif;
+  background-color: var(--bg);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
   overscroll-behavior: none;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -41,14 +122,47 @@ input[type='number'] {
   -moz-appearance: textfield;
 }
 
+/* ---------------------------------------------------------------------------
+   A11y: keyboard-visible focus ring on every interactive element.
+   Inline `outline: 'none'` styles override the default outline, but
+   :focus-visible with !important wins back keyboard focus visibility.
+   --------------------------------------------------------------------------- */
+:focus {
+  outline: none;
+}
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[role='button']:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent) !important;
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Hide visually but keep accessible to screen readers. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* Bottom nav — defined here so safe-area-inset-bottom is applied before JS hydration */
 .bottom-nav {
   position: fixed;
   bottom: 0;
   left: 0;
   right: 0;
-  background-color: #1a1a1a;
-  border-top: 1px solid #2e2e2e;
+  background-color: var(--surface);
+  border-top: 1px solid var(--border);
   display: flex;
   align-items: stretch;
   z-index: 100;
@@ -68,12 +182,12 @@ input[type='number'] {
 
 .wm-sheet {
   width: 100%;
-  background-color: #1a1a1a;
-  border-radius: 16px 16px 0 0;
+  background-color: var(--surface);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   max-height: 88dvh;
   display: flex;
   flex-direction: column;
-  border: 1px solid #2e2e2e;
+  border: 1px solid var(--border);
   border-bottom: none;
 }
 
@@ -91,13 +205,13 @@ input[type='number'] {
 
   .wm-sheet {
     max-width: 480px;
-    border-radius: 16px;
+    border-radius: var(--radius-lg);
     max-height: min(80dvh, 680px);
-    border-bottom: 1px solid #2e2e2e;
+    border-bottom: 1px solid var(--border);
   }
 
   .wm-scroll {
-    padding-bottom: 16px;
+    padding-bottom: var(--card-md);
   }
 }
 
@@ -135,10 +249,25 @@ input[type='number'] {
 .shimmer {
   background: linear-gradient(
     90deg,
-    #1a1a1a 0%,
-    #2e2e2e 50%,
-    #1a1a1a 100%
+    var(--surface) 0%,
+    var(--border) 50%,
+    var(--surface) 100%
   );
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
+}
+
+/* ---------------------------------------------------------------------------
+   Reduced motion — respect user preference. Zero out transitions and
+   keyframe animations rather than disabling functionality.
+   --------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -3,11 +3,12 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Exercise } from '@/lib/types'
+import { haptic } from '@/lib/utils/haptics'
 import WorkoutManager from './WorkoutManager'
 
 function PushIcon() {
   return (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#c8f135" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent)' }}>
       <line x1="5" y1="17" x2="5" y2="21" />
       <line x1="19" y1="17" x2="19" y2="21" />
       <rect x="3" y="14" width="18" height="3" rx="1.5" />
@@ -20,7 +21,7 @@ function PushIcon() {
 
 function PullIcon() {
   return (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#c8f135" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent)' }}>
       <line x1="4" y1="4" x2="4" y2="20" />
       <line x1="20" y1="4" x2="20" y2="20" />
       <line x1="4" y1="7" x2="20" y2="7" />
@@ -34,7 +35,7 @@ function PullIcon() {
 
 function LegsIcon() {
   return (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#c8f135" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent)' }}>
       <line x1="5" y1="3" x2="5" y2="21" />
       <line x1="19" y1="3" x2="19" y2="21" />
       <polyline points="5 10 8 10 8 13" />
@@ -48,7 +49,7 @@ function LegsIcon() {
 
 function DefaultDayIcon() {
   return (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#c8f135" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent)' }}>
       <line x1="6" y1="12" x2="18" y2="12" />
       <rect x="2" y="9" width="4" height="6" rx="1.5" />
       <rect x="18" y="9" width="4" height="6" rx="1.5" />
@@ -97,7 +98,7 @@ export default function DaySelect() {
           <h1 style={{
             fontFamily: "'Bebas Neue', sans-serif",
             fontSize: '32px',
-            color: '#f0f0f0',
+            color: 'var(--text-primary)',
             letterSpacing: '1px',
             margin: 0,
           }}>
@@ -107,35 +108,35 @@ export default function DaySelect() {
             onClick={() => setShowManager(true)}
             style={{
               display: 'flex', alignItems: 'center', gap: '6px',
-              backgroundColor: '#242424',
-              border: '1px solid #2e2e2e',
+              backgroundColor: 'var(--surface-elevated)',
+              border: '1px solid var(--border)',
               borderRadius: '8px',
               padding: '8px 12px',
               cursor: 'pointer',
               transition: 'border-color 150ms ease',
               flexShrink: 0,
             }}
-            onMouseEnter={e => (e.currentTarget.style.borderColor = '#c8f135')}
-            onMouseLeave={e => (e.currentTarget.style.borderColor = '#2e2e2e')}
+            onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+            onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}
           >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#888888" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-secondary)' }}>
               <circle cx="12" cy="12" r="3"/>
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
             </svg>
-            <span style={{ fontSize: '12px', color: '#888888', fontFamily: "'DM Sans', sans-serif", fontWeight: 600 }}>
+            <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontFamily: "'DM Sans', sans-serif", fontWeight: 600 }}>
               MANAGE
             </span>
           </button>
         </div>
 
         {loading ? (
-          <div style={{ color: '#555555', fontSize: '14px' }}>Loading...</div>
+          <div style={{ color: 'var(--text-muted)', fontSize: '14px' }}>Loading...</div>
         ) : dayKeys.length === 0 ? (
-          <div style={{ color: '#555555', fontSize: '14px', lineHeight: 1.6 }}>
+          <div style={{ color: 'var(--text-muted)', fontSize: '14px', lineHeight: 1.6 }}>
             No workout days yet.{' '}
             <button
               onClick={() => setShowManager(true)}
-              style={{ background: 'none', border: 'none', color: '#c8f135', cursor: 'pointer', fontSize: '14px', padding: 0, fontFamily: "'DM Sans', sans-serif", fontWeight: 600 }}
+              style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: '14px', padding: 0, fontFamily: "'DM Sans', sans-serif", fontWeight: 600 }}
             >
               Add one
             </button>
@@ -150,10 +151,13 @@ export default function DaySelect() {
               return (
                 <button
                   key={key}
-                  onClick={() => router.push(`/log?day=${key}`)}
+                  onClick={() => {
+                    haptic('heavy')
+                    router.push(`/log?day=${key}`)
+                  }}
                   style={{
-                    backgroundColor: '#1a1a1a',
-                    border: '1px solid #2e2e2e',
+                    backgroundColor: 'var(--surface)',
+                    border: '1px solid var(--border)',
                     borderRadius: '12px',
                     padding: '20px',
                     textAlign: 'left',
@@ -161,10 +165,10 @@ export default function DaySelect() {
                     transition: 'border-color 150ms ease',
                     width: '100%',
                   }}
-                  onMouseEnter={e => (e.currentTarget.style.borderColor = '#c8f135')}
-                  onMouseLeave={e => (e.currentTarget.style.borderColor = '#2e2e2e')}
-                  onTouchStart={e => (e.currentTarget.style.borderColor = '#c8f135')}
-                  onTouchEnd={e => (e.currentTarget.style.borderColor = '#2e2e2e')}
+                  onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+                  onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+                  onTouchStart={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+                  onTouchEnd={e => (e.currentTarget.style.borderColor = 'var(--border)')}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -172,17 +176,17 @@ export default function DaySelect() {
                       <span style={{
                         fontFamily: "'Bebas Neue', sans-serif",
                         fontSize: '28px',
-                        color: '#c8f135',
+                        color: 'var(--accent)',
                         letterSpacing: '1px',
                       }}>
                         {key.replace(/-/g, ' ').toUpperCase()}
                       </span>
                     </div>
-                    <span style={{ fontSize: '12px', color: '#555555' }}>
+                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
                       {exs.length} exercise{exs.length !== 1 ? 's' : ''}
                     </span>
                   </div>
-                  <div style={{ fontSize: '14px', color: '#888888' }}>
+                  <div style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>
                     {description}
                   </div>
                 </button>
@@ -200,15 +204,15 @@ export default function DaySelect() {
                 border: 'none',
                 cursor: 'pointer',
                 fontSize: '13px',
-                color: '#555555',
+                color: 'var(--text-muted)',
                 fontFamily: "'DM Sans', sans-serif",
                 textDecoration: 'underline',
                 textUnderlineOffset: '3px',
                 padding: '4px 8px',
                 transition: 'color 150ms ease',
               }}
-              onMouseEnter={e => (e.currentTarget.style.color = '#888888')}
-              onMouseLeave={e => (e.currentTarget.style.color = '#555555')}
+              onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-secondary)')}
+              onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
             >
               Log a past workout
             </button>
