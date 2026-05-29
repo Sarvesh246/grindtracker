@@ -207,7 +207,7 @@ export default function SetupPage() {
           lineHeight: 1.5,
         }}>
           Your username is public and appears on leaderboards.<br />
-          You can&apos;t change it later, so choose wisely.
+          You can change it later in your profile.
         </div>
       </div>
     </div>
