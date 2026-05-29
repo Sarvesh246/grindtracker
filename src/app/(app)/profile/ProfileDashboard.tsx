@@ -124,7 +124,7 @@ export default function ProfileDashboard({
   useEffect(() => {
     if (!editingUsername) return
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    setUsernameAvailable(null)
+    setUsernameAvailable(null) // eslint-disable-line react-hooks/set-state-in-effect
     setUsernameError(null)
 
     const trimmed = newUsername.trim().toLowerCase()

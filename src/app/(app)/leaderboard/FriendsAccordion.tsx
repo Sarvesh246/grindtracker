@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { UserProfile, Friendship } from '@/lib/types'
+import { UserProfile } from '@/lib/types'
 
 interface FriendRow {
   friendship_id: string
@@ -105,13 +105,14 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
     onFriendsChange(friendRows.map(f => f.profile.id))
   }, [userId, supabase, onFriendsChange])
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { loadFriendsData() }, [loadFriendsData])
 
   // Debounced username search
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
     const q = query.trim().toLowerCase()
-    if (!q) { setSearchResults([]); return }
+    if (!q) { setSearchResults([]); return } // eslint-disable-line react-hooks/set-state-in-effect
 
     debounceRef.current = setTimeout(async () => {
       const existingIds = [

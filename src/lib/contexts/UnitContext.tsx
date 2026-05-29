@@ -1,5 +1,5 @@
 'use client'
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useState } from 'react'
 
 type Unit = 'metric' | 'imperial'
 
@@ -34,13 +34,14 @@ function buildToStorage(unit: Unit) {
     unit === 'imperial' ? Math.round(val * LBS_TO_KG * 1000) / 1000 : val
 }
 
-export function UnitProvider({ children }: { children: React.ReactNode }) {
-  const [unit, setUnit] = useState<Unit>('metric')
+function readStoredUnit(): Unit {
+  if (typeof window === 'undefined') return 'metric'
+  const stored = localStorage.getItem('grind_unit_pref')
+  return stored === 'imperial' || stored === 'metric' ? stored : 'metric'
+}
 
-  useEffect(() => {
-    const stored = localStorage.getItem('grind_unit_pref')
-    if (stored === 'imperial' || stored === 'metric') setUnit(stored)
-  }, [])
+export function UnitProvider({ children }: { children: React.ReactNode }) {
+  const [unit, setUnit] = useState<Unit>(readStoredUnit)
 
   function toggleUnit() {
     setUnit(prev => {

@@ -22,11 +22,6 @@ const DAY_LABELS: Record<string, string> = {
   legs: 'LEGS DAY',
 }
 
-const DAY_MUSCLES: Record<string, string> = {
-  push: 'Chest, Shoulders, Triceps',
-  pull: 'Back, Biceps, Rear Delts',
-  legs: 'Quads, Hamstrings, Glutes',
-}
 
 export default function HomeDashboard({
   stats,

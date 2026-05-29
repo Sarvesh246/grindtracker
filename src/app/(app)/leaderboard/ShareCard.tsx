@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { LeaderboardEntry } from '@/lib/types'
 import { useUnit } from '@/lib/contexts/UnitContext'
 
@@ -22,10 +22,7 @@ function initials(name: string) {
 
 export default function ShareCard({ entry, rank, category, onClose }: ShareCardProps) {
   const { unitLabel, toDisplay } = useUnit()
-  const [canShare, setCanShare] = useState(false)
-  useEffect(() => {
-    setCanShare(typeof navigator !== 'undefined' && 'share' in navigator)
-  }, [])
+  const [canShare] = useState(() => typeof navigator !== 'undefined' && 'share' in navigator)
   const categoryLabel = {
     push: 'PUSH DAY',
     pull: 'PULL DAY',

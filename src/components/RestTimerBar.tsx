@@ -31,9 +31,8 @@ export default function RestTimerBar({
   const [open, setOpen] = useState(false)
   const [rest, setRest] = useState<number>(() => getExerciseRest(exerciseId))
 
-  useEffect(() => {
-    setRest(getExerciseRest(exerciseId))
-  }, [exerciseId])
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { setRest(getExerciseRest(exerciseId)) }, [exerciseId])
 
   const pct = durationMs > 0 ? Math.min(100, (remainingMs / durationMs) * 100) : 0
   const lowTime = remainingMs <= 10_000

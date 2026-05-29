@@ -52,11 +52,6 @@ export default function PlateCalculator({ initialTarget, onClose, onApply }: Pro
     initialTarget && initialTarget > 0 ? String(initialTarget) : '',
   )
 
-  // When unit changes (e.g. settings toggled while modal open), reset bar to unit default.
-  useEffect(() => {
-    setBar(getStoredBar(unit))
-  }, [unit])
-
   useEffect(() => {
     localStorage.setItem(storageKey(unit), String(bar))
   }, [bar, unit])

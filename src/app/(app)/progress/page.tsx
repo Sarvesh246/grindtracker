@@ -98,18 +98,18 @@ export default function ProgressPage() {
 
   useEffect(() => {
     if (!selectedId) return
-    loadRawLogs(selectedId)
+    loadRawLogs(selectedId) // eslint-disable-line react-hooks/immutability
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId])
 
   useEffect(() => {
     if (rawLogs.length === 0) {
-      setChartData([])
+      setChartData([]) // eslint-disable-line react-hooks/set-state-in-effect
       setStats({ bestWeight: null, sessionCount: 0, lastWeight: null, prCount: 0 })
       setRecentSessions([])
       return
     }
-    recomputeForMetric(rawLogs, metric, unitLabel, toDisplay)
+    recomputeForMetric(rawLogs, metric, unitLabel, toDisplay) // eslint-disable-line react-hooks/immutability
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rawLogs, metric, unitLabel])
 

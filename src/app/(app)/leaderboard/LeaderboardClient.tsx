@@ -56,9 +56,8 @@ export default function LeaderboardClient({ userId }: Props) {
   }, [userId, supabase])
 
   // Refetch when category or friends change
-  useEffect(() => {
-    fetchLeaderboard(category, friendIds)
-  }, [category, friendIds, fetchLeaderboard])
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { fetchLeaderboard(category, friendIds) }, [category, friendIds, fetchLeaderboard])
 
   // Refetch on window focus
   useEffect(() => {

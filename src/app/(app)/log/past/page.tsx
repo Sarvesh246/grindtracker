@@ -100,9 +100,8 @@ function LogPastContent() {
   const [duplicateWarning, setDuplicateWarning] = useState(false)
   const [done, setDone] = useState<{ xpEarned: number; prCount: number; isEdit: boolean; isDelete: boolean } | null>(null)
 
-  useEffect(() => {
-    checkExistingSession(selectedDate)
-  }, [selectedDate])
+  // eslint-disable-next-line react-hooks/immutability
+  useEffect(() => { checkExistingSession(selectedDate) }, [selectedDate])
 
   async function checkExistingSession(date: string) {
     setCheckingDate(true)

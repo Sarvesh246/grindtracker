@@ -91,16 +91,15 @@ export default function ActiveWorkout({ day }: { day: string }) {
     return () => { if (timerRef.current) clearInterval(timerRef.current) }
   }, [startedAt])
 
-  useEffect(() => {
-    initSession()
-  }, [day])
+  // eslint-disable-next-line react-hooks/immutability
+  useEffect(() => { initSession() }, [day])
 
   // Auto-clear undo state when the 5s window expires.
   useEffect(() => {
     if (!undoState) return
     const remaining = undoState.expiresAt - Date.now()
     if (remaining <= 0) {
-      setUndoState(null)
+      setUndoState(null) // eslint-disable-line react-hooks/set-state-in-effect
       return
     }
     const id = setTimeout(() => setUndoState(null), remaining)

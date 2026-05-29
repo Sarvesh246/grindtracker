@@ -70,7 +70,6 @@ export function useRestTimer() {
         rafRef.current = null
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.exerciseId, state.startedAt, state.durationMs])
 
   function start(exerciseId: string, durationSec?: number) {
