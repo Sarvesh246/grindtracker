@@ -68,9 +68,18 @@ noon (`new Date(key + 'T12:00:00')`) before comparison. The profile "days active
 count is computed client-side (user's timezone) for the same reason.
 
 ### Units
-`UnitContext` is a display-label toggle (kg/lbs) persisted in localStorage; it
-changes the label only and does not convert stored numbers. Use `useUnit()`'s
-`unitLabel` everywhere a weight unit is shown — do not hardcode "lbs"/"kg".
+All weights are stored canonically in **lbs** in Supabase. `UnitContext` (kg/lbs,
+persisted in localStorage, defaults to imperial/lbs) is a display preference that
+**converts** numbers at the display/input boundaries — it does not change stored
+values. `useUnit()` exposes: `unitLabel` (label only), `toDisplay(canonicalLbs)`
+(stored→display unit), `fromDisplay(displayValue)` (typed value→canonical lbs), and
+`fmt(canonicalLbs)` (display string, 1-decimal, trailing zeros stripped). Convert
+stored→display wherever a weight is shown (use `fmt`/`toDisplay`, never raw); convert
+display→canonical with `fromDisplay` before saving, and prefill inputs via `fmt`. Keep
+all comparisons (PR detection, "previous best", volume/e1RM) in canonical lbs.
+`fromDisplay` never rounds — only display is rounded — so toggling a read-only value
+drifts zero; one-time quantization can occur only when a kg value is edited and saved.
+Conversion is instant because it's React Context. Never hardcode "lbs"/"kg".
 
 ## File Structure
 src/

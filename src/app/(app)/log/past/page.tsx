@@ -80,7 +80,7 @@ function LogPastContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const supabase = createClient()
-  const { unitLabel } = useUnit()
+  const { unitLabel, fromDisplay, fmt } = useUnit()
 
   const yesterday = getYesterdayString()
   const paramDate = searchParams.get('date')
@@ -172,7 +172,7 @@ function LogPastContent() {
       for (const log of existingLogs ?? []) {
         if (inputs[log.exercise_id]?.[log.set_number - 1]) {
           inputs[log.exercise_id][log.set_number - 1] = {
-            weight: log.weight !== null ? String(log.weight) : '',
+            weight: log.weight !== null ? fmt(log.weight) : '',
             reps: log.reps !== null ? String(log.reps) : '',
           }
         }
@@ -311,7 +311,9 @@ function LogPastContent() {
       const sets = setInputs[ex.id] ?? []
       for (let i = 0; i < sets.length; i++) {
         const s = sets[i]
-        const weight = s.weight !== '' ? parseFloat(s.weight) : null
+        // Inputs are typed in the display unit; convert back to canonical lbs before
+        // saving. prevBests are stored canonical, so the PR check stays lbs-vs-lbs.
+        const weight = s.weight !== '' ? fromDisplay(parseFloat(s.weight)) : null
         const reps = s.reps !== '' ? parseInt(s.reps) : null
         const prevBest = prevBests[ex.id] ?? null
         const isPR = weight !== null && prevBest !== null && weight > prevBest
