@@ -1182,7 +1182,7 @@ function ExerciseCard({
   onToggleWarmup, onAddSet, onStartEdit, onSaveEdit, onPersistNote,
   onOpenPlateCalc,
 }: ExerciseCardProps) {
-  const { unitLabel } = useUnit()
+  const { unitLabel, fmt, toDisplay } = useUnit()
   const totalSets = exercise.sets_target + extraSets
   const setNumbers = Array.from({ length: totalSets }, (_, i) => i + 1)
   const anySkipped = setNumbers.some(s => logs[`${exercise.id}-${s}`]?.skipped)
@@ -1285,7 +1285,7 @@ function ExerciseCard({
             {exercise.sets_target} sets × {exercise.reps_target} reps
           </span>
           <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: "'JetBrains Mono', monospace" }}>
-            {previousBest !== null ? `prev: ${previousBest} ${unitLabel}` : 'no previous data'}
+            {previousBest !== null ? `prev: ${fmt(previousBest)} ${unitLabel}` : 'no previous data'}
           </span>
         </div>
       </div>
@@ -1319,8 +1319,9 @@ function ExerciseCard({
               onSkip={() => onSkipSet(exercise.id, setNum)}
               onUnskip={() => onUnskipSet(exercise.id, setNum)}
               onOpenPlateCalc={() => {
+                // logEntry.weight is canonical lbs; open the calculator on the displayed value.
                 const cur = logEntry.weight !== '' ? parseFloat(logEntry.weight) : NaN
-                onOpenPlateCalc(key, Number.isFinite(cur) ? cur : 0)
+                onOpenPlateCalc(key, Number.isFinite(cur) ? toDisplay(cur) : 0)
               }}
             />
           )
@@ -1543,8 +1544,14 @@ function SetRow({
   onWeightChange, onRepsChange, onNoteChange, onNoteBlur,
   onToggleWarmup, onSkip, onUnskip, onOpenPlateCalc,
 }: SetRowProps) {
+  const { toDisplay, fromDisplay, fmt } = useUnit()
   const [justChecked, setJustChecked] = useState(false)
   const [noteOpen, setNoteOpen] = useState(false)
+  // logEntry.weight is stored canonically in lbs. We show it in the active display unit.
+  // While the field is focused we keep the raw typed string in `rawWeight` so the user can
+  // type freely (decimals, partial entries) without conversion fighting the keystrokes; on
+  // blur we drop the buffer and the field re-derives from canonical state.
+  const [rawWeight, setRawWeight] = useState<string | null>(null)
   const weightRef = useRef<HTMLInputElement>(null)
   const repsRef = useRef<HTMLInputElement>(null)
   const longPressTimer = useRef<NodeJS.Timeout | null>(null)
@@ -1569,6 +1576,17 @@ function SetRow({
       clearTimeout(longPressTimer.current)
       longPressTimer.current = null
     }
+  }
+
+  const displayWeight = rawWeight ?? (logEntry.weight === '' ? '' : fmt(parseFloat(logEntry.weight)))
+
+  function handleWeightChange(v: string) {
+    setRawWeight(v)
+    if (v === '') { onWeightChange(''); return }
+    const n = parseFloat(v)
+    // Commit to canonical lbs on every keystroke (when parseable) so parent state — which
+    // drives the check action, PR detection and saving — never lags behind the input.
+    if (Number.isFinite(n)) onWeightChange(String(fromDisplay(n)))
   }
 
   function handleWeightKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -1641,9 +1659,10 @@ function SetRow({
             ref={weightRef}
             type="number"
             inputMode="decimal"
-            value={logEntry.weight}
-            onChange={e => onWeightChange(e.target.value)}
+            value={displayWeight}
+            onChange={e => handleWeightChange(e.target.value)}
             onFocus={e => e.target.select()}
+            onBlur={() => setRawWeight(null)}
             onKeyDown={handleWeightKeyDown}
             disabled={inputsDisabled}
             placeholder="0"

@@ -21,7 +21,7 @@ function initials(name: string) {
 }
 
 export default function ShareCard({ entry, rank, category, onClose }: ShareCardProps) {
-  const { unitLabel } = useUnit()
+  const { unitLabel, fmt } = useUnit()
   const [canShare, setCanShare] = useState(false)
   useEffect(() => {
     setCanShare(typeof navigator !== 'undefined' && 'share' in navigator)
@@ -36,7 +36,7 @@ export default function ShareCard({ entry, rank, category, onClose }: ShareCardP
   const statLabel = category === 'overall' ? 'XP' : 'BEST LIFT'
   const statValue = category === 'overall'
     ? `${entry.xp_total.toLocaleString()} XP`
-    : `${entry.best_lift}${unitLabel}`
+    : `${entry.best_lift === 0 ? '—' : `${fmt(entry.best_lift)}${unitLabel}`}`
 
   const rankColor = RANK_COLORS[rank] ?? 'var(--accent)'
 

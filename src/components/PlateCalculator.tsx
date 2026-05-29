@@ -1,16 +1,20 @@
 'use client'
 import { useEffect, useState } from 'react'
+import { useUnit } from '@/lib/contexts/UnitContext'
 
-const PLATES = [45, 35, 25, 10, 5, 2.5] as const
-const BAR_PRESETS = [45, 35, 25, 15] as const
-const STORAGE_BAR = 'grind.barWeight'
+// Plate / bar denominations differ by unit system. The calculator works entirely in the
+// active display unit and converts back to canonical lbs at the apply boundary.
+const PLATES_LB = [45, 35, 25, 10, 5, 2.5] as const
+const BAR_PRESETS_LB = [45, 35, 25, 15] as const
+const PLATES_KG = [25, 20, 15, 10, 5, 2.5, 1.25] as const
+const BAR_PRESETS_KG = [20, 15, 10] as const
 
-function calcPerSide(target: number, bar: number): { plates: number[]; usable: number } {
+function calcPerSide(target: number, bar: number, plates: readonly number[]): { plates: number[]; usable: number } {
   const each = (target - bar) / 2
   if (each <= 0) return { plates: [], usable: 0 }
   const out: number[] = []
   let left = each
-  for (const p of PLATES) {
+  for (const p of plates) {
     while (left >= p - 0.0001) {
       out.push(p)
       left -= p
@@ -20,31 +24,39 @@ function calcPerSide(target: number, bar: number): { plates: number[]; usable: n
   return { plates: out, usable }
 }
 
-function getStoredBar(): number {
-  if (typeof window === 'undefined') return 45
-  const v = Number(localStorage.getItem(STORAGE_BAR))
-  return Number.isFinite(v) && v > 0 ? v : 45
+function getStoredBar(unitLabel: 'kg' | 'lbs'): number {
+  const fallback = unitLabel === 'kg' ? 20 : 45
+  if (typeof window === 'undefined') return fallback
+  const v = Number(localStorage.getItem(`grind.barWeight.${unitLabel}`))
+  return Number.isFinite(v) && v > 0 ? v : fallback
 }
 
 interface Props {
+  /** Target weight in the active display unit. */
   initialTarget?: number
   onClose: () => void
+  /** Receives the chosen weight converted back to canonical lbs. */
   onApply: (weight: number) => void
 }
 
 export default function PlateCalculator({ initialTarget, onClose, onApply }: Props) {
-  const [bar, setBar] = useState<number>(getStoredBar)
+  const { unitLabel, fromDisplay } = useUnit()
+  const metric = unitLabel === 'kg'
+  const plateSet = metric ? PLATES_KG : PLATES_LB
+  const barPresets = metric ? BAR_PRESETS_KG : BAR_PRESETS_LB
+
+  const [bar, setBar] = useState<number>(() => getStoredBar(unitLabel))
   const [target, setTarget] = useState<string>(
-    initialTarget && initialTarget > 0 ? String(initialTarget) : '',
+    initialTarget && initialTarget > 0 ? String(Math.round(initialTarget * 10) / 10) : '',
   )
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_BAR, String(bar))
-  }, [bar])
+    localStorage.setItem(`grind.barWeight.${unitLabel}`, String(bar))
+  }, [bar, unitLabel])
 
   const targetNum = Number(target)
   const valid = Number.isFinite(targetNum) && targetNum >= bar
-  const { plates, usable } = valid ? calcPerSide(targetNum, bar) : { plates: [], usable: 0 }
+  const { plates, usable } = valid ? calcPerSide(targetNum, bar, plateSet) : { plates: [], usable: 0 }
   const remainder = valid ? targetNum - usable : 0
 
   return (
@@ -116,7 +128,7 @@ export default function PlateCalculator({ initialTarget, onClose, onApply }: Pro
                 textTransform: 'uppercase',
               }}
             >
-              Target (lb)
+              Target ({unitLabel})
             </span>
             <input
               type="number"
@@ -145,10 +157,10 @@ export default function PlateCalculator({ initialTarget, onClose, onApply }: Pro
                 textTransform: 'uppercase',
               }}
             >
-              Bar (lb)
+              Bar ({unitLabel})
             </span>
             <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-              {BAR_PRESETS.map(b => {
+              {barPresets.map(b => {
                 const selected = bar === b
                 return (
                   <button
@@ -224,7 +236,7 @@ export default function PlateCalculator({ initialTarget, onClose, onApply }: Pro
                 <span style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
                   {usable}
                 </span>{' '}
-                lb
+                {unitLabel}
                 {remainder > 0.01 && (
                   <>
                     {' '}
@@ -243,7 +255,7 @@ export default function PlateCalculator({ initialTarget, onClose, onApply }: Pro
         <button
           onClick={() => {
             if (!valid) return
-            onApply(targetNum)
+            onApply(fromDisplay(targetNum))
             onClose()
           }}
           disabled={!valid}
@@ -260,7 +272,7 @@ export default function PlateCalculator({ initialTarget, onClose, onApply }: Pro
             cursor: valid ? 'pointer' : 'not-allowed',
           }}
         >
-          USE {valid ? targetNum : '—'} LB
+          USE {valid ? targetNum : '—'} {unitLabel.toUpperCase()}
         </button>
       </div>
     </div>
