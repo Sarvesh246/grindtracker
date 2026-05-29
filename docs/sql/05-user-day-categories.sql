@@ -28,6 +28,12 @@ create index if not exists user_day_categories_user_idx
 --   2. If NO row exists for (user_id, day_key) → fall back to literal day_type = category
 --      This keeps existing users with standard push/pull/legs names working with no migration.
 
+-- Wrapped in a transaction: DDL in Postgres is transactional, so if the
+-- create below fails (syntax error, missing table, etc.) the drop is rolled
+-- back and the existing get_leaderboard stays intact. Without this, a failed
+-- create would leave the leaderboard RPC permanently missing.
+begin;
+
 drop function if exists get_leaderboard(text, uuid[]);
 
 create or replace function get_leaderboard(
@@ -118,3 +124,5 @@ language sql stable security definer as $$
   order by
     case when p_day_type = 'overall' then xp_total::numeric else best_lift end desc
 $$;
+
+commit;

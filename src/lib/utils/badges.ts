@@ -56,11 +56,15 @@ export async function checkAndAwardBadges(
     (weekSessions ?? []).map((s: { day_type: string }) => s.day_type)
   )]
 
-  const { data: categoryRows } = await supabase
-    .from('user_day_categories')
-    .select('day_key, category')
-    .eq('user_id', userId)
-    .in('day_key', weekDayKeys.length > 0 ? weekDayKeys : ['__none__'])
+  // Only query when there are day_keys to look up. Avoids a fragile sentinel
+  // value (a real day could be named '__none__') and a pointless round-trip.
+  const categoryRows = weekDayKeys.length > 0
+    ? (await supabase
+        .from('user_day_categories')
+        .select('day_key, category')
+        .eq('user_id', userId)
+        .in('day_key', weekDayKeys)).data
+    : []
 
   const categoryMap = new Map<string, string>(
     (categoryRows ?? []).map(r => [r.day_key, r.category])

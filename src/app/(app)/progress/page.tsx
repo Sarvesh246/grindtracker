@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Exercise } from '@/lib/types'
 import { formatHeaderDate } from '@/lib/utils/formatting'
@@ -102,17 +102,6 @@ export default function ProgressPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId])
 
-  useEffect(() => {
-    if (rawLogs.length === 0) {
-      setChartData([])
-      setStats({ bestWeight: null, sessionCount: 0, lastWeight: null, prCount: 0 })
-      setRecentSessions([])
-      return
-    }
-    recomputeForMetric(rawLogs, metric, unitLabel)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rawLogs, metric, unitLabel])
-
   async function loadRawLogs(exerciseId: string) {
     setLoadingChart(true)
 
@@ -142,7 +131,7 @@ export default function ProgressPage() {
     setLoadingChart(false)
   }
 
-  function recomputeForMetric(logs: RawLog[], m: Metric, ul: string) {
+  const recomputeForMetric = useCallback((logs: RawLog[], m: Metric, ul: string) => {
     interface SessionAgg {
       id: string
       completedAt: string
@@ -234,7 +223,17 @@ export default function ProgressPage() {
     setChartData(points)
     setStats({ bestWeight, sessionCount: sessions.length, lastWeight, prCount })
     setRecentSessions(recent)
-  }
+  }, [])
+
+  useEffect(() => {
+    if (rawLogs.length === 0) {
+      setChartData([])
+      setStats({ bestWeight: null, sessionCount: 0, lastWeight: null, prCount: 0 })
+      setRecentSessions([])
+      return
+    }
+    recomputeForMetric(rawLogs, metric, unitLabel)
+  }, [rawLogs, metric, unitLabel, recomputeForMetric])
 
   const selectedExercise = exercises.find(e => e.id === selectedId)
   const dayTypes = [...new Set(exercises.map(e => e.day_type))].sort(
