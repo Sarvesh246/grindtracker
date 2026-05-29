@@ -48,3 +48,31 @@ export interface UserBadge {
   badge_id: string
   earned_at: string
 }
+
+export interface UserProfile {
+  id: string
+  username: string
+  display_name: string
+  avatar_url: string | null
+  created_at: string
+}
+
+export interface Friendship {
+  id: string
+  requester_id: string
+  addressee_id: string
+  status: 'pending' | 'accepted'
+  created_at: string
+}
+
+export interface LeaderboardEntry {
+  user_id: string
+  username: string
+  display_name: string
+  avatar_url: string | null
+  xp_total: number
+  level: number
+  current_streak: number
+  total_workouts: number
+  best_lift: number
+}

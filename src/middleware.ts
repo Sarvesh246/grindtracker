@@ -29,12 +29,32 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
+  const { pathname } = request.nextUrl
+
   if (
     !user &&
-    !request.nextUrl.pathname.startsWith('/login') &&
-    !request.nextUrl.pathname.startsWith('/auth')
+    !pathname.startsWith('/login') &&
+    !pathname.startsWith('/auth')
   ) {
     return NextResponse.redirect(new URL('/login', request.url))
+  }
+
+  // Redirect to username setup if authenticated user has no profile yet
+  if (
+    user &&
+    !pathname.startsWith('/setup') &&
+    !pathname.startsWith('/login') &&
+    !pathname.startsWith('/auth') &&
+    !pathname.startsWith('/_next')
+  ) {
+    const { data: profile } = await supabase
+      .from('user_profiles')
+      .select('id')
+      .eq('id', user.id)
+      .maybeSingle()
+    if (!profile) {
+      return NextResponse.redirect(new URL('/setup', request.url))
+    }
   }
 
   return supabaseResponse

@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { getLevel, getXpInCurrentLevel, getXpRequiredForLevel, getXpToNextLevel } from '@/lib/utils/gamification'
@@ -79,9 +79,12 @@ interface StatsShape {
   total_workouts: number
 }
 
+const USERNAME_RE = /^[a-z0-9_]{3,20}$/
+
 interface Props {
   displayName: string
   avatarUrl: string | null
+  username: string | null
   stats: StatsShape
   earnedBadgeIds: string[]
   totalPRs: number
@@ -93,6 +96,7 @@ interface Props {
 export default function ProfileDashboard({
   displayName,
   avatarUrl,
+  username: initialUsername,
   stats,
   earnedBadgeIds,
   totalPRs,
@@ -104,6 +108,102 @@ export default function ProfileDashboard({
   const supabase = createClient()
   const [tooltipBadgeId, setTooltipBadgeId] = useState<string | null>(null)
   const [badgesOpen, setBadgesOpen] = useState(false)
+
+  // Username editing
+  const [username, setUsername] = useState(initialUsername ?? '')
+  const [editingUsername, setEditingUsername] = useState(false)
+  const [newUsername, setNewUsername] = useState('')
+  const [usernameChecking, setUsernameChecking] = useState(false)
+  const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null)
+  const [usernameSaving, setUsernameSaving] = useState(false)
+  const [usernameError, setUsernameError] = useState<string | null>(null)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    if (!editingUsername) return
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    setUsernameAvailable(null)
+    setUsernameError(null)
+
+    const trimmed = newUsername.trim().toLowerCase()
+    // Same as current → always valid, no check needed
+    if (trimmed === username) { setUsernameAvailable(true); return }
+    if (!trimmed || !USERNAME_RE.test(trimmed)) return
+
+    setUsernameChecking(true)
+    debounceRef.current = setTimeout(async () => {
+      const { data } = await supabase
+        .from('user_profiles')
+        .select('id')
+        .eq('username', trimmed)
+        .maybeSingle()
+      setUsernameChecking(false)
+      setUsernameAvailable(!data)
+    }, 400)
+  }, [newUsername, editingUsername, username])
+
+  function openUsernameEdit() {
+    setNewUsername(username)
+    setUsernameAvailable(null)
+    setUsernameError(null)
+    setEditingUsername(true)
+  }
+
+  function cancelUsernameEdit() {
+    setEditingUsername(false)
+    setUsernameError(null)
+  }
+
+  async function saveUsername() {
+    const trimmed = newUsername.trim().toLowerCase()
+    if (!USERNAME_RE.test(trimmed)) {
+      setUsernameError('3–20 chars, lowercase letters, numbers, underscores only.')
+      return
+    }
+    if (usernameChecking) { setUsernameError('Still checking — try again in a moment.'); return }
+    if (!usernameAvailable) { setUsernameError('That username is taken.'); return }
+
+    setUsernameSaving(true)
+    setUsernameError(null)
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+
+    const { error } = await supabase
+      .from('user_profiles')
+      .update({ username: trimmed })
+      .eq('id', user.id)
+
+    setUsernameSaving(false)
+    if (error) { setUsernameError(error.message); return }
+
+    setUsername(trimmed)
+    setEditingUsername(false)
+  }
+
+  function usernameStatusText() {
+    const trimmed = newUsername.trim().toLowerCase()
+    if (!trimmed) return ''
+    if (trimmed === username) return ''
+    if (!USERNAME_RE.test(trimmed)) return '3–20 chars, lowercase letters, numbers, underscores only'
+    if (usernameChecking) return 'Checking…'
+    if (usernameAvailable === true) return '@' + trimmed + ' is available'
+    if (usernameAvailable === false) return 'Username taken'
+    return ''
+  }
+
+  function usernameStatusColor() {
+    const trimmed = newUsername.trim().toLowerCase()
+    if (!trimmed || trimmed === username) return 'var(--text-muted)'
+    if (!USERNAME_RE.test(trimmed) || usernameChecking) return 'var(--text-muted)'
+    return usernameAvailable ? '#4ade80' : 'var(--danger)'
+  }
+
+  const canSaveUsername = (() => {
+    const trimmed = newUsername.trim().toLowerCase()
+    if (trimmed === username) return false // unchanged
+    return USERNAME_RE.test(trimmed) && usernameAvailable === true && !usernameChecking && !usernameSaving
+  })()
 
   useEffect(() => {
     if (!tooltipBadgeId) return
@@ -194,9 +294,112 @@ export default function ProfileDashboard({
             }}>
               {displayName}
             </div>
-            <div style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>
+            <div style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '3px' }}>
               Level {level}
             </div>
+
+            {/* Username row */}
+            {!editingUsername ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '13px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
+                  {username ? `@${username}` : '—'}
+                </span>
+                <button
+                  onClick={openUsernameEdit}
+                  title="Change username"
+                  style={{
+                    background: 'none', border: 'none', padding: '2px',
+                    cursor: 'pointer', display: 'flex', alignItems: 'center',
+                  }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+                    stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                  </svg>
+                </button>
+              </div>
+            ) : (
+              <div style={{ marginTop: '8px' }}>
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                  <input
+                    type="text"
+                    value={newUsername}
+                    onChange={e => setNewUsername(e.target.value.toLowerCase())}
+                    maxLength={20}
+                    autoComplete="off"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    autoFocus
+                    style={{
+                      flex: 1,
+                      padding: '7px 10px',
+                      backgroundColor: 'var(--bg)',
+                      border: '1px solid var(--border)',
+                      borderRadius: '8px',
+                      color: 'var(--text-primary)',
+                      fontFamily: "'DM Sans', sans-serif",
+                      fontSize: '13px',
+                      outline: 'none',
+                      minWidth: 0,
+                    }}
+                  />
+                  <button
+                    onClick={saveUsername}
+                    style={{
+                      padding: '7px 12px',
+                      backgroundColor: canSaveUsername ? 'var(--accent)' : 'var(--surface-elevated)',
+                      color: canSaveUsername ? 'var(--bg)' : 'var(--text-muted)',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontFamily: "'DM Sans', sans-serif",
+                      fontWeight: 700,
+                      fontSize: '12px',
+                      cursor: canSaveUsername ? 'pointer' : 'default',
+                      transition: 'all 150ms ease',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {usernameSaving ? '…' : 'Save'}
+                  </button>
+                  <button
+                    onClick={cancelUsernameEdit}
+                    style={{
+                      padding: '7px 10px',
+                      backgroundColor: 'transparent',
+                      color: 'var(--text-muted)',
+                      border: '1px solid var(--border)',
+                      borderRadius: '8px',
+                      fontFamily: "'DM Sans', sans-serif",
+                      fontSize: '12px',
+                      cursor: 'pointer',
+                    }}
+                  >✕</button>
+                </div>
+                {usernameStatusText() && (
+                  <div style={{
+                    marginTop: '5px',
+                    fontSize: '12px',
+                    fontFamily: "'DM Sans', sans-serif",
+                    color: usernameStatusColor(),
+                    paddingLeft: '2px',
+                  }}>
+                    {usernameStatusText()}
+                  </div>
+                )}
+                {usernameError && (
+                  <div style={{
+                    marginTop: '5px',
+                    fontSize: '12px',
+                    fontFamily: "'DM Sans', sans-serif",
+                    color: 'var(--danger)',
+                    paddingLeft: '2px',
+                  }}>
+                    {usernameError}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Level badge */}

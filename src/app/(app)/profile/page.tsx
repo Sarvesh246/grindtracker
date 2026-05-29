@@ -55,10 +55,18 @@ export default async function ProfilePage() {
   const avatarUrl = user.user_metadata?.avatar_url ?? null
   const displayName = user.user_metadata?.full_name ?? user.email ?? 'Athlete'
 
+  // Public profile (username)
+  const { data: profile } = await supabase
+    .from('user_profiles')
+    .select('username')
+    .eq('id', user.id)
+    .maybeSingle()
+
   return (
     <ProfileDashboard
       displayName={displayName}
       avatarUrl={avatarUrl}
+      username={profile?.username ?? null}
       stats={stats ?? {
         xp_total: 0,
         level: 1,
