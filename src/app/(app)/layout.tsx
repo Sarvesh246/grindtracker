@@ -5,7 +5,8 @@ import { UnitProvider } from '@/lib/contexts/UnitContext'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const pref = (await cookies()).get('grind_unit_pref')?.value
-  const initialUnit = pref === 'imperial' || pref === 'metric' ? pref : 'metric'
+  // Default imperial when no cookie — weights are stored canonically in lbs.
+  const initialUnit = pref === 'imperial' || pref === 'metric' ? pref : 'imperial'
 
   return (
     <UnitProvider initialUnit={initialUnit}>

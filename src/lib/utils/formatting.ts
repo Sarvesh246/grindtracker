@@ -17,3 +17,12 @@ export function formatHeaderDate(): string {
     day: 'numeric',
   }).toUpperCase()
 }
+
+/**
+ * Local-timezone date key (YYYY-MM-DD). Unlike `toISOString().split('T')[0]`,
+ * this never shifts the calendar day for users ahead of/behind UTC, so streak
+ * dates stay consistent with the user's actual local day.
+ */
+export function localDateKey(date: Date = new Date()): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}

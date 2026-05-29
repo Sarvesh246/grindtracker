@@ -31,7 +31,7 @@ interface Props {
 
 export default function LeaderboardClient({ userId }: Props) {
   const supabase = createClient()
-  const { unitLabel } = useUnit()
+  const { unitLabel, fmt } = useUnit()
   const [category, setCategory] = useState<Category>('overall')
   const [entries, setEntries] = useState<LeaderboardEntry[]>([])
   const [friendIds, setFriendIds] = useState<string[]>([])
@@ -73,7 +73,7 @@ export default function LeaderboardClient({ userId }: Props) {
   function statDisplay(entry: LeaderboardEntry) {
     if (category === 'overall') return `${entry.xp_total.toLocaleString()} XP`
     if (entry.best_lift === 0) return '—'
-    return `${entry.best_lift}${unitLabel}`
+    return `${fmt(entry.best_lift)}${unitLabel}`
   }
 
   return (

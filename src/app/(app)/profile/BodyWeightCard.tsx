@@ -23,7 +23,7 @@ function todayDateKey(): string {
 
 export default function BodyWeightCard() {
   const supabase = createClient()
-  const { unitLabel } = useUnit()
+  const { unitLabel, toDisplay, fromDisplay, fmt } = useUnit()
   const [rows, setRows] = useState<Row[]>([])
   const [draft, setDraft] = useState('')
   const [saving, setSaving] = useState(false)
@@ -53,7 +53,7 @@ export default function BodyWeightCard() {
     setRows((data ?? []) as Row[])
     const today = todayDateKey()
     const todayRow = (data ?? []).find((r: Row) => r.recorded_at === today)
-    if (todayRow) setDraft(String(todayRow.weight))
+    if (todayRow) setDraft(fmt(todayRow.weight))
     setLoading(false)
   }
 
@@ -65,7 +65,7 @@ export default function BodyWeightCard() {
     if (!user) { setSaving(false); return }
 
     await supabase.from('body_weights').upsert(
-      { user_id: user.id, weight: w, recorded_at: todayDateKey() },
+      { user_id: user.id, weight: fromDisplay(w), recorded_at: todayDateKey() },
       { onConflict: 'user_id,recorded_at' },
     )
     await load()
@@ -75,7 +75,7 @@ export default function BodyWeightCard() {
   const latest = rows.length > 0 ? rows[rows.length - 1] : null
   const earliest = rows.length > 0 ? rows[0] : null
   const change = latest && earliest && latest.recorded_at !== earliest.recorded_at
-    ? latest.weight - earliest.weight
+    ? toDisplay(latest.weight) - toDisplay(earliest.weight)
     : 0
 
   const chartPoints = rows.map(r => ({
@@ -84,7 +84,7 @@ export default function BodyWeightCard() {
       month: 'short',
       day: 'numeric',
     }),
-    weight: r.weight,
+    weight: toDisplay(r.weight),
   }))
 
   return (
@@ -121,7 +121,7 @@ export default function BodyWeightCard() {
                 color: 'var(--text-primary)',
               }}
             >
-              {latest.weight}
+              {fmt(latest.weight)}
             </span>
             <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{unitLabel}</span>
             {change !== 0 && (
