@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Exercise } from '@/lib/types'
 import { checkAndAwardBadges } from '@/lib/utils/badges'
 import { getLevel } from '@/lib/utils/gamification'
+import { localDateKey } from '@/lib/utils/formatting'
 import { haptic } from '@/lib/utils/haptics'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { deleteIncompleteSessions } from '@/lib/utils/sessions'
@@ -669,8 +670,10 @@ export default function ActiveWorkout({ day }: { day: string }) {
 
     const today = new Date()
     today.setHours(0, 0, 0, 0)
+    // Parse the stored date key at local noon so the comparison stays in the
+    // user's timezone (avoids the UTC-midnight off-by-one that breaks streaks).
     const lastDate = currentStats.last_workout_date
-      ? new Date(currentStats.last_workout_date)
+      ? new Date(currentStats.last_workout_date + 'T12:00:00')
       : null
 
     let newStreak = 1
@@ -713,7 +716,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       level: newLevel,
       current_streak: newStreak,
       longest_streak: newLongest,
-      last_workout_date: today.toISOString().split('T')[0],
+      last_workout_date: localDateKey(today),
       total_workouts: currentStats.total_workouts + 1,
       updated_at: new Date().toISOString(),
     }
