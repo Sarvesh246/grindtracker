@@ -46,6 +46,7 @@ export default function WorkoutCalendar() {
   const [workoutDays, setWorkoutDays] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
 
+  // eslint-disable-next-line react-hooks/immutability
   useEffect(() => { loadMonth() }, [currentMonth])
 
   async function loadMonth() {

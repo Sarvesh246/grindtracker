@@ -18,7 +18,7 @@ export default function SetupPage() {
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    setAvailable(null)
+    setAvailable(null) // eslint-disable-line react-hooks/set-state-in-effect
     setError(null)
 
     const trimmed = username.trim().toLowerCase()

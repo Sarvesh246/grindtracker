@@ -31,7 +31,7 @@ interface Props {
 
 export default function LeaderboardClient({ userId }: Props) {
   const supabase = createClient()
-  const { unitLabel } = useUnit()
+  const { unitLabel, toDisplay } = useUnit()
   const [category, setCategory] = useState<Category>('overall')
   const [entries, setEntries] = useState<LeaderboardEntry[]>([])
   const [friendIds, setFriendIds] = useState<string[]>([])
@@ -56,9 +56,8 @@ export default function LeaderboardClient({ userId }: Props) {
   }, [userId, supabase])
 
   // Refetch when category or friends change
-  useEffect(() => {
-    fetchLeaderboard(category, friendIds)
-  }, [category, friendIds, fetchLeaderboard])
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { fetchLeaderboard(category, friendIds) }, [category, friendIds, fetchLeaderboard])
 
   // Refetch on window focus
   useEffect(() => {
@@ -73,7 +72,7 @@ export default function LeaderboardClient({ userId }: Props) {
   function statDisplay(entry: LeaderboardEntry) {
     if (category === 'overall') return `${entry.xp_total.toLocaleString()} XP`
     if (entry.best_lift === 0) return '—'
-    return `${entry.best_lift}${unitLabel}`
+    return `${toDisplay(entry.best_lift)}${unitLabel}`
   }
 
   return (

@@ -36,6 +36,7 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
   const [formReps, setFormReps] = useState('8')
   const [formError, setFormError] = useState('')
 
+  // eslint-disable-next-line react-hooks/immutability
   useEffect(() => { load() }, [])
 
   async function load() {
@@ -353,7 +354,7 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
             {screen.id === 'new-day' && (
               <div style={{ padding: '20px 16px' }}>
                 <div style={{ fontSize: '13px', color: 'var(--text-secondary)', fontFamily: "'DM Sans', sans-serif", marginBottom: '8px' }}>
-                  Day name (e.g. "Abs", "Cardio", "Upper Body")
+                  Day name (e.g. &quot;Abs&quot;, &quot;Cardio&quot;, &quot;Upper Body&quot;)
                 </div>
                 <input
                   autoFocus
