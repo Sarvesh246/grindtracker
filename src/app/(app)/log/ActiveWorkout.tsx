@@ -55,6 +55,7 @@ function dayLabel(day: string): string {
 export default function ActiveWorkout({ day }: { day: string }) {
   const router = useRouter()
   const supabase = createClient()
+  const { toDisplay, toStorage } = useUnit()
 
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [exercises, setExercises] = useState<Exercise[]>([])
@@ -198,7 +199,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         for (let s = 1; s <= total; s++) {
           const key = `${ex.id}-${s}`
           restored[key] = {
-            weight: bests[ex.id] !== null ? String(bests[ex.id]) : '',
+            weight: bests[ex.id] !== null ? String(toDisplay(bests[ex.id]!)) : '',
             reps: '',
             checked: false,
             skipped: false,
@@ -211,7 +212,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       for (const log of (existingLogs ?? [])) {
         const key = `${log.exercise_id}-${log.set_number}`
         restored[key] = {
-          weight: log.weight !== null ? String(log.weight) : '',
+          weight: log.weight !== null ? String(toDisplay(log.weight)) : '',
           reps: log.reps !== null ? String(log.reps) : '',
           checked: true,
           skipped: false,
@@ -245,7 +246,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         for (let s = 1; s <= ex.sets_target; s++) {
           const key = `${ex.id}-${s}`
           prefilled[key] = {
-            weight: bests[ex.id] !== null ? String(bests[ex.id]) : '',
+            weight: bests[ex.id] !== null ? String(toDisplay(bests[ex.id]!)) : '',
             reps: '',
             checked: false,
             skipped: false,
@@ -270,13 +271,13 @@ export default function ActiveWorkout({ day }: { day: string }) {
    * Warm-ups and unchecked/skipped sets don't count.
    */
   function bestFromLogs(exerciseId: string, logsMap: LogMap): number | null {
-    let best = baselineBests[exerciseId] ?? null
+    let best = baselineBests[exerciseId] ?? null  // canonical kg
     for (const key of Object.keys(logsMap)) {
       if (!key.startsWith(`${exerciseId}-`)) continue
       const e = logsMap[key]
       if (!e.checked || e.isWarmup || e.skipped) continue
       if (e.weight === '') continue
-      const w = parseFloat(e.weight)
+      const w = toStorage(parseFloat(e.weight))  // convert display → kg
       if (!Number.isFinite(w)) continue
       if (best === null || w > best) best = w
     }
@@ -333,15 +334,16 @@ export default function ActiveWorkout({ day }: { day: string }) {
     const logEntry = logs[key]
     if (!logEntry || !sessionId || logEntry.checked) return
 
-    const weight = logEntry.weight !== '' ? parseFloat(logEntry.weight) : null
+    const displayWeight = logEntry.weight !== '' ? parseFloat(logEntry.weight) : null
+    const storageWeight = displayWeight !== null ? toStorage(displayWeight) : null
     const reps = logEntry.reps !== '' ? parseInt(logEntry.reps) : null
 
-    const prevBest = previousBests[exerciseId]
+    const prevBest = previousBests[exerciseId]  // canonical kg
     const isPR =
       !logEntry.isWarmup &&
-      weight !== null &&
+      storageWeight !== null &&
       prevBest !== null &&
-      weight > prevBest
+      storageWeight > prevBest
 
     const { data: saved } = await supabase
       .from('session_logs')
@@ -350,7 +352,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
           session_id: sessionId,
           exercise_id: exerciseId,
           set_number: setNumber,
-          weight,
+          weight: storageWeight,
           reps,
           is_pr: isPR,
           is_warmup: logEntry.isWarmup,
@@ -366,8 +368,8 @@ export default function ActiveWorkout({ day }: { day: string }) {
       [key]: { ...prev[key], checked: true, skipped: false, isPR, logId: saved?.id },
     }))
 
-    if (isPR && weight !== null) {
-      setPreviousBests(prev => ({ ...prev, [exerciseId]: weight }))
+    if (isPR && storageWeight !== null) {
+      setPreviousBests(prev => ({ ...prev, [exerciseId]: storageWeight }))
       haptic('success')
     } else {
       haptic('light')
@@ -413,22 +415,23 @@ export default function ActiveWorkout({ day }: { day: string }) {
     const logEntry = logs[key]
     if (!logEntry || !sessionId) return
 
-    const weight = logEntry.weight !== '' ? parseFloat(logEntry.weight) : null
+    const displayWeight = logEntry.weight !== '' ? parseFloat(logEntry.weight) : null
+    const storageWeight = displayWeight !== null ? toStorage(displayWeight) : null
     const reps = logEntry.reps !== '' ? parseInt(logEntry.reps) : null
 
-    const prevBest = previousBests[exerciseId]
+    const prevBest = previousBests[exerciseId]  // canonical kg
     const isPR =
       !logEntry.isWarmup &&
-      weight !== null &&
+      storageWeight !== null &&
       prevBest !== null &&
-      weight > prevBest
+      storageWeight > prevBest
 
     await supabase.from('session_logs').upsert(
       {
         session_id: sessionId,
         exercise_id: exerciseId,
         set_number: setNumber,
-        weight,
+        weight: storageWeight,
         reps,
         is_pr: isPR,
         is_warmup: logEntry.isWarmup,
@@ -475,7 +478,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
     setLogs(prev => ({
       ...prev,
       [`${exerciseId}-${newSetNum}`]: {
-        weight: previousBests[exerciseId] !== null ? String(previousBests[exerciseId]) : '',
+        weight: previousBests[exerciseId] !== null ? String(toDisplay(previousBests[exerciseId]!)) : '',
         reps: '',
         checked: false,
         skipped: false,
@@ -580,7 +583,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       }
       for (let s = 1; s <= newExercise.sets_target; s++) {
         next[`${newExercise.id}-${s}`] = {
-          weight: prevBest !== null ? String(prevBest) : '',
+          weight: prevBest !== null ? String(toDisplay(prevBest)) : '',
           reps: '',
           checked: false,
           skipped: false,
@@ -1179,7 +1182,7 @@ function ExerciseCard({
   onToggleWarmup, onAddSet, onStartEdit, onSaveEdit, onPersistNote,
   onOpenPlateCalc,
 }: ExerciseCardProps) {
-  const { unitLabel } = useUnit()
+  const { unitLabel, toDisplay } = useUnit()
   const totalSets = exercise.sets_target + extraSets
   const setNumbers = Array.from({ length: totalSets }, (_, i) => i + 1)
   const anySkipped = setNumbers.some(s => logs[`${exercise.id}-${s}`]?.skipped)
@@ -1282,7 +1285,7 @@ function ExerciseCard({
             {exercise.sets_target} sets × {exercise.reps_target} reps
           </span>
           <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: "'JetBrains Mono', monospace" }}>
-            {previousBest !== null ? `prev: ${previousBest} ${unitLabel}` : 'no previous data'}
+            {previousBest !== null ? `prev: ${toDisplay(previousBest)} ${unitLabel}` : 'no previous data'}
           </span>
         </div>
       </div>

@@ -38,7 +38,7 @@ export default function HomeDashboard({
   totalPRs,
 }: Props) {
   const router = useRouter()
-  const { unitLabel } = useUnit()
+  const { unitLabel, toDisplay } = useUnit()
 
   const xpTotal = stats?.xp_total ?? 0
   const level = getLevel(xpTotal)
@@ -357,7 +357,7 @@ export default function HomeDashboard({
                     fontSize: '14px',
                     color: log.weight !== null ? 'var(--accent)' : 'var(--text-muted)',
                   }}>
-                    {log.weight !== null ? `${log.weight} ${unitLabel}` : '—'}
+                    {log.weight !== null ? `${toDisplay(log.weight)} ${unitLabel}` : '—'}
                   </span>
                 </div>
               ))}

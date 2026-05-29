@@ -54,7 +54,7 @@ function epley(weight: number, reps: number): number {
 
 export default function ProgressPage() {
   const supabase = createClient()
-  const { unitLabel } = useUnit()
+  const { unitLabel, toDisplay } = useUnit()
 
   const [exercises, setExercises] = useState<Exercise[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -109,7 +109,7 @@ export default function ProgressPage() {
       setRecentSessions([])
       return
     }
-    recomputeForMetric(rawLogs, metric, unitLabel)
+    recomputeForMetric(rawLogs, metric, unitLabel, toDisplay)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rawLogs, metric, unitLabel])
 
@@ -142,7 +142,7 @@ export default function ProgressPage() {
     setLoadingChart(false)
   }
 
-  function recomputeForMetric(logs: RawLog[], m: Metric, ul: string) {
+  function recomputeForMetric(logs: RawLog[], m: Metric, ul: string, td: (kg: number) => number) {
     interface SessionAgg {
       id: string
       completedAt: string
@@ -174,23 +174,23 @@ export default function ProgressPage() {
       let label: string
       switch (m) {
         case 'weight':
-          value = Math.max(...s.sets.map(x => x.weight))
+          value = td(Math.max(...s.sets.map(x => x.weight)))
           label = `${value} ${ul}`
           break
         case 'volume':
-          value = s.sets.reduce((sum, x) => sum + x.weight * x.reps, 0)
+          value = Math.round(td(s.sets.reduce((sum, x) => sum + x.weight * x.reps, 0)))
           label = `${value.toLocaleString()} ${ul} · vol`
           break
         case 'e1rm': {
           const e = Math.max(...s.sets.map(x => epley(x.weight, x.reps)))
-          value = Math.round(e * 10) / 10
+          value = td(Math.round(e * 10) / 10)
           label = `${value} ${ul} e1RM`
           break
         }
         case 'best': {
           const best = s.sets.reduce((b, x) => (x.weight > b.weight ? x : b), s.sets[0])
-          value = best.weight
-          label = `${best.weight} × ${best.reps}`
+          value = td(best.weight)
+          label = `${td(best.weight)} × ${best.reps}`
           break
         }
       }
@@ -207,9 +207,9 @@ export default function ProgressPage() {
     }
 
     const weights = sessions.flatMap(s => s.sets.map(x => x.weight))
-    const bestWeight = weights.length > 0 ? Math.max(...weights) : null
+    const bestWeight = weights.length > 0 ? td(Math.max(...weights)) : null
     const last = sessions.length > 0 ? sessions[sessions.length - 1] : null
-    const lastWeight = last && last.sets.length > 0 ? Math.max(...last.sets.map(x => x.weight)) : null
+    const lastWeight = last && last.sets.length > 0 ? td(Math.max(...last.sets.map(x => x.weight))) : null
     const prCount = logs.filter(l => l.is_pr).length
 
     const recent: RecentSession[] = sessions
@@ -225,7 +225,7 @@ export default function ProgressPage() {
             day: 'numeric',
             year: 'numeric',
           }),
-          weight: best?.weight ?? null,
+          weight: best ? td(best.weight) : null,
           reps: best?.reps ?? null,
           isPR: s.hasPR,
         }
