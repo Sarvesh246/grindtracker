@@ -1,10 +1,14 @@
 import { Suspense } from 'react'
+import { cookies } from 'next/headers'
 import BottomNav from '@/components/BottomNav'
 import { UnitProvider } from '@/lib/contexts/UnitContext'
 
-export default function AppLayout({ children }: { children: React.ReactNode }) {
+export default async function AppLayout({ children }: { children: React.ReactNode }) {
+  const pref = (await cookies()).get('grind_unit_pref')?.value
+  const initialUnit = pref === 'imperial' || pref === 'metric' ? pref : 'metric'
+
   return (
-    <UnitProvider>
+    <UnitProvider initialUnit={initialUnit}>
     <div style={{
       backgroundColor: 'var(--bg)',
       minHeight: '100dvh',

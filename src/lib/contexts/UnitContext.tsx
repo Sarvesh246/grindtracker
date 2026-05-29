@@ -1,7 +1,9 @@
 'use client'
-import { createContext, useContext, useState } from 'react'
+import { createContext, useContext, useEffect, useState } from 'react'
 
 type Unit = 'metric' | 'imperial'
+
+const PREF_KEY = 'grind_unit_pref'
 
 interface UnitContextValue {
   unit: Unit
@@ -15,30 +17,64 @@ const UnitContext = createContext<UnitContextValue>({
   toggleUnit: () => {},
 })
 
-function readStoredUnit(): Unit {
-  // Read synchronously so the very first client render already reflects the
-  // saved preference — no post-mount effect that snaps 'kg' → 'lbs'.
-  if (typeof window === 'undefined') return 'metric'
+function readCookieUnit(): Unit | null {
+  if (typeof document === 'undefined') return null
+  const match = document.cookie.match(/(?:^|;\s*)grind_unit_pref=(metric|imperial)\b/)
+  return match ? (match[1] as Unit) : null
+}
+
+function persistUnit(unit: Unit) {
+  // Cookie is the source of truth so the server can render the right unit on
+  // the next request (no first-paint flash, no hydration mismatch). localStorage
+  // is written too for resilience / backwards compatibility.
   try {
-    const stored = window.localStorage.getItem('grind_unit_pref')
-    return stored === 'imperial' || stored === 'metric' ? stored : 'metric'
+    document.cookie = `${PREF_KEY}=${unit};path=/;max-age=31536000;samesite=lax`
   } catch {
-    // localStorage can throw in private-mode / sandboxed contexts.
-    return 'metric'
+    // ignore — non-browser or restricted context
+  }
+  try {
+    window.localStorage.setItem(PREF_KEY, unit)
+  } catch {
+    // ignore — private mode / sandboxed context
   }
 }
 
-export function UnitProvider({ children }: { children: React.ReactNode }) {
-  const [unit, setUnit] = useState<Unit>(readStoredUnit)
+export function UnitProvider({
+  children,
+  initialUnit = 'metric',
+}: {
+  children: React.ReactNode
+  /** Resolved on the server from the cookie so the first render is deterministic. */
+  initialUnit?: Unit
+}) {
+  const [unit, setUnit] = useState<Unit>(initialUnit)
+
+  // One-time migration for users who saved a preference before the cookie
+  // existed: if the server sent no cookie but localStorage has a value, adopt
+  // it after mount (no hydration mismatch — first render matched the server)
+  // and write the cookie so every later server render is correct and flash-free.
+  useEffect(() => {
+    if (readCookieUnit()) return
+    let stored: string | null = null
+    try {
+      stored = window.localStorage.getItem(PREF_KEY)
+    } catch {
+      stored = null
+    }
+    if (stored === 'imperial' || stored === 'metric') {
+      persistUnit(stored)
+      // Intentional post-mount sync from a browser-only store (localStorage is
+      // unavailable during SSR). Reading it in the initializer instead would
+      // reintroduce the server/client hydration mismatch this design avoids.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setUnit(stored)
+    }
+  }, [])
 
   function toggleUnit() {
     setUnit(prev => {
       const next = prev === 'metric' ? 'imperial' : 'metric'
-      try {
-        window.localStorage.setItem('grind_unit_pref', next)
-      } catch {
-        // Ignore persistence failures; in-memory state still updates.
-      }
+      persistUnit(next)
       return next
     })
   }
