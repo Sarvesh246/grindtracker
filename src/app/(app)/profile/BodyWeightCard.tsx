@@ -9,6 +9,7 @@ import {
   ResponsiveContainer,
 } from 'recharts'
 import { createClient } from '@/lib/supabase/client'
+import { useUnit } from '@/lib/contexts/UnitContext'
 
 interface Row {
   weight: number
@@ -22,6 +23,7 @@ function todayDateKey(): string {
 
 export default function BodyWeightCard() {
   const supabase = createClient()
+  const { unitLabel } = useUnit()
   const [rows, setRows] = useState<Row[]>([])
   const [draft, setDraft] = useState('')
   const [saving, setSaving] = useState(false)
@@ -121,7 +123,7 @@ export default function BodyWeightCard() {
             >
               {latest.weight}
             </span>
-            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>lbs</span>
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{unitLabel}</span>
             {change !== 0 && (
               <span
                 style={{

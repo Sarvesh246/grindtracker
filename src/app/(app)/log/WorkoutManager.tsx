@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Exercise } from '@/lib/types'
+import { Exercise, DayCategory } from '@/lib/types'
 
 interface WorkoutManagerProps {
   onClose: () => void
@@ -13,6 +13,7 @@ type Screen =
   | { id: 'day'; dayKey: string }
   | { id: 'exercise-form'; dayKey: string; exercise?: Exercise }
   | { id: 'new-day' }
+  | { id: 'category-picker'; dayKey: string }
 
 type DeleteTarget =
   | { type: 'day'; key: string; label: string }
@@ -21,6 +22,7 @@ type DeleteTarget =
 export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerProps) {
   const supabase = createClient()
   const [exercises, setExercises] = useState<Exercise[]>([])
+  const [dayCategories, setDayCategories] = useState<Record<string, DayCategory>>({})
   const [loading, setLoading] = useState(true)
   const [screen, setScreen] = useState<Screen>({ id: 'days' })
   const [saving, setSaving] = useState(false)
@@ -38,12 +40,19 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
 
   async function load() {
     setLoading(true)
-    const { data } = await supabase
-      .from('exercises')
-      .select('*')
-      .order('day_type', { ascending: true })
-      .order('sort_order', { ascending: true })
-    setExercises(data ?? [])
+    const { data: { user } } = await supabase.auth.getUser()
+    const [exRes, catRes] = await Promise.all([
+      supabase.from('exercises').select('*')
+        .order('day_type', { ascending: true })
+        .order('sort_order', { ascending: true }),
+      user
+        ? supabase.from('user_day_categories').select('day_key, category').eq('user_id', user.id)
+        : Promise.resolve({ data: [] as { day_key: string; category: string }[] }),
+    ])
+    setExercises(exRes.data ?? [])
+    const map: Record<string, DayCategory> = {}
+    for (const r of (catRes.data ?? [])) map[r.day_key] = r.category as DayCategory
+    setDayCategories(map)
     setLoading(false)
   }
 
@@ -131,18 +140,34 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
     const key = newDayInput.trim().toLowerCase().replace(/\s+/g, '-')
     if (!key) return
     if (grouped[key]) {
-      // day already exists, just navigate to it
       setNewDayInput('')
       setScreen({ id: 'day', dayKey: key })
       return
     }
     setNewDayInput('')
-    openExerciseForm(key)
+    setScreen({ id: 'category-picker', dayKey: key })
+  }
+
+  async function saveCategory(dayKey: string, category: DayCategory) {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    await supabase.from('user_day_categories').upsert(
+      { user_id: user.id, day_key: dayKey, category },
+      { onConflict: 'user_id,day_key' }
+    )
+    setDayCategories(prev => ({ ...prev, [dayKey]: category }))
+    if (grouped[dayKey]) {
+      setScreen({ id: 'day', dayKey })
+    } else {
+      openExerciseForm(dayKey)
+    }
   }
 
   function goBack() {
     if (screen.id === 'days' || screen.id === 'new-day') {
       onClose()
+    } else if (screen.id === 'category-picker') {
+      setScreen(grouped[screen.dayKey] ? { id: 'days' } : { id: 'new-day' })
     } else if (screen.id === 'day') {
       setScreen({ id: 'days' })
     } else if (screen.id === 'exercise-form') {
@@ -155,6 +180,7 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
   const title =
     screen.id === 'days' ? 'MANAGE WORKOUTS' :
     screen.id === 'new-day' ? 'NEW DAY' :
+    screen.id === 'category-picker' ? 'SELECT CATEGORY' :
     screen.id === 'day' ? screen.dayKey.replace(/-/g, ' ').toUpperCase() :
     screen.exercise ? 'EDIT EXERCISE' : 'ADD EXERCISE'
 
@@ -249,6 +275,21 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
                             <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
                               {exs.length} exercise{exs.length !== 1 ? 's' : ''}
                             </div>
+                            {!dayCategories[key] && (
+                              <div
+                                style={{
+                                  display: 'flex', alignItems: 'center', gap: '4px',
+                                  marginTop: '4px', fontSize: '11px',
+                                  color: '#F59E0B', fontFamily: "'DM Sans', sans-serif",
+                                }}
+                                onClick={e => { e.stopPropagation(); setScreen({ id: 'category-picker', dayKey: key }) }}
+                              >
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                  <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                                </svg>
+                                No leaderboard category — tap to set
+                              </div>
+                            )}
                           </button>
                           <button
                             onClick={() => setScreen({ id: 'day', dayKey: key })}
@@ -344,6 +385,48 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
                 >
                   NEXT — ADD EXERCISES
                 </button>
+              </div>
+            )}
+
+            {/* ── Category Picker ── */}
+            {screen.id === 'category-picker' && (
+              <div style={{ padding: '20px 16px' }}>
+                <div style={{ fontSize: '13px', color: 'var(--text-secondary)', fontFamily: "'DM Sans', sans-serif", marginBottom: '16px' }}>
+                  Which leaderboard tab should{' '}
+                  <strong style={{ color: 'var(--text-primary)' }}>
+                    {screen.dayKey.replace(/-/g, ' ').toUpperCase()}
+                  </strong>{' '}
+                  count toward?
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {([
+                    { key: 'push' as DayCategory,  label: 'PUSH',  sub: 'Chest, shoulders, triceps' },
+                    { key: 'pull' as DayCategory,  label: 'PULL',  sub: 'Back, biceps, rear delts' },
+                    { key: 'legs' as DayCategory,  label: 'LEGS',  sub: 'Quads, hamstrings, glutes' },
+                    { key: 'other' as DayCategory, label: 'OTHER', sub: 'Cardio, abs, full-body, etc.' },
+                  ] as const).map(opt => (
+                    <button
+                      key={opt.key}
+                      onClick={() => saveCategory(screen.dayKey, opt.key)}
+                      style={{
+                        width: '100%', textAlign: 'left',
+                        backgroundColor: 'var(--surface-elevated)',
+                        border: '1px solid var(--border)', borderRadius: '10px',
+                        padding: '14px 16px', cursor: 'pointer',
+                        display: 'flex', flexDirection: 'column', gap: '3px',
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+                      onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+                    >
+                      <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '20px', color: 'var(--accent)', letterSpacing: '1px' }}>
+                        {opt.label}
+                      </span>
+                      <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '12px', color: 'var(--text-muted)' }}>
+                        {opt.sub}
+                      </span>
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
 

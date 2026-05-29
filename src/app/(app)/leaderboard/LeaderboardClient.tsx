@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/client'
 import { LeaderboardEntry } from '@/lib/types'
 import FriendsAccordion from './FriendsAccordion'
 import ShareCard from './ShareCard'
+import { useUnit } from '@/lib/contexts/UnitContext'
 
 type Category = 'push' | 'pull' | 'legs' | 'overall'
 
@@ -30,6 +31,7 @@ interface Props {
 
 export default function LeaderboardClient({ userId }: Props) {
   const supabase = createClient()
+  const { unitLabel } = useUnit()
   const [category, setCategory] = useState<Category>('overall')
   const [entries, setEntries] = useState<LeaderboardEntry[]>([])
   const [friendIds, setFriendIds] = useState<string[]>([])
@@ -71,7 +73,7 @@ export default function LeaderboardClient({ userId }: Props) {
   function statDisplay(entry: LeaderboardEntry) {
     if (category === 'overall') return `${entry.xp_total.toLocaleString()} XP`
     if (entry.best_lift === 0) return '—'
-    return `${entry.best_lift}kg`
+    return `${entry.best_lift}${unitLabel}`
   }
 
   return (

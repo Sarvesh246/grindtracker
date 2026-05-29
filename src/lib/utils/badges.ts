@@ -51,8 +51,27 @@ export async function checkAndAwardBadges(
     .eq('user_id', userId)
     .not('completed_at', 'is', null)
     .gte('completed_at', weekStart.toISOString())
-  const weekDayTypes = new Set((weekSessions ?? []).map((s: { day_type: string }) => s.day_type))
-  const hasFullSplit = weekDayTypes.has('push') && weekDayTypes.has('pull') && weekDayTypes.has('legs')
+
+  const weekDayKeys = [...new Set(
+    (weekSessions ?? []).map((s: { day_type: string }) => s.day_type)
+  )]
+
+  const { data: categoryRows } = await supabase
+    .from('user_day_categories')
+    .select('day_key, category')
+    .eq('user_id', userId)
+    .in('day_key', weekDayKeys.length > 0 ? weekDayKeys : ['__none__'])
+
+  const categoryMap = new Map<string, string>(
+    (categoryRows ?? []).map(r => [r.day_key, r.category])
+  )
+  // Fallback: if no mapping exists for a day_key, treat the key itself as the category
+  // (handles users with standard push/pull/legs naming who never set categories)
+  const resolvedCategories = new Set(weekDayKeys.map(k => categoryMap.get(k) ?? k))
+  const hasFullSplit =
+    resolvedCategories.has('push') &&
+    resolvedCategories.has('pull') &&
+    resolvedCategories.has('legs')
 
   const totalPRs = totalPRCount ?? 0
   const currentLevel = getLevel(stats.xp_total)
