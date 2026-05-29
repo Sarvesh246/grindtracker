@@ -14,7 +14,7 @@ export default async function ProfilePage() {
     .from('user_stats')
     .select('*')
     .eq('user_id', user.id)
-    .single()
+    .maybeSingle()
 
   // Earned badges
   const { data: earnedBadges } = await supabase
@@ -38,18 +38,18 @@ export default async function ProfilePage() {
     .eq('sessions.user_id', user.id)
     .not('sessions.completed_at', 'is', null)
 
-  // Distinct active days
+  // Active-day timestamps. Distinct local days are derived client-side so the
+  // count matches the user's timezone (consistent with the calendar/streak),
+  // rather than the server's UTC day which can split or merge days at midnight.
   const { data: activeDays } = await supabase
     .from('sessions')
-    .select('started_at')
+    .select('completed_at')
     .eq('user_id', user.id)
     .not('completed_at', 'is', null)
 
-  const distinctDays = new Set(
-    (activeDays ?? []).map(s =>
-      new Date(s.started_at).toISOString().split('T')[0]
-    )
-  ).size
+  const activeDayTimestamps = (activeDays ?? [])
+    .map(s => s.completed_at)
+    .filter((t): t is string => t !== null)
 
   // Google avatar + display name from user metadata
   const avatarUrl = user.user_metadata?.avatar_url ?? null
@@ -77,7 +77,7 @@ export default async function ProfilePage() {
       earnedBadgeIds={Array.from(earnedSet)}
       totalPRs={totalPRs ?? 0}
       totalSets={totalSets ?? 0}
-      distinctDays={distinctDays}
+      activeDayTimestamps={activeDayTimestamps}
       allBadges={ALL_BADGES}
     />
   )

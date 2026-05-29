@@ -6,6 +6,7 @@ import { Exercise } from '@/lib/types'
 import { getLevel } from '@/lib/utils/gamification'
 import { checkAndAwardBadges } from '@/lib/utils/badges'
 import { haptic } from '@/lib/utils/haptics'
+import { useUnit } from '@/lib/contexts/UnitContext'
 
 function parseDefaultReps(repsTarget: string): string {
   return repsTarget.split('-')[0].trim()
@@ -79,6 +80,7 @@ function LogPastContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const supabase = createClient()
+  const { unitLabel } = useUnit()
 
   const yesterday = getYesterdayString()
   const paramDate = searchParams.get('date')
@@ -838,7 +840,7 @@ function LogPastContent() {
                               transform: 'translateY(-50%)', fontSize: '11px',
                               color: 'var(--text-muted)', pointerEvents: 'none',
                             }}>
-                              lbs
+                              {unitLabel}
                             </span>
                           </div>
 

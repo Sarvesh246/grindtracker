@@ -1,8 +1,9 @@
 'use client'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { getLevel, getXpInCurrentLevel, getXpRequiredForLevel, getXpToNextLevel } from '@/lib/utils/gamification'
+import { localDateKey } from '@/lib/utils/formatting'
 import { BadgeDefinition } from '@/lib/utils/badges'
 import BodyWeightCard from './BodyWeightCard'
 import { useUnit } from '@/lib/contexts/UnitContext'
@@ -90,7 +91,7 @@ interface Props {
   earnedBadgeIds: string[]
   totalPRs: number
   totalSets: number
-  distinctDays: number
+  activeDayTimestamps: string[]
   allBadges: BadgeDefinition[]
 }
 
@@ -102,7 +103,7 @@ export default function ProfileDashboard({
   earnedBadgeIds,
   totalPRs,
   totalSets,
-  distinctDays,
+  activeDayTimestamps,
   allBadges,
 }: Props) {
   const router = useRouter()
@@ -222,6 +223,12 @@ export default function ProfileDashboard({
   const xpPercent = (xpInLevel / levelSize) * 100
   const earnedSet = new Set(earnedBadgeIds)
   const earnedCount = earnedBadgeIds.length
+  // Distinct active days counted in the user's local timezone so it matches the
+  // calendar and streak (the server renders in UTC, which would mis-bucket days).
+  const distinctDays = useMemo(
+    () => new Set(activeDayTimestamps.map(t => localDateKey(new Date(t)))).size,
+    [activeDayTimestamps],
+  )
 
   async function handleSignOut() {
     await supabase.auth.signOut()
