@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { LeaderboardEntry } from '@/lib/types'
+import { useUnit } from '@/lib/contexts/UnitContext'
 
 const RANK_COLORS: Record<number, string> = {
   1: '#FFD700',
@@ -20,6 +21,7 @@ function initials(name: string) {
 }
 
 export default function ShareCard({ entry, rank, category, onClose }: ShareCardProps) {
+  const { unitLabel } = useUnit()
   const [canShare, setCanShare] = useState(false)
   useEffect(() => {
     setCanShare(typeof navigator !== 'undefined' && 'share' in navigator)
@@ -34,7 +36,7 @@ export default function ShareCard({ entry, rank, category, onClose }: ShareCardP
   const statLabel = category === 'overall' ? 'XP' : 'BEST LIFT'
   const statValue = category === 'overall'
     ? `${entry.xp_total.toLocaleString()} XP`
-    : `${entry.best_lift}kg`
+    : `${entry.best_lift}${unitLabel}`
 
   const rankColor = RANK_COLORS[rank] ?? 'var(--accent)'
 

@@ -4,6 +4,7 @@ import { Session, UserStats } from '@/lib/types'
 import { getLevel, getXpInCurrentLevel, getXpRequiredForLevel, getXpToNextLevel } from '@/lib/utils/gamification'
 import { formatHeaderDate, formatShortDate } from '@/lib/utils/formatting'
 import WorkoutCalendar from '@/components/WorkoutCalendar'
+import { useUnit } from '@/lib/contexts/UnitContext'
 
 interface Props {
   stats: UserStats | null
@@ -37,6 +38,7 @@ export default function HomeDashboard({
   totalPRs,
 }: Props) {
   const router = useRouter()
+  const { unitLabel } = useUnit()
 
   const xpTotal = stats?.xp_total ?? 0
   const level = getLevel(xpTotal)
@@ -355,7 +357,7 @@ export default function HomeDashboard({
                     fontSize: '14px',
                     color: log.weight !== null ? 'var(--accent)' : 'var(--text-muted)',
                   }}>
-                    {log.weight !== null ? `${log.weight} lbs` : '—'}
+                    {log.weight !== null ? `${log.weight} ${unitLabel}` : '—'}
                   </span>
                 </div>
               ))}

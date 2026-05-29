@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { getLevel, getXpInCurrentLevel, getXpRequiredForLevel, getXpToNextLevel } from '@/lib/utils/gamification'
 import { BadgeDefinition } from '@/lib/utils/badges'
 import BodyWeightCard from './BodyWeightCard'
+import { useUnit } from '@/lib/contexts/UnitContext'
 
 function FlameIcon({ size = 24, color = 'var(--accent)' }: { size?: number; color?: string }) {
   return (
@@ -106,6 +107,7 @@ export default function ProfileDashboard({
 }: Props) {
   const router = useRouter()
   const supabase = createClient()
+  const { unit, toggleUnit } = useUnit()
   const [tooltipBadgeId, setTooltipBadgeId] = useState<string | null>(null)
   const [badgesOpen, setBadgesOpen] = useState(false)
 
@@ -533,6 +535,88 @@ export default function ProfileDashboard({
       </div>
 
       <BodyWeightCard />
+
+      {/* Settings */}
+      <div style={{ marginBottom: '16px' }}>
+        <div style={{
+          fontSize: '12px', color: 'var(--text-muted)',
+          textTransform: 'uppercase', letterSpacing: '1.5px',
+          marginBottom: '10px',
+        }}>
+          SETTINGS
+        </div>
+        <div style={{
+          backgroundColor: 'var(--surface)',
+          border: '1px solid var(--border)',
+          borderRadius: '12px',
+          padding: '14px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}>
+          <div>
+            <div style={{ fontSize: '14px', color: 'var(--text-primary)', fontWeight: 600, marginBottom: '2px' }}>
+              Weight Unit
+            </div>
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+              {unit === 'metric' ? 'Kilograms (kg)' : 'Pounds (lbs)'}
+            </div>
+          </div>
+          <button
+            onClick={toggleUnit}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0',
+              backgroundColor: 'var(--surface-elevated)',
+              border: '1px solid var(--border)',
+              borderRadius: '9999px',
+              padding: '3px',
+              cursor: 'pointer',
+              position: 'relative',
+              width: '80px',
+              height: '32px',
+              flexShrink: 0,
+            }}
+          >
+            {/* KG label */}
+            <span style={{
+              flex: 1,
+              textAlign: 'center',
+              fontSize: '11px',
+              fontWeight: 700,
+              fontFamily: "'DM Sans', sans-serif",
+              color: unit === 'metric' ? 'var(--bg)' : 'var(--text-muted)',
+              position: 'relative',
+              zIndex: 1,
+              letterSpacing: '0.5px',
+            }}>KG</span>
+            {/* LBS label */}
+            <span style={{
+              flex: 1,
+              textAlign: 'center',
+              fontSize: '11px',
+              fontWeight: 700,
+              fontFamily: "'DM Sans', sans-serif",
+              color: unit === 'imperial' ? 'var(--bg)' : 'var(--text-muted)',
+              position: 'relative',
+              zIndex: 1,
+              letterSpacing: '0.5px',
+            }}>LBS</span>
+            {/* Sliding pill */}
+            <div style={{
+              position: 'absolute',
+              top: '3px',
+              left: unit === 'metric' ? '3px' : 'calc(50% + 1px)',
+              width: 'calc(50% - 4px)',
+              height: 'calc(100% - 6px)',
+              backgroundColor: 'var(--accent)',
+              borderRadius: '9999px',
+              transition: 'left 150ms ease',
+            }} />
+          </button>
+        </div>
+      </div>
 
       {/* Badges */}
       <div style={{ marginBottom: '32px' }}>

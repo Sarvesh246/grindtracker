@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { ALL_BADGES } from '@/lib/utils/badges'
+import { useUnit } from '@/lib/contexts/UnitContext'
 
 interface CompletionData {
   xpEarned: number
@@ -28,6 +29,7 @@ export default function CompletionModal({
   onDone: () => void
 }) {
   const [visible, setVisible] = useState(false)
+  const { unitLabel } = useUnit()
 
   useEffect(() => {
     requestAnimationFrame(() => setVisible(true))
@@ -142,7 +144,7 @@ export default function CompletionModal({
                     fontFamily: "'JetBrains Mono', monospace",
                     fontSize: '14px', color: 'var(--accent)',
                   }}>
-                    {pr.weight} lbs
+                    {pr.weight} {unitLabel}
                   </span>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent)' }}>
                     <polyline points="8 6 12 2 16 6"/><path d="M12 2v10"/><path d="M5 17l1.5-5h11L19 17"/><path d="M3 22h18"/>

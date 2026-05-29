@@ -1,8 +1,10 @@
 import { Suspense } from 'react'
 import BottomNav from '@/components/BottomNav'
+import { UnitProvider } from '@/lib/contexts/UnitContext'
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
+    <UnitProvider>
     <div style={{
       backgroundColor: 'var(--bg)',
       minHeight: '100dvh',
@@ -20,5 +22,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <BottomNav />
       </Suspense>
     </div>
+    </UnitProvider>
   )
 }

@@ -6,6 +6,7 @@ import { Exercise } from '@/lib/types'
 import { checkAndAwardBadges } from '@/lib/utils/badges'
 import { getLevel } from '@/lib/utils/gamification'
 import { haptic } from '@/lib/utils/haptics'
+import { useUnit } from '@/lib/contexts/UnitContext'
 import { deleteIncompleteSessions } from '@/lib/utils/sessions'
 import { useRestTimer } from '@/lib/hooks/useRestTimer'
 import RestTimerBar from '@/components/RestTimerBar'
@@ -1178,6 +1179,7 @@ function ExerciseCard({
   onToggleWarmup, onAddSet, onStartEdit, onSaveEdit, onPersistNote,
   onOpenPlateCalc,
 }: ExerciseCardProps) {
+  const { unitLabel } = useUnit()
   const totalSets = exercise.sets_target + extraSets
   const setNumbers = Array.from({ length: totalSets }, (_, i) => i + 1)
   const anySkipped = setNumbers.some(s => logs[`${exercise.id}-${s}`]?.skipped)
@@ -1280,7 +1282,7 @@ function ExerciseCard({
             {exercise.sets_target} sets × {exercise.reps_target} reps
           </span>
           <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: "'JetBrains Mono', monospace" }}>
-            {previousBest !== null ? `prev: ${previousBest} lbs` : 'no previous data'}
+            {previousBest !== null ? `prev: ${previousBest} ${unitLabel}` : 'no previous data'}
           </span>
         </div>
       </div>

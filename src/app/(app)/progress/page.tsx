@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Exercise } from '@/lib/types'
 import { formatHeaderDate } from '@/lib/utils/formatting'
 import ProgressChart from './ProgressChart'
+import { useUnit } from '@/lib/contexts/UnitContext'
 
 export type Metric = 'weight' | 'volume' | 'e1rm' | 'best'
 
@@ -39,11 +40,11 @@ interface RawLog {
 
 const DAY_ORDER: Record<string, number> = { push: 0, pull: 1, legs: 2 }
 
-const METRICS: { id: Metric; label: string; suffix: string }[] = [
-  { id: 'weight', label: 'Weight', suffix: 'lbs' },
-  { id: 'volume', label: 'Volume', suffix: 'lbs' },
-  { id: 'e1rm', label: 'e1RM', suffix: 'lbs' },
-  { id: 'best', label: 'Best Set', suffix: 'lbs' },
+const METRIC_IDS: { id: Metric; label: string }[] = [
+  { id: 'weight', label: 'Weight' },
+  { id: 'volume', label: 'Volume' },
+  { id: 'e1rm', label: 'e1RM' },
+  { id: 'best', label: 'Best Set' },
 ]
 
 function epley(weight: number, reps: number): number {
@@ -53,6 +54,7 @@ function epley(weight: number, reps: number): number {
 
 export default function ProgressPage() {
   const supabase = createClient()
+  const { unitLabel } = useUnit()
 
   const [exercises, setExercises] = useState<Exercise[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -107,8 +109,9 @@ export default function ProgressPage() {
       setRecentSessions([])
       return
     }
-    recomputeForMetric(rawLogs, metric)
-  }, [rawLogs, metric])
+    recomputeForMetric(rawLogs, metric, unitLabel)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawLogs, metric, unitLabel])
 
   async function loadRawLogs(exerciseId: string) {
     setLoadingChart(true)
@@ -139,7 +142,7 @@ export default function ProgressPage() {
     setLoadingChart(false)
   }
 
-  function recomputeForMetric(logs: RawLog[], m: Metric) {
+  function recomputeForMetric(logs: RawLog[], m: Metric, ul: string) {
     interface SessionAgg {
       id: string
       completedAt: string
@@ -172,16 +175,16 @@ export default function ProgressPage() {
       switch (m) {
         case 'weight':
           value = Math.max(...s.sets.map(x => x.weight))
-          label = `${value} lbs`
+          label = `${value} ${ul}`
           break
         case 'volume':
           value = s.sets.reduce((sum, x) => sum + x.weight * x.reps, 0)
-          label = `${value.toLocaleString()} lbs · vol`
+          label = `${value.toLocaleString()} ${ul} · vol`
           break
         case 'e1rm': {
           const e = Math.max(...s.sets.map(x => epley(x.weight, x.reps)))
           value = Math.round(e * 10) / 10
-          label = `${value} lbs e1RM`
+          label = `${value} ${ul} e1RM`
           break
         }
         case 'best': {
@@ -349,7 +352,7 @@ export default function ProgressPage() {
             padding: '4px',
           }}
         >
-          {METRICS.map(m => {
+          {METRIC_IDS.map(m => {
             const active = m.id === metric
             return (
               <button
