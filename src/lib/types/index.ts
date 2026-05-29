@@ -76,3 +76,12 @@ export interface LeaderboardEntry {
   total_workouts: number
   best_lift: number
 }
+
+export type DayCategory = 'push' | 'pull' | 'legs' | 'other'
+
+export interface UserDayCategory {
+  user_id: string
+  day_key: string
+  category: DayCategory
+  created_at: string
+}
