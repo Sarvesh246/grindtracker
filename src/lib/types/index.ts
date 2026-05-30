@@ -15,6 +15,7 @@ export interface Session {
   started_at: string
   completed_at: string | null
   xp_earned: number
+  note: string | null
   created_at: string
 }
 

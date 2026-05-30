@@ -478,7 +478,7 @@ function LogPastContent() {
 
   // ── Form ───────────────────────────────────────────────────────────────────
   return (
-    <div style={{ fontFamily: "'DM Sans', sans-serif", paddingBottom: '40px' }}>
+    <div className="page page--narrow" style={{ fontFamily: "'DM Sans', sans-serif", paddingBottom: '40px' }}>
 
       {/* Header */}
       <div style={{ padding: '24px 16px 20px', display: 'flex', alignItems: 'center', gap: '12px' }}>

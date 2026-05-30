@@ -73,6 +73,8 @@
   --radius-md: 12px;
   --radius-lg: 16px;
 
+  --nav-h: 56px;
+
   --card-sm: 12px;
   --card-md: 16px;
   --card-lg: 20px;
@@ -269,5 +271,148 @@ select:focus-visible,
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Responsive desktop layout. Mobile-first: the rules below only engage at
+   >=768px. Navigation switches from the fixed bottom bar to a fixed top bar
+   via pure CSS display toggles — both bars are always rendered, so there's no
+   JS width detection and no hydration/resize jank at the breakpoint.
+   --------------------------------------------------------------------------- */
+
+/* Main content padding (moved off inline styles so media queries can override). */
+.app-main {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: calc(64px + env(safe-area-inset-bottom));
+  min-height: 100dvh;
+  overflow-x: hidden;
+}
+
+/* Top nav: rendered always, hidden on mobile, shown >=768px. */
+.top-nav {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: calc(var(--nav-h) + env(safe-area-inset-top));
+  padding-top: env(safe-area-inset-top);
+  padding-left: 24px;
+  padding-right: 24px;
+  align-items: center;
+  gap: 20px;
+  background-color: var(--surface);
+  border-bottom: 1px solid var(--border);
+  z-index: 100;
+}
+
+/* Centered content container. Mobile = full width (unchanged). */
+.page {
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* Responsive grids — mobile column counts match the current inline values. */
+/* Cards keep their own marginBottom for vertical rhythm; the grid only adds a
+   horizontal gap between the two columns on desktop (row-gap stays 0). */
+.home-grid {
+  display: grid;
+  column-gap: 16px;
+  row-gap: 0;
+  grid-template-columns: 1fr;
+}
+.home-col {
+  min-width: 0;
+}
+.stat-grid-4 {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr 1fr;
+}
+.badge-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, 1fr);
+}
+.day-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 1fr;
+}
+
+/* Active-workout fixed bars: full-width on mobile. */
+.wo-fixed-bar {
+  left: 0;
+  right: 0;
+}
+
+/* Active-workout sticky header sticks to the viewport top on mobile; on desktop
+   it must clear the fixed top nav. */
+.wo-sticky-header {
+  top: 0;
+}
+
+@media (min-width: 768px) {
+  .bottom-nav {
+    display: none;
+  }
+  .top-nav {
+    display: flex;
+  }
+
+  .app-main {
+    padding-top: calc(var(--nav-h) + env(safe-area-inset-top));
+    padding-bottom: 32px;
+  }
+
+  .page--dashboard {
+    max-width: 1040px;
+  }
+  .page--profile,
+  .page--progress,
+  .page--wide {
+    max-width: 880px;
+  }
+  .page--narrow {
+    max-width: 640px;
+  }
+  .page--form {
+    max-width: 520px;
+  }
+
+  /* Fixed workout bars align to the centered 640px column. */
+  .wo-fixed-bar {
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+    width: 100%;
+    max-width: 640px;
+  }
+
+  /* The top nav carries the brand — hide the in-page wordmark on home. */
+  .home-brand {
+    display: none;
+  }
+
+  /* Workout sticky header clears the fixed top nav. */
+  .wo-sticky-header {
+    top: calc(var(--nav-h) + env(safe-area-inset-top));
+  }
+}
+
+@media (min-width: 900px) {
+  .home-grid {
+    grid-template-columns: 1.15fr 0.85fr;
+    align-items: start;
+  }
+  .stat-grid-4 {
+    grid-template-columns: repeat(4, 1fr);
+  }
+  .badge-grid {
+    grid-template-columns: repeat(6, 1fr);
+  }
+  .day-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
 }

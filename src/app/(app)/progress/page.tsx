@@ -253,7 +253,7 @@ export default function ProgressPage() {
   }
 
   return (
-    <div style={{ fontFamily: "'DM Sans', sans-serif", paddingBottom: '32px' }}>
+    <div className="page page--progress" style={{ fontFamily: "'DM Sans', sans-serif", paddingBottom: '32px' }}>
 
       {/* Header */}
       <div style={{
@@ -386,9 +386,9 @@ export default function ProgressPage() {
       {/* Stats bar */}
       <div style={{ display: 'flex', gap: '6px', padding: '0 16px', marginBottom: '16px' }}>
         {[
-          { label: 'BEST', value: stats.bestWeight !== null ? `${stats.bestWeight}` : '—', accent: true },
+          { label: 'BEST', value: stats.bestWeight !== null ? `${stats.bestWeight} ${unitLabel}` : '—', accent: true },
           { label: 'SESSIONS', value: String(stats.sessionCount), accent: false },
-          { label: 'LAST', value: stats.lastWeight !== null ? `${stats.lastWeight}` : '—', accent: false },
+          { label: 'LAST', value: stats.lastWeight !== null ? `${stats.lastWeight} ${unitLabel}` : '—', accent: false },
           { label: 'PRs', value: String(stats.prCount), accent: false },
         ].map(stat => (
           <div key={stat.label} style={{

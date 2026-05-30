@@ -77,7 +77,7 @@ export default function LeaderboardClient({ userId }: Props) {
   }
 
   return (
-    <div style={{
+    <div className="page page--narrow" style={{
       minHeight: '100dvh',
       backgroundColor: 'var(--bg)',
       padding: '24px 16px',

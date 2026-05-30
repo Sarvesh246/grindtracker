@@ -1,6 +1,7 @@
 import { Suspense } from 'react'
 import { cookies } from 'next/headers'
 import BottomNav from '@/components/BottomNav'
+import TopNav from '@/components/TopNav'
 import { UnitProvider } from '@/lib/contexts/UnitContext'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -15,12 +16,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       minHeight: '100dvh',
       position: 'relative',
     }}>
-      <main style={{
-        paddingTop: 'env(safe-area-inset-top)',
-        paddingBottom: 'calc(64px + env(safe-area-inset-bottom))',
-        minHeight: '100dvh',
-        overflowX: 'hidden',
-      }}>
+      {/* Top nav (desktop) and bottom nav (mobile) are both rendered; CSS at the
+          768px breakpoint shows exactly one — no JS width detection. */}
+      <TopNav />
+      <main className="app-main">
         {children}
       </main>
       <Suspense fallback={null}>
