@@ -42,10 +42,9 @@ export default function RestTimerBar({
     <div
       role="status"
       aria-live="polite"
+      className="wo-fixed-bar"
       style={{
         position: 'fixed',
-        left: 0,
-        right: 0,
         bottom: `${bottomOffsetPx}px`,
         backgroundColor: 'var(--surface-elevated)',
         borderTop: '1px solid var(--border)',

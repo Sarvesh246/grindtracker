@@ -26,7 +26,10 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
   const [loading, setLoading] = useState(true)
   const [screen, setScreen] = useState<Screen>({ id: 'days' })
   const [saving, setSaving] = useState(false)
+  const [savingCategory, setSavingCategory] = useState(false)
+  const [categoryError, setCategoryError] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
+  const [deleteError, setDeleteError] = useState('')
 
   // new-day form
   const [newDayInput, setNewDayInput] = useState('')
@@ -40,20 +43,26 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
 
   async function load() {
     setLoading(true)
-    const { data: { user } } = await supabase.auth.getUser()
-    const [exRes, catRes] = await Promise.all([
-      supabase.from('exercises').select('*')
-        .order('day_type', { ascending: true })
-        .order('sort_order', { ascending: true }),
-      user
-        ? supabase.from('user_day_categories').select('day_key, category').eq('user_id', user.id)
-        : Promise.resolve({ data: [] as { day_key: string; category: string }[] }),
-    ])
-    setExercises(exRes.data ?? [])
-    const map: Record<string, DayCategory> = {}
-    for (const r of (catRes.data ?? [])) map[r.day_key] = r.category as DayCategory
-    setDayCategories(map)
-    setLoading(false)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      const [exRes, catRes] = await Promise.all([
+        supabase.from('exercises').select('*')
+          .order('day_type', { ascending: true })
+          .order('sort_order', { ascending: true }),
+        user
+          ? supabase.from('user_day_categories').select('day_key, category').eq('user_id', user.id)
+          : Promise.resolve({ data: [] as { day_key: string; category: string }[] }),
+      ])
+      setExercises(exRes.data ?? [])
+      const map: Record<string, DayCategory> = {}
+      for (const r of (catRes.data ?? [])) map[r.day_key] = r.category as DayCategory
+      setDayCategories(map)
+    } catch {
+      // Network/auth failure — keep whatever we have rather than wedging the UI.
+      // The spinner is cleared in finally so the modal stays usable.
+    } finally {
+      setLoading(false)
+    }
   }
 
   const grouped: Record<string, Exercise[]> = {}
@@ -94,45 +103,58 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
     setSaving(true)
     setFormError('')
 
-    if (exercise) {
-      await supabase.from('exercises').update({
-        name: trimmedName,
-        sets_target: sets,
-        reps_target: formReps.trim(),
-      }).eq('id', exercise.id)
-    } else {
-      const maxOrder = (grouped[dayKey] ?? []).reduce((m, e) => Math.max(m, e.sort_order), 0)
-      await supabase.from('exercises').insert({
-        name: trimmedName,
-        day_type: dayKey,
-        sets_target: sets,
-        reps_target: formReps.trim(),
-        sort_order: maxOrder + 1,
-      })
-    }
+    try {
+      const { error } = exercise
+        ? await supabase.from('exercises').update({
+            name: trimmedName,
+            sets_target: sets,
+            reps_target: formReps.trim(),
+          }).eq('id', exercise.id)
+        : await supabase.from('exercises').insert({
+            name: trimmedName,
+            day_type: dayKey,
+            sets_target: sets,
+            reps_target: formReps.trim(),
+            sort_order: (grouped[dayKey] ?? []).reduce((m, e) => Math.max(m, e.sort_order), 0) + 1,
+          })
 
-    await load()
-    setSaving(false)
-    onChanged()
-    setScreen({ id: 'day', dayKey })
+      if (error) {
+        setFormError('Could not save exercise. Check your connection and try again.')
+        return
+      }
+
+      await load()
+      onChanged()
+      setScreen({ id: 'day', dayKey })
+    } catch {
+      setFormError('Could not save exercise. Check your connection and try again.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function confirmDelete() {
-    if (!deleteTarget) return
+    if (!deleteTarget || saving) return
     setSaving(true)
-    if (deleteTarget.type === 'day') {
-      await supabase.from('exercises').delete().eq('day_type', deleteTarget.key)
+    setDeleteError('')
+    try {
+      const { error } = deleteTarget.type === 'day'
+        ? await supabase.from('exercises').delete().eq('day_type', deleteTarget.key)
+        : await supabase.from('exercises').delete().eq('id', deleteTarget.id)
+
+      if (error) {
+        setDeleteError('Could not delete. Check your connection and try again.')
+        return
+      }
+
       await load()
-      setSaving(false)
       onChanged()
+      if (deleteTarget.type === 'day') setScreen({ id: 'days' })
       setDeleteTarget(null)
-      setScreen({ id: 'days' })
-    } else {
-      await supabase.from('exercises').delete().eq('id', deleteTarget.id)
-      await load()
+    } catch {
+      setDeleteError('Could not delete. Check your connection and try again.')
+    } finally {
       setSaving(false)
-      onChanged()
-      setDeleteTarget(null)
     }
   }
 
@@ -145,21 +167,39 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
       return
     }
     setNewDayInput('')
+    setCategoryError('')
     setScreen({ id: 'category-picker', dayKey: key })
   }
 
   async function saveCategory(dayKey: string, category: DayCategory) {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    await supabase.from('user_day_categories').upsert(
-      { user_id: user.id, day_key: dayKey, category },
-      { onConflict: 'user_id,day_key' }
-    )
-    setDayCategories(prev => ({ ...prev, [dayKey]: category }))
-    if (grouped[dayKey]) {
-      setScreen({ id: 'day', dayKey })
-    } else {
-      openExerciseForm(dayKey)
+    if (savingCategory) return // guard against rapid double-taps firing concurrent upserts
+    setSavingCategory(true)
+    setCategoryError('')
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        setCategoryError('You must be signed in to save a category.')
+        return
+      }
+      const { error } = await supabase.from('user_day_categories').upsert(
+        { user_id: user.id, day_key: dayKey, category },
+        { onConflict: 'user_id,day_key' }
+      )
+      if (error) {
+        // Surface the failure and stay on the picker — never navigate away as if it saved.
+        setCategoryError('Could not save category. Check your connection and try again.')
+        return
+      }
+      setDayCategories(prev => ({ ...prev, [dayKey]: category }))
+      if (grouped[dayKey]) {
+        setScreen({ id: 'day', dayKey })
+      } else {
+        openExerciseForm(dayKey)
+      }
+    } catch {
+      setCategoryError('Could not save category. Check your connection and try again.')
+    } finally {
+      setSavingCategory(false)
     }
   }
 
@@ -282,7 +322,7 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
                                   marginTop: '4px', fontSize: '11px',
                                   color: '#F59E0B', fontFamily: "'DM Sans', sans-serif",
                                 }}
-                                onClick={e => { e.stopPropagation(); setScreen({ id: 'category-picker', dayKey: key }) }}
+                                onClick={e => { e.stopPropagation(); setCategoryError(''); setScreen({ id: 'category-picker', dayKey: key }) }}
                               >
                                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                                   <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
@@ -306,7 +346,7 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
                             </svg>
                           </button>
                           <button
-                            onClick={() => setDeleteTarget({ type: 'day', key, label: key.replace(/-/g, ' ').toUpperCase() })}
+                            onClick={() => { setDeleteError(''); setDeleteTarget({ type: 'day', key, label: key.replace(/-/g, ' ').toUpperCase() }) }}
                             style={{
                               background: 'none', border: 'none', cursor: 'pointer',
                               padding: '8px', opacity: 0.4,
@@ -408,14 +448,17 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
                     <button
                       key={opt.key}
                       onClick={() => saveCategory(screen.dayKey, opt.key)}
+                      disabled={savingCategory}
                       style={{
                         width: '100%', textAlign: 'left',
                         backgroundColor: 'var(--surface-elevated)',
                         border: '1px solid var(--border)', borderRadius: '10px',
-                        padding: '14px 16px', cursor: 'pointer',
+                        padding: '14px 16px',
+                        cursor: savingCategory ? 'default' : 'pointer',
+                        opacity: savingCategory ? 0.6 : 1,
                         display: 'flex', flexDirection: 'column', gap: '3px',
                       }}
-                      onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+                      onMouseEnter={e => { if (!savingCategory) e.currentTarget.style.borderColor = 'var(--accent)' }}
                       onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}
                     >
                       <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '20px', color: 'var(--accent)', letterSpacing: '1px' }}>
@@ -427,6 +470,11 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
                     </button>
                   ))}
                 </div>
+                {categoryError && (
+                  <div style={{ marginTop: '14px', fontSize: '13px', color: 'var(--danger)', fontFamily: "'DM Sans', sans-serif" }}>
+                    {categoryError}
+                  </div>
+                )}
               </div>
             )}
 
@@ -474,7 +522,7 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
                           </svg>
                         </button>
                         <button
-                          onClick={() => setDeleteTarget({ type: 'exercise', id: ex.id, name: ex.name, dayKey })}
+                          onClick={() => { setDeleteError(''); setDeleteTarget({ type: 'exercise', id: ex.id, name: ex.name, dayKey }) }}
                           style={{
                             background: 'none', border: 'none', cursor: 'pointer',
                             padding: '8px', opacity: 0.4,
@@ -625,9 +673,15 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
                 ? `Remove "${deleteTarget.label}" and all its exercises? This cannot be undone.`
                 : `Remove "${deleteTarget.name}" from this day?`}
             </div>
+            {deleteError && (
+              <div style={{ fontSize: '13px', color: 'var(--danger)', fontFamily: "'DM Sans', sans-serif", marginBottom: '16px' }}>
+                {deleteError}
+              </div>
+            )}
             <div style={{ display: 'flex', gap: '8px' }}>
               <button
-                onClick={() => setDeleteTarget(null)}
+                onClick={() => { setDeleteTarget(null); setDeleteError('') }}
+                disabled={saving}
                 style={{
                   flex: 1, height: '44px', backgroundColor: 'var(--surface-elevated)',
                   border: '1px solid var(--border)', borderRadius: '8px',

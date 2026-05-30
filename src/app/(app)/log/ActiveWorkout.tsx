@@ -980,11 +980,11 @@ export default function ActiveWorkout({ day }: { day: string }) {
         />
       )}
 
-      <div style={{ paddingBottom: 'calc(140px + env(safe-area-inset-bottom))', fontFamily: "'DM Sans', sans-serif" }}>
+      <div className="page page--narrow" style={{ paddingBottom: 'calc(140px + env(safe-area-inset-bottom))', fontFamily: "'DM Sans', sans-serif" }}>
 
         {/* Header */}
-        <div style={{
-          position: 'sticky', top: 0, zIndex: 10,
+        <div className="wo-sticky-header" style={{
+          position: 'sticky', zIndex: 10,
           backgroundColor: 'var(--bg)',
           borderBottom: '1px solid var(--border)',
           padding: '0 16px',
@@ -1107,11 +1107,9 @@ export default function ActiveWorkout({ day }: { day: string }) {
       </div>
 
       {/* Finish button */}
-      <div style={{
+      <div className="wo-fixed-bar" style={{
         position: 'fixed',
         bottom: 0,
-        left: 0,
-        right: 0,
         paddingTop: '12px',
         paddingLeft: '16px',
         paddingRight: '16px',

@@ -236,7 +236,7 @@ export default function ProfileDashboard({
   }
 
   return (
-    <div style={{
+    <div className="page page--profile" style={{
       fontFamily: "'DM Sans', sans-serif",
       padding: '0 16px 48px',
     }}>
@@ -504,11 +504,7 @@ export default function ProfileDashboard({
           LIFETIME STATS
         </div>
 
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: '8px',
-        }}>
+        <div className="stat-grid-4">
           {[
             { label: 'WORKOUTS LOGGED', value: stats.total_workouts, accent: true },
             { label: 'TOTAL PRs', value: totalPRs, accent: false },
@@ -659,15 +655,12 @@ export default function ProfileDashboard({
           </div>
         </button>
 
-        {badgesOpen && <div style={{
+        {badgesOpen && <div className="badge-grid" style={{
           backgroundColor: 'var(--surface)',
           border: '1px solid var(--border)',
           borderTop: 'none',
           borderRadius: '0 0 12px 12px',
           padding: '10px',
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr 1fr',
-          gap: '8px',
         }}>
           {allBadges.map((badge) => {
             const earned = earnedSet.has(badge.id)

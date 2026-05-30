@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Exercise } from '@/lib/types'
 import { formatHeaderDate } from '@/lib/utils/formatting'
@@ -102,17 +102,6 @@ export default function ProgressPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId])
 
-  useEffect(() => {
-    if (rawLogs.length === 0) {
-      setChartData([])
-      setStats({ bestWeight: null, sessionCount: 0, lastWeight: null, prCount: 0 })
-      setRecentSessions([])
-      return
-    }
-    recomputeForMetric(rawLogs, metric, unitLabel)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rawLogs, metric, unitLabel])
-
   async function loadRawLogs(exerciseId: string) {
     setLoadingChart(true)
 
@@ -142,7 +131,7 @@ export default function ProgressPage() {
     setLoadingChart(false)
   }
 
-  function recomputeForMetric(logs: RawLog[], m: Metric, ul: string) {
+  const recomputeForMetric = useCallback((logs: RawLog[], m: Metric, ul: string) => {
     interface SessionAgg {
       id: string
       completedAt: string
@@ -237,7 +226,17 @@ export default function ProgressPage() {
     setChartData(points)
     setStats({ bestWeight, sessionCount: sessions.length, lastWeight, prCount })
     setRecentSessions(recent)
-  }
+  }, [toDisplay])
+
+  useEffect(() => {
+    if (rawLogs.length === 0) {
+      setChartData([])
+      setStats({ bestWeight: null, sessionCount: 0, lastWeight: null, prCount: 0 })
+      setRecentSessions([])
+      return
+    }
+    recomputeForMetric(rawLogs, metric, unitLabel)
+  }, [rawLogs, metric, unitLabel, recomputeForMetric])
 
   const selectedExercise = exercises.find(e => e.id === selectedId)
   const dayTypes = [...new Set(exercises.map(e => e.day_type))].sort(
@@ -254,7 +253,7 @@ export default function ProgressPage() {
   }
 
   return (
-    <div style={{ fontFamily: "'DM Sans', sans-serif", paddingBottom: '32px' }}>
+    <div className="page page--progress" style={{ fontFamily: "'DM Sans', sans-serif", paddingBottom: '32px' }}>
 
       {/* Header */}
       <div style={{
@@ -387,9 +386,9 @@ export default function ProgressPage() {
       {/* Stats bar */}
       <div style={{ display: 'flex', gap: '6px', padding: '0 16px', marginBottom: '16px' }}>
         {[
-          { label: 'BEST', value: stats.bestWeight !== null ? `${stats.bestWeight}` : '—', accent: true },
+          { label: 'BEST', value: stats.bestWeight !== null ? `${stats.bestWeight} ${unitLabel}` : '—', accent: true },
           { label: 'SESSIONS', value: String(stats.sessionCount), accent: false },
-          { label: 'LAST', value: stats.lastWeight !== null ? `${stats.lastWeight}` : '—', accent: false },
+          { label: 'LAST', value: stats.lastWeight !== null ? `${stats.lastWeight} ${unitLabel}` : '—', accent: false },
           { label: 'PRs', value: String(stats.prCount), accent: false },
         ].map(stat => (
           <div key={stat.label} style={{
