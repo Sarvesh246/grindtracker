@@ -782,7 +782,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
           onClick={() => router.push('/log')}
           style={{
             marginTop: '8px', height: '48px', padding: '0 28px',
-            backgroundColor: 'var(--accent)', color: 'var(--bg)', border: 'none',
+            backgroundColor: 'var(--accent)', color: 'var(--on-accent)', border: 'none',
             borderRadius: '12px', fontFamily: "'Bebas Neue', sans-serif",
             fontSize: '18px', letterSpacing: '1px', cursor: 'pointer',
           }}
@@ -897,7 +897,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
             transform: 'translateX(-50%)',
             backgroundColor: 'var(--surface-elevated)',
             border: '1px solid var(--accent)',
-            color: 'var(--accent)',
+            color: 'var(--accent-text)',
             padding: '10px 16px',
             borderRadius: 'var(--radius-pill, 9999px)',
             fontSize: '13px',
@@ -941,7 +941,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
             style={{
               background: 'transparent',
               border: 'none',
-              color: 'var(--accent)',
+              color: 'var(--accent-text)',
               fontFamily: 'var(--font-sans)',
               fontWeight: 700,
               fontSize: '13px',
@@ -1127,7 +1127,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
               style={{
                 width: '100%', height: '56px',
                 backgroundColor: canFinish ? 'var(--accent)' : 'var(--border)',
-                color: canFinish ? 'var(--bg)' : 'var(--text-muted)',
+                color: canFinish ? 'var(--on-accent)' : 'var(--text-muted)',
                 border: 'none', borderRadius: '12px',
                 fontFamily: "'Bebas Neue', sans-serif",
                 fontSize: '22px', letterSpacing: '1px',
@@ -1239,7 +1239,7 @@ function ExerciseCard({
               onMouseLeave={e => (e.currentTarget.style.opacity = '0.5')}
             >
               {allSkipped ? (
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent)' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent-text)' }}>
                   <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.37"/>
                 </svg>
               ) : (
@@ -1249,7 +1249,7 @@ function ExerciseCard({
               )}
               <span style={{
                 fontSize: '10px',
-                color: allSkipped ? 'var(--accent)' : 'var(--text-secondary)',
+                color: allSkipped ? 'var(--accent-text)' : 'var(--text-secondary)',
                 fontFamily: "'Bebas Neue', sans-serif",
                 letterSpacing: '0.5px',
               }}>
@@ -1481,7 +1481,7 @@ function ExerciseSwapModal({ currentExerciseId, allExercises, currentExercises, 
                       <div>
                         <div style={{
                           fontSize: '15px', fontWeight: 600,
-                          color: isCurrent ? 'var(--accent)' : 'var(--text-primary)',
+                          color: isCurrent ? 'var(--accent-text)' : 'var(--text-primary)',
                           fontFamily: "'DM Sans', sans-serif",
                           marginBottom: '2px',
                         }}>
@@ -1493,7 +1493,7 @@ function ExerciseSwapModal({ currentExerciseId, allExercises, currentExercises, 
                       </div>
                       {isCurrent && (
                         <span style={{
-                          fontSize: '10px', color: 'var(--accent)',
+                          fontSize: '10px', color: 'var(--accent-text)',
                           backgroundColor: 'rgba(200, 241, 53, 0.1)',
                           border: '1px solid rgba(200, 241, 53, 0.25)',
                           borderRadius: '9999px', padding: '2px 8px',
@@ -1731,7 +1731,7 @@ function SetRow({
         {logEntry.isPR && (
           <span style={{
             fontSize: '10px', fontFamily: "'Bebas Neue', sans-serif",
-            color: 'var(--accent)',
+            color: 'var(--accent-text)',
             backgroundColor: 'rgba(200, 241, 53, 0.1)',
             border: '1px solid rgba(200, 241, 53, 0.3)',
             borderRadius: '9999px', padding: '2px 7px',
@@ -1778,7 +1778,7 @@ function SetRow({
               borderRadius: 'var(--radius-pill, 9999px)',
               border: 'none',
               backgroundColor: 'var(--accent)',
-              color: 'var(--bg)',
+              color: 'var(--on-accent)',
               fontFamily: 'var(--font-sans)',
               fontSize: '12px',
               fontWeight: 700,
@@ -1814,7 +1814,7 @@ function SetRow({
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
               stroke="currentColor"
               strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-             style={{ color: logEntry.checked ? 'var(--accent)' : 'var(--text-muted)' }}>
+             style={{ color: logEntry.checked ? 'var(--accent-text)' : 'var(--text-muted)' }}>
               <polyline points="20 6 9 17 4 12" />
             </svg>
           </button>

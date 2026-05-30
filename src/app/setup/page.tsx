@@ -116,7 +116,7 @@ export default function SetupPage() {
             fontFamily: "'Bebas Neue', sans-serif",
             fontSize: '64px',
             lineHeight: 1,
-            color: 'var(--accent)',
+            color: 'var(--accent-text)',
             letterSpacing: '2px',
           }}>GRIND</div>
           <div style={{
@@ -184,7 +184,7 @@ export default function SetupPage() {
               width: '100%',
               height: '52px',
               backgroundColor: canSubmit ? 'var(--accent)' : 'var(--surface)',
-              color: canSubmit ? 'var(--bg)' : 'var(--text-muted)',
+              color: canSubmit ? 'var(--on-accent)' : 'var(--text-muted)',
               border: canSubmit ? 'none' : '1px solid var(--border)',
               borderRadius: '12px',
               fontFamily: "'DM Sans', sans-serif",

@@ -8,7 +8,7 @@ import WorkoutManager from './WorkoutManager'
 
 function PushIcon() {
   return (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent)' }}>
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent-text)' }}>
       <line x1="5" y1="17" x2="5" y2="21" />
       <line x1="19" y1="17" x2="19" y2="21" />
       <rect x="3" y="14" width="18" height="3" rx="1.5" />
@@ -21,7 +21,7 @@ function PushIcon() {
 
 function PullIcon() {
   return (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent)' }}>
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent-text)' }}>
       <line x1="4" y1="4" x2="4" y2="20" />
       <line x1="20" y1="4" x2="20" y2="20" />
       <line x1="4" y1="7" x2="20" y2="7" />
@@ -35,7 +35,7 @@ function PullIcon() {
 
 function LegsIcon() {
   return (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent)' }}>
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent-text)' }}>
       <line x1="5" y1="3" x2="5" y2="21" />
       <line x1="19" y1="3" x2="19" y2="21" />
       <polyline points="5 10 8 10 8 13" />
@@ -49,7 +49,7 @@ function LegsIcon() {
 
 function DefaultDayIcon() {
   return (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent)' }}>
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent-text)' }}>
       <line x1="6" y1="12" x2="18" y2="12" />
       <rect x="2" y="9" width="4" height="6" rx="1.5" />
       <rect x="18" y="9" width="4" height="6" rx="1.5" />
@@ -136,7 +136,7 @@ export default function DaySelect() {
             No workout days yet.{' '}
             <button
               onClick={() => setShowManager(true)}
-              style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: '14px', padding: 0, fontFamily: "'DM Sans', sans-serif", fontWeight: 600 }}
+              style={{ background: 'none', border: 'none', color: 'var(--accent-text)', cursor: 'pointer', fontSize: '14px', padding: 0, fontFamily: "'DM Sans', sans-serif", fontWeight: 600 }}
             >
               Add one
             </button>
@@ -176,7 +176,7 @@ export default function DaySelect() {
                       <span style={{
                         fontFamily: "'Bebas Neue', sans-serif",
                         fontSize: '28px',
-                        color: 'var(--accent)',
+                        color: 'var(--accent-text)',
                         letterSpacing: '1px',
                       }}>
                         {key.replace(/-/g, ' ').toUpperCase()}

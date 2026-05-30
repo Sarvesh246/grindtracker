@@ -2,16 +2,29 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { useTheme } from '@/lib/contexts/ThemeContext'
 
-// Distinct, clearly differentiated colors for known day types
+// Fill colors — used for cell background tints, dot indicators, and borders.
+// These stay vibrant in both themes (they're used as low-opacity decorative fills).
 const NAMED_COLORS: Record<string, string> = {
   push: '#c8f135',  // lime green (matches app accent)
   pull: '#38bdf8',  // sky blue
   legs: '#fb923c',  // orange
 }
 
+// Text/label colors for LIGHT mode — dark accessible variants of the fill colors
+// so the day number is legible on a white card surface.
+const NAMED_TEXT_COLORS_LIGHT: Record<string, string> = {
+  push: '#5a7a1a',  // dark olive  (fill: lime)
+  pull: '#075985',  // dark blue   (fill: sky)
+  legs: '#9a3412',  // dark sienna (fill: orange)
+}
+
 // Fallback pool for any additional day types the user adds
 const EXTRA_COLORS = ['#a78bfa', '#f472b6', '#34d399', '#fbbf24', '#f87171', '#e879f9']
+
+// Dark accessible variants for the extra-color pool (same order)
+const EXTRA_TEXT_COLORS_LIGHT = ['#5b21b6', '#9d174d', '#065f46', '#92400e', '#991b1b', '#86198f']
 
 const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
 const MONTH_NAMES = [
@@ -24,15 +37,28 @@ function toLocalDateKey(isoString: string): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+// Vibrant fill color used for backgrounds, borders, and dots (same in both themes).
 function resolveColor(type: string, extraTypes: string[]): string {
   if (NAMED_COLORS[type]) return NAMED_COLORS[type]
   const idx = extraTypes.indexOf(type)
   return EXTRA_COLORS[idx % EXTRA_COLORS.length]
 }
 
+/** Readable text color for the day number.
+ *  In dark mode: same as the fill (vibrant on dark surfaces).
+ *  In light mode: darkened accessible variant (readable on white card). */
+function resolveTextColor(type: string, extraTypes: string[], isLight: boolean): string {
+  if (!isLight) return resolveColor(type, extraTypes)
+  if (NAMED_TEXT_COLORS_LIGHT[type]) return NAMED_TEXT_COLORS_LIGHT[type]
+  const idx = extraTypes.indexOf(type)
+  return EXTRA_TEXT_COLORS_LIGHT[idx % EXTRA_TEXT_COLORS_LIGHT.length]
+}
+
 export default function WorkoutCalendar() {
   const router = useRouter()
   const supabase = createClient()
+  const { theme } = useTheme()
+  const isLight = theme === 'light'
 
   const todayDate = new Date()
   todayDate.setHours(0, 0, 0, 0)
@@ -105,11 +131,11 @@ export default function WorkoutCalendar() {
   }
 
   return (
-    <div style={{
+    <div className="cal-card" style={{
       backgroundColor: 'var(--surface)',
       border: '1px solid var(--border)',
-      borderRadius: '12px',
-      padding: '16px',
+      borderRadius: '20px',
+      padding: '24px',
     }}>
       {/* Month nav */}
       <div style={{
@@ -171,13 +197,18 @@ export default function WorkoutCalendar() {
       </div>
 
       {/* Day grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px', opacity: loading ? 0.5 : 1, transition: 'opacity 150ms ease' }}>
+      <div className="cal-grid" style={{ opacity: loading ? 0.5 : 1, transition: 'opacity 150ms ease' }}>
         {cells.map((day, idx) => {
-          if (!day) return <div key={idx} style={{ height: '40px' }} />
+          if (!day) return <div key={idx} className="cal-empty" />
 
           const dateKey = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
           const workoutType = workoutDays[dateKey]
+          // dotColor = vibrant fill (backgrounds, dots, borders — same in both themes)
           const dotColor = workoutType ? resolveColor(workoutType, extraTypes) : null
+          // dayTextColor = readable day-number color (dark variants in light mode)
+          const dayTextColor = workoutType
+            ? resolveTextColor(workoutType, extraTypes, isLight)
+            : null
 
           const isToday = isOnCurrentMonth && day === todayDate.getDate()
           const isFuture =
@@ -185,25 +216,27 @@ export default function WorkoutCalendar() {
             (year === todayDate.getFullYear() && month > todayDate.getMonth()) ||
             (isOnCurrentMonth && day > todayDate.getDate())
 
-          const textColor = dotColor
-            ? dotColor
-            : isFuture
+          const textColor = dayTextColor
+            ?? (isFuture
               ? 'var(--text-disabled)'
               : isToday
                 ? 'var(--text-primary)'
-                : 'var(--text-muted)'
+                : 'var(--text-muted)')
 
           const isClickable = !isFuture
 
-          // Base styles for the cell background and border
-          const baseBg = dotColor ? `${dotColor}28` : 'transparent'
+          // Cell background: slightly higher opacity in light mode so the tint reads on white
+          const bgOpacity = isLight ? '33' : '28'
+          const baseBg = dotColor ? `${dotColor}${bgOpacity}` : 'transparent'
           const baseBorder = isToday
             ? '1px solid var(--border-strong)'
             : dotColor
-              ? `1px solid ${dotColor}55`
+              ? `1px solid ${dotColor}${isLight ? '88' : '55'}`
               : '1px solid transparent'
 
-          const hoverBg = dotColor ? `${dotColor}55` : 'rgba(255,255,255,0.06)'
+          const hoverBg = dotColor
+            ? `${dotColor}${isLight ? '55' : '55'}`
+            : isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.06)'
           const hoverBorder = isToday
             ? '1px solid var(--border-strong)'
             : dotColor
@@ -213,6 +246,7 @@ export default function WorkoutCalendar() {
           return (
             <div
               key={idx}
+              className="cal-cell"
               onClick={() => {
                 if (!isClickable) return
                 if (isToday) router.push('/log')
@@ -223,7 +257,6 @@ export default function WorkoutCalendar() {
                 flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
-                height: '40px',
                 borderRadius: '8px',
                 cursor: isClickable ? 'pointer' : 'default',
                 border: baseBorder,
@@ -268,18 +301,20 @@ export default function WorkoutCalendar() {
       {/* Legend — always shows all named types; extra types from data appended */}
       <div style={{ display: 'flex', gap: '14px', marginTop: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
         {legendTypes.map(type => {
-          const color = resolveColor(type, extraTypes)
+          const fillColor = resolveColor(type, extraTypes)
+          const labelColor = resolveTextColor(type, extraTypes, isLight)
           return (
             <div key={type} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
               <div style={{
                 width: '8px',
                 height: '8px',
                 borderRadius: '50%',
-                backgroundColor: color,
+                backgroundColor: fillColor,
                 flexShrink: 0,
-                boxShadow: `0 0 4px ${color}80`,
+                // Glow only in dark mode — on white it looks muddy
+                boxShadow: isLight ? 'none' : `0 0 4px ${fillColor}80`,
               }} />
-              <span style={{ fontSize: '10px', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              <span style={{ fontSize: '10px', color: labelColor, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                 {type}
               </span>
             </div>

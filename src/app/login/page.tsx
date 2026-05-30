@@ -40,7 +40,7 @@ export default function LoginPage() {
           style={{
             fontFamily: "'Bebas Neue', sans-serif",
             fontSize: '72px',
-            color: 'var(--accent)',
+            color: 'var(--accent-text)',
             lineHeight: 1,
             letterSpacing: '2px',
           }}
@@ -72,7 +72,7 @@ export default function LoginPage() {
           maxWidth: '320px',
           height: '52px',
           backgroundColor: loading ? '#cccccc' : '#ffffff',
-          color: 'var(--bg)',
+          color: 'var(--on-accent)',
           border: 'none',
           borderRadius: '12px',
           fontSize: '15px',

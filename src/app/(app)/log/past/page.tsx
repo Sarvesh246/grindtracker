@@ -432,7 +432,7 @@ function LogPastContent() {
             <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
           </svg>
         ) : (
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent)' }}>
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent-text)' }}>
             <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
             <polyline points="22 4 12 14.01 9 11.01" />
           </svg>
@@ -458,7 +458,7 @@ function LogPastContent() {
           style={{
             marginTop: '8px',
             backgroundColor: accentColor,
-            color: 'var(--bg)',
+            color: 'var(--on-accent)',
             border: 'none',
             borderRadius: '12px',
             padding: '14px 32px',
@@ -531,7 +531,6 @@ function LogPastContent() {
                 fontFamily: "'DM Sans', sans-serif",
                 outline: 'none',
                 boxSizing: 'border-box',
-                colorScheme: 'dark',
               }}
             />
           </div>
@@ -557,7 +556,7 @@ function LogPastContent() {
                         borderRadius: '9999px',
                         border: active ? 'none' : '1px solid var(--border)',
                         backgroundColor: active ? 'var(--accent)' : 'var(--surface-elevated)',
-                        color: active ? 'var(--bg)' : 'var(--text-secondary)',
+                        color: active ? 'var(--on-accent)' : 'var(--text-secondary)',
                         fontSize: '13px',
                         fontFamily: "'Bebas Neue', sans-serif",
                         letterSpacing: '0.5px',
@@ -781,10 +780,10 @@ function LogPastContent() {
                       >
                         {skippedExercises.has(ex.id) ? (
                           <>
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent)' }}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent-text)' }}>
                               <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.37"/>
                             </svg>
-                            <span style={{ fontSize: '10px', color: 'var(--accent)', fontFamily: "'Bebas Neue', sans-serif", letterSpacing: '0.5px' }}>UNDO</span>
+                            <span style={{ fontSize: '10px', color: 'var(--accent-text)', fontFamily: "'Bebas Neue', sans-serif", letterSpacing: '0.5px' }}>UNDO</span>
                           </>
                         ) : (
                           <>
@@ -902,7 +901,7 @@ function LogPastContent() {
               width: '100%',
               height: '52px',
               backgroundColor: submitting ? 'var(--text-muted)' : 'var(--accent)',
-              color: 'var(--bg)',
+              color: 'var(--on-accent)',
               border: 'none',
               borderRadius: '12px',
               fontFamily: "'Bebas Neue', sans-serif",

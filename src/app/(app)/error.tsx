@@ -46,7 +46,7 @@ export default function Error({
           height: '48px',
           padding: '0 32px',
           backgroundColor: 'var(--accent)',
-          color: 'var(--bg)',
+          color: 'var(--on-accent)',
           border: 'none',
           borderRadius: '12px',
           fontFamily: "'Bebas Neue', sans-serif",

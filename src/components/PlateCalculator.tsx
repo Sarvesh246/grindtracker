@@ -174,7 +174,7 @@ export default function PlateCalculator({ initialTarget, onClose, onApply }: Pro
                       borderRadius: 'var(--radius-sm)',
                       border: `1px solid ${selected ? 'var(--accent)' : 'var(--border)'}`,
                       backgroundColor: selected ? 'rgba(200,241,53,0.1)' : 'var(--surface-elevated)',
-                      color: selected ? 'var(--accent)' : 'var(--text-secondary)',
+                      color: selected ? 'var(--accent-text)' : 'var(--text-secondary)',
                       fontFamily: 'var(--font-mono)',
                       fontSize: '13px',
                       cursor: 'pointer',
@@ -222,7 +222,7 @@ export default function PlateCalculator({ initialTarget, onClose, onApply }: Pro
                       borderRadius: 'var(--radius-pill, 9999px)',
                       backgroundColor: 'var(--surface-elevated)',
                       border: '1px solid var(--border)',
-                      color: 'var(--accent)',
+                      color: 'var(--accent-text)',
                       fontFamily: 'var(--font-mono)',
                       fontSize: '13px',
                     }}
@@ -262,7 +262,7 @@ export default function PlateCalculator({ initialTarget, onClose, onApply }: Pro
           style={{
             height: '48px',
             backgroundColor: valid ? 'var(--accent)' : 'var(--surface-elevated)',
-            color: valid ? 'var(--bg)' : 'var(--text-disabled)',
+            color: valid ? 'var(--on-accent)' : 'var(--text-disabled)',
             border: 'none',
             borderRadius: 'var(--radius-md)',
             fontFamily: 'var(--font-sans)',

@@ -48,11 +48,11 @@ function CustomTooltip({ active, payload }: { active?: boolean; payload?: Toolti
           display: 'flex', alignItems: 'center', gap: '5px',
           marginTop: '4px',
         }}>
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent)' }}>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent-text)' }}>
             <polyline points="8 6 12 2 16 6"/><path d="M12 2v10"/>
             <path d="M5 17l1.5-5h11L19 17"/><path d="M3 22h18"/>
           </svg>
-          <span style={{ fontSize: '11px', color: 'var(--accent)', fontWeight: 600 }}>PR</span>
+          <span style={{ fontSize: '11px', color: 'var(--accent-text)', fontWeight: 600 }}>PR</span>
         </div>
       )}
     </div>
@@ -71,13 +71,15 @@ function CustomDot({ cx, cy, payload }: CustomDotProps) {
   if (payload.isPR) {
     return (
       <g>
-        <circle cx={cx} cy={cy} r={8} fill="rgba(200, 241, 53, 0.2)" />
+        {/* PR halo: use accent-wash so it's visible on both dark and light backgrounds */}
+        <circle cx={cx} cy={cy} r={9} fill="var(--accent)" opacity={0.2} />
         <circle cx={cx} cy={cy} r={5} fill="var(--accent)" />
       </g>
     )
   }
 
-  return <circle cx={cx} cy={cy} r={3} fill="var(--accent)" opacity={0.5} />
+  {/* Regular dot: use accent-text (olive in light, lime in dark) at full opacity for visibility */}
+  return <circle cx={cx} cy={cy} r={3.5} fill="var(--accent-text)" />
 }
 
 export default function ProgressChart({ data }: { data: ChartPoint[] }) {
@@ -126,10 +128,10 @@ export default function ProgressChart({ data }: { data: ChartPoint[] }) {
         <Line
           type="monotone"
           dataKey="value"
-          stroke="var(--accent)"
+          stroke="var(--accent-text)"
           strokeWidth={2}
           dot={<CustomDot />}
-          activeDot={{ r: 6, fill: 'var(--accent)', stroke: 'var(--bg)', strokeWidth: 2 }}
+          activeDot={{ r: 6, fill: 'var(--accent)', stroke: 'var(--surface)', strokeWidth: 2 }}
         />
       </LineChart>
     </ResponsiveContainer>
