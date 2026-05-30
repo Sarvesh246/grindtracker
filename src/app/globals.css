@@ -389,9 +389,12 @@ select:focus-visible,
 }
 
 /* Dashboard outer padding. Mobile keeps a tight 16px; desktop opens up to the
-   32px gutter the spec calls for (overridden in the >=768 block above/below). */
+   32px gutter the spec calls for (overridden in the >=768 block above/below).
+   overflow-x: hidden prevents any child (stats row, calendar, etc.) from
+   widening the viewport on mobile and triggering the browser's auto-zoom. */
 .page--dashboard {
   padding: 0 16px 32px;
+  overflow-x: hidden;
 }
 
 /* Responsive grids — mobile column counts match the current inline values. */
@@ -402,9 +405,16 @@ select:focus-visible,
   column-gap: 24px;
   row-gap: 24px;
   grid-template-columns: 1fr;
+  min-width: 0;
+  overflow: hidden;
 }
 .home-col {
   min-width: 0;
+  overflow: hidden;
+}
+.hg-last {
+  min-width: 0;
+  overflow: hidden;
 }
 
 /* Workout calendar. Mobile keeps fixed, touch-friendly 40px day cells. On the
