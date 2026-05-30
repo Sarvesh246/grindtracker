@@ -7,6 +7,13 @@ All core phases (1–7) built and deployed. Single-user PWA, in daily use.
 Next.js 16 App Router, React 19, TypeScript, Tailwind CSS v4,
 Supabase (@supabase/ssr), Recharts, deployed on Vercel.
 
+> ⚠️ Next.js 16 has breaking changes vs. earlier versions (APIs, conventions,
+> file structure). It may differ from training data — consult
+> `node_modules/next/dist/docs/` before writing Next-specific code (see `AGENTS.md`).
+
+Commands: `npm run dev` (dev server), `npm run build` (production build, see below),
+`npm start` (serve build), `npm run lint` (ESLint).
+
 ### Building locally
 `npm run build` uses Turbopack, which requires native SWC bindings. In sandboxes
 without them (e.g. musl/WASM-only), build with `npx next build --webpack`.
@@ -25,6 +32,11 @@ Border radius: 12px standard, 8px small, 9999px pill
 Transitions: 150ms ease
 Primary button: bg #c8f135, text #0f0f0f, font bold
 Secondary button: bg #242424, text #f0f0f0, border #2e2e2e
+
+### Responsive navigation
+`TopNav` (desktop) and `BottomNav` (mobile) both render in `(app)/layout.tsx`;
+CSS at the 768px breakpoint shows exactly one — there is no JS width detection.
+Both share `UnitContext`, so the kg/lbs toggle stays in sync across them.
 
 ## Supabase Tables
 - exercises — name, day_type, sets_target, reps_target, sort_order. Seeded
@@ -91,7 +103,10 @@ src/
     setup/page.tsx                — username claim (first run)
     auth/callback/route.ts        — OAuth code exchange
     (app)/
-      layout.tsx                  — wraps UnitProvider + BottomNav, safe-area padding
+      layout.tsx                  — wraps UnitProvider + TopNav (desktop) + BottomNav
+                                     (mobile), safe-area padding. Resolves the unit
+                                     preference server-side from the grind_unit_pref
+                                     cookie to avoid a hydration flash.
       error.tsx                   — error boundary
       home/page.tsx + HomeDashboard.tsx + loading.tsx
       log/page.tsx + DaySelect.tsx + ActiveWorkout.tsx + CompletionModal.tsx
@@ -100,7 +115,7 @@ src/
       profile/page.tsx + ProfileDashboard.tsx + BodyWeightCard.tsx + loading.tsx
       leaderboard/page.tsx + LeaderboardClient.tsx + FriendsAccordion.tsx + ShareCard.tsx
   components/
-    BottomNav.tsx, WorkoutCalendar.tsx, PlateCalculator.tsx, RestTimerBar.tsx
+    BottomNav.tsx, TopNav.tsx, WorkoutCalendar.tsx, PlateCalculator.tsx, RestTimerBar.tsx
     ui/ (Button, Card, IconButton, Input, SectionLabel, StatTile, index)
   lib/
     supabase/client.ts + server.ts
