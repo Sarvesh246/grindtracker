@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import HomeDashboard from './HomeDashboard'
+import { computeRotation } from '@/lib/utils/gamification'
 
 export default async function HomePage() {
   const supabase = await createClient()
@@ -89,8 +90,38 @@ export default async function HomePage() {
     }
   }
 
-  // Exercises for the next suggested day (to show preview in CTA)
-  const nextDay = getNextDayTypeServer(lastSession?.day_type ?? null)
+  // Skip-aware rotation: recommend the day trained least recently and flag any
+  // days that have fallen behind. This way, deviating from push→pull→legs (e.g.
+  // doing an extra push instead of legs) doesn't drop the skipped day out of the
+  // suggestion — it floats up as the recommendation and is flagged as overdue.
+  const { data: dayRows } = await supabase
+    .from('exercises')
+    .select('day_type')
+
+  const { data: completedForRotation } = await supabase
+    .from('sessions')
+    .select('day_type, completed_at')
+    .eq('user_id', user.id)
+    .not('completed_at', 'is', null)
+    .order('completed_at', { ascending: false })
+
+  // Most recent completion per day_type (rows are already newest-first).
+  const lastTrainedByDay: Record<string, string | null> = {}
+  for (const s of completedForRotation ?? []) {
+    if (s.completed_at && !(s.day_type in lastTrainedByDay)) {
+      lastTrainedByDay[s.day_type] = s.completed_at
+    }
+  }
+
+  const dayTypes = [...new Set((dayRows ?? []).map(d => d.day_type))]
+  const rotation = computeRotation(dayTypes, lastTrainedByDay)
+
+  // Recommended next day (least recently trained); fall back to the simple
+  // cycle from the last session when no workout days are defined yet.
+  const nextDay = rotation.find(r => r.recommended)?.dayType
+    ?? getNextDayTypeServer(lastSession?.day_type ?? null)
+
+  // Exercises for the recommended day, to preview in the CTA.
   const { data: nextDayExercises } = await supabase
     .from('exercises')
     .select('name')
@@ -129,6 +160,7 @@ export default async function HomePage() {
       lastSessionLogs={lastSessionLogs}
       nextDay={nextDay}
       nextDayExercises={(nextDayExercises ?? []).map(e => e.name)}
+      rotation={rotation}
       firstName={firstName}
       weeklyWorkouts={weeklyCount ?? 0}
       monthlyWorkouts={monthlyCount ?? 0}

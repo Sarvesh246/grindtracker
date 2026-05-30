@@ -1,7 +1,7 @@
 'use client'
 import { useRouter } from 'next/navigation'
 import { Session, UserStats } from '@/lib/types'
-import { getLevel, getXpInCurrentLevel, getXpRequiredForLevel, getXpToNextLevel } from '@/lib/utils/gamification'
+import { getLevel, getXpInCurrentLevel, getXpRequiredForLevel, getXpToNextLevel, RotationDay } from '@/lib/utils/gamification'
 import { formatHeaderDate, formatShortDate } from '@/lib/utils/formatting'
 import WorkoutCalendar from '@/components/WorkoutCalendar'
 import { useUnit } from '@/lib/contexts/UnitContext'
@@ -10,8 +10,9 @@ interface Props {
   stats: UserStats | null
   lastSession: Session | null
   lastSessionLogs: { exercise_name: string; weight: number | null; sets: number; reps: number | null }[]
-  nextDay: 'push' | 'pull' | 'legs'
+  nextDay: string
   nextDayExercises: string[]
+  rotation: RotationDay[]
   firstName: string
   weeklyWorkouts: number
   monthlyWorkouts: number
@@ -28,6 +29,22 @@ const DAY_MUSCLES: Record<string, string> = {
   push: 'Chest, Shoulders, Triceps',
   pull: 'Back, Biceps, Rear Delts',
   legs: 'Quads, Hamstrings, Glutes',
+}
+
+// Custom day names fall back to a humanized, uppercased label.
+function dayLabel(dayType: string): string {
+  return DAY_LABELS[dayType] ?? `${dayType.replace(/-/g, ' ').toUpperCase()} DAY`
+}
+
+function dayName(dayType: string): string {
+  return dayType.replace(/-/g, ' ').toUpperCase()
+}
+
+function recencyLabel(daysSince: number | null): string {
+  if (daysSince === null) return 'Never trained'
+  if (daysSince === 0) return 'Trained today'
+  if (daysSince === 1) return 'Trained yesterday'
+  return `Trained ${daysSince}d ago`
 }
 
 // A small dumbbell/barbell glyph, reused for the welcome state and the CTA.
@@ -55,6 +72,7 @@ export default function HomeDashboard({
   lastSessionLogs,
   nextDay,
   nextDayExercises,
+  rotation,
   firstName,
   weeklyWorkouts,
   monthlyWorkouts,
@@ -76,6 +94,11 @@ export default function HomeDashboard({
   const exercisePreview = nextDayExercises.length <= 2
     ? nextDayExercises.join(', ')
     : `${nextDayExercises.slice(0, 2).join(', ')} +${nextDayExercises.length - 2} more`
+
+  // Only surface the rotation once there's history — the first-run welcome
+  // handles onboarding, and a brand-new user has nothing meaningful to skip.
+  const showRotation = totalWorkouts > 0 && rotation.length > 0
+  const overdueNames = rotation.filter(d => d.overdue).map(d => dayName(d.dayType))
 
   return (
     <div className="page page--dashboard" style={{ padding: '0 16px 32px', fontFamily: "'DM Sans', sans-serif" }}>
@@ -309,7 +332,7 @@ export default function HomeDashboard({
       {/* Start Workout CTA */}
       <button
         onClick={() => router.push(`/log?day=${nextDay}`)}
-        title={DAY_MUSCLES[nextDay]}
+        title={DAY_MUSCLES[nextDay] ?? undefined}
         style={{
           width: '100%',
           minHeight: '72px',
@@ -340,7 +363,7 @@ export default function HomeDashboard({
             letterSpacing: '1px',
             lineHeight: 1,
           }}>
-            START {DAY_LABELS[nextDay]}
+            START {dayLabel(nextDay)}
           </span>
           <span style={{
             fontSize: '11px',
@@ -354,6 +377,99 @@ export default function HomeDashboard({
         </span>
         <span style={{ flexShrink: 0 }}><ChevronRight color="var(--bg)" /></span>
       </button>
+
+      {/* Rotation — shows every day with how recently it was trained, highlights
+          overdue days, and lets you jump straight back to one you skipped. */}
+      {showRotation && (
+        <div style={{ marginBottom: '24px' }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'baseline',
+            justifyContent: 'space-between',
+            gap: '12px',
+            marginBottom: '10px',
+          }}>
+            <span style={{
+              fontSize: '12px',
+              color: 'var(--text-muted)',
+              textTransform: 'uppercase',
+              letterSpacing: '1.5px',
+            }}>
+              ROTATION
+            </span>
+            {overdueNames.length > 0 && (
+              <span style={{ fontSize: '12px', color: 'var(--danger)', textAlign: 'right' }}>
+                Behind on {overdueNames.join(', ')}
+              </span>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {rotation.map(day => {
+              const isNext = day.recommended
+              const isOverdue = day.overdue && !day.recommended
+              const borderColor = isNext
+                ? 'var(--accent)'
+                : isOverdue
+                  ? 'var(--danger)'
+                  : 'var(--border)'
+              const recencyColor = day.overdue
+                ? (isNext ? 'var(--accent-dim)' : 'var(--danger)')
+                : 'var(--text-muted)'
+              return (
+                <button
+                  key={day.dayType}
+                  onClick={() => router.push(`/log?day=${day.dayType}`)}
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    backgroundColor: 'var(--surface)',
+                    border: `1px solid ${borderColor}`,
+                    borderRadius: '12px',
+                    padding: '12px 14px',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    transition: 'border-color 150ms ease',
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontFamily: "'Bebas Neue', sans-serif",
+                      fontSize: '18px',
+                      color: 'var(--text-primary)',
+                      letterSpacing: '0.5px',
+                      lineHeight: 1.1,
+                    }}>
+                      {dayName(day.dayType)}
+                    </div>
+                    <div style={{ fontSize: '12px', color: recencyColor, marginTop: '1px' }}>
+                      {recencyLabel(day.daysSince)}
+                    </div>
+                  </div>
+                  {(isNext || isOverdue) && (
+                    <span style={{
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      letterSpacing: '0.5px',
+                      textTransform: 'uppercase',
+                      color: isNext ? 'var(--bg)' : '#fff',
+                      backgroundColor: isNext ? 'var(--accent)' : 'var(--danger)',
+                      padding: '3px 8px',
+                      borderRadius: '9999px',
+                      flexShrink: 0,
+                    }}>
+                      {isNext ? 'Next' : 'Overdue'}
+                    </span>
+                  )}
+                  <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}><ChevronRight /></span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Last Workout */}
       <div style={{ marginBottom: '16px' }}>
