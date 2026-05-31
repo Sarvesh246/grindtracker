@@ -48,6 +48,10 @@ function queueDistance(seq: string[], currentIndex: number, day: string): number
  * you trained a later day out of order and left D behind. The just-completed day
  * sits at the far end of the queue, so finishing a workout never flags anything.
  *
+ * Only days that appear exactly once in the sequence are considered — recurring
+ * filler days (e.g. abs) are excluded, since skipping one instance isn't a real
+ * skip and their freshness would otherwise falsely flag the days around them.
+ *
  * Pure. `lastTrainedByDay` maps day_key → last completed ISO timestamp (null/absent
  * = never trained, treated as oldest). Returns most-overdue-first.
  */
@@ -57,7 +61,16 @@ export function overdueDays(
   lastTrainedByDay: Record<string, string | null>,
   now: Date = new Date(),
 ): OverdueDay[] {
-  const days = [...new Set(seq)]
+  // Only reason about days that appear exactly ONCE in the sequence. A repeated
+  // day (e.g. abs after every other day) recurs by design — skipping one instance
+  // isn't a meaningful skip, and because it's both due soon and freshly trained it
+  // would otherwise make every day between its occurrences look skipped. We hold
+  // only its latest completion anyway, so per-occurrence reasoning isn't possible.
+  const counts = seq.reduce<Record<string, number>>((m, d) => {
+    m[d] = (m[d] ?? 0) + 1
+    return m
+  }, {})
+  const days = [...new Set(seq)].filter(d => counts[d] === 1)
   const recency = (d: string): number => {
     const iso = lastTrainedByDay[d] ?? null
     return iso === null ? -Infinity : new Date(iso).getTime()
