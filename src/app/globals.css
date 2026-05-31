@@ -474,6 +474,49 @@ select:focus-visible,
   right: 0;
 }
 
+/* ── Active-workout desktop layout ──────────────────────────────────────────
+   Mobile base rules below MUST equal the prior inline values so the phone UI
+   is byte-identical. The sidebar/grid desktop layout lives in the >=1024 block
+   further down. */
+
+/* Page container for the live workout. Mobile = full width (like .page). */
+.page--workout {
+  width: 100%;
+}
+
+/* Sidebar+main wrapper. Mobile = plain block (no layout change). */
+.wo-layout {
+  display: block;
+}
+
+/* Desktop-only sidebar rail — hidden on mobile. */
+.wo-sidebar {
+  display: none;
+}
+
+/* Mobile sticky header — visible on mobile, hidden on desktop (sidebar
+   replaces it). No inline `display` on the element, so this class wins. */
+.wo-mobile-header {
+  display: block;
+}
+
+/* Exercise list inner wrapper — no constraint on mobile. */
+.wo-main-inner {
+  width: 100%;
+}
+
+/* Finish bar inner layout — mobile = stacked (button, then summary below). */
+.wo-finish-inner {
+  display: block;
+}
+.wo-finish-btn {
+  width: 100%;
+}
+.wo-finish-summary {
+  text-align: center;
+  margin-top: 6px;
+}
+
 /* Active-workout sticky header sticks to the viewport top on mobile; on desktop
    it must clear the fixed top nav. */
 .wo-sticky-header {
@@ -504,7 +547,8 @@ select:focus-visible,
   .page--wide {
     max-width: 880px;
   }
-  .page--narrow {
+  .page--narrow,
+  .page--workout {
     max-width: 640px;
   }
   .page--form {
@@ -610,4 +654,88 @@ select:focus-visible,
   .day-grid {
     grid-template-columns: repeat(2, 1fr);
   }
+}
+
+/* ── Active-workout desktop sidebar layout (>=1024px) ───────────────────────
+   Below 1024 the workout keeps the centered 640px single column (unchanged). */
+@media (min-width: 1024px) {
+  /* `overflow-x: hidden` (set on .app-main for the mobile anti-zoom guard) forces
+     overflow-y to compute as `auto`, which makes .app-main a scroll container and
+     breaks `position: sticky` for the workout sidebar. `clip` clips identically
+     without creating a scroll container, so sticky pins to the viewport again. */
+  .app-main {
+    overflow-x: clip;
+    overflow-y: visible;
+  }
+
+  .page--workout {
+    max-width: 1080px;
+  }
+
+  /* Two-column grid: fixed sidebar rail + flexible main panel. */
+  .wo-layout {
+    display: grid;
+    grid-template-columns: 264px minmax(0, 1fr);
+    gap: 32px;
+    align-items: start;
+  }
+
+  /* Sidebar becomes a sticky surface panel beside the cards. */
+  .wo-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    position: sticky;
+    top: calc(var(--nav-h) + env(safe-area-inset-top) + 16px);
+    align-self: start;
+    background-color: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 20px;
+    box-shadow: var(--card-shadow);
+  }
+
+  /* The mobile header is redundant on desktop — the sidebar carries title,
+     timer and progress. */
+  .wo-mobile-header {
+    display: none;
+  }
+
+  /* Keep set rows tight/readable instead of stretching across the wide main
+     column. */
+  .wo-main-inner {
+    max-width: 760px;
+  }
+
+  /* Finish bar + rest bar align to the wider content column. */
+  .wo-fixed-bar {
+    max-width: 1080px;
+  }
+
+  /* Inline toolbar: summary on the left, button on the right. */
+  .wo-finish-inner {
+    display: flex;
+    flex-direction: row-reverse;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .wo-finish-btn {
+    width: auto;
+    min-width: 300px;
+  }
+  .wo-finish-summary {
+    margin-top: 0;
+    text-align: left;
+  }
+}
+
+/* Sidebar exercise jump-list buttons: hover feedback (background lives here so
+   :hover can take effect, matching the .top-nav-tab pattern). */
+.wo-jump-item {
+  background-color: transparent;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+.wo-jump-item:hover {
+  background-color: var(--surface-elevated);
 }

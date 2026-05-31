@@ -339,7 +339,10 @@ export default function ActiveWorkout({ day }: { day: string }) {
     const key = `${exerciseId}-${setNumber}`
     setLogs(prev => {
       const cur = prev[key]
-      if (!cur || cur.checked) return prev
+      // Allow toggling on an unsaved set, OR on a saved set that's currently
+      // being edited. Block it only for saved sets not in the edit window —
+      // otherwise re-opening a logged set to edit it left warm-up stuck.
+      if (!cur || (cur.checked && editingKey !== key)) return prev
       return { ...prev, [key]: { ...cur, isWarmup: !cur.isWarmup } }
     })
   }
@@ -1033,10 +1036,136 @@ export default function ActiveWorkout({ day }: { day: string }) {
         />
       )}
 
-      <div className="page page--narrow" style={{ paddingBottom: 'calc(140px + env(safe-area-inset-bottom))', fontFamily: "'DM Sans', sans-serif" }}>
+      <div className="page page--workout" style={{ paddingBottom: 'calc(140px + env(safe-area-inset-bottom))', fontFamily: "'DM Sans', sans-serif" }}>
+       <div className="wo-layout">
+
+        {/* Desktop sidebar rail — hidden on mobile via CSS. Mirrors the mobile
+            header (title/timer/progress) and adds an exercise jump-list. */}
+        <aside className="wo-sidebar">
+          <button
+            onClick={() => setShowExitConfirm(true)}
+            aria-label="Exit workout"
+            style={{
+              display: 'flex', alignItems: 'center', gap: '6px',
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: 'var(--text-secondary)', padding: 0,
+              fontFamily: "'DM Sans', sans-serif", fontSize: '13px', fontWeight: 600,
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
+            Exit
+          </button>
+
+          <div>
+            <div style={{
+              fontFamily: "'Bebas Neue', sans-serif",
+              fontSize: '30px', color: 'var(--text-primary)', letterSpacing: '1px',
+              lineHeight: 1.05,
+            }}>
+              {dayLabel(day)}
+            </div>
+            <div style={{
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: '14px', color: 'var(--text-secondary)', marginTop: '4px',
+            }}>
+              {formatElapsed(elapsed)}
+            </div>
+          </div>
+
+          {/* Progress */}
+          <div>
+            <div style={{
+              display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
+              marginBottom: '6px',
+            }}>
+              <span style={{
+                fontSize: '10px', letterSpacing: 'var(--tracking-label)',
+                color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 500,
+              }}>
+                Progress
+              </span>
+              <span style={{
+                fontFamily: "'JetBrains Mono', monospace", fontSize: '13px',
+                color: 'var(--accent-text)',
+              }}>
+                {Math.round(progressPercent())}%
+              </span>
+            </div>
+            <div style={{ height: '6px', backgroundColor: 'var(--border)', borderRadius: '9999px', overflow: 'hidden' }}>
+              <div style={{
+                height: '100%', width: `${progressPercent()}%`,
+                backgroundColor: 'var(--accent)', borderRadius: '9999px',
+                transition: 'width 300ms ease',
+              }} />
+            </div>
+          </div>
+
+          {/* Exercise jump-list */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <span style={{
+              fontSize: '10px', letterSpacing: 'var(--tracking-label)',
+              color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 500,
+              marginBottom: '2px',
+            }}>
+              Exercises
+            </span>
+            {exercises.map((ex) => {
+              const setCount = ex.sets_target + (extraSets[ex.id] ?? 0)
+              const keys = Array.from({ length: setCount }, (_, i) => `${ex.id}-${i + 1}`)
+              const entries = keys.map(k => logs[k])
+              const allSkipped = setCount > 0 && entries.every(e => e?.skipped)
+              const allProcessed = setCount > 0 && entries.every(e => e?.checked || e?.skipped)
+              const anyChecked = entries.some(e => e?.checked)
+              const done = allProcessed && anyChecked
+              return (
+                <button
+                  key={ex.id}
+                  className="wo-jump-item"
+                  onClick={() => document.getElementById(`wo-ex-${ex.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '8px',
+                    width: '100%', textAlign: 'left',
+                    border: '1px solid transparent', borderRadius: 'var(--radius-sm)',
+                    padding: '7px 8px', cursor: 'pointer',
+                  }}
+                >
+                  <span style={{
+                    width: '16px', height: '16px', borderRadius: '9999px', flexShrink: 0,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    border: done ? 'none' : `1.5px solid ${allSkipped ? 'var(--danger)' : 'var(--border-strong)'}`,
+                    backgroundColor: done ? 'var(--accent)' : 'transparent',
+                  }}>
+                    {done && (
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--on-accent)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    )}
+                    {allSkipped && !done && (
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" strokeWidth="3" strokeLinecap="round">
+                        <line x1="5" y1="12" x2="19" y2="12" />
+                      </svg>
+                    )}
+                  </span>
+                  <span style={{
+                    fontSize: '13px', minWidth: 0,
+                    color: allSkipped ? 'var(--text-muted)' : 'var(--text-secondary)',
+                    textDecoration: allSkipped ? 'line-through' : 'none',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
+                    {ex.name}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </aside>
+
+        <div className="wo-main">
 
         {/* Header */}
-        <div className="wo-sticky-header" style={{
+        <div className="wo-sticky-header wo-mobile-header" style={{
           position: 'sticky', zIndex: 10,
           backgroundColor: 'var(--bg)',
           borderBottom: '1px solid var(--border)',
@@ -1088,7 +1217,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         </div>
 
         {/* Exercise cards */}
-        <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div className="wo-main-inner" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {showNoteHint && (
             <div
               style={{
@@ -1193,6 +1322,8 @@ export default function ActiveWorkout({ day }: { day: string }) {
             />
           </div>
         </div>
+        </div>{/* .wo-main */}
+       </div>{/* .wo-layout */}
       </div>
 
       {/* Finish button — hidden while the rest bar owns the bottom edge */}
@@ -1208,14 +1339,16 @@ export default function ActiveWorkout({ day }: { day: string }) {
         borderTop: '1px solid var(--border)',
         zIndex: 50,
       }}>
+        <div className="wo-finish-inner">
         {(() => {
           const canFinish = checked > 0 && !finishing
           return (
             <button
               onClick={handleFinish}
               disabled={!canFinish}
+              className="wo-finish-btn"
               style={{
-                width: '100%', height: '56px',
+                height: '56px',
                 backgroundColor: canFinish ? 'var(--accent)' : 'var(--border)',
                 color: canFinish ? 'var(--on-accent)' : 'var(--text-muted)',
                 border: 'none', borderRadius: '12px',
@@ -1229,10 +1362,11 @@ export default function ActiveWorkout({ day }: { day: string }) {
             </button>
           )
         })()}
-        <div style={{ textAlign: 'center', marginTop: '6px', fontSize: '12px', color: 'var(--text-muted)' }}>
+        <div className="wo-finish-summary" style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
           {skipped > 0
             ? `${checked} done · ${skipped} skipped · ${total} total`
             : `${checked} / ${total} sets`}
+        </div>
         </div>
       </div>
       )}
@@ -1278,13 +1412,14 @@ function ExerciseCard({
   const allSkipped = setNumbers.every(s => logs[`${exercise.id}-${s}`]?.skipped)
 
   return (
-    <div style={{
+    <div id={`wo-ex-${exercise.id}`} style={{
       backgroundColor: 'var(--surface)',
       border: `1px solid ${anySkipped ? 'rgba(239,68,68,0.2)' : 'var(--border)'}`,
       borderRadius: '12px',
       overflow: 'hidden',
       opacity: allSkipped ? 0.65 : 1,
       transition: 'opacity 150ms ease, border-color 150ms ease',
+      scrollMarginTop: 'calc(var(--nav-h) + 16px)',
     }}>
       <div style={{ padding: '14px 16px 10px' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px', marginBottom: '4px' }}>
@@ -1714,7 +1849,7 @@ function SetRow({
       }}
     >
       <div
-        style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px' }}
+        style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px' }}
         onMouseDown={handleRowLongPressStart}
         onMouseUp={handleRowLongPressEnd}
         onMouseLeave={handleRowLongPressEnd}
@@ -1736,8 +1871,8 @@ function SetRow({
            under the first set of each exercise states what it does without repeating
            on every row. The fixed-width column keeps the inputs aligned across rows. */}
         <div style={{
-          width: '34px', flexShrink: 0,
-          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px',
+          width: '36px', flexShrink: 0, marginRight: '2px',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '5px',
         }}>
           <button
             onClick={onToggleWarmup}
@@ -1902,23 +2037,27 @@ function SetRow({
           <button
             onClick={onSaveEdit}
             aria-label={`Save set ${setNumber}`}
+            title="Save changes"
             style={{
-              height: '44px',
-              minWidth: '60px',
-              padding: '0 14px',
-              borderRadius: 'var(--radius-pill, 9999px)',
-              border: 'none',
+              // Match the check button's 44×44 circular footprint so swapping
+              // check ⇄ save never changes the row layout (and never squeezes
+              // the weight input). The filled accent fill reads as "confirm".
+              width: '44px', height: '44px', minWidth: '44px',
+              borderRadius: '9999px',
+              border: '2px solid var(--accent)',
               backgroundColor: 'var(--accent)',
-              color: 'var(--on-accent)',
-              fontFamily: 'var(--font-sans)',
-              fontSize: '12px',
-              fontWeight: 700,
-              letterSpacing: '1px',
               cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
               flexShrink: 0,
+              transition: 'border-color 150ms ease, background-color 150ms ease',
             }}
           >
-            SAVE
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+              style={{ color: 'var(--on-accent)' }}>
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
           </button>
         ) : (
           <button

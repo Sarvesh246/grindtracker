@@ -1,7 +1,6 @@
 'use client'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useUnit } from '@/lib/contexts/UnitContext'
 import ThemeToggle from '@/components/ThemeToggle'
 
 const tabs = [
@@ -76,7 +75,6 @@ const tabs = [
 export default function TopNav() {
   // Desktop top bar (hidden on mobile via CSS at <768px).
   const pathname = usePathname()
-  const { unit, toggleUnit } = useUnit()
 
   return (
     <nav className="top-nav">
@@ -132,50 +130,10 @@ export default function TopNav() {
         })}
       </div>
 
-      {/* Right column: theme toggle + unit toggle (both shared via context, so
-          they stay in sync with the matching controls in Profile settings). */}
+      {/* Right column: theme toggle. The unit (kg/lb) preference is a
+          set-once choice, so it lives only in Profile settings. */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', justifySelf: 'end' }}>
       <ThemeToggle size={30} />
-      <button
-        onClick={toggleUnit}
-        aria-label={`Switch units — currently ${unit === 'metric' ? 'kilograms' : 'pounds'}`}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          backgroundColor: 'var(--surface-elevated)',
-          border: '1px solid var(--border)',
-          borderRadius: '9999px',
-          padding: '3px',
-          cursor: 'pointer',
-          position: 'relative',
-          width: '76px',
-          height: '30px',
-          flexShrink: 0,
-        }}
-      >
-        <span style={{
-          flex: 1, textAlign: 'center', fontSize: '11px', fontWeight: 700,
-          fontFamily: "'DM Sans', sans-serif", letterSpacing: '0.5px',
-          color: unit === 'metric' ? 'var(--on-accent)' : 'var(--text-muted)',
-          position: 'relative', zIndex: 1,
-        }}>KG</span>
-        <span style={{
-          flex: 1, textAlign: 'center', fontSize: '11px', fontWeight: 700,
-          fontFamily: "'DM Sans', sans-serif", letterSpacing: '0.5px',
-          color: unit === 'imperial' ? 'var(--on-accent)' : 'var(--text-muted)',
-          position: 'relative', zIndex: 1,
-        }}>LBS</span>
-        <div style={{
-          position: 'absolute',
-          top: '3px',
-          left: unit === 'metric' ? '3px' : 'calc(50% + 1px)',
-          width: 'calc(50% - 4px)',
-          height: 'calc(100% - 6px)',
-          backgroundColor: 'var(--accent)',
-          borderRadius: '9999px',
-          transition: 'left 150ms ease',
-        }} />
-      </button>
       </div>
     </nav>
   )
