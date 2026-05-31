@@ -18,8 +18,6 @@ function getYesterdayString(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-const DAY_TYPES = ['push', 'pull', 'legs'] as const
-
 type SetInput = { weight: string; reps: string }
 
 type ExistingSession = { id: string; day_type: string; xp_earned: number }
@@ -67,7 +65,7 @@ async function recalculateStreak(
     if (dates[i] === targetDate) streak_at_target = streak
   }
 
-  // Zero out streak if last workout is more than 2 days from today
+  // Zero out streak if the last workout is more than 1 day from today (a missed day)
   const todayMs = new Date().setHours(0, 0, 0, 0)
   const lastMs = new Date(dates[dates.length - 1] + 'T12:00:00').setHours(0, 0, 0, 0)
   const diffFromToday = Math.round((todayMs - lastMs) / (1000 * 60 * 60 * 24))
@@ -87,6 +85,7 @@ function LogPastContent() {
   const initialDate = paramDate && paramDate <= yesterday ? paramDate : yesterday
 
   const [selectedDate, setSelectedDate] = useState(initialDate)
+  const [dayTypes, setDayTypes] = useState<string[]>([])
   const [selectedDayType, setSelectedDayType] = useState<string | null>(null)
   const [existingSession, setExistingSession] = useState<ExistingSession | null>(null)
   const existingSessionRef = useRef<ExistingSession | null>(null)
@@ -101,6 +100,22 @@ function LogPastContent() {
   const [error, setError] = useState<string | null>(null)
   const [duplicateWarning, setDuplicateWarning] = useState(false)
   const [done, setDone] = useState<{ xpEarned: number; prCount: number; isEdit: boolean; isDelete: boolean } | null>(null)
+
+  // The user's actual workout days (including custom ones like "abs" or "upper"),
+  // not a fixed push/pull/legs list — so a past workout can be logged for any day
+  // the user trains, matching the live day picker.
+  useEffect(() => {
+    let cancelled = false
+    supabase
+      .from('exercises')
+      .select('day_type')
+      .then(({ data }) => {
+        if (cancelled) return
+        setDayTypes(Array.from(new Set((data ?? []).map(r => r.day_type))).sort())
+      })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     checkExistingSession(selectedDate)
@@ -273,7 +288,6 @@ function LogPastContent() {
     }
 
     let sessionId: string
-    const oldXp = isEditing ? existingSessionRef.current!.xp_earned : 0
 
     if (isEditing) {
       sessionId = existingSessionRef.current!.id
@@ -370,7 +384,7 @@ function LogPastContent() {
       })
       .eq('user_id', user.id)
 
-    await checkAndAwardBadges(supabase, user.id, updatedStats, prCount)
+    await checkAndAwardBadges(supabase, user.id, updatedStats)
 
     haptic('medium')
     setDone({ xpEarned, prCount, isEdit: false, isDelete: false })
@@ -542,17 +556,22 @@ function LogPastContent() {
             </div>
             {checkingDate ? (
               <div style={{ fontSize: '13px', color: 'var(--text-muted)', padding: '8px 0' }}>Checking date...</div>
+            ) : dayTypes.length === 0 ? (
+              <div style={{ fontSize: '13px', color: 'var(--text-muted)', padding: '8px 0' }}>No workout days yet.</div>
             ) : (
-              <div style={{ display: 'flex', gap: '8px' }}>
-                {DAY_TYPES.map(type => {
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                {dayTypes.map(type => {
                   const active = selectedDayType === type
                   return (
                     <button
                       key={type}
                       onClick={() => handleDayTypeSelect(type)}
                       style={{
-                        flex: 1,
+                        // Grow to fill, but wrap to a new row past ~3 days so custom
+                        // rotations with many days stay readable on a phone.
+                        flex: '1 1 80px',
                         height: '36px',
+                        padding: '0 12px',
                         borderRadius: '9999px',
                         border: active ? 'none' : '1px solid var(--border)',
                         backgroundColor: active ? 'var(--accent)' : 'var(--surface-elevated)',
@@ -561,10 +580,11 @@ function LogPastContent() {
                         fontFamily: "'Bebas Neue', sans-serif",
                         letterSpacing: '0.5px',
                         cursor: 'pointer',
+                        whiteSpace: 'nowrap',
                         transition: 'background-color 150ms ease, color 150ms ease',
                       }}
                     >
-                      {type.toUpperCase()}
+                      {type.replace(/-/g, ' ').toUpperCase()}
                     </button>
                   )
                 })}

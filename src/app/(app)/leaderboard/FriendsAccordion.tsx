@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { UserProfile, Friendship } from '@/lib/types'
+import { UserProfile } from '@/lib/types'
 
 interface FriendRow {
   friendship_id: string

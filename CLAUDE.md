@@ -154,7 +154,8 @@ src/
     types/index.ts
     utils/gamification.ts + formatting.ts + badges.ts + haptics.ts + sessions.ts + rotation.ts
     brand-icon.tsx
-  middleware.ts                   — auth gate + redirect to /setup if no profile
+  proxy.ts                        — auth gate + redirect to /setup if no profile
+                                    (Next 16 renamed the Middleware convention to Proxy)
 docs/
   SQL.md + sql/*.sql              — ordered schema migrations
 public/

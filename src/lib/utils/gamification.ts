@@ -18,13 +18,3 @@ export function getXpToNextLevel(xpTotal: number): number {
   const level = getLevel(xpTotal)
   return getXpRequiredForLevel(level) - getXpInCurrentLevel(xpTotal)
 }
-
-export function getNextDayType(lastDayType: string | null): 'push' | 'pull' | 'legs' {
-  if (!lastDayType) return 'push'
-  const cycle: Record<string, 'push' | 'pull' | 'legs'> = {
-    push: 'pull',
-    pull: 'legs',
-    legs: 'push',
-  }
-  return cycle[lastDayType] ?? 'push'
-}

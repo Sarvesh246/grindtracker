@@ -30,7 +30,6 @@ export async function checkAndAwardBadges(
   supabase: SupabaseClient,
   userId: string,
   stats: UserStats,
-  sessionPRCount: number,
 ): Promise<string[]> {
   const { data: earned } = await supabase
     .from('user_badges')

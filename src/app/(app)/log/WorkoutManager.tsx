@@ -686,7 +686,7 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
             {screen.id === 'new-day' && (
               <div style={{ padding: '20px 16px' }}>
                 <div style={{ fontSize: '13px', color: 'var(--text-secondary)', fontFamily: "'DM Sans', sans-serif", marginBottom: '8px' }}>
-                  Day name (e.g. "Abs", "Cardio", "Upper Body")
+                  Day name (e.g. &ldquo;Abs&rdquo;, &ldquo;Cardio&rdquo;, &ldquo;Upper Body&rdquo;)
                 </div>
                 <input
                   autoFocus

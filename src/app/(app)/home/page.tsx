@@ -37,7 +37,8 @@ export default async function HomePage() {
     stats = newStats
   }
 
-  // Reset stale streak: if last workout was more than 2 days ago, streak should be 0
+  // Reset stale streak: if the last workout was more than 1 day ago (a full day
+  // was missed), the streak is broken and should show 0.
   if (stats && stats.current_streak > 0 && stats.last_workout_date) {
     const today = new Date()
     today.setHours(0, 0, 0, 0)

@@ -317,11 +317,6 @@ export default function ActiveWorkout({ day }: { day: string }) {
     return Object.values(logs).filter(l => l.skipped).length
   }
 
-  function allProcessed(): boolean {
-    if (totalSets() === 0) return false
-    return Object.values(logs).every(l => l.checked || l.skipped)
-  }
-
   function progressPercent(): number {
     if (totalSets() === 0) return 0
     const processed = Object.values(logs).filter(l => l.checked || l.skipped).length
@@ -780,7 +775,6 @@ export default function ActiveWorkout({ day }: { day: string }) {
       supabase,
       user.id,
       { ...currentStats, ...updatedStats },
-      prCount,
     )
 
     setCompletionData({
@@ -1768,7 +1762,7 @@ function SetRow({
   onWeightChange, onRepsChange, onNoteChange, onNoteBlur,
   onToggleWarmup, onSkip, onUnskip, onOpenPlateCalc,
 }: SetRowProps) {
-  const { toDisplay, fromDisplay, fmt } = useUnit()
+  const { fromDisplay, fmt } = useUnit()
   const [justChecked, setJustChecked] = useState(false)
   const [needsReps, setNeedsReps] = useState(false)
   const [noteOpen, setNoteOpen] = useState(false)

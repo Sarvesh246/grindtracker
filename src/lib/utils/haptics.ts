@@ -80,33 +80,42 @@ function tryVibrate(pattern: number | number[]): boolean {
 export function haptic(intensity: Intensity = 'light'): void {
   if (typeof window === 'undefined') return
 
-  // Try iOS first — when supported it produces a real native tap.
-  // iOS exposes one intensity, so we fake stronger feedback by stacking
-  // taps. "success" pulses three times, "heavy" twice.
-  const iosOk = tryIosHaptic()
-  if (iosOk) {
+  // Route by capability, not by attempt order. The iOS switch hack is a hidden
+  // <label>.click() that "succeeds" on every platform (it just toggles a checkbox),
+  // so trying it first would swallow the Android path and leave it dead. iOS Safari
+  // is the only engine that omits the Vibration API, so navigator.vibrate's presence
+  // cleanly distinguishes Android/Chrome (use it) from iOS (fall back to the hack).
+  const nav = typeof navigator !== 'undefined'
+    ? (navigator as Navigator & { vibrate?: (p: number | number[]) => boolean })
+    : undefined
+
+  if (nav && typeof nav.vibrate === 'function') {
+    switch (intensity) {
+      case 'light':
+        tryVibrate(10)
+        break
+      case 'medium':
+        tryVibrate(25)
+        break
+      case 'heavy':
+        tryVibrate([18, 40, 40])
+        break
+      case 'success':
+        tryVibrate([10, 60, 30])
+        break
+    }
+    return
+  }
+
+  // iOS fallback — the switch hack produces a real native tap. iOS exposes one
+  // intensity, so we fake stronger feedback by stacking taps: "success" pulses
+  // three times, "heavy" twice.
+  if (tryIosHaptic()) {
     if (intensity === 'heavy') {
       setTimeout(tryIosHaptic, 70)
     } else if (intensity === 'success') {
       setTimeout(tryIosHaptic, 70)
       setTimeout(tryIosHaptic, 160)
     }
-    return
-  }
-
-  // Fall back to Android vibrate API.
-  switch (intensity) {
-    case 'light':
-      tryVibrate(10)
-      break
-    case 'medium':
-      tryVibrate(25)
-      break
-    case 'heavy':
-      tryVibrate([18, 40, 40])
-      break
-    case 'success':
-      tryVibrate([10, 60, 30])
-      break
   }
 }
