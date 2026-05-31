@@ -8,8 +8,10 @@ import { BadgeDefinition } from '@/lib/utils/badges'
 import BodyWeightCard from './BodyWeightCard'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { getDefaultRest, setDefaultRest } from '@/lib/hooks/useRestTimer'
+import { useTheme } from '@/lib/contexts/ThemeContext'
+import ThemeToggle from '@/components/ThemeToggle'
 
-function FlameIcon({ size = 24, color = 'var(--accent)' }: { size?: number; color?: string }) {
+function FlameIcon({ size = 24, color = 'var(--accent-text)' }: { size?: number; color?: string }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 2c0 4-4 6-4 10a4 4 0 0 0 8 0c0-4-4-6-4-10z" />
@@ -18,7 +20,7 @@ function FlameIcon({ size = 24, color = 'var(--accent)' }: { size?: number; colo
   )
 }
 
-function BoltIcon({ size = 24, color = 'var(--accent)' }: { size?: number; color?: string }) {
+function BoltIcon({ size = 24, color = 'var(--accent-text)' }: { size?: number; color?: string }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
@@ -36,7 +38,7 @@ function LockIcon({ size = 14 }: { size?: number }) {
 }
 
 function BadgeIcon({ badgeId, size = 28, earned }: { badgeId: string; size?: number; earned: boolean }) {
-  const color = earned ? 'var(--accent)' : '#444444'
+  const color = earned ? 'var(--accent-text)' : 'var(--text-disabled)'
   const s = { width: size, height: size }
   const props = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none' as const, stroke: color, strokeWidth: '1.8', strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
 
@@ -110,6 +112,7 @@ export default function ProfileDashboard({
   const router = useRouter()
   const supabase = createClient()
   const { unit, toggleUnit } = useUnit()
+  const { theme } = useTheme()
   const [tooltipBadgeId, setTooltipBadgeId] = useState<string | null>(null)
   const [badgesOpen, setBadgesOpen] = useState(false)
   // Default rest time (min:sec), persisted to localStorage via the rest-timer hook.
@@ -304,7 +307,7 @@ export default function ProfileDashboard({
               <span style={{
                 fontFamily: "'Bebas Neue', sans-serif",
                 fontSize: '22px',
-                color: 'var(--accent)',
+                color: 'var(--accent-text)',
                 letterSpacing: '1px',
                 lineHeight: 1,
               }}>
@@ -376,7 +379,7 @@ export default function ProfileDashboard({
                     style={{
                       padding: '7px 12px',
                       backgroundColor: canSaveUsername ? 'var(--accent)' : 'var(--surface-elevated)',
-                      color: canSaveUsername ? 'var(--bg)' : 'var(--text-muted)',
+                      color: canSaveUsername ? 'var(--on-accent)' : 'var(--text-muted)',
                       border: 'none',
                       borderRadius: '8px',
                       fontFamily: "'DM Sans', sans-serif",
@@ -432,7 +435,7 @@ export default function ProfileDashboard({
           {/* Level badge */}
           <div style={{
             fontFamily: "'Bebas Neue', sans-serif",
-            fontSize: '40px', color: 'var(--accent)',
+            fontSize: '40px', color: 'var(--accent-text)',
             lineHeight: 1, flexShrink: 0,
           }}>
             {level}
@@ -538,7 +541,7 @@ export default function ProfileDashboard({
               <div style={{
                 fontFamily: "'Bebas Neue', sans-serif",
                 fontSize: '36px',
-                color: stat.accent ? 'var(--accent)' : 'var(--text-primary)',
+                color: stat.accent ? 'var(--accent-text)' : 'var(--text-primary)',
                 lineHeight: 1,
                 marginBottom: '4px',
               }}>
@@ -575,6 +578,21 @@ export default function ProfileDashboard({
           flexDirection: 'column',
           gap: '14px',
         }}>
+          {/* Appearance */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ fontSize: '14px', color: 'var(--text-primary)', fontWeight: 600, marginBottom: '2px' }}>
+                Appearance
+              </div>
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                {theme === 'light' ? 'Light mode' : 'Dark mode'}
+              </div>
+            </div>
+            <ThemeToggle size={32} />
+          </div>
+
+          <div style={{ height: '1px', backgroundColor: 'var(--border)' }} />
+
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <div style={{ fontSize: '14px', color: 'var(--text-primary)', fontWeight: 600, marginBottom: '2px' }}>
@@ -608,7 +626,7 @@ export default function ProfileDashboard({
               fontSize: '11px',
               fontWeight: 700,
               fontFamily: "'DM Sans', sans-serif",
-              color: unit === 'metric' ? 'var(--bg)' : 'var(--text-muted)',
+              color: unit === 'metric' ? 'var(--on-accent)' : 'var(--text-muted)',
               position: 'relative',
               zIndex: 1,
               letterSpacing: '0.5px',
@@ -620,7 +638,7 @@ export default function ProfileDashboard({
               fontSize: '11px',
               fontWeight: 700,
               fontFamily: "'DM Sans', sans-serif",
-              color: unit === 'imperial' ? 'var(--bg)' : 'var(--text-muted)',
+              color: unit === 'imperial' ? 'var(--on-accent)' : 'var(--text-muted)',
               position: 'relative',
               zIndex: 1,
               letterSpacing: '0.5px',

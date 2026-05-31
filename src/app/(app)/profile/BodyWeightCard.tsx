@@ -128,7 +128,7 @@ export default function BodyWeightCard() {
               <span
                 style={{
                   fontSize: '11px',
-                  color: change > 0 ? 'var(--accent)' : 'var(--text-secondary)',
+                  color: change > 0 ? 'var(--accent-text)' : 'var(--text-secondary)',
                   fontFamily: 'var(--font-mono)',
                 }}
               >
@@ -169,7 +169,7 @@ export default function BodyWeightCard() {
             borderRadius: 'var(--radius-sm)',
             border: 'none',
             backgroundColor: saving || !draft ? 'var(--surface-elevated)' : 'var(--accent)',
-            color: saving || !draft ? 'var(--text-muted)' : 'var(--bg)',
+            color: saving || !draft ? 'var(--text-muted)' : 'var(--on-accent)',
             fontFamily: 'var(--font-sans)',
             fontSize: '13px',
             fontWeight: 700,
@@ -221,10 +221,10 @@ export default function BodyWeightCard() {
               <Line
                 type="monotone"
                 dataKey="weight"
-                stroke="var(--accent)"
+                stroke="var(--accent-text)"
                 strokeWidth={2}
                 dot={false}
-                activeDot={{ r: 5, fill: 'var(--accent)', stroke: 'var(--bg)', strokeWidth: 2 }}
+                activeDot={{ r: 5, fill: 'var(--accent)', stroke: 'var(--surface)', strokeWidth: 2 }}
               />
             </LineChart>
           </ResponsiveContainer>

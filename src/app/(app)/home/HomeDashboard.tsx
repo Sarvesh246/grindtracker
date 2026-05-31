@@ -82,14 +82,23 @@ export default function HomeDashboard({
     ? nextDayExercises.join(', ')
     : `${nextDayExercises.slice(0, 2).join(', ')} +${nextDayExercises.length - 2} more`
 
+  // Shared card surface — one radius (20px) and one padding (24px) across the
+  // whole dashboard so every card edge aligns to the same grid.
+  const card: React.CSSProperties = {
+    backgroundColor: 'var(--surface)',
+    border: '1px solid var(--border)',
+    borderRadius: '20px',
+    padding: '24px',
+  }
+
   return (
-    <div className="page page--dashboard" style={{ padding: '0 16px 32px', fontFamily: "'DM Sans', sans-serif" }}>
+    <div className="page page--dashboard" style={{ fontFamily: "'DM Sans', sans-serif" }}>
 
       {/* Mobile-only wordmark — desktop carries the brand in the fixed TopNav. */}
       <h1 className="home-brand" style={{
         fontFamily: "'Bebas Neue', sans-serif",
         fontSize: '28px',
-        color: 'var(--accent)',
+        color: 'var(--accent-text)',
         letterSpacing: '1px',
         fontWeight: 'normal',
         paddingTop: '24px',
@@ -101,11 +110,9 @@ export default function HomeDashboard({
       {totalWorkouts === 0 && (
         <div
           style={{
-            backgroundColor: 'var(--surface)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-md)',
-            padding: '28px 20px',
-            marginBottom: '16px',
+            ...card,
+            padding: '32px 24px',
+            marginBottom: '24px',
             marginTop: '16px',
             textAlign: 'center',
             display: 'flex',
@@ -114,7 +121,7 @@ export default function HomeDashboard({
             alignItems: 'center',
           }}
         >
-          <span style={{ color: 'var(--accent)' }}><BarbellIcon size={48} /></span>
+          <span style={{ color: 'var(--accent-text)' }}><BarbellIcon size={48} /></span>
           <h2
             style={{
               fontFamily: 'var(--font-display)',
@@ -137,7 +144,7 @@ export default function HomeDashboard({
               height: '48px',
               padding: '0 28px',
               backgroundColor: 'var(--accent)',
-              color: 'var(--bg)',
+              color: 'var(--on-accent)',
               border: 'none',
               borderRadius: 'var(--radius-md)',
               fontFamily: 'var(--font-display)',
@@ -153,39 +160,33 @@ export default function HomeDashboard({
       )}
 
       <div className="home-grid">
-      <div className="home-col">
+      <div className="home-col hg-left" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
-      {/* Greeting */}
-      <div style={{ paddingTop: '20px', paddingBottom: '20px' }}>
+      {/* Greeting — the visual starting point of the dashboard. */}
+      <div>
         <div style={{
           fontSize: '13px',
           color: 'var(--text-muted)',
           textTransform: 'uppercase',
           letterSpacing: '1.5px',
-          marginBottom: '8px',
+          marginBottom: '10px',
         }}>
           {formatHeaderDate()}
         </div>
         <h2 style={{
           fontFamily: "'DM Sans', sans-serif",
-          fontSize: '32px',
+          fontSize: '34px',
           fontWeight: 600,
           color: 'var(--text-primary)',
           letterSpacing: '-0.5px',
-          lineHeight: 1.15,
+          lineHeight: 1.1,
         }}>
           Let&apos;s get after it, {firstName}.
         </h2>
       </div>
 
       {/* Level + XP Card */}
-      <div style={{
-        backgroundColor: 'var(--surface)',
-        borderRadius: '12px',
-        border: '1px solid var(--border)',
-        padding: '16px',
-        marginBottom: '12px',
-      }}>
+      <div style={card}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
           <div>
             <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '2px' }}>
@@ -193,8 +194,8 @@ export default function HomeDashboard({
             </div>
             <div style={{
               fontFamily: "'Bebas Neue', sans-serif",
-              fontSize: '52px',
-              color: 'var(--accent)',
+              fontSize: '68px',
+              color: 'var(--accent-text)',
               lineHeight: 1,
             }}>
               {level}
@@ -236,20 +237,16 @@ export default function HomeDashboard({
         <button
           onClick={() => router.push(`/log?day=${nextDay}`)}
           style={{
+            ...card,
             width: '100%',
-            backgroundColor: 'var(--surface)',
-            borderRadius: '12px',
-            border: '1px solid var(--border)',
-            padding: '16px',
-            marginBottom: '20px',
             display: 'flex',
             alignItems: 'center',
-            gap: '14px',
+            gap: '16px',
             cursor: 'pointer',
             textAlign: 'left',
           }}
         >
-          <span style={{ color: 'var(--accent)', flexShrink: 0 }}>
+          <span style={{ color: 'var(--accent-text)', flexShrink: 0 }}>
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 2c0 4-4 6-4 10a4 4 0 0 0 8 0c0-4-4-6-4-10z"/><path d="M12 12c0 2-1.5 3-1.5 4.5a1.5 1.5 0 0 0 3 0C13.5 15 12 14 12 12z"/>
             </svg>
@@ -266,18 +263,14 @@ export default function HomeDashboard({
         </button>
       ) : (
         <div style={{
-          backgroundColor: 'var(--surface)',
-          borderRadius: '12px',
-          border: '1px solid var(--border)',
-          padding: '16px',
-          marginBottom: '20px',
+          ...card,
           display: 'flex',
           alignItems: 'center',
           gap: '16px',
         }}>
           <div style={{ flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent)' }}>
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent-text)' }}>
                 <path d="M12 2c0 4-4 6-4 10a4 4 0 0 0 8 0c0-4-4-6-4-10z"/><path d="M12 12c0 2-1.5 3-1.5 4.5a1.5 1.5 0 0 0 3 0C13.5 15 12 14 12 12z"/>
               </svg>
               <span style={{
@@ -317,17 +310,16 @@ export default function HomeDashboard({
         title={DAY_MUSCLES[nextDay]}
         style={{
           width: '100%',
-          minHeight: '72px',
-          padding: '0 20px',
+          minHeight: '96px',
+          padding: '0 24px',
           backgroundColor: 'var(--accent)',
-          color: 'var(--bg)',
+          color: 'var(--on-accent)',
           border: 'none',
-          borderRadius: '12px',
+          borderRadius: '20px',
           cursor: 'pointer',
           display: 'flex',
           alignItems: 'center',
-          gap: '16px',
-          marginBottom: '24px',
+          gap: '18px',
           transition: 'opacity 150ms ease',
         }}
         onMouseEnter={e => (e.currentTarget.style.opacity = '0.88')}
@@ -337,47 +329,46 @@ export default function HomeDashboard({
         onTouchStart={e => (e.currentTarget.style.opacity = '0.85')}
         onTouchEnd={e => (e.currentTarget.style.opacity = '1')}
       >
-        <span style={{ flexShrink: 0 }}><BarbellIcon size={28} color="var(--bg)" /></span>
-        <span style={{ flex: 1, textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+        <span style={{ flexShrink: 0 }}><BarbellIcon size={32} color="var(--on-accent)" /></span>
+        <span style={{ flex: 1, textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '4px' }}>
           <span style={{
             fontFamily: "'Bebas Neue', sans-serif",
-            fontSize: '22px',
+            fontSize: '28px',
             letterSpacing: '1px',
             lineHeight: 1,
           }}>
             START {dayLabel(nextDay)}
           </span>
           <span style={{
-            fontSize: '11px',
-            fontWeight: 400,
-            color: 'var(--bg)',
-            opacity: 0.65,
+            fontSize: '12px',
+            fontWeight: 500,
+            color: 'var(--on-accent)',
+            opacity: 0.7,
             lineHeight: 1.2,
           }}>
             {exercisePreview}
           </span>
         </span>
-        <span style={{ flexShrink: 0 }}><ChevronRight color="var(--bg)" /></span>
+        <span style={{ flexShrink: 0 }}><ChevronRight color="var(--on-accent)" /></span>
       </button>
 
-      {/* Last Workout */}
-      <div style={{ marginBottom: '16px' }}>
+      </div>{/* end left column */}
+
+      {/* Last Workout — full-width band beneath both columns on desktop */}
+      <div className="hg-last">
         <div style={{
           fontSize: '12px',
           color: 'var(--text-muted)',
           textTransform: 'uppercase',
           letterSpacing: '1.5px',
-          marginBottom: '10px',
+          marginBottom: '12px',
         }}>
           LAST WORKOUT
         </div>
 
         {!lastSession ? (
           <div style={{
-            backgroundColor: 'var(--surface)',
-            borderRadius: '12px',
-            border: '1px solid var(--border)',
-            padding: '20px',
+            ...card,
             color: 'var(--text-muted)',
             fontSize: '14px',
             textAlign: 'center',
@@ -385,18 +376,20 @@ export default function HomeDashboard({
             No workouts logged yet. Hit that first session!
           </div>
         ) : (
-          <div style={{
+          <div className="lw-card" style={{
             backgroundColor: 'var(--surface)',
-            borderRadius: '12px',
+            borderRadius: '20px',
             border: '1px solid var(--border)',
             overflow: 'hidden',
           }}>
-            <div style={{
-              padding: '12px 16px',
+            <div className="lw-main">
+            <div className="lw-header" style={{
+              padding: '18px 24px',
               borderBottom: '1px solid var(--border)',
               display: 'flex',
               justifyContent: 'space-between',
-              alignItems: 'center',
+              alignItems: 'baseline',
+              gap: '14px',
             }}>
               <span style={{
                 fontFamily: "'Bebas Neue', sans-serif",
@@ -409,7 +402,7 @@ export default function HomeDashboard({
                 {formatShortDate(lastSession.completed_at!)}
               </span>
             </div>
-            <div style={{ padding: '8px 0' }}>
+            <div style={{ padding: '12px 0' }}>
               {lastSessionLogs.map((log, i) => (
                 <div
                   key={i}
@@ -418,7 +411,7 @@ export default function HomeDashboard({
                     justifyContent: 'space-between',
                     alignItems: 'center',
                     gap: '12px',
-                    padding: '7px 16px',
+                    padding: '9px 24px',
                   }}
                 >
                   <span style={{ fontSize: '14px', color: 'var(--text-primary)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -427,7 +420,7 @@ export default function HomeDashboard({
                   <span style={{
                     fontFamily: "'JetBrains Mono', monospace",
                     fontSize: '14px',
-                    color: log.weight !== null ? 'var(--accent)' : 'var(--text-muted)',
+                    color: log.weight !== null ? 'var(--accent-text)' : 'var(--text-muted)',
                     textAlign: 'right',
                     minWidth: '78px',
                   }}>
@@ -445,34 +438,37 @@ export default function HomeDashboard({
                 </div>
               ))}
             </div>
-            {lastSession.note && (
+            </div>{/* end lw-main */}
+            {/* Notes panel — always rendered on desktop so the card keeps its
+                two-region balance; falls back to a muted placeholder, and stays
+                hidden on mobile when there's nothing to show. */}
+            <div className={`lw-notes${lastSession.note ? '' : ' lw-notes--empty'}`} style={{ padding: '20px 24px' }}>
               <div style={{
-                padding: '12px 16px',
-                borderTop: '1px solid var(--border)',
+                fontSize: '11px',
+                color: 'var(--text-muted)',
+                textTransform: 'uppercase',
+                letterSpacing: '1px',
+                marginBottom: '4px',
               }}>
-                <div style={{
-                  fontSize: '11px',
-                  color: 'var(--text-muted)',
-                  textTransform: 'uppercase',
-                  letterSpacing: '1px',
-                  marginBottom: '4px',
-                }}>
-                  NOTES
-                </div>
-                <div style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                  {lastSession.note}
-                </div>
+                NOTES
               </div>
-            )}
+              <div style={{
+                fontSize: '13px',
+                color: lastSession.note ? 'var(--text-secondary)' : 'var(--text-muted)',
+                fontStyle: lastSession.note ? 'normal' : 'italic',
+                lineHeight: 1.4,
+              }}>
+                {lastSession.note || 'No notes for this session.'}
+              </div>
+            </div>
           </div>
         )}
-      </div>
+      </div>{/* end last-workout band */}
 
-      </div>{/* end left column */}
-      <div className="home-col">
+      <div className="home-col hg-right" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
-      {/* Stats Row */}
-      <div style={{ display: 'flex', gap: '8px', marginTop: '20px', marginBottom: '24px' }}>
+      {/* Stats Row — three equal-width, equal-height cards. */}
+      <div style={{ display: 'flex', gap: '20px', alignItems: 'stretch' }}>
         {[
           { value: weeklyWorkouts, label: 'WORKOUTS', sub: 'This Week' },
           { value: monthlyWorkouts, label: 'WORKOUTS', sub: 'This Month' },
@@ -481,20 +477,18 @@ export default function HomeDashboard({
           <div
             key={i}
             style={{
+              ...card,
               flex: 1,
-              backgroundColor: 'var(--surface)',
-              border: '1px solid var(--border)',
-              borderRadius: '12px',
-              padding: '18px 8px',
+              padding: '22px 12px',
               textAlign: 'center',
             }}
           >
             <div style={{
               fontFamily: "'Bebas Neue', sans-serif",
-              fontSize: '40px',
+              fontSize: '52px',
               color: 'var(--text-primary)',
               lineHeight: 1,
-              marginBottom: '6px',
+              marginBottom: '8px',
             }}>
               {stat.value}
             </div>
@@ -510,7 +504,7 @@ export default function HomeDashboard({
             <div style={{
               fontSize: '11px',
               color: 'var(--text-muted)',
-              marginTop: '1px',
+              marginTop: '2px',
             }}>
               {stat.sub}
             </div>
@@ -518,17 +512,22 @@ export default function HomeDashboard({
         ))}
       </div>
 
-      {/* Workout History Calendar */}
-      <div style={{
-        fontSize: '12px',
-        color: 'var(--text-muted)',
-        textTransform: 'uppercase',
-        letterSpacing: '1.5px',
-        marginBottom: '10px',
-      }}>
-        WORKOUT HISTORY
+      {/* Workout History Calendar — the dominant element of the right column.
+          flex-fills so the card bottom aligns with the left column's CTA. */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        <div style={{
+          fontSize: '12px',
+          color: 'var(--text-muted)',
+          textTransform: 'uppercase',
+          letterSpacing: '1.5px',
+          marginBottom: '12px',
+        }}>
+          WORKOUT HISTORY
+        </div>
+        <div style={{ flex: 1, minHeight: 0 }}>
+          <WorkoutCalendar />
+        </div>
       </div>
-      <WorkoutCalendar />
 
       </div>{/* end right column */}
       </div>{/* end home-grid */}

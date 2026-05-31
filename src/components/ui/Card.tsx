@@ -34,6 +34,7 @@ export default function Card({
         backgroundColor: elevated ? 'var(--surface-elevated)' : 'var(--surface)',
         border: '1px solid var(--border)',
         borderRadius: 'var(--radius-md)',
+        boxShadow: 'var(--card-shadow)',
         padding: PAD[padding],
         ...style,
       }}

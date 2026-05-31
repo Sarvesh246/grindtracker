@@ -26,6 +26,21 @@ Transitions: 150ms ease
 Primary button: bg #c8f135, text #0f0f0f, font bold
 Secondary button: bg #242424, text #f0f0f0, border #2e2e2e
 
+### Theming (dark default + light mode)
+All colors are CSS vars in `src/app/globals.css`. The dark palette lives in
+`:root`; the light palette overrides the same mirror vars under `html.light`.
+Theme is dark by default and persisted via the `grind_theme_pref` cookie
+(+ localStorage) by `ThemeContext` — mirroring `UnitContext`. The root layout
+(`src/app/layout.tsx`) reads the cookie server-side and sets `<html class="light">`
+so there's no flash. Toggle UI: circular sun/moon `ThemeToggle` beside the kg/lb
+toggle in TopNav and Profile settings.
+**Convention:** the lime `--accent` is a FILL, unchanged in both themes. For lime
+TEXT/icons that must read on white, use `--accent-text` (lime in dark, olive
+`#5f7a16` in light) — never `--accent` for text color. Faint accent panel
+backgrounds use `--accent-wash`; cards read `--card-shadow` (none in dark). The
+leaderboard ShareCard and the favicon stay dark-branded (`.share-card-dark` pins
+the dark tokens regardless of theme).
+
 ## Supabase Tables
 - exercises — name, day_type, sets_target, reps_target, sort_order. Seeded
   push/pull/legs; users add/edit/delete their own days & exercises. No RLS.

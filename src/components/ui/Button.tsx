@@ -28,7 +28,7 @@ function variantStyle(variant: Variant, disabled: boolean): CSSProperties {
     case 'primary':
       return {
         backgroundColor: 'var(--accent)',
-        color: 'var(--bg)',
+        color: 'var(--on-accent)',
         border: '1px solid var(--accent)',
         fontWeight: 700,
       }
@@ -50,7 +50,7 @@ function variantStyle(variant: Variant, disabled: boolean): CSSProperties {
       return {
         backgroundColor: 'var(--danger-bg)',
         color: 'var(--danger)',
-        border: '1px solid rgba(239, 68, 68, 0.3)',
+        border: '1px solid var(--danger-bg-hover)',
         fontWeight: 600,
       }
   }

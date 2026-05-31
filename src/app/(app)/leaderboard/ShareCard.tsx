@@ -64,9 +64,11 @@ export default function ShareCard({ entry, rank, category, onClose }: ShareCardP
         padding: '24px',
       }}
     >
-      {/* Card — stop propagation so clicking it doesn't close */}
+      {/* Card — stop propagation so clicking it doesn't close. `share-card-dark`
+          pins the dark palette so the branded card looks the same in light mode. */}
       <div
         onClick={e => e.stopPropagation()}
+        className="share-card-dark"
         style={{
           width: '320px',
           backgroundColor: '#0f0f0f',

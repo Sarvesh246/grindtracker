@@ -201,7 +201,7 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
           {pendingCount > 0 && (
             <span style={{
               backgroundColor: 'var(--accent)',
-              color: 'var(--bg)',
+              color: 'var(--on-accent)',
               fontFamily: "'DM Sans', sans-serif",
               fontWeight: 700,
               fontSize: '11px',
@@ -270,7 +270,7 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
                       style={{
                         padding: '6px 14px',
                         backgroundColor: 'var(--accent)',
-                        color: 'var(--bg)',
+                        color: 'var(--on-accent)',
                         border: 'none',
                         borderRadius: '9999px',
                         fontFamily: "'DM Sans', sans-serif",
@@ -316,7 +316,7 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
                         style={{
                           padding: '6px 12px',
                           backgroundColor: 'var(--accent)',
-                          color: 'var(--bg)',
+                          color: 'var(--on-accent)',
                           border: 'none',
                           borderRadius: '9999px',
                           fontFamily: "'DM Sans', sans-serif",
