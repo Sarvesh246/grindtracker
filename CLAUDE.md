@@ -54,8 +54,10 @@ CSS at the 768px breakpoint shows exactly one — there is no JS width detection
 Both share `UnitContext`, so the kg/lbs toggle stays in sync across them.
 
 ## Supabase Tables
-- exercises — name, day_type, sets_target, reps_target, sort_order. Seeded
-  push/pull/legs; users add/edit/delete their own days & exercises. No RLS.
+- exercises — user_id, name, day_type, sets_target, reps_target, sort_order.
+  Per-user catalog (RLS, owner-only): each user builds & edits their own days &
+  exercises; a new user starts with a blank slate (no seeded days). See migration
+  `07-exercises-per-user.sql`.
 - sessions — user_id, day_type, started_at, completed_at, xp_earned, note
 - session_logs — session_id, exercise_id, set_number, weight, reps, is_pr,
   is_warmup, note. UNIQUE on (session_id, exercise_id, set_number).
@@ -70,7 +72,7 @@ Both share `UnitContext`, so the kg/lbs toggle stays in sync across them.
 - user_rotation — user_id (PK), mode ('auto'|'manual'), sequence (jsonb array of
   day_keys, may repeat), current_index (pointer to last completed slot). Drives the
   home page's suggested next day. See Rotation below.
-RLS on sessions, session_logs, user_stats, user_badges, body_weights,
+RLS on exercises, sessions, session_logs, user_stats, user_badges, body_weights,
 user_day_categories, user_rotation (and delete policies on sessions/session_logs for discard).
 `get_leaderboard(p_day_type, p_user_ids)` RPC ranks overall by XP, or
 push/pull/legs by heaviest working-set lift (category-aware, security definer).

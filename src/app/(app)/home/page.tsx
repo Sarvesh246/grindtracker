@@ -162,6 +162,7 @@ export default async function HomePage() {
       lastSessionLogs={lastSessionLogs}
       nextDay={nextDay}
       nextDayExercises={(nextDayExercises ?? []).map(e => e.name)}
+      hasDays={dayKeys.length > 0}
       rotationSeq={seq}
       rotationIndex={rotation?.current_index ?? -1}
       lastTrainedByDay={lastTrainedByDay}

@@ -114,6 +114,11 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
     setFormError('')
 
     try {
+      // Exercises are per-user (RLS-owned); stamp the owner on insert. Updates are
+      // already constrained to the user's own rows by the RLS policy.
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { setFormError('You are signed out. Sign in and try again.'); setSaving(false); return }
+
       const { error } = exercise
         ? await supabase.from('exercises').update({
             name: trimmedName,
@@ -121,6 +126,7 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
             reps_target: formReps.trim(),
           }).eq('id', exercise.id)
         : await supabase.from('exercises').insert({
+            user_id: user.id,
             name: trimmedName,
             day_type: dayKey,
             sets_target: sets,

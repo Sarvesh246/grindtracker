@@ -33,6 +33,7 @@ interface Props {
   lastSessionLogs: { exercise_name: string; weight: number | null; sets: number; reps: number | null }[]
   nextDay: string
   nextDayExercises: string[]
+  hasDays: boolean
   rotationSeq: string[]
   rotationIndex: number
   lastTrainedByDay: Record<string, string | null>
@@ -89,6 +90,7 @@ export default function HomeDashboard({
   lastSessionLogs,
   nextDay,
   nextDayExercises,
+  hasDays,
   rotationSeq,
   rotationIndex,
   lastTrainedByDay,
@@ -284,7 +286,7 @@ export default function HomeDashboard({
       {/* Streak Card */}
       {currentStreak === 0 ? (
         <button
-          onClick={() => router.push(`/log?day=${nextDay}`)}
+          onClick={() => router.push(hasDays ? `/log?day=${nextDay}` : '/log')}
           style={{
             ...card,
             width: '100%',
@@ -353,10 +355,12 @@ export default function HomeDashboard({
         </div>
       )}
 
-      {/* Start Workout CTA */}
+      {/* Primary CTA — start the suggested day, or (for a brand-new blank-slate
+          user with no days yet) set up the first day so the button is never a
+          dead end into an empty workout. */}
       <button
-        onClick={() => router.push(`/log?day=${nextDay}`)}
-        title={DAY_MUSCLES[nextDay]}
+        onClick={() => router.push(hasDays ? `/log?day=${nextDay}` : '/log')}
+        title={hasDays ? DAY_MUSCLES[nextDay] : undefined}
         style={{
           width: '100%',
           minHeight: '96px',
@@ -386,7 +390,7 @@ export default function HomeDashboard({
             letterSpacing: '1px',
             lineHeight: 1,
           }}>
-            START {dayLabel(nextDay)}
+            {hasDays ? `START ${dayLabel(nextDay)}` : 'CREATE YOUR FIRST DAY'}
           </span>
           <span style={{
             fontSize: '12px',
@@ -395,7 +399,7 @@ export default function HomeDashboard({
             opacity: 0.7,
             lineHeight: 1.2,
           }}>
-            {exercisePreview}
+            {hasDays ? exercisePreview : 'Set up your workout days to get started'}
           </span>
         </span>
         <span style={{ flexShrink: 0 }}><ChevronRight color="var(--on-accent)" /></span>
