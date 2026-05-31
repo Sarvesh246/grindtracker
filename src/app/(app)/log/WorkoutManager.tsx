@@ -1,7 +1,8 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Exercise, DayCategory } from '@/lib/types'
+import { Exercise, DayCategory, UserRotation } from '@/lib/types'
+import { autoSequence, effectiveSequence } from '@/lib/utils/rotation'
 
 interface WorkoutManagerProps {
   onClose: () => void
@@ -14,6 +15,7 @@ type Screen =
   | { id: 'exercise-form'; dayKey: string; exercise?: Exercise }
   | { id: 'new-day' }
   | { id: 'category-picker'; dayKey: string }
+  | { id: 'rotation' }
 
 type DeleteTarget =
   | { type: 'day'; key: string; label: string }
@@ -23,6 +25,10 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
   const supabase = createClient()
   const [exercises, setExercises] = useState<Exercise[]>([])
   const [dayCategories, setDayCategories] = useState<Record<string, DayCategory>>({})
+  const [rotation, setRotation] = useState<UserRotation | null>(null)
+  const [rotationError, setRotationError] = useState('')
+  const [savingRotation, setSavingRotation] = useState(false)
+  const [addingSlot, setAddingSlot] = useState(false)
   const [loading, setLoading] = useState(true)
   const [screen, setScreen] = useState<Screen>({ id: 'days' })
   const [saving, setSaving] = useState(false)
@@ -45,18 +51,22 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
     setLoading(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
-      const [exRes, catRes] = await Promise.all([
+      const [exRes, catRes, rotRes] = await Promise.all([
         supabase.from('exercises').select('*')
           .order('day_type', { ascending: true })
           .order('sort_order', { ascending: true }),
         user
           ? supabase.from('user_day_categories').select('day_key, category').eq('user_id', user.id)
           : Promise.resolve({ data: [] as { day_key: string; category: string }[] }),
+        user
+          ? supabase.from('user_rotation').select('*').eq('user_id', user.id).maybeSingle()
+          : Promise.resolve({ data: null }),
       ])
       setExercises(exRes.data ?? [])
       const map: Record<string, DayCategory> = {}
       for (const r of (catRes.data ?? [])) map[r.day_key] = r.category as DayCategory
       setDayCategories(map)
+      setRotation((rotRes.data as UserRotation | null) ?? null)
     } catch {
       // Network/auth failure — keep whatever we have rather than wedging the UI.
       // The spinner is cleared in finally so the modal stays usable.
@@ -203,6 +213,72 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
     }
   }
 
+  // ── Rotation (workout order) ───────────────────────────────────────────────
+  // Persist the rotation row and keep local state in sync. Sequence + mode are
+  // the source of truth in manual mode; current_index is left untouched here
+  // (the read path wraps it with modulo, so a stale value is harmless).
+  async function persistRotation(mode: 'auto' | 'manual', sequence: string[]) {
+    setSavingRotation(true)
+    setRotationError('')
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { setRotationError('You must be signed in.'); return }
+      const { error } = await supabase.from('user_rotation').upsert(
+        {
+          user_id: user.id,
+          mode,
+          sequence,
+          current_index: rotation?.current_index ?? 0,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id' },
+      )
+      if (error) {
+        setRotationError('Could not save. Check your connection and try again.')
+        return
+      }
+      setRotation(prev => ({
+        user_id: user.id,
+        mode,
+        sequence,
+        current_index: prev?.current_index ?? 0,
+        updated_at: new Date().toISOString(),
+      }))
+    } catch {
+      setRotationError('Could not save. Check your connection and try again.')
+    } finally {
+      setSavingRotation(false)
+    }
+  }
+
+  // The order currently in effect, used to seed the manual editor and render auto chips.
+  const effectiveSeq = effectiveSequence(rotation, dayKeys)
+  const isManual = rotation?.mode === 'manual'
+  const manualSeq = isManual ? effectiveSeq : []
+
+  function customizeOrder() {
+    setAddingSlot(false)
+    persistRotation('manual', autoSequence(dayKeys))
+  }
+  function resetToAuto() {
+    setAddingSlot(false)
+    persistRotation('auto', rotation?.sequence ?? [])
+  }
+  function moveSlot(index: number, dir: -1 | 1) {
+    const next = [...manualSeq]
+    const target = index + dir
+    if (target < 0 || target >= next.length) return
+    ;[next[index], next[target]] = [next[target], next[index]]
+    persistRotation('manual', next)
+  }
+  function removeSlot(index: number) {
+    persistRotation('manual', manualSeq.filter((_, i) => i !== index))
+  }
+  function addSlot(dayKey: string) {
+    setAddingSlot(false)
+    persistRotation('manual', [...manualSeq, dayKey])
+  }
+
   function goBack() {
     if (screen.id === 'days' || screen.id === 'new-day') {
       onClose()
@@ -214,6 +290,9 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
       const dayKey = screen.dayKey
       const dayExists = !!grouped[dayKey]
       setScreen(dayExists ? { id: 'day', dayKey } : { id: 'days' })
+    } else if (screen.id === 'rotation') {
+      setAddingSlot(false)
+      setScreen({ id: 'days' })
     }
   }
 
@@ -221,6 +300,7 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
     screen.id === 'days' ? 'MANAGE WORKOUTS' :
     screen.id === 'new-day' ? 'NEW DAY' :
     screen.id === 'category-picker' ? 'SELECT CATEGORY' :
+    screen.id === 'rotation' ? 'WORKOUT ORDER' :
     screen.id === 'day' ? screen.dayKey.replace(/-/g, ' ').toUpperCase() :
     screen.exercise ? 'EDIT EXERCISE' : 'ADD EXERCISE'
 
@@ -386,7 +466,220 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
                     ADD NEW DAY
                   </span>
                 </button>
+
+                {/* Advanced: edit the suggested workout order. Kept low-key —
+                    the default auto rotation needs no attention. */}
+                {dayKeys.length > 0 && (
+                  <button
+                    onClick={() => { setRotationError(''); setAddingSlot(false); setScreen({ id: 'rotation' }) }}
+                    style={{
+                      width: '100%', textAlign: 'left',
+                      background: 'none', border: 'none',
+                      borderTop: '1px solid var(--border)',
+                      padding: '16px', cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', gap: '10px',
+                    }}
+                  >
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-muted)' }}>
+                      <line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="14" y2="12"/><line x1="4" y1="18" x2="10" y2="18"/>
+                    </svg>
+                    <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                      Edit workout order
+                    </span>
+                    {isManual && (
+                      <span style={{
+                        marginLeft: 'auto', fontSize: '10px', fontWeight: 700,
+                        color: 'var(--accent)', letterSpacing: '0.5px',
+                        backgroundColor: 'rgba(200,241,53,0.12)',
+                        padding: '2px 7px', borderRadius: '9999px',
+                      }}>
+                        CUSTOM
+                      </span>
+                    )}
+                  </button>
+                )}
               </>
+            )}
+
+            {/* ── Rotation (Workout Order) ── */}
+            {screen.id === 'rotation' && (
+              <div style={{ padding: '20px 16px' }}>
+                <div style={{ fontSize: '13px', color: 'var(--text-secondary)', fontFamily: "'DM Sans', sans-serif", lineHeight: 1.5, marginBottom: '18px' }}>
+                  Your workout order. After each session, GRIND suggests the next day in this loop — a day can appear more than once (e.g. abs after every other day).
+                </div>
+
+                {!isManual ? (
+                  <>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '20px' }}>
+                      {effectiveSeq.length === 0 ? (
+                        <div style={{ fontSize: '13px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
+                          Add a workout day to set up your order.
+                        </div>
+                      ) : effectiveSeq.map((key, i) => (
+                        <span key={i} style={{
+                          fontFamily: "'Bebas Neue', sans-serif", fontSize: '15px',
+                          letterSpacing: '0.5px', color: 'var(--text-primary)',
+                          backgroundColor: 'var(--surface-elevated)',
+                          border: '1px solid var(--border)', borderRadius: '8px',
+                          padding: '6px 12px',
+                        }}>
+                          {key.replace(/-/g, ' ').toUpperCase()}
+                        </span>
+                      ))}
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif", marginBottom: '14px' }}>
+                      Automatic — every day once, in order. Want abs twice or a custom loop?
+                    </div>
+                    <button
+                      onClick={customizeOrder}
+                      disabled={savingRotation || effectiveSeq.length === 0}
+                      style={{
+                        width: '100%', height: '48px',
+                        backgroundColor: (savingRotation || effectiveSeq.length === 0) ? 'var(--border)' : 'var(--accent)',
+                        color: (savingRotation || effectiveSeq.length === 0) ? 'var(--text-muted)' : 'var(--bg)',
+                        border: 'none', borderRadius: '10px',
+                        fontFamily: "'Bebas Neue', sans-serif", fontSize: '18px',
+                        letterSpacing: '1px', cursor: (savingRotation || effectiveSeq.length === 0) ? 'default' : 'pointer',
+                      }}
+                    >
+                      CUSTOMIZE ORDER
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {manualSeq.length === 0 ? (
+                      <div style={{ fontSize: '13px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif", marginBottom: '14px' }}>
+                        No slots yet. Add one below.
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '14px' }}>
+                        {manualSeq.map((key, i) => (
+                          <div key={i} style={{
+                            display: 'flex', alignItems: 'center', gap: '8px',
+                            backgroundColor: 'var(--surface-elevated)',
+                            border: '1px solid var(--border)', borderRadius: '10px',
+                            padding: '10px 12px',
+                          }}>
+                            <span style={{
+                              fontFamily: "'JetBrains Mono', monospace", fontSize: '12px',
+                              color: 'var(--text-muted)', width: '20px', textAlign: 'center', flexShrink: 0,
+                            }}>
+                              {i + 1}
+                            </span>
+                            <span style={{
+                              flex: 1, fontFamily: "'Bebas Neue', sans-serif", fontSize: '18px',
+                              letterSpacing: '0.5px', color: 'var(--text-primary)',
+                            }}>
+                              {key.replace(/-/g, ' ').toUpperCase()}
+                            </span>
+                            <button
+                              onClick={() => moveSlot(i, -1)}
+                              disabled={savingRotation || i === 0}
+                              aria-label="Move up"
+                              style={{ background: 'none', border: 'none', cursor: i === 0 ? 'default' : 'pointer', padding: '6px', opacity: i === 0 ? 0.25 : 0.7, display: 'flex' }}
+                            >
+                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-secondary)' }}>
+                                <polyline points="18 15 12 9 6 15" />
+                              </svg>
+                            </button>
+                            <button
+                              onClick={() => moveSlot(i, 1)}
+                              disabled={savingRotation || i === manualSeq.length - 1}
+                              aria-label="Move down"
+                              style={{ background: 'none', border: 'none', cursor: i === manualSeq.length - 1 ? 'default' : 'pointer', padding: '6px', opacity: i === manualSeq.length - 1 ? 0.25 : 0.7, display: 'flex' }}
+                            >
+                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-secondary)' }}>
+                                <polyline points="6 9 12 15 18 9" />
+                              </svg>
+                            </button>
+                            <button
+                              onClick={() => removeSlot(i)}
+                              disabled={savingRotation}
+                              aria-label="Remove slot"
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '6px', opacity: 0.5, display: 'flex' }}
+                            >
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--danger)' }}>
+                                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                              </svg>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Add slot */}
+                    {addingSlot ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '14px' }}>
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif", textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                          Add a day to the loop
+                        </div>
+                        {dayKeys.map(key => (
+                          <button
+                            key={key}
+                            onClick={() => addSlot(key)}
+                            disabled={savingRotation}
+                            style={{
+                              width: '100%', textAlign: 'left',
+                              backgroundColor: 'var(--surface-elevated)',
+                              border: '1px solid var(--border)', borderRadius: '8px',
+                              padding: '12px 14px', cursor: 'pointer',
+                              fontFamily: "'Bebas Neue', sans-serif", fontSize: '16px',
+                              letterSpacing: '0.5px', color: 'var(--text-primary)',
+                            }}
+                          >
+                            {key.replace(/-/g, ' ').toUpperCase()}
+                          </button>
+                        ))}
+                        <button
+                          onClick={() => setAddingSlot(false)}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '8px', fontFamily: "'DM Sans', sans-serif", fontSize: '13px', color: 'var(--text-muted)' }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setAddingSlot(true)}
+                        disabled={savingRotation}
+                        style={{
+                          width: '100%', padding: '14px',
+                          background: 'none', border: '1px dashed var(--border-strong)',
+                          borderRadius: '10px', cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                          marginBottom: '14px',
+                        }}
+                      >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent)' }}>
+                          <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                        </svg>
+                        <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '14px', fontWeight: 600, color: 'var(--accent)' }}>
+                          Add slot
+                        </span>
+                      </button>
+                    )}
+
+                    <button
+                      onClick={resetToAuto}
+                      disabled={savingRotation}
+                      style={{
+                        width: '100%', height: '44px', background: 'none',
+                        border: 'none', cursor: 'pointer',
+                        fontFamily: "'DM Sans', sans-serif", fontSize: '13px',
+                        color: 'var(--text-muted)', textDecoration: 'underline',
+                        textUnderlineOffset: '3px',
+                      }}
+                    >
+                      Reset to automatic
+                    </button>
+                  </>
+                )}
+
+                {rotationError && (
+                  <div style={{ marginTop: '14px', fontSize: '13px', color: 'var(--danger)', fontFamily: "'DM Sans', sans-serif" }}>
+                    {rotationError}
+                  </div>
+                )}
+              </div>
             )}
 
             {/* ── New Day ── */}

@@ -10,7 +10,7 @@ interface Props {
   stats: UserStats | null
   lastSession: Session | null
   lastSessionLogs: { exercise_name: string; weight: number | null; sets: number; reps: number | null }[]
-  nextDay: 'push' | 'pull' | 'legs'
+  nextDay: string
   nextDayExercises: string[]
   firstName: string
   weeklyWorkouts: number
@@ -28,6 +28,11 @@ const DAY_MUSCLES: Record<string, string> = {
   push: 'Chest, Shoulders, Triceps',
   pull: 'Back, Biceps, Rear Delts',
   legs: 'Quads, Hamstrings, Glutes',
+}
+
+// Standard days read "PUSH DAY"; custom days (abs, cardio, …) just use the name.
+function dayLabel(key: string): string {
+  return DAY_LABELS[key] ?? key.replace(/-/g, ' ').toUpperCase()
 }
 
 // A small dumbbell/barbell glyph, reused for the welcome state and the CTA.
@@ -340,7 +345,7 @@ export default function HomeDashboard({
             letterSpacing: '1px',
             lineHeight: 1,
           }}>
-            START {DAY_LABELS[nextDay]}
+            START {dayLabel(nextDay)}
           </span>
           <span style={{
             fontSize: '11px',
@@ -398,7 +403,7 @@ export default function HomeDashboard({
                 fontSize: '18px',
                 color: 'var(--text-primary)',
               }}>
-                {DAY_LABELS[lastSession.day_type]}
+                {dayLabel(lastSession.day_type)}
               </span>
               <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
                 {formatShortDate(lastSession.completed_at!)}

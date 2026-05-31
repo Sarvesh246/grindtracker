@@ -40,8 +40,11 @@ Secondary button: bg #242424, text #f0f0f0, border #2e2e2e
 - friendships — requester_id, addressee_id, status ('pending' | 'accepted')
 - user_day_categories — (user_id, day_key) → category ('push'|'pull'|'legs'|'other'),
   maps custom day names to leaderboard tabs.
+- user_rotation — user_id (PK), mode ('auto'|'manual'), sequence (jsonb array of
+  day_keys, may repeat), current_index (pointer to last completed slot). Drives the
+  home page's suggested next day. See Rotation below.
 RLS on sessions, session_logs, user_stats, user_badges, body_weights,
-user_day_categories (and delete policies on sessions/session_logs for discard).
+user_day_categories, user_rotation (and delete policies on sessions/session_logs for discard).
 `get_leaderboard(p_day_type, p_user_ids)` RPC ranks overall by XP, or
 push/pull/legs by heaviest working-set lift (category-aware, security definer).
 
@@ -58,6 +61,18 @@ increments; same day keeps it; any larger gap resets to 1). Home page zeroes a
 stale streak when the last workout was more than 1 day ago.
 PR: weight > max non-warm-up weight in any previous completed session for that exercise.
 14 badges in src/lib/utils/badges.ts.
+
+### Rotation (src/lib/utils/rotation.ts)
+The suggested "next day" comes from a per-user rotation — an ordered loop of day_keys
+that may repeat (e.g. [push, abs, pull, abs, legs, abs]). `auto` mode derives the order
+from the user's days (each once, alphabetical, via `autoSequence`) and fixes the old bug
+where custom days fell out of the push→pull→legs cycle; `manual` mode follows the saved
+`sequence`, editable in WorkoutManager's "Edit workout order" screen (reorderable slot
+list). `home/page.tsx` reads `nextDay(effectiveSequence(row, dayKeys), current_index)`;
+`ActiveWorkout.handleFinish` advances `current_index` via `advanceIndex` after a live
+completion (backdated `log/past` entries deliberately don't). The suggestion is
+non-binding — DaySelect still lets you pick any day, and marks the suggested one "UP NEXT".
+Helpers are pure (no Supabase import). Apply migration `06-user-rotation.sql` first.
 
 ### Dates & timezones (important)
 Streak/calendar logic is timezone-sensitive. Always derive a date key from local
@@ -107,7 +122,7 @@ src/
     contexts/UnitContext.tsx
     hooks/useRestTimer.ts
     types/index.ts
-    utils/gamification.ts + formatting.ts + badges.ts + haptics.ts + sessions.ts
+    utils/gamification.ts + formatting.ts + badges.ts + haptics.ts + sessions.ts + rotation.ts
     brand-icon.tsx
   middleware.ts                   — auth gate + redirect to /setup if no profile
 docs/

@@ -2,8 +2,9 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Exercise } from '@/lib/types'
+import { Exercise, UserRotation } from '@/lib/types'
 import { haptic } from '@/lib/utils/haptics'
+import { effectiveSequence, nextDay as nextDayFromRotation } from '@/lib/utils/rotation'
 import WorkoutManager from './WorkoutManager'
 
 function PushIcon() {
@@ -67,6 +68,7 @@ export default function DaySelect() {
   const router = useRouter()
   const supabase = createClient()
   const [exercises, setExercises] = useState<Exercise[]>([])
+  const [rotation, setRotation] = useState<UserRotation | null>(null)
   const [loading, setLoading] = useState(true)
   const [showManager, setShowManager] = useState(false)
 
@@ -74,12 +76,17 @@ export default function DaySelect() {
 
   async function load() {
     setLoading(true)
-    const { data } = await supabase
-      .from('exercises')
-      .select('*')
-      .order('day_type', { ascending: true })
-      .order('sort_order', { ascending: true })
-    setExercises(data ?? [])
+    const { data: { user } } = await supabase.auth.getUser()
+    const [exRes, rotRes] = await Promise.all([
+      supabase.from('exercises').select('*')
+        .order('day_type', { ascending: true })
+        .order('sort_order', { ascending: true }),
+      user
+        ? supabase.from('user_rotation').select('*').eq('user_id', user.id).maybeSingle()
+        : Promise.resolve({ data: null }),
+    ])
+    setExercises(exRes.data ?? [])
+    setRotation((rotRes.data as UserRotation | null) ?? null)
     setLoading(false)
   }
 
@@ -89,6 +96,9 @@ export default function DaySelect() {
     grouped[ex.day_type].push(ex)
   }
   const dayKeys = Object.keys(grouped).sort()
+
+  // Non-binding hint: the day the rotation suggests next.
+  const upNext = nextDayFromRotation(effectiveSequence(rotation, dayKeys), rotation?.current_index ?? -1)
 
   return (
     <>
@@ -148,6 +158,7 @@ export default function DaySelect() {
               const exs = grouped[key]
               const Icon = DAY_ICONS[key] ?? DefaultDayIcon
               const description = exs.slice(0, 3).map(e => e.name).join(', ') + (exs.length > 3 ? '…' : '')
+              const isUpNext = key === upNext
               return (
                 <button
                   key={key}
@@ -157,7 +168,7 @@ export default function DaySelect() {
                   }}
                   style={{
                     backgroundColor: 'var(--surface)',
-                    border: '1px solid var(--border)',
+                    border: isUpNext ? '1px solid var(--accent)' : '1px solid var(--border)',
                     borderRadius: '12px',
                     padding: '20px',
                     textAlign: 'left',
@@ -166,9 +177,9 @@ export default function DaySelect() {
                     width: '100%',
                   }}
                   onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
-                  onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+                  onMouseLeave={e => (e.currentTarget.style.borderColor = isUpNext ? 'var(--accent)' : 'var(--border)')}
                   onTouchStart={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
-                  onTouchEnd={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+                  onTouchEnd={e => (e.currentTarget.style.borderColor = isUpNext ? 'var(--accent)' : 'var(--border)')}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -182,9 +193,20 @@ export default function DaySelect() {
                         {key.replace(/-/g, ' ').toUpperCase()}
                       </span>
                     </div>
-                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                      {exs.length} exercise{exs.length !== 1 ? 's' : ''}
-                    </span>
+                    {isUpNext ? (
+                      <span style={{
+                        fontSize: '10px', fontWeight: 700, letterSpacing: '0.5px',
+                        color: 'var(--bg)', backgroundColor: 'var(--accent)',
+                        padding: '3px 8px', borderRadius: '9999px',
+                        fontFamily: "'DM Sans', sans-serif",
+                      }}>
+                        UP NEXT
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                        {exs.length} exercise{exs.length !== 1 ? 's' : ''}
+                      </span>
+                    )}
                   </div>
                   <div style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>
                     {description}

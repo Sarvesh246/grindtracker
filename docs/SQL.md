@@ -8,7 +8,8 @@ Schema changes ship as standalone SQL snippets in [docs/sql/](sql/). Apply each 
 | [03-body-weights.sql](sql/03-body-weights.sql) | 3 | `body_weights` table with RLS policy + user/date index. |
 | [04-session-delete-rls.sql](sql/04-session-delete-rls.sql) | 4 | RLS `delete` policies on `sessions` and `session_logs` so discard workout works. |
 | [05-user-day-categories.sql](sql/05-user-day-categories.sql) | 5 | `user_day_categories` table with RLS, and replacement `get_leaderboard` RPC with category-aware matching (explicit mapping + literal fallback for standard push/pull/legs names). |
+| [06-user-rotation.sql](sql/06-user-rotation.sql) | 6 | `user_rotation` table with RLS — per-user suggested workout order (an ordered loop of day_keys that may repeat) plus the `current_index` pointer the home page advances. |
 
-Apply in order. Once `02` is in, warm-up sets are excluded from PR detection and previous-best prefill. Once `03` is in, the profile page's body-weight card starts persisting.
+Apply in order. Once `02` is in, warm-up sets are excluded from PR detection and previous-best prefill. Once `03` is in, the profile page's body-weight card starts persisting. Until `06` is applied the rotation falls back to automatic (every day once) for everyone.
 
 If you have multiple Supabase environments (e.g., preview + prod), run the same scripts on each.

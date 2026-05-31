@@ -86,3 +86,11 @@ export interface UserDayCategory {
   category: DayCategory
   created_at: string
 }
+
+export interface UserRotation {
+  user_id: string
+  mode: 'auto' | 'manual'
+  sequence: string[]
+  current_index: number
+  updated_at: string
+}

@@ -7,6 +7,7 @@ import { localDateKey } from '@/lib/utils/formatting'
 import { BadgeDefinition } from '@/lib/utils/badges'
 import BodyWeightCard from './BodyWeightCard'
 import { useUnit } from '@/lib/contexts/UnitContext'
+import { getDefaultRest, setDefaultRest } from '@/lib/hooks/useRestTimer'
 
 function FlameIcon({ size = 24, color = 'var(--accent)' }: { size?: number; color?: string }) {
   return (
@@ -111,6 +112,23 @@ export default function ProfileDashboard({
   const { unit, toggleUnit } = useUnit()
   const [tooltipBadgeId, setTooltipBadgeId] = useState<string | null>(null)
   const [badgesOpen, setBadgesOpen] = useState(false)
+  // Default rest time (min:sec), persisted to localStorage via the rest-timer hook.
+  const [restMin, setRestMin] = useState(2)
+  const [restSec, setRestSec] = useState(0)
+
+  useEffect(() => {
+    const total = getDefaultRest()
+    setRestMin(Math.floor(total / 60))
+    setRestSec(total % 60)
+  }, [])
+
+  function commitRest(min: number, sec: number) {
+    const m = Math.max(0, Math.floor(min) || 0)
+    const s = Math.min(59, Math.max(0, Math.floor(sec) || 0))
+    setRestMin(m)
+    setRestSec(s)
+    setDefaultRest(Math.max(5, m * 60 + s)) // floor at 5s so the timer is never trivial
+  }
 
   // Username editing
   const [username, setUsername] = useState(initialUsername ?? '')
@@ -554,9 +572,10 @@ export default function ProfileDashboard({
           borderRadius: '12px',
           padding: '14px 16px',
           display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
+          flexDirection: 'column',
+          gap: '14px',
         }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <div style={{ fontSize: '14px', color: 'var(--text-primary)', fontWeight: 600, marginBottom: '2px' }}>
               Weight Unit
@@ -618,6 +637,58 @@ export default function ProfileDashboard({
               transition: 'left 150ms ease',
             }} />
           </button>
+          </div>
+
+          <div style={{ height: '1px', backgroundColor: 'var(--border)' }} />
+
+          {/* Default rest time */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ fontSize: '14px', color: 'var(--text-primary)', fontWeight: 600, marginBottom: '2px' }}>
+                Default Rest Time
+              </div>
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                Used between sets unless changed per exercise
+              </div>
+            </div>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0,
+              backgroundColor: 'var(--surface-elevated)',
+              border: '1px solid var(--border)',
+              borderRadius: '9999px',
+              padding: '3px 10px',
+              height: '32px',
+            }}>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={0}
+                value={restMin}
+                onChange={e => commitRest(Number(e.target.value), restSec)}
+                aria-label="Default rest minutes"
+                style={{
+                  width: '28px', background: 'transparent', border: 'none', outline: 'none',
+                  color: 'var(--text-primary)', fontFamily: "'JetBrains Mono', monospace",
+                  fontSize: '14px', textAlign: 'right',
+                }}
+              />
+              <span style={{ color: 'var(--text-muted)', fontFamily: "'JetBrains Mono', monospace", fontSize: '14px' }}>:</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={0}
+                max={59}
+                value={String(restSec).padStart(2, '0')}
+                onChange={e => commitRest(restMin, Number(e.target.value))}
+                aria-label="Default rest seconds"
+                style={{
+                  width: '28px', background: 'transparent', border: 'none', outline: 'none',
+                  color: 'var(--text-primary)', fontFamily: "'JetBrains Mono', monospace",
+                  fontSize: '14px', textAlign: 'left',
+                }}
+              />
+            </div>
+          </div>
         </div>
       </div>
 

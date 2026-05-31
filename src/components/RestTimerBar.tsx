@@ -7,10 +7,19 @@ interface Props {
   exerciseName: string
   remainingMs: number
   durationMs: number
+  paused: boolean
   bottomOffsetPx?: number
   onStop: () => void
   onAdd: (sec: number) => void
+  onPause: () => void
+  onResume: () => void
 }
+
+const ADD_OPTIONS: { label: string; sec: number }[] = [
+  { label: '+15s', sec: 15 },
+  { label: '+30s', sec: 30 },
+  { label: '+1:00', sec: 60 },
+]
 
 function fmt(ms: number): string {
   const total = Math.ceil(ms / 1000)
@@ -24,11 +33,15 @@ export default function RestTimerBar({
   exerciseName,
   remainingMs,
   durationMs,
+  paused,
   bottomOffsetPx = 0,
   onStop,
   onAdd,
+  onPause,
+  onResume,
 }: Props) {
   const [open, setOpen] = useState(false)
+  const [addOpen, setAddOpen] = useState(false)
   const [rest, setRest] = useState<number>(() => getExerciseRest(exerciseId))
 
   useEffect(() => {
@@ -36,7 +49,7 @@ export default function RestTimerBar({
   }, [exerciseId])
 
   const pct = durationMs > 0 ? Math.min(100, (remainingMs / durationMs) * 100) : 0
-  const lowTime = remainingMs <= 10_000
+  const lowTime = !paused && remainingMs <= 10_000
 
   return (
     <div
@@ -46,6 +59,7 @@ export default function RestTimerBar({
       style={{
         position: 'fixed',
         bottom: `${bottomOffsetPx}px`,
+        paddingBottom: bottomOffsetPx === 0 ? 'env(safe-area-inset-bottom)' : 0,
         backgroundColor: 'var(--surface-elevated)',
         borderTop: '1px solid var(--border)',
         boxShadow: '0 -4px 16px rgba(0,0,0,0.4)',
@@ -66,12 +80,13 @@ export default function RestTimerBar({
             height: '100%',
             width: `${pct}%`,
             backgroundColor: lowTime ? 'var(--danger)' : 'var(--accent)',
-            transition: 'width 250ms linear, background-color 200ms ease',
+            opacity: paused ? 0.4 : 1,
+            transition: 'width 250ms linear, background-color 200ms ease, opacity 200ms ease',
           }}
         />
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', padding: '10px 16px', gap: '12px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', padding: '16px 16px', gap: '10px' }}>
         <button
           onClick={() => setOpen(o => !o)}
           aria-label={open ? 'Collapse rest timer' : 'Expand rest timer'}
@@ -91,9 +106,9 @@ export default function RestTimerBar({
           <span
             style={{
               fontFamily: 'var(--font-mono)',
-              fontSize: '18px',
-              color: lowTime ? 'var(--danger)' : 'var(--text-primary)',
-              minWidth: '54px',
+              fontSize: '20px',
+              color: paused ? 'var(--text-muted)' : lowTime ? 'var(--danger)' : 'var(--text-primary)',
+              minWidth: '58px',
               textAlign: 'left',
               fontVariantNumeric: 'tabular-nums',
             }}
@@ -103,7 +118,7 @@ export default function RestTimerBar({
           <span
             style={{
               fontSize: '11px',
-              color: 'var(--text-muted)',
+              color: paused ? 'var(--accent-dim)' : 'var(--text-muted)',
               letterSpacing: 'var(--tracking-label)',
               textTransform: 'uppercase',
               overflow: 'hidden',
@@ -111,28 +126,108 @@ export default function RestTimerBar({
               whiteSpace: 'nowrap',
             }}
           >
-            REST · {exerciseName}
+            {paused ? 'PAUSED' : `REST · ${exerciseName}`}
           </span>
         </button>
 
+        {/* Pause / Resume */}
         <button
-          onClick={() => onAdd(30)}
-          aria-label="Add 30 seconds"
+          onClick={paused ? onResume : onPause}
+          aria-label={paused ? 'Resume rest timer' : 'Pause rest timer'}
           style={{
             backgroundColor: 'var(--surface)',
             border: '1px solid var(--border)',
             borderRadius: 'var(--radius-sm)',
             color: 'var(--text-primary)',
-            fontSize: '12px',
-            fontFamily: 'var(--font-sans)',
-            fontWeight: 600,
-            padding: '6px 10px',
             cursor: 'pointer',
-            height: '36px',
+            width: '40px',
+            height: '40px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
           }}
         >
-          +30s
+          {paused ? (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style={{ color: 'var(--accent)' }}>
+              <polygon points="6 4 20 12 6 20 6 4" />
+            </svg>
+          ) : (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <rect x="6" y="4" width="4" height="16" rx="1" />
+              <rect x="14" y="4" width="4" height="16" rx="1" />
+            </svg>
+          )}
         </button>
+
+        {/* Add time (popover) */}
+        <div style={{ position: 'relative', flexShrink: 0 }}>
+          <button
+            onClick={() => setAddOpen(o => !o)}
+            aria-label="Add time to rest timer"
+            aria-expanded={addOpen}
+            style={{
+              backgroundColor: 'var(--surface)',
+              border: `1px solid ${addOpen ? 'var(--accent)' : 'var(--border)'}`,
+              borderRadius: 'var(--radius-sm)',
+              color: addOpen ? 'var(--accent)' : 'var(--text-primary)',
+              fontSize: '18px',
+              fontFamily: 'var(--font-sans)',
+              fontWeight: 600,
+              cursor: 'pointer',
+              width: '40px',
+              height: '40px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              lineHeight: 1,
+            }}
+          >
+            +
+          </button>
+          {addOpen && (
+            <div
+              style={{
+                position: 'absolute',
+                bottom: 'calc(100% + 8px)',
+                right: 0,
+                display: 'flex',
+                gap: '6px',
+                padding: '8px',
+                backgroundColor: 'var(--surface-elevated)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-md)',
+                boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+                zIndex: 1,
+              }}
+            >
+              {ADD_OPTIONS.map(opt => (
+                <button
+                  key={opt.sec}
+                  onClick={() => {
+                    onAdd(opt.sec)
+                    setAddOpen(false)
+                  }}
+                  style={{
+                    height: '34px',
+                    minWidth: '52px',
+                    borderRadius: 'var(--radius-pill, 9999px)',
+                    border: '1px solid var(--border)',
+                    backgroundColor: 'transparent',
+                    color: 'var(--text-secondary)',
+                    fontSize: '13px',
+                    fontFamily: 'var(--font-mono)',
+                    cursor: 'pointer',
+                    padding: '0 12px',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
 
         <button
           onClick={onStop}
@@ -145,9 +240,10 @@ export default function RestTimerBar({
             fontSize: '12px',
             fontFamily: 'var(--font-sans)',
             fontWeight: 500,
-            padding: '6px 10px',
+            padding: '0 12px',
             cursor: 'pointer',
-            height: '36px',
+            height: '40px',
+            flexShrink: 0,
           }}
         >
           SKIP

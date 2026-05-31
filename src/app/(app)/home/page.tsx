@@ -1,6 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import HomeDashboard from './HomeDashboard'
+import type { UserRotation } from '@/lib/types'
+import { effectiveSequence, nextDay as nextDayFromRotation } from '@/lib/utils/rotation'
 
 export default async function HomePage() {
   const supabase = await createClient()
@@ -89,8 +91,19 @@ export default async function HomePage() {
     }
   }
 
+  // Suggested next day, from the user's rotation. Auto mode derives the order from
+  // their days (each once); manual mode follows their saved sequence (which may
+  // repeat a day). Falls back gracefully for users with no rotation row yet.
+  const [{ data: dayTypeRows }, { data: rotationRow }] = await Promise.all([
+    supabase.from('exercises').select('day_type'),
+    supabase.from('user_rotation').select('*').eq('user_id', user.id).maybeSingle(),
+  ])
+  const dayKeys = Array.from(new Set((dayTypeRows ?? []).map(r => r.day_type)))
+  const rotation = (rotationRow as UserRotation | null)
+  const seq = effectiveSequence(rotation, dayKeys)
+  const nextDay = nextDayFromRotation(seq, rotation?.current_index ?? -1) ?? dayKeys.sort()[0] ?? 'push'
+
   // Exercises for the next suggested day (to show preview in CTA)
-  const nextDay = getNextDayTypeServer(lastSession?.day_type ?? null)
   const { data: nextDayExercises } = await supabase
     .from('exercises')
     .select('name')
@@ -135,14 +148,6 @@ export default async function HomePage() {
       totalPRs={totalPRs ?? 0}
     />
   )
-}
-
-function getNextDayTypeServer(lastDayType: string | null): 'push' | 'pull' | 'legs' {
-  if (!lastDayType) return 'push'
-  const cycle: Record<string, 'push' | 'pull' | 'legs'> = {
-    push: 'pull', pull: 'legs', legs: 'push',
-  }
-  return cycle[lastDayType] ?? 'push'
 }
 
 function getMonthStart(): Date {

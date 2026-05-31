@@ -9,6 +9,8 @@ import { localDateKey } from '@/lib/utils/formatting'
 import { haptic } from '@/lib/utils/haptics'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { deleteIncompleteSessions } from '@/lib/utils/sessions'
+import { advanceIndex, effectiveSequence } from '@/lib/utils/rotation'
+import type { UserRotation } from '@/lib/types'
 import { useRestTimer } from '@/lib/hooks/useRestTimer'
 import RestTimerBar from '@/components/RestTimerBar'
 import PlateCalculator from '@/components/PlateCalculator'
@@ -81,8 +83,21 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const [resumeToast, setResumeToast] = useState<string | null>(null)
   const [discarding, setDiscarding] = useState(false)
   const [plateCalcTarget, setPlateCalcTarget] = useState<{ key: string; current: number } | null>(null)
+  const [showNoteHint, setShowNoteHint] = useState(false)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   const restTimer = useRestTimer()
+
+  // Surface the long-press-for-note affordance once (it's otherwise invisible).
+  useEffect(() => {
+    if (typeof window !== 'undefined' && !localStorage.getItem('grind.hint.setnote')) {
+      setShowNoteHint(true)
+    }
+  }, [])
+
+  function dismissNoteHint() {
+    setShowNoteHint(false)
+    if (typeof window !== 'undefined') localStorage.setItem('grind.hint.setnote', '1')
+  }
 
   useEffect(() => {
     timerRef.current = setInterval(() => {
@@ -375,7 +390,15 @@ export default function ActiveWorkout({ day }: { day: string }) {
     }
 
     setUndoState({ key, exerciseId, setNumber, expiresAt: Date.now() + 5000 })
-    if (!logEntry.isWarmup) {
+
+    // Don't start a rest countdown when this check completes the whole workout —
+    // there's nothing left to rest for. `logs` still holds the pre-check state, so
+    // treat the just-checked key as processed when projecting completion.
+    const willAllBeProcessed =
+      totalSets() > 0 &&
+      Object.entries(logs).every(([k, l]) => (k === key ? true : l.checked || l.skipped))
+
+    if (!logEntry.isWarmup && !willAllBeProcessed) {
       restTimer.start(exerciseId)
     }
   }
@@ -725,6 +748,31 @@ export default function ActiveWorkout({ day }: { day: string }) {
       .update(updatedStats)
       .eq('user_id', user.id)
 
+    // Advance the rotation pointer so the home page suggests the next day after
+    // this one. Best-effort — a failure here must never block completion.
+    try {
+      const [{ data: dayTypeRows }, { data: rotationRow }] = await Promise.all([
+        supabase.from('exercises').select('day_type'),
+        supabase.from('user_rotation').select('*').eq('user_id', user.id).maybeSingle(),
+      ])
+      const dayKeys = Array.from(new Set((dayTypeRows ?? []).map(r => r.day_type)))
+      const rotation = rotationRow as UserRotation | null
+      const seq = effectiveSequence(rotation, dayKeys)
+      const newIndex = advanceIndex(seq, rotation?.current_index ?? -1, day)
+      await supabase.from('user_rotation').upsert(
+        {
+          user_id: user.id,
+          mode: rotation?.mode ?? 'auto',
+          sequence: rotation?.sequence ?? [],
+          current_index: newIndex,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id' },
+      )
+    } catch {
+      // Rotation is a non-critical convenience; swallow and move on.
+    }
+
     const newBadges = await checkAndAwardBadges(
       supabase,
       user.id,
@@ -910,27 +958,29 @@ export default function ActiveWorkout({ day }: { day: string }) {
         </div>
       )}
 
-      {/* Undo toast */}
+      {/* Undo toast — anchored to the top so it's visible wherever you are scrolled.
+          Sits just below the resume toast if both happen to show. */}
       {undoState && (
         <div
           role="status"
           aria-live="polite"
           style={{
             position: 'fixed',
-            bottom: 'calc(160px + env(safe-area-inset-bottom))',
-            left: '16px',
-            right: '16px',
+            top: `calc(env(safe-area-inset-top) + ${resumeToast ? '60px' : '12px'})`,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            width: 'calc(100% - 32px)',
+            maxWidth: '420px',
             backgroundColor: 'var(--surface-elevated)',
             border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-md)',
-            padding: '12px 16px',
+            borderRadius: 'var(--radius-pill, 9999px)',
+            padding: '10px 12px 10px 18px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            zIndex: 95,
+            zIndex: 300,
             boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
-            maxWidth: '480px',
-            margin: '0 auto',
+            animation: 'toast-in 180ms ease',
           }}
         >
           <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
@@ -974,9 +1024,12 @@ export default function ActiveWorkout({ day }: { day: string }) {
           exerciseName={exercises.find(e => e.id === restTimer.exerciseId)?.name ?? ''}
           remainingMs={restTimer.remainingMs}
           durationMs={restTimer.durationMs}
-          bottomOffsetPx={92}
+          paused={restTimer.paused}
+          bottomOffsetPx={0}
           onStop={restTimer.stop}
           onAdd={restTimer.addSeconds}
+          onPause={restTimer.pause}
+          onResume={restTimer.resume}
         />
       )}
 
@@ -1036,6 +1089,42 @@ export default function ActiveWorkout({ day }: { day: string }) {
 
         {/* Exercise cards */}
         <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {showNoteHint && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '8px',
+                fontSize: '12px',
+                color: 'var(--text-muted)',
+                padding: '2px 2px 2px 0',
+              }}
+            >
+              <span style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                  <path d="M12 20h9" />
+                  <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+                </svg>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  Tip — press &amp; hold a set to add a note
+                </span>
+              </span>
+              <button
+                onClick={dismissNoteHint}
+                aria-label="Dismiss tip"
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  color: 'var(--text-muted)', padding: '4px', flexShrink: 0,
+                  display: 'flex', alignItems: 'center',
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+          )}
           {exercises.map((ex) => (
             <ExerciseCard
               key={ex.id}
@@ -1106,7 +1195,8 @@ export default function ActiveWorkout({ day }: { day: string }) {
         </div>
       </div>
 
-      {/* Finish button */}
+      {/* Finish button — hidden while the rest bar owns the bottom edge */}
+      {!restTimer.active && (
       <div className="wo-fixed-bar" style={{
         position: 'fixed',
         bottom: 0,
@@ -1145,6 +1235,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
             : `${checked} / ${total} sets`}
         </div>
       </div>
+      )}
     </>
   )
 }
@@ -1544,6 +1635,7 @@ function SetRow({
 }: SetRowProps) {
   const { toDisplay, fromDisplay, fmt } = useUnit()
   const [justChecked, setJustChecked] = useState(false)
+  const [needsReps, setNeedsReps] = useState(false)
   const [noteOpen, setNoteOpen] = useState(false)
   // logEntry.weight is stored canonically in lbs. We show it in the active display unit.
   // While the field is focused we keep the raw typed string in `rawWeight` so the user can
@@ -1559,9 +1651,21 @@ function SetRow({
 
   function handleCheck() {
     if (logEntry.checked) return
+    // A non-skipped set marked done must have a rep count — otherwise an empty
+    // set would silently count as completed. Nudge the user to the reps field.
+    if (logEntry.reps.trim() === '') {
+      setNeedsReps(true)
+      repsRef.current?.focus()
+      return
+    }
     setJustChecked(true)
     setTimeout(() => setJustChecked(false), 300)
     onCheck()
+  }
+
+  function handleRepsChange(v: string) {
+    if (needsReps && v.trim() !== '') setNeedsReps(false)
+    onRepsChange(v)
   }
 
   function handleRowLongPressStart() {
@@ -1628,29 +1732,47 @@ function SetRow({
           {isBonus ? `+${setNumber - 1}` : `SET ${setNumber}`}
         </span>
 
-        {/* Warm-up toggle */}
-        <button
-          onClick={onToggleWarmup}
-          disabled={logEntry.checked && !editing}
-          aria-pressed={logEntry.isWarmup}
-          aria-label={logEntry.isWarmup ? `Unmark set ${setNumber} as warm-up` : `Mark set ${setNumber} as warm-up`}
-          title={logEntry.isWarmup ? 'Warm-up set' : 'Mark as warm-up'}
-          style={{
-            width: '28px', height: '28px',
-            borderRadius: '999px',
-            border: `1px solid ${logEntry.isWarmup ? 'var(--accent-dim)' : 'var(--border)'}`,
-            backgroundColor: logEntry.isWarmup ? 'rgba(143, 170, 36, 0.18)' : 'transparent',
-            color: logEntry.isWarmup ? 'var(--accent-dim)' : 'var(--text-muted)',
-            fontFamily: "'DM Sans', sans-serif",
-            fontSize: '11px',
-            fontWeight: 700,
-            cursor: (logEntry.checked && !editing) ? 'default' : 'pointer',
-            flexShrink: 0,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}
-        >
-          W
-        </button>
+        {/* Warm-up toggle. The "W" pill is intentionally minimal; a small caption
+           under the first set of each exercise states what it does without repeating
+           on every row. The fixed-width column keeps the inputs aligned across rows. */}
+        <div style={{
+          width: '34px', flexShrink: 0,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px',
+        }}>
+          <button
+            onClick={onToggleWarmup}
+            disabled={logEntry.checked && !editing}
+            aria-pressed={logEntry.isWarmup}
+            aria-label={logEntry.isWarmup ? `Unmark set ${setNumber} as warm-up` : `Mark set ${setNumber} as warm-up`}
+            title={logEntry.isWarmup ? 'Warm-up set (excluded from PRs)' : 'Mark as warm-up'}
+            style={{
+              width: '28px', height: '28px',
+              borderRadius: '999px',
+              border: `1px solid ${logEntry.isWarmup ? 'var(--accent-dim)' : 'var(--border)'}`,
+              backgroundColor: logEntry.isWarmup ? 'rgba(143, 170, 36, 0.18)' : 'transparent',
+              color: logEntry.isWarmup ? 'var(--accent-dim)' : 'var(--text-muted)',
+              fontFamily: "'DM Sans', sans-serif",
+              fontSize: '11px',
+              fontWeight: 700,
+              cursor: (logEntry.checked && !editing) ? 'default' : 'pointer',
+              flexShrink: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >
+            W
+          </button>
+          {setNumber === 1 && !isBonus && (
+            <span style={{
+              fontFamily: "'DM Sans', sans-serif",
+              fontSize: '8px', fontWeight: 600, lineHeight: 1,
+              letterSpacing: '0.3px', textTransform: 'uppercase',
+              whiteSpace: 'nowrap',
+              color: logEntry.isWarmup ? 'var(--accent-dim)' : 'var(--text-muted)',
+            }}>
+              warm-up
+            </span>
+          )}
+        </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 1, minWidth: 0 }}>
           <input
@@ -1666,7 +1788,7 @@ function SetRow({
             placeholder="0"
             aria-label={`Weight for set ${setNumber}`}
             style={{
-              width: '68px', height: '40px',
+              width: '68px', minWidth: 0, height: '40px',
               backgroundColor: 'var(--surface-elevated)',
               border: `1px solid ${inputsDisabled ? 'var(--border)' : 'var(--border-strong)'}`,
               borderRadius: '8px',
@@ -1701,31 +1823,39 @@ function SetRow({
           </button>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
           <input
             ref={repsRef}
             type="number"
             inputMode="numeric"
             value={logEntry.reps}
-            onChange={e => onRepsChange(e.target.value)}
+            onChange={e => handleRepsChange(e.target.value)}
             onFocus={e => e.target.select()}
             onKeyDown={handleRepsKeyDown}
             disabled={inputsDisabled}
             placeholder="0"
             aria-label={`Reps for set ${setNumber}`}
+            aria-invalid={needsReps}
             style={{
               width: '52px', height: '40px',
               backgroundColor: 'var(--surface-elevated)',
-              border: `1px solid ${inputsDisabled ? 'var(--border)' : 'var(--border-strong)'}`,
+              border: `1px solid ${needsReps ? 'var(--danger)' : inputsDisabled ? 'var(--border)' : 'var(--border-strong)'}`,
               borderRadius: '8px',
               color: 'var(--text-primary)',
               fontFamily: "'JetBrains Mono', monospace",
               fontSize: '16px',
               textAlign: 'center',
               outline: 'none',
+              transition: 'border-color 150ms ease',
             }}
           />
-          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>reps</span>
+          <span style={{
+            fontSize: '11px',
+            color: needsReps ? 'var(--danger)' : 'var(--text-muted)',
+            transition: 'color 150ms ease',
+          }}>
+            {needsReps ? 'enter' : 'reps'}
+          </span>
         </div>
 
         {logEntry.isPR && (
@@ -1774,6 +1904,7 @@ function SetRow({
             aria-label={`Save set ${setNumber}`}
             style={{
               height: '44px',
+              minWidth: '60px',
               padding: '0 14px',
               borderRadius: 'var(--radius-pill, 9999px)',
               border: 'none',
