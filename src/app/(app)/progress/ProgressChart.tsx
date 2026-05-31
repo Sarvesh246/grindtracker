@@ -97,7 +97,7 @@ export default function ProgressChart({ data }: { data: ChartPoint[] }) {
     <ResponsiveContainer width="100%" height={200}>
       <LineChart
         data={data}
-        margin={{ top: 8, right: 16, bottom: 4, left: -8 }}
+        margin={{ top: 8, right: 28, bottom: 8, left: -8 }}
       >
         <CartesianGrid
           strokeDasharray="3 3"

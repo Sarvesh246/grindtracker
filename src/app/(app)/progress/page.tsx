@@ -421,7 +421,7 @@ export default function ProgressPage() {
           backgroundColor: 'var(--surface)',
           border: '1px solid var(--border)',
           borderRadius: '12px',
-          padding: '16px 8px 8px',
+          padding: '16px 12px 10px',
           minHeight: '220px',
           display: 'flex',
           alignItems: 'center',

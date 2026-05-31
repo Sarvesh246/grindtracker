@@ -66,19 +66,33 @@ export default async function HomePage() {
   if (lastSession) {
     const { data: logs } = await supabase
       .from('session_logs')
-      .select('weight, reps, is_warmup, exercise_id, set_number, exercises(name)')
+      .select('weight, reps, is_warmup, exercise_id, set_number, created_at, exercises(name)')
       .eq('session_id', lastSession.id)
-      .order('set_number', { ascending: true })
+      .order('created_at', { ascending: true })
 
     if (logs) {
       // One row per exercise — count working sets and take the heaviest working
       // set's weight + reps for the "sets × reps" summary (warm-ups excluded).
-      const byExercise: Record<string, { exercise_name: string; weight: number | null; sets: number; reps: number | null }> = {}
+      // Preserve the order the user logged sets (first created_at per exercise).
+      type LogRow = {
+        exercise_name: string
+        weight: number | null
+        sets: number
+        reps: number | null
+        firstLoggedAt: string
+      }
+      const byExercise: Record<string, LogRow> = {}
       for (const log of logs) {
         const exercises = log.exercises as unknown as { name: string }[] | { name: string } | null
         const name = (Array.isArray(exercises) ? exercises[0]?.name : exercises?.name) ?? 'Unknown'
         if (!byExercise[log.exercise_id]) {
-          byExercise[log.exercise_id] = { exercise_name: name, weight: null, sets: 0, reps: null }
+          byExercise[log.exercise_id] = {
+            exercise_name: name,
+            weight: null,
+            sets: 0,
+            reps: null,
+            firstLoggedAt: log.created_at,
+          }
         }
         if (log.is_warmup) continue
         const entry = byExercise[log.exercise_id]
@@ -89,6 +103,8 @@ export default async function HomePage() {
         }
       }
       lastSessionLogs = Object.values(byExercise)
+        .sort((a, b) => a.firstLoggedAt.localeCompare(b.firstLoggedAt))
+        .map(({ firstLoggedAt: _, ...row }) => row)
     }
   }
 
