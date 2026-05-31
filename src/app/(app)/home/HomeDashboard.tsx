@@ -1,10 +1,31 @@
 'use client'
+import { useSyncExternalStore } from 'react'
 import { useRouter } from 'next/navigation'
 import { Session, UserStats } from '@/lib/types'
 import { getLevel, getXpInCurrentLevel, getXpRequiredForLevel, getXpToNextLevel } from '@/lib/utils/gamification'
 import { formatHeaderDate, formatShortDate } from '@/lib/utils/formatting'
+import { overdueDays } from '@/lib/utils/rotation'
 import WorkoutCalendar from '@/components/WorkoutCalendar'
 import { useUnit } from '@/lib/contexts/UnitContext'
+
+// The dismissed-overdue signature lives in localStorage and is read via
+// useSyncExternalStore so hydration stays clean (server snapshot = null, client
+// reads the real value). A custom event lets our own writes trigger a re-render,
+// since the native 'storage' event doesn't fire in the document that wrote it.
+const OVERDUE_DISMISS_KEY = 'grind_overdue_dismissed'
+const OVERDUE_DISMISS_EVENT = 'grind:overdue-dismissed'
+
+function subscribeDismiss(cb: () => void): () => void {
+  window.addEventListener('storage', cb)
+  window.addEventListener(OVERDUE_DISMISS_EVENT, cb)
+  return () => {
+    window.removeEventListener('storage', cb)
+    window.removeEventListener(OVERDUE_DISMISS_EVENT, cb)
+  }
+}
+function readDismissedSig(): string | null {
+  try { return localStorage.getItem(OVERDUE_DISMISS_KEY) } catch { return null }
+}
 
 interface Props {
   stats: UserStats | null
@@ -12,6 +33,9 @@ interface Props {
   lastSessionLogs: { exercise_name: string; weight: number | null; sets: number; reps: number | null }[]
   nextDay: string
   nextDayExercises: string[]
+  rotationSeq: string[]
+  rotationIndex: number
+  lastTrainedByDay: Record<string, string | null>
   firstName: string
   weeklyWorkouts: number
   monthlyWorkouts: number
@@ -33,6 +57,11 @@ const DAY_MUSCLES: Record<string, string> = {
 // Standard days read "PUSH DAY"; custom days (abs, cardio, …) just use the name.
 function dayLabel(key: string): string {
   return DAY_LABELS[key] ?? key.replace(/-/g, ' ').toUpperCase()
+}
+
+// Just the day's name (no "DAY" suffix) for the overdue nudge.
+function dayName(key: string): string {
+  return key.replace(/-/g, ' ').toUpperCase()
 }
 
 // A small dumbbell/barbell glyph, reused for the welcome state and the CTA.
@@ -60,6 +89,9 @@ export default function HomeDashboard({
   lastSessionLogs,
   nextDay,
   nextDayExercises,
+  rotationSeq,
+  rotationIndex,
+  lastTrainedByDay,
   firstName,
   weeklyWorkouts,
   monthlyWorkouts,
@@ -81,6 +113,23 @@ export default function HomeDashboard({
   const exercisePreview = nextDayExercises.length <= 2
     ? nextDayExercises.join(', ')
     : `${nextDayExercises.slice(0, 2).join(', ')} +${nextDayExercises.length - 2} more`
+
+  // Days the rotation pointer skipped past — a subtle, dismissible nudge so a day
+  // you jumped over isn't lost. Computed client-side so daysSince uses the viewer's
+  // timezone. The position system still picks `nextDay`; this never surfaces the
+  // merely-next/earliest day, only one trained out of order and left behind.
+  const overdue = totalWorkouts > 0 ? overdueDays(rotationSeq, rotationIndex, lastTrainedByDay) : []
+  const overdueSig = overdue.map(d => d.dayType).join(',')
+
+  // Dismissal is keyed to the overdue set, so hiding it sticks across reloads but
+  // returns if a *different* day later gets skipped.
+  const dismissedSig = useSyncExternalStore(subscribeDismiss, readDismissedSig, () => null)
+  const dismissOverdue = () => {
+    try { localStorage.setItem(OVERDUE_DISMISS_KEY, overdueSig) } catch {}
+    window.dispatchEvent(new Event(OVERDUE_DISMISS_EVENT))
+  }
+  const showOverdue = overdue.length > 0 && dismissedSig !== overdueSig
+  const overdueNames = overdue.map(d => dayName(d.dayType))
 
   // Shared card surface — one radius (20px) and one padding (24px) across the
   // whole dashboard so every card edge aligns to the same grid.
@@ -351,6 +400,74 @@ export default function HomeDashboard({
         </span>
         <span style={{ flexShrink: 0 }}><ChevronRight color="var(--on-accent)" /></span>
       </button>
+
+      {/* Overdue nudge — a slim, dismissible line that surfaces a day the rotation
+          skipped past (trained out of order and left behind), so you don't have to
+          scan the calendar. Tap to start it; × hides it until a new day is skipped. */}
+      {showOverdue && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          padding: '10px 12px',
+          borderRadius: '12px',
+          backgroundColor: 'var(--surface)',
+          border: '1px solid var(--border)',
+        }}>
+          <span style={{ color: 'var(--danger)', flexShrink: 0, display: 'flex' }} aria-hidden>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+              <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+          </span>
+          <button
+            onClick={() => router.push(`/log?day=${overdue[0].dayType}`)}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              background: 'none',
+              border: 'none',
+              padding: 0,
+              textAlign: 'left',
+              cursor: 'pointer',
+              fontSize: '13px',
+              color: 'var(--text-secondary)',
+              lineHeight: 1.3,
+            }}
+          >
+            You&apos;re overdue for{' '}
+            <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
+              {overdueNames.join(', ')}
+            </span>
+            {overdue[0].daysSince !== null && overdueNames.length === 1 && (
+              <span style={{ color: 'var(--text-muted)' }}> · {overdue[0].daysSince}d ago</span>
+            )}
+          </button>
+          <button
+            onClick={dismissOverdue}
+            aria-label="Dismiss"
+            style={{
+              flexShrink: 0,
+              background: 'none',
+              border: 'none',
+              // ~32px touch target without growing the row's visual height.
+              padding: '8px',
+              margin: '-6px -4px',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              color: 'var(--text-muted)',
+              display: 'flex',
+              transition: 'color 150ms ease',
+            }}
+            onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-primary)')}
+            onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+      )}
 
       </div>{/* end left column */}
 

@@ -103,6 +103,25 @@ export default async function HomePage() {
   const seq = effectiveSequence(rotation, dayKeys)
   const nextDay = nextDayFromRotation(seq, rotation?.current_index ?? -1) ?? dayKeys.sort()[0] ?? 'push'
 
+  // Last completed date per day_key, for the home rotation's recency/overdue
+  // info. Surfaces how long since you trained each day (and flags skipped ones)
+  // WITHOUT changing which day is suggested next — that stays position-driven.
+  const { data: completedDays } = await supabase
+    .from('sessions')
+    .select('day_type, completed_at')
+    .eq('user_id', user.id)
+    .not('completed_at', 'is', null)
+    .order('completed_at', { ascending: false })
+
+  const lastTrainedByDay: Record<string, string | null> = {}
+  for (const key of dayKeys) lastTrainedByDay[key] = null
+  for (const row of completedDays ?? []) {
+    // Rows are newest-first, so the first time we see a day_type is its latest.
+    if (lastTrainedByDay[row.day_type] == null && row.completed_at) {
+      lastTrainedByDay[row.day_type] = row.completed_at
+    }
+  }
+
   // Exercises for the next suggested day (to show preview in CTA)
   const { data: nextDayExercises } = await supabase
     .from('exercises')
@@ -142,6 +161,9 @@ export default async function HomePage() {
       lastSessionLogs={lastSessionLogs}
       nextDay={nextDay}
       nextDayExercises={(nextDayExercises ?? []).map(e => e.name)}
+      rotationSeq={seq}
+      rotationIndex={rotation?.current_index ?? -1}
+      lastTrainedByDay={lastTrainedByDay}
       firstName={firstName}
       weeklyWorkouts={weeklyCount ?? 0}
       monthlyWorkouts={monthlyCount ?? 0}
