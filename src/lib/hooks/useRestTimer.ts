@@ -123,11 +123,13 @@ export function useRestTimer() {
   }
 
   function resume() {
-    // Rebase the clock onto the frozen remaining time so the countdown picks up
-    // exactly where it left off.
+    // Rebase the clock so the countdown picks up exactly where it left off.
+    // Calculate how much time had elapsed before pause, then set startedAt such that
+    // (now - startedAt) equals that elapsed time. This way the progress bar stays at
+    // the same position, and the countdown continues from remainingMs.
     setState(s =>
       s.exerciseId && s.paused
-        ? { ...s, paused: false, startedAt: Date.now(), durationMs: s.remainingMs }
+        ? { ...s, paused: false, startedAt: Date.now() - (s.durationMs - s.remainingMs) }
         : s,
     )
   }
