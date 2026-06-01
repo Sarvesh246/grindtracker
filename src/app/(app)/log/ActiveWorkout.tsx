@@ -1917,7 +1917,7 @@ function SetRow({
             placeholder="0"
             aria-label={`Weight for set ${setNumber}`}
             style={{
-              width: '68px', minWidth: 0, height: '40px',
+              width: '52px', flexShrink: 0, height: '40px',
               backgroundColor: 'var(--surface-elevated)',
               border: `1px solid ${inputsDisabled ? 'var(--border)' : 'var(--border-strong)'}`,
               borderRadius: '8px',
