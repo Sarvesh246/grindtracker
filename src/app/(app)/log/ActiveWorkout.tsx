@@ -1511,6 +1511,25 @@ function ExerciseCard({
       <div style={{ height: '1px', backgroundColor: 'var(--border)' }} />
 
       <div style={{ padding: '8px 0' }}>
+        {/* Column headers, aligned over the weight/reps boxes in each SetRow. The two
+           leading spacers mirror the SET label and warm-up "W" columns so the labels
+           line up with the inputs without repeating on every row. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0 16px 6px' }}>
+          <span aria-hidden style={{ minWidth: '38px', flexShrink: 0 }} />
+          <span aria-hidden style={{ width: '38px', flexShrink: 0 }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            {[unitLabel, 'reps'].map((label, i) => (
+              <span key={i} style={{
+                width: '56px', textAlign: 'center',
+                fontSize: '10px', fontWeight: 600, letterSpacing: '0.5px',
+                textTransform: 'uppercase', color: 'var(--text-muted)',
+                fontFamily: "'DM Sans', sans-serif",
+              }}>
+                {label}
+              </span>
+            ))}
+          </div>
+        </div>
         {setNumbers.map((setNum) => {
           const key = `${exercise.id}-${setNum}`
           const logEntry = logs[key] ?? {
@@ -1903,7 +1922,11 @@ function SetRow({
           )}
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 1, minWidth: 0 }}>
+        {/* Weight + reps inputs. Both are equal-sized fixed boxes with a clear gap
+           so they never butt up against each other; their column labels live in the
+           header above the sets. The group is flex:1 so the action buttons sit at the
+           far right. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: 0 }}>
           <input
             ref={weightRef}
             type="number"
@@ -1917,7 +1940,7 @@ function SetRow({
             placeholder="0"
             aria-label={`Weight for set ${setNumber}`}
             style={{
-              width: '52px', flexShrink: 0, height: '40px',
+              width: '56px', flexShrink: 0, height: '40px',
               backgroundColor: 'var(--surface-elevated)',
               border: `1px solid ${inputsDisabled ? 'var(--border)' : 'var(--border-strong)'}`,
               borderRadius: '8px',
@@ -1926,6 +1949,32 @@ function SetRow({
               fontSize: '16px',
               textAlign: 'center',
               outline: 'none',
+            }}
+          />
+          <input
+            ref={repsRef}
+            type="number"
+            inputMode="numeric"
+            value={logEntry.reps}
+            onChange={e => handleRepsChange(e.target.value)}
+            onFocus={e => e.target.select()}
+            onKeyDown={handleRepsKeyDown}
+            disabled={inputsDisabled}
+            placeholder="0"
+            aria-label={`Reps for set ${setNumber}`}
+            aria-invalid={needsReps}
+            title={needsReps ? 'Enter a rep count to complete this set' : undefined}
+            style={{
+              width: '56px', flexShrink: 0, height: '40px',
+              backgroundColor: 'var(--surface-elevated)',
+              border: `1px solid ${needsReps ? 'var(--danger)' : inputsDisabled ? 'var(--border)' : 'var(--border-strong)'}`,
+              borderRadius: '8px',
+              color: 'var(--text-primary)',
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: '16px',
+              textAlign: 'center',
+              outline: 'none',
+              transition: 'border-color 150ms ease',
             }}
           />
           <button
@@ -1950,41 +1999,6 @@ function SetRow({
               <line x1="18" y1="8" x2="18" y2="16" />
             </svg>
           </button>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
-          <input
-            ref={repsRef}
-            type="number"
-            inputMode="numeric"
-            value={logEntry.reps}
-            onChange={e => handleRepsChange(e.target.value)}
-            onFocus={e => e.target.select()}
-            onKeyDown={handleRepsKeyDown}
-            disabled={inputsDisabled}
-            placeholder="0"
-            aria-label={`Reps for set ${setNumber}`}
-            aria-invalid={needsReps}
-            style={{
-              width: '52px', height: '40px',
-              backgroundColor: 'var(--surface-elevated)',
-              border: `1px solid ${needsReps ? 'var(--danger)' : inputsDisabled ? 'var(--border)' : 'var(--border-strong)'}`,
-              borderRadius: '8px',
-              color: 'var(--text-primary)',
-              fontFamily: "'JetBrains Mono', monospace",
-              fontSize: '16px',
-              textAlign: 'center',
-              outline: 'none',
-              transition: 'border-color 150ms ease',
-            }}
-          />
-          <span style={{
-            fontSize: '11px',
-            color: needsReps ? 'var(--danger)' : 'var(--text-muted)',
-            transition: 'color 150ms ease',
-          }}>
-            {needsReps ? 'enter' : 'reps'}
-          </span>
         </div>
 
         {logEntry.isPR && (
