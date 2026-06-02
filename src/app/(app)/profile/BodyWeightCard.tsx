@@ -26,6 +26,7 @@ export default function BodyWeightCard() {
   const { unitLabel, toDisplay, fromDisplay, fmt } = useUnit()
   const [rows, setRows] = useState<Row[]>([])
   const [draft, setDraft] = useState('')
+  const [editingDate, setEditingDate] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
 
@@ -51,10 +52,17 @@ export default function BodyWeightCard() {
       .order('recorded_at', { ascending: true })
 
     setRows((data ?? []) as Row[])
-    const today = todayDateKey()
-    const todayRow = (data ?? []).find((r: Row) => r.recorded_at === today)
-    if (todayRow) setDraft(fmt(todayRow.weight))
     setLoading(false)
+  }
+
+  function startEdit(date: string, weight: number) {
+    setEditingDate(date)
+    setDraft(fmt(weight))
+  }
+
+  function cancelEdit() {
+    setEditingDate(null)
+    setDraft('')
   }
 
   async function handleSave() {
@@ -65,10 +73,12 @@ export default function BodyWeightCard() {
     if (!user) { setSaving(false); return }
 
     await supabase.from('body_weights').upsert(
-      { user_id: user.id, weight: fromDisplay(w), recorded_at: todayDateKey() },
+      { user_id: user.id, weight: fromDisplay(w), recorded_at: editingDate ?? todayDateKey() },
       { onConflict: 'user_id,recorded_at' },
     )
     await load()
+    setDraft('')
+    setEditingDate(null)
     setSaving(false)
   }
 
@@ -80,12 +90,34 @@ export default function BodyWeightCard() {
 
   const chartPoints = rows.map(r => ({
     date: r.recorded_at,
+    canonical: r.weight,
     displayDate: new Date(r.recorded_at + 'T00:00:00').toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
     }),
     weight: toDisplay(r.weight),
   }))
+
+  // Clickable dot — tap a point to edit that day's weight directly.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const renderDot = (props: any) => {
+    const { cx, cy, payload } = props
+    if (cx == null || cy == null) return <g key={payload?.date} />
+    const active = payload?.date === editingDate
+    return (
+      <circle
+        key={payload.date}
+        cx={cx}
+        cy={cy}
+        r={active ? 5 : 4}
+        fill="var(--accent)"
+        stroke="var(--surface)"
+        strokeWidth={2}
+        style={{ cursor: 'pointer' }}
+        onClick={() => startEdit(payload.date, payload.canonical)}
+      />
+    )
+  }
 
   return (
     <div
@@ -140,14 +172,49 @@ export default function BodyWeightCard() {
         )}
       </div>
 
+      {editingDate && (
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            fontSize: '11px',
+            color: 'var(--text-secondary)',
+          }}
+        >
+          <span>
+            Editing{' '}
+            <span style={{ color: 'var(--accent-text)' }}>
+              {new Date(editingDate + 'T00:00:00').toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+              })}
+            </span>
+          </span>
+          <button
+            onClick={cancelEdit}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--text-muted)',
+              fontSize: '11px',
+              cursor: 'pointer',
+              padding: 0,
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
         <input
           type="number"
           inputMode="decimal"
           value={draft}
           onChange={e => setDraft(e.target.value)}
-          placeholder="Log today"
-          aria-label="Today's body weight"
+          placeholder={editingDate ? 'Edit weight' : 'Log today'}
+          aria-label={editingDate ? 'Edit body weight' : "Today's body weight"}
           style={{
             flex: 1,
             backgroundColor: 'var(--surface-elevated)',
@@ -177,7 +244,7 @@ export default function BodyWeightCard() {
             cursor: saving || !draft ? 'not-allowed' : 'pointer',
           }}
         >
-          {saving ? '...' : 'LOG'}
+          {saving ? '...' : editingDate ? 'UPDATE' : 'LOG'}
         </button>
       </div>
 
@@ -190,7 +257,7 @@ export default function BodyWeightCard() {
       ) : (
         <div style={{ height: '120px' }}>
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartPoints} margin={{ top: 4, right: 8, bottom: 0, left: -16 }}>
+            <LineChart data={chartPoints} margin={{ top: 4, right: 20, bottom: 0, left: 4 }}>
               <XAxis
                 dataKey="displayDate"
                 stroke="transparent"
@@ -204,8 +271,9 @@ export default function BodyWeightCard() {
                 tick={{ fill: 'var(--text-muted)', fontSize: 9, fontFamily: "'DM Sans', sans-serif" }}
                 tickLine={false}
                 axisLine={false}
-                width={32}
+                width={40}
                 domain={['dataMin - 2', 'dataMax + 2']}
+                tickFormatter={(v: number) => String(Math.round(v))}
               />
               <Tooltip
                 contentStyle={{
@@ -223,7 +291,7 @@ export default function BodyWeightCard() {
                 dataKey="weight"
                 stroke="var(--accent-text)"
                 strokeWidth={2}
-                dot={false}
+                dot={renderDot}
                 activeDot={{ r: 5, fill: 'var(--accent)', stroke: 'var(--surface)', strokeWidth: 2 }}
               />
             </LineChart>
