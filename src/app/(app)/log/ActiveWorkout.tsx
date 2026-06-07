@@ -1597,14 +1597,13 @@ function ExerciseCard({
       <div style={{ height: '1px', backgroundColor: 'var(--border)' }} />
 
       <div style={{ padding: '8px 0' }}>
-        {/* Column headers, aligned over the weight/reps boxes in each SetRow. The two
-           leading spacers mirror the SET label and warm-up "W" columns so the labels
-           line up with the inputs without repeating on every row. The plate calc icon
-           sits between LBS and REPS, matching the button position in each set row. */}
+        {/* Column headers. The two leading spacers mirror the SET label and W columns.
+           The plate calc button is position:absolute so it sits visually between LBS
+           and REPS without displacing either label — both stay centered over their inputs. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0 16px 6px' }}>
           <span aria-hidden style={{ minWidth: '38px', flexShrink: 0 }} />
           <span aria-hidden style={{ width: '38px', flexShrink: 0 }} />
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', position: 'relative' }}>
             <span style={{
               width: '56px', textAlign: 'center',
               fontSize: '10px', fontWeight: 600, letterSpacing: '0.5px',
@@ -1613,6 +1612,7 @@ function ExerciseCard({
             }}>
               {unitLabel}
             </span>
+            {/* Absolutely positioned so it doesn't affect the flex layout of LBS/REPS */}
             <button
               onClick={() => {
                 // Prefer first unchecked+unskipped set; fall back to set 1 when all are done.
@@ -1629,7 +1629,11 @@ function ExerciseCard({
               aria-label="Open plate calculator"
               title="Plate calculator"
               style={{
-                width: '28px', height: '28px', flexShrink: 0,
+                position: 'absolute',
+                left: '50%',
+                top: '50%',
+                transform: 'translate(-50%, -50%)',
+                width: '28px', height: '28px',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 backgroundColor: 'transparent', border: 'none',
                 cursor: 'pointer', padding: 0,
