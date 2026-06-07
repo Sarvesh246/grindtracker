@@ -69,6 +69,7 @@ export default function DaySelect() {
   const supabase = createClient()
   const [exercises, setExercises] = useState<Exercise[]>([])
   const [rotation, setRotation] = useState<UserRotation | null>(null)
+  const [flexDays, setFlexDays] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [showManager, setShowManager] = useState(false)
 
@@ -77,16 +78,20 @@ export default function DaySelect() {
   async function load() {
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
-    const [exRes, rotRes] = await Promise.all([
+    const [exRes, rotRes, flexRes] = await Promise.all([
       supabase.from('exercises').select('*')
         .order('day_type', { ascending: true })
         .order('sort_order', { ascending: true }),
       user
         ? supabase.from('user_rotation').select('*').eq('user_id', user.id).maybeSingle()
         : Promise.resolve({ data: null }),
+      user
+        ? supabase.from('user_flex_days').select('day_key').eq('user_id', user.id)
+        : Promise.resolve({ data: [] as { day_key: string }[] }),
     ])
     setExercises(exRes.data ?? [])
     setRotation((rotRes.data as UserRotation | null) ?? null)
+    setFlexDays(new Set((flexRes.data ?? []).map(r => r.day_key)))
     setLoading(false)
   }
 
@@ -97,8 +102,8 @@ export default function DaySelect() {
   }
   const dayKeys = Object.keys(grouped).sort()
 
-  // Non-binding hint: the day the rotation suggests next.
-  const upNext = nextDayFromRotation(effectiveSequence(rotation, dayKeys), rotation?.current_index ?? -1)
+  // Non-binding hint: the day the rotation suggests next (flex days excluded).
+  const upNext = nextDayFromRotation(effectiveSequence(rotation, dayKeys, flexDays), rotation?.current_index ?? -1)
 
   return (
     <>
@@ -193,20 +198,33 @@ export default function DaySelect() {
                         {key.replace(/-/g, ' ').toUpperCase()}
                       </span>
                     </div>
-                    {isUpNext ? (
-                      <span style={{
-                        fontSize: '10px', fontWeight: 700, letterSpacing: '0.5px',
-                        color: 'var(--bg)', backgroundColor: 'var(--accent)',
-                        padding: '3px 8px', borderRadius: '9999px',
-                        fontFamily: "'DM Sans', sans-serif",
-                      }}>
-                        UP NEXT
-                      </span>
-                    ) : (
-                      <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                        {exs.length} exercise{exs.length !== 1 ? 's' : ''}
-                      </span>
-                    )}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      {flexDays.has(key) && (
+                        <span style={{
+                          fontSize: '10px', fontWeight: 700, letterSpacing: '0.5px',
+                          color: 'var(--text-secondary)',
+                          border: '1px solid var(--border)',
+                          padding: '2px 7px', borderRadius: '9999px',
+                          fontFamily: "'DM Sans', sans-serif",
+                        }}>
+                          FLEX
+                        </span>
+                      )}
+                      {isUpNext ? (
+                        <span style={{
+                          fontSize: '10px', fontWeight: 700, letterSpacing: '0.5px',
+                          color: 'var(--bg)', backgroundColor: 'var(--accent)',
+                          padding: '3px 8px', borderRadius: '9999px',
+                          fontFamily: "'DM Sans', sans-serif",
+                        }}>
+                          UP NEXT
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                          {exs.length} exercise{exs.length !== 1 ? 's' : ''}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>
                     {description}

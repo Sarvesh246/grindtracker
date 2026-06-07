@@ -90,21 +90,27 @@ export function overdueDays(
     .sort((a, b) => (b.daysSince ?? Infinity) - (a.daysSince ?? Infinity))
 }
 
-/** Auto order: every day once, alphabetical — matches the ordering used elsewhere
- *  (DaySelect / WorkoutManager group exercises and sort the keys). */
-export function autoSequence(dayKeys: string[]): string[] {
-  return [...dayKeys].sort()
+/** Auto order: every non-flex day once, alphabetical — matches the ordering used
+ *  elsewhere (DaySelect / WorkoutManager group exercises and sort the keys).
+ *  Flex days are excluded so they never appear as "UP NEXT". */
+export function autoSequence(dayKeys: string[], flexDays: Set<string> = new Set()): string[] {
+  return [...dayKeys].filter(k => !flexDays.has(k)).sort()
 }
 
 /** The order actually in effect for a user, given their current days.
  *  Manual sequences are filtered to keys that still have exercises so deleted
- *  days drop out cleanly. */
-export function effectiveSequence(row: UserRotation | null, dayKeys: string[]): string[] {
+ *  days drop out cleanly. Flex days are only excluded in auto mode — in manual
+ *  mode the user explicitly controls what's in the sequence. */
+export function effectiveSequence(
+  row: UserRotation | null,
+  dayKeys: string[],
+  flexDays: Set<string> = new Set(),
+): string[] {
   if (row && row.mode === 'manual') {
     const valid = new Set(dayKeys)
     return row.sequence.filter(k => valid.has(k))
   }
-  return autoSequence(dayKeys)
+  return autoSequence(dayKeys, flexDays)
 }
 
 /** The next day to suggest, stepping forward from `currentIndex` (wrapping).
