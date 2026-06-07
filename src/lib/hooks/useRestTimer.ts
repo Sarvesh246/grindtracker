@@ -41,16 +41,53 @@ interface TimerState {
 }
 
 const ZERO: TimerState = { exerciseId: null, startedAt: 0, durationMs: 0, remainingMs: 0, paused: false }
+const ACTIVE_TIMER_KEY = 'grind.rest.active_timer'
+
+/** Restore a persisted timer from localStorage on page remount (e.g. after FinishUndoBanner resume).
+ *  Uses startedAt + durationMs to recompute remaining so the countdown is live-accurate even
+ *  if the user spent time away. Returns ZERO if there's nothing saved or the timer has expired. */
+function readPersistedTimer(): TimerState {
+  if (typeof window === 'undefined') return ZERO
+  try {
+    const raw = localStorage.getItem(ACTIVE_TIMER_KEY)
+    if (!raw) return ZERO
+    const saved = JSON.parse(raw) as { exerciseId: string; startedAt: number; durationMs: number }
+    const elapsed = Date.now() - saved.startedAt
+    const remainingMs = Math.max(0, saved.durationMs - elapsed)
+    if (remainingMs <= 0) { localStorage.removeItem(ACTIVE_TIMER_KEY); return ZERO }
+    return { exerciseId: saved.exerciseId, startedAt: saved.startedAt, durationMs: saved.durationMs, remainingMs, paused: false }
+  } catch { return ZERO }
+}
 
 /**
  * Single global rest timer for the active workout.
+ * Persists the active timer to localStorage so it survives page navigations
+ * (e.g. tapping RESUME in the FinishUndoBanner restores the countdown).
  * Auto-fires light haptic at 10s remaining and at 0s.
  */
 export function useRestTimer() {
-  const [state, setState] = useState<TimerState>(ZERO)
+  const [state, setState] = useState<TimerState>(() => readPersistedTimer())
   const tenSecFired = useRef(false)
   const zeroFired = useRef(false)
   const rafRef = useRef<number | null>(null)
+
+  // Sync timer parameters to localStorage so a page remount can restore the countdown.
+  // We watch exerciseId/startedAt/durationMs/paused — NOT remainingMs, to avoid
+  // writing on every 250ms tick. The restore function recomputes remaining from
+  // startedAt + durationMs, so the value is always live-accurate on restore.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (state.exerciseId && !state.paused && state.remainingMs > 0) {
+      localStorage.setItem(ACTIVE_TIMER_KEY, JSON.stringify({
+        exerciseId: state.exerciseId,
+        startedAt: state.startedAt,
+        durationMs: state.durationMs,
+      }))
+    } else {
+      localStorage.removeItem(ACTIVE_TIMER_KEY)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.exerciseId, state.startedAt, state.durationMs, state.paused])
 
   useEffect(() => {
     if (!state.exerciseId || state.paused) return
