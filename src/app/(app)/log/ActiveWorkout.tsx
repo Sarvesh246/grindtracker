@@ -1589,7 +1589,7 @@ function ExerciseCard({
             {exercise.sets_target} sets × {exercise.reps_target} reps
           </span>
           <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: "'JetBrains Mono', monospace" }}>
-            {previousBest !== null ? `prev: ${fmt(previousBest)} ${unitLabel}` : 'no previous data'}
+            {previousBest !== null ? (previousBest === 0 ? 'prev: BW' : `prev: ${fmt(previousBest)} ${unitLabel}`) : 'no previous data'}
           </span>
         </div>
       </div>
@@ -1948,11 +1948,19 @@ function SetRow({
     }
   }
 
-  const displayWeight = rawWeight ?? (logEntry.weight === '' ? '' : fmt(parseFloat(logEntry.weight)))
+  // Show 'BW' (body weight) when the stored weight is exactly 0.
+  function fmtWeight(canonical: string): string {
+    if (canonical === '') return ''
+    const n = parseFloat(canonical)
+    return n === 0 ? 'BW' : fmt(n)
+  }
+  const displayWeight = rawWeight ?? fmtWeight(logEntry.weight)
 
   function handleWeightChange(v: string) {
     setRawWeight(v)
     if (v === '') { onWeightChange(''); return }
+    // Allow typing 'BW' / 'bw' directly as a shorthand for body weight (stored as 0).
+    if (v.trim().toLowerCase() === 'bw') { onWeightChange('0'); return }
     const n = parseFloat(v)
     // Commit to canonical lbs on every keystroke (when parseable) so parent state — which
     // drives the check action, PR detection and saving — never lags behind the input.
@@ -2049,15 +2057,20 @@ function SetRow({
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: 0 }}>
           <input
             ref={weightRef}
-            type="number"
+            type="text"
             inputMode="decimal"
             value={displayWeight}
             onChange={e => handleWeightChange(e.target.value)}
-            onFocus={e => e.target.select()}
+            onFocus={e => {
+              // When BW is shown, clear the buffer so the user types a fresh value
+              // rather than appending to the 'BW' text.
+              if (displayWeight === 'BW') setRawWeight('')
+              else e.target.select()
+            }}
             onBlur={() => setRawWeight(null)}
             onKeyDown={handleWeightKeyDown}
             disabled={inputsDisabled}
-            placeholder="0"
+            placeholder="BW"
             aria-label={`Weight for set ${setNumber}`}
             style={{
               width: '56px', flexShrink: 0, height: '40px',
