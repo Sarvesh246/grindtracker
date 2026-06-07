@@ -535,7 +535,6 @@ function LogPastContent() {
                 setDuplicateWarning(false)
               }}
               style={{
-                width: '100%',
                 backgroundColor: 'var(--surface-elevated)',
                 border: '1px solid var(--border)',
                 borderRadius: '8px',
@@ -544,7 +543,6 @@ function LogPastContent() {
                 fontSize: '15px',
                 fontFamily: "'DM Sans', sans-serif",
                 outline: 'none',
-                boxSizing: 'border-box',
               }}
             />
           </div>
