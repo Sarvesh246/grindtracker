@@ -24,9 +24,11 @@ function formatDuration(seconds: number): string {
 export default function CompletionModal({
   data,
   onDone,
+  onUndo,
 }: {
   data: CompletionData
   onDone: () => void
+  onUndo?: () => void
 }) {
   const [visible, setVisible] = useState(false)
   const { unitLabel, fmt } = useUnit()
@@ -197,6 +199,24 @@ export default function CompletionModal({
         >
           BACK TO HOME
         </button>
+
+        {onUndo && (
+          <button
+            onClick={onUndo}
+            style={{
+              width: '100%', height: '44px', marginTop: '10px',
+              backgroundColor: 'transparent',
+              color: 'var(--text-secondary)',
+              border: '1px solid var(--border)',
+              borderRadius: '12px',
+              fontFamily: "'DM Sans', sans-serif",
+              fontSize: '14px', fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            Accidentally finished? Resume workout
+          </button>
+        )}
       </div>
     </div>
   )

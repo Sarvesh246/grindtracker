@@ -51,6 +51,21 @@ interface CompletionData {
   setsCompleted: number
 }
 
+export interface FinishUndoToken {
+  sessionId: string
+  day: string
+  userId: string
+  xpEarned: number
+  prevXpTotal: number
+  prevLevel: number
+  prevStreak: number
+  prevLongestStreak: number
+  prevLastWorkoutDate: string | null
+  prevTotalWorkouts: number
+  prevRotationIndex: number
+  expiresAt: number
+}
+
 function dayLabel(day: string): string {
   return day.replace(/-/g, ' ').toUpperCase() + ' DAY'
 }
@@ -643,6 +658,33 @@ export default function ActiveWorkout({ day }: { day: string }) {
     router.replace('/log')
   }
 
+  async function handleUndoFinish() {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem('grind_finish_undo') : null
+    if (!raw) return
+    let token: FinishUndoToken
+    try { token = JSON.parse(raw) } catch { return }
+    if (Date.now() > token.expiresAt) { localStorage.removeItem('grind_finish_undo'); return }
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user || user.id !== token.userId) return
+
+    await Promise.all([
+      supabase.from('sessions').update({ completed_at: null, xp_earned: 0 }).eq('id', token.sessionId),
+      supabase.from('user_stats').update({
+        xp_total: token.prevXpTotal,
+        level: token.prevLevel,
+        current_streak: token.prevStreak,
+        longest_streak: token.prevLongestStreak,
+        last_workout_date: token.prevLastWorkoutDate,
+        total_workouts: token.prevTotalWorkouts,
+      }).eq('user_id', user.id),
+      supabase.from('user_rotation').update({ current_index: token.prevRotationIndex }).eq('user_id', user.id),
+    ])
+
+    localStorage.removeItem('grind_finish_undo')
+    setCompletionData(null)
+  }
+
   async function handleFinish() {
     if (!sessionId || finishing) return
     if (checkedSets() === 0) {
@@ -748,14 +790,18 @@ export default function ActiveWorkout({ day }: { day: string }) {
 
     // Advance the rotation pointer so the home page suggests the next day after
     // this one. Best-effort — a failure here must never block completion.
+    let prevRotationIndex = 0
     try {
-      const [{ data: dayTypeRows }, { data: rotationRow }] = await Promise.all([
+      const [{ data: dayTypeRows }, { data: rotationRow }, { data: flexRows }] = await Promise.all([
         supabase.from('exercises').select('day_type'),
         supabase.from('user_rotation').select('*').eq('user_id', user.id).maybeSingle(),
+        supabase.from('user_flex_days').select('day_key').eq('user_id', user.id),
       ])
       const dayKeys = Array.from(new Set((dayTypeRows ?? []).map(r => r.day_type)))
       const rotation = rotationRow as UserRotation | null
-      const seq = effectiveSequence(rotation, dayKeys)
+      prevRotationIndex = rotation?.current_index ?? 0
+      const flexDays = new Set((flexRows ?? []).map((r: { day_key: string }) => r.day_key))
+      const seq = effectiveSequence(rotation, dayKeys, flexDays)
       const newIndex = advanceIndex(seq, rotation?.current_index ?? -1, day)
       await supabase.from('user_rotation').upsert(
         {
@@ -769,6 +815,25 @@ export default function ActiveWorkout({ day }: { day: string }) {
       )
     } catch {
       // Rotation is a non-critical convenience; swallow and move on.
+    }
+
+    // Store a 10-minute undo token so the user can resume if they finished by accident.
+    if (typeof window !== 'undefined') {
+      const token: FinishUndoToken = {
+        sessionId,
+        day,
+        userId: user.id,
+        xpEarned,
+        prevXpTotal: currentStats.xp_total,
+        prevLevel: getLevel(currentStats.xp_total),
+        prevStreak: currentStats.current_streak,
+        prevLongestStreak: currentStats.longest_streak,
+        prevLastWorkoutDate: currentStats.last_workout_date,
+        prevTotalWorkouts: currentStats.total_workouts,
+        prevRotationIndex,
+        expiresAt: Date.now() + 10 * 60 * 1000,
+      }
+      localStorage.setItem('grind_finish_undo', JSON.stringify(token))
     }
 
     const newBadges = await checkAndAwardBadges(
@@ -848,6 +913,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         <CompletionModal
           data={completionData}
           onDone={() => router.push('/home')}
+          onUndo={handleUndoFinish}
         />
       )}
 
@@ -1513,21 +1579,35 @@ function ExerciseCard({
       <div style={{ padding: '8px 0' }}>
         {/* Column headers, aligned over the weight/reps boxes in each SetRow. The two
            leading spacers mirror the SET label and warm-up "W" columns so the labels
-           line up with the inputs without repeating on every row. */}
+           line up with the inputs without repeating on every row. The plate calc icon
+           sits between LBS and REPS, matching the button position in each set row. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0 16px 6px' }}>
           <span aria-hidden style={{ minWidth: '38px', flexShrink: 0 }} />
           <span aria-hidden style={{ width: '38px', flexShrink: 0 }} />
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            {[unitLabel, 'reps'].map((label, i) => (
-              <span key={i} style={{
-                width: '56px', textAlign: 'center',
-                fontSize: '10px', fontWeight: 600, letterSpacing: '0.5px',
-                textTransform: 'uppercase', color: 'var(--text-muted)',
-                fontFamily: "'DM Sans', sans-serif",
-              }}>
-                {label}
-              </span>
-            ))}
+            <span style={{
+              width: '56px', textAlign: 'center',
+              fontSize: '10px', fontWeight: 600, letterSpacing: '0.5px',
+              textTransform: 'uppercase', color: 'var(--text-muted)',
+              fontFamily: "'DM Sans', sans-serif",
+            }}>
+              {unitLabel}
+            </span>
+            <span aria-hidden style={{ width: '28px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--border-strong)' }}>
+                <rect x="9" y="3" width="6" height="18" rx="1" />
+                <line x1="6" y1="8" x2="6" y2="16" />
+                <line x1="18" y1="8" x2="18" y2="16" />
+              </svg>
+            </span>
+            <span style={{
+              width: '56px', textAlign: 'center',
+              fontSize: '10px', fontWeight: 600, letterSpacing: '0.5px',
+              textTransform: 'uppercase', color: 'var(--text-muted)',
+              fontFamily: "'DM Sans', sans-serif",
+            }}>
+              reps
+            </span>
           </div>
         </div>
         {setNumbers.map((setNum) => {
@@ -1951,6 +2031,28 @@ function SetRow({
               outline: 'none',
             }}
           />
+          <button
+            onClick={onOpenPlateCalc}
+            aria-label="Open plate calculator"
+            title="Plate calculator"
+            disabled={inputsDisabled}
+            style={{
+              width: '28px', height: '28px',
+              backgroundColor: 'transparent',
+              border: 'none',
+              color: 'var(--text-muted)',
+              cursor: inputsDisabled ? 'default' : 'pointer',
+              padding: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="9" y="3" width="6" height="18" rx="1" />
+              <line x1="6" y1="8" x2="6" y2="16" />
+              <line x1="18" y1="8" x2="18" y2="16" />
+            </svg>
+          </button>
           <input
             ref={repsRef}
             type="number"
@@ -1977,28 +2079,6 @@ function SetRow({
               transition: 'border-color 150ms ease',
             }}
           />
-          <button
-            onClick={onOpenPlateCalc}
-            aria-label="Open plate calculator"
-            title="Plate calculator"
-            disabled={inputsDisabled}
-            style={{
-              width: '28px', height: '28px',
-              backgroundColor: 'transparent',
-              border: 'none',
-              color: 'var(--text-muted)',
-              cursor: inputsDisabled ? 'default' : 'pointer',
-              padding: 0,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              flexShrink: 0,
-            }}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="9" y="3" width="6" height="18" rx="1" />
-              <line x1="6" y1="8" x2="6" y2="16" />
-              <line x1="18" y1="8" x2="18" y2="16" />
-            </svg>
-          </button>
         </div>
 
         {logEntry.isPR && (
