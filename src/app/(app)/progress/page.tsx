@@ -167,7 +167,7 @@ export default function ProgressPage() {
       switch (m) {
         case 'weight':
           value = Math.round(Math.max(...s.sets.map(x => x.weight)) * 10) / 10
-          label = `${value} ${ul}`
+          label = value === 0 ? 'BW' : `${value} ${ul}`
           break
         case 'volume':
           value = Math.round(s.sets.reduce((sum, x) => sum + x.weight * x.reps, 0))
@@ -182,7 +182,7 @@ export default function ProgressPage() {
         case 'best': {
           const best = s.sets.reduce((b, x) => (x.weight > b.weight ? x : b), s.sets[0])
           value = Math.round(best.weight * 10) / 10
-          label = `${value} × ${best.reps}`
+          label = value === 0 ? `BW × ${best.reps}` : `${value} × ${best.reps}`
           break
         }
       }
@@ -386,9 +386,9 @@ export default function ProgressPage() {
       {/* Stats bar */}
       <div style={{ display: 'flex', gap: '6px', padding: '0 16px', marginBottom: '16px' }}>
         {[
-          { label: 'BEST', value: stats.bestWeight !== null ? `${stats.bestWeight} ${unitLabel}` : '—', accent: true },
+          { label: 'BEST', value: stats.bestWeight !== null ? (stats.bestWeight === 0 ? 'BW' : `${stats.bestWeight} ${unitLabel}`) : '—', accent: true },
           { label: 'SESSIONS', value: String(stats.sessionCount), accent: false },
-          { label: 'LAST', value: stats.lastWeight !== null ? `${stats.lastWeight} ${unitLabel}` : '—', accent: false },
+          { label: 'LAST', value: stats.lastWeight !== null ? (stats.lastWeight === 0 ? 'BW' : `${stats.lastWeight} ${unitLabel}`) : '—', accent: false },
           { label: 'PRs', value: String(stats.prCount), accent: false },
         ].map(stat => (
           <div key={stat.label} style={{
@@ -507,7 +507,7 @@ export default function ProgressPage() {
                     color: session.weight !== null ? 'var(--text-primary)' : 'var(--text-muted)',
                   }}>
                     {session.weight !== null && session.reps !== null
-                      ? `${session.weight} × ${session.reps}`
+                      ? `${session.weight === 0 ? 'BW' : session.weight} × ${session.reps}`
                       : '—'}
                   </span>
                 </div>
