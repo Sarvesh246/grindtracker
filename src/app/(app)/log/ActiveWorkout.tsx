@@ -1948,11 +1948,12 @@ function SetRow({
     }
   }
 
-  // Show 'BW' (body weight) when the stored weight is exactly 0.
+  // Show 'BW' only when the set is checked/saved with weight 0 —
+  // not for skipped or unchecked rows, where 0 is just a pre-fill placeholder.
   function fmtWeight(canonical: string): string {
     if (canonical === '') return ''
     const n = parseFloat(canonical)
-    return n === 0 ? 'BW' : fmt(n)
+    return (n === 0 && logEntry.checked) ? 'BW' : fmt(n)
   }
   const displayWeight = rawWeight ?? fmtWeight(logEntry.weight)
 
