@@ -1593,13 +1593,34 @@ function ExerciseCard({
             }}>
               {unitLabel}
             </span>
-            <span aria-hidden style={{ width: '28px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--border-strong)' }}>
+            <button
+              onClick={() => {
+                const target = setNumbers.find(s => {
+                  const e = logs[`${exercise.id}-${s}`]
+                  return e && !e.checked && !e.skipped
+                })
+                if (target == null) return
+                const key = `${exercise.id}-${target}`
+                const entry = logs[key]
+                const cur = entry?.weight !== '' ? parseFloat(entry?.weight ?? '') : NaN
+                onOpenPlateCalc(key, Number.isFinite(cur) ? toDisplay(cur) : 0)
+              }}
+              aria-label="Open plate calculator"
+              title="Plate calculator"
+              style={{
+                width: '28px', height: '28px', flexShrink: 0,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                backgroundColor: 'transparent', border: 'none',
+                cursor: 'pointer', padding: 0,
+                color: 'var(--text-muted)',
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="9" y="3" width="6" height="18" rx="1" />
                 <line x1="6" y1="8" x2="6" y2="16" />
                 <line x1="18" y1="8" x2="18" y2="16" />
               </svg>
-            </span>
+            </button>
             <span style={{
               width: '56px', textAlign: 'center',
               fontSize: '10px', fontWeight: 600, letterSpacing: '0.5px',
@@ -1635,11 +1656,6 @@ function ExerciseCard({
               onToggleWarmup={() => onToggleWarmup(exercise.id, setNum)}
               onSkip={() => onSkipSet(exercise.id, setNum)}
               onUnskip={() => onUnskipSet(exercise.id, setNum)}
-              onOpenPlateCalc={() => {
-                // logEntry.weight is canonical lbs; open the calculator on the displayed value.
-                const cur = logEntry.weight !== '' ? parseFloat(logEntry.weight) : NaN
-                onOpenPlateCalc(key, Number.isFinite(cur) ? toDisplay(cur) : 0)
-              }}
             />
           )
         })}
@@ -1851,7 +1867,6 @@ interface SetRowProps {
   onToggleWarmup: () => void
   onSkip: () => void
   onUnskip: () => void
-  onOpenPlateCalc: () => void
 }
 
 function SetRow({
@@ -1859,7 +1874,7 @@ function SetRow({
   logEntry,
   onCheck, onSaveEdit, onStartEdit,
   onWeightChange, onRepsChange, onNoteChange, onNoteBlur,
-  onToggleWarmup, onSkip, onUnskip, onOpenPlateCalc,
+  onToggleWarmup, onSkip, onUnskip,
 }: SetRowProps) {
   const { fromDisplay, fmt } = useUnit()
   const [justChecked, setJustChecked] = useState(false)
@@ -2031,28 +2046,6 @@ function SetRow({
               outline: 'none',
             }}
           />
-          <button
-            onClick={onOpenPlateCalc}
-            aria-label="Open plate calculator"
-            title="Plate calculator"
-            disabled={inputsDisabled}
-            style={{
-              width: '28px', height: '28px',
-              backgroundColor: 'transparent',
-              border: 'none',
-              color: 'var(--text-muted)',
-              cursor: inputsDisabled ? 'default' : 'pointer',
-              padding: 0,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              flexShrink: 0,
-            }}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="9" y="3" width="6" height="18" rx="1" />
-              <line x1="6" y1="8" x2="6" y2="16" />
-              <line x1="18" y1="8" x2="18" y2="16" />
-            </svg>
-          </button>
           <input
             ref={repsRef}
             type="number"
