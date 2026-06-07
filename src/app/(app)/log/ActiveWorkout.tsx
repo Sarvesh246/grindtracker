@@ -523,12 +523,32 @@ export default function ActiveWorkout({ day }: { day: string }) {
     }))
   }
 
-  function handleSkipSet(exerciseId: string, setNumber: number) {
+  async function handleSkipSet(exerciseId: string, setNumber: number) {
     const key = `${exerciseId}-${setNumber}`
-    setLogs(prev => ({
-      ...prev,
-      [key]: { ...prev[key], skipped: true, checked: false },
-    }))
+    const entry = logs[key]
+    // If this set was already saved to the DB, delete it so the record doesn't
+    // persist as a completed set while the UI shows it as skipped.
+    if (entry?.checked && sessionId) {
+      await supabase
+        .from('session_logs')
+        .delete()
+        .eq('session_id', sessionId)
+        .eq('exercise_id', exerciseId)
+        .eq('set_number', setNumber)
+      // Recompute live PR bar — the deleted set may have been the best.
+      setLogs(prev => {
+        const next = { ...prev, [key]: { ...prev[key], skipped: true, checked: false, isPR: false, logId: undefined } }
+        setPreviousBests(pb => ({ ...pb, [exerciseId]: bestFromLogs(exerciseId, next) }))
+        return next
+      })
+    } else {
+      setLogs(prev => ({
+        ...prev,
+        [key]: { ...prev[key], skipped: true, checked: false },
+      }))
+    }
+    // Exit edit mode if the user is mid-edit when they skip.
+    if (editingKey === key) setEditingKey(null)
   }
 
   function handleUnskipSet(exerciseId: string, setNumber: number) {
@@ -1595,10 +1615,11 @@ function ExerciseCard({
             </span>
             <button
               onClick={() => {
+                // Prefer first unchecked+unskipped set; fall back to set 1 when all are done.
                 const target = setNumbers.find(s => {
                   const e = logs[`${exercise.id}-${s}`]
                   return e && !e.checked && !e.skipped
-                })
+                }) ?? setNumbers[0]
                 if (target == null) return
                 const key = `${exercise.id}-${target}`
                 const entry = logs[key]
@@ -2087,10 +2108,11 @@ function SetRow({
           </span>
         )}
 
-        {/* Skip / unskip set button */}
+        {/* Skip / unskip set button. Also enabled in edit mode so the user can
+            skip a previously logged set (handleSkipSet will delete the DB row). */}
         <button
-          onClick={logEntry.skipped ? onUnskip : (logEntry.checked ? undefined : onSkip)}
-          disabled={logEntry.checked}
+          onClick={logEntry.skipped ? onUnskip : (logEntry.checked && !editing ? undefined : onSkip)}
+          disabled={logEntry.checked && !editing}
           title={logEntry.skipped ? 'Undo skip' : 'Skip this set'}
           aria-label={logEntry.skipped ? `Undo skip on set ${setNumber}` : `Skip set ${setNumber}`}
           style={{
@@ -2098,11 +2120,11 @@ function SetRow({
             borderRadius: '9999px',
             border: `2px solid ${logEntry.skipped ? 'rgba(239,68,68,0.5)' : 'var(--border)'}`,
             backgroundColor: logEntry.skipped ? 'rgba(239,68,68,0.1)' : 'transparent',
-            cursor: logEntry.checked ? 'default' : 'pointer',
+            cursor: (logEntry.checked && !editing) ? 'default' : 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             flexShrink: 0,
             transition: 'border-color 150ms ease, background-color 150ms ease',
-            opacity: logEntry.checked ? 0.3 : 1,
+            opacity: (logEntry.checked && !editing) ? 0.3 : 1,
           }}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
