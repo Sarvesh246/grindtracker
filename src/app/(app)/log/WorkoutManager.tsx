@@ -25,6 +25,7 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
   const supabase = createClient()
   const [exercises, setExercises] = useState<Exercise[]>([])
   const [dayCategories, setDayCategories] = useState<Record<string, DayCategory>>({})
+  const [flexDays, setFlexDays] = useState<Set<string>>(new Set())
   const [rotation, setRotation] = useState<UserRotation | null>(null)
   const [rotationError, setRotationError] = useState('')
   const [savingRotation, setSavingRotation] = useState(false)
@@ -51,13 +52,16 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
     setLoading(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
-      const [exRes, catRes, rotRes] = await Promise.all([
+      const [exRes, catRes, flexRes, rotRes] = await Promise.all([
         supabase.from('exercises').select('*')
           .order('day_type', { ascending: true })
           .order('sort_order', { ascending: true }),
         user
           ? supabase.from('user_day_categories').select('day_key, category').eq('user_id', user.id)
           : Promise.resolve({ data: [] as { day_key: string; category: string }[] }),
+        user
+          ? supabase.from('user_flex_days').select('day_key').eq('user_id', user.id)
+          : Promise.resolve({ data: [] as { day_key: string }[] }),
         user
           ? supabase.from('user_rotation').select('*').eq('user_id', user.id).maybeSingle()
           : Promise.resolve({ data: null }),
@@ -66,6 +70,7 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
       const map: Record<string, DayCategory> = {}
       for (const r of (catRes.data ?? [])) map[r.day_key] = r.category as DayCategory
       setDayCategories(map)
+      setFlexDays(new Set((flexRes.data ?? []).map(r => r.day_key)))
       setRotation((rotRes.data as UserRotation | null) ?? null)
     } catch {
       // Network/auth failure — keep whatever we have rather than wedging the UI.
@@ -219,6 +224,20 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
     }
   }
 
+  async function toggleFlex(dayKey: string) {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    const isFlex = flexDays.has(dayKey)
+    if (isFlex) {
+      await supabase.from('user_flex_days').delete().eq('user_id', user.id).eq('day_key', dayKey)
+      setFlexDays(prev => { const next = new Set(prev); next.delete(dayKey); return next })
+    } else {
+      await supabase.from('user_flex_days').insert({ user_id: user.id, day_key: dayKey })
+      setFlexDays(prev => new Set([...prev, dayKey]))
+    }
+    onChanged()
+  }
+
   // ── Rotation (workout order) ───────────────────────────────────────────────
   // Persist the rotation row and keep local state in sync. Sequence + mode are
   // the source of truth in manual mode; current_index is left untouched here
@@ -258,13 +277,13 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
   }
 
   // The order currently in effect, used to seed the manual editor and render auto chips.
-  const effectiveSeq = effectiveSequence(rotation, dayKeys)
+  const effectiveSeq = effectiveSequence(rotation, dayKeys, flexDays)
   const isManual = rotation?.mode === 'manual'
   const manualSeq = isManual ? effectiveSeq : []
 
   function customizeOrder() {
     setAddingSlot(false)
-    persistRotation('manual', autoSequence(dayKeys))
+    persistRotation('manual', autoSequence(dayKeys, flexDays))
   }
   function resetToAuto() {
     setAddingSlot(false)
@@ -392,11 +411,25 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
                               cursor: 'pointer', padding: 0,
                             }}
                           >
-                            <div style={{
-                              fontFamily: "'Bebas Neue', sans-serif", fontSize: '20px',
-                              color: 'var(--text-primary)', letterSpacing: '1px', marginBottom: '2px',
-                            }}>
-                              {key.replace(/-/g, ' ').toUpperCase()}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
+                              <span style={{
+                                fontFamily: "'Bebas Neue', sans-serif", fontSize: '20px',
+                                color: 'var(--text-primary)', letterSpacing: '1px',
+                              }}>
+                                {key.replace(/-/g, ' ').toUpperCase()}
+                              </span>
+                              {flexDays.has(key) && (
+                                <span style={{
+                                  fontSize: '10px', fontWeight: 700, letterSpacing: '0.5px',
+                                  color: 'var(--text-secondary)',
+                                  backgroundColor: 'var(--surface-elevated)',
+                                  border: '1px solid var(--border)',
+                                  padding: '2px 6px', borderRadius: '9999px',
+                                  fontFamily: "'DM Sans', sans-serif",
+                                }}>
+                                  FLEX
+                                </span>
+                              )}
                             </div>
                             <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
                               {exs.length} exercise{exs.length !== 1 ? 's' : ''}
@@ -858,6 +891,41 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
                     }}>
                       ADD EXERCISE
                     </span>
+                  </button>
+
+                  {/* Flex day toggle */}
+                  <button
+                    onClick={() => toggleFlex(dayKey)}
+                    style={{
+                      width: '100%', textAlign: 'left',
+                      background: 'none', border: 'none',
+                      padding: '16px',
+                      cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '2px' }}>
+                        Flex day
+                      </div>
+                      <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '12px', color: 'var(--text-muted)' }}>
+                        Skip in rotation — do it whenever you want
+                      </div>
+                    </div>
+                    {/* Toggle pill */}
+                    <div style={{
+                      width: '44px', height: '26px', borderRadius: '9999px', flexShrink: 0,
+                      backgroundColor: flexDays.has(dayKey) ? 'var(--accent)' : 'var(--border)',
+                      position: 'relative', transition: 'background-color 150ms ease',
+                    }}>
+                      <div style={{
+                        position: 'absolute', top: '3px',
+                        left: flexDays.has(dayKey) ? '21px' : '3px',
+                        width: '20px', height: '20px', borderRadius: '50%',
+                        backgroundColor: flexDays.has(dayKey) ? 'var(--bg)' : 'var(--text-muted)',
+                        transition: 'left 150ms ease',
+                      }} />
+                    </div>
                   </button>
                 </>
               )

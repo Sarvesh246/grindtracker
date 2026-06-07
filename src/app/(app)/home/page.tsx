@@ -111,13 +111,15 @@ export default async function HomePage() {
   // Suggested next day, from the user's rotation. Auto mode derives the order from
   // their days (each once); manual mode follows their saved sequence (which may
   // repeat a day). Falls back gracefully for users with no rotation row yet.
-  const [{ data: dayTypeRows }, { data: rotationRow }] = await Promise.all([
+  const [{ data: dayTypeRows }, { data: rotationRow }, { data: flexRows }] = await Promise.all([
     supabase.from('exercises').select('day_type'),
     supabase.from('user_rotation').select('*').eq('user_id', user.id).maybeSingle(),
+    supabase.from('user_flex_days').select('day_key').eq('user_id', user.id),
   ])
   const dayKeys = Array.from(new Set((dayTypeRows ?? []).map(r => r.day_type)))
   const rotation = (rotationRow as UserRotation | null)
-  const seq = effectiveSequence(rotation, dayKeys)
+  const flexDays = new Set((flexRows ?? []).map(r => r.day_key))
+  const seq = effectiveSequence(rotation, dayKeys, flexDays)
   const nextDay = nextDayFromRotation(seq, rotation?.current_index ?? -1) ?? dayKeys.sort()[0] ?? 'push'
 
   // Last completed date per day_key, for the home rotation's recency/overdue
