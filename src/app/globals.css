@@ -357,7 +357,10 @@ select:focus-visible,
   padding-top: env(safe-area-inset-top);
   padding-bottom: calc(64px + env(safe-area-inset-bottom));
   min-height: 100dvh;
-  overflow-x: hidden;
+  /* clip prevents horizontal overflow (anti-zoom) without creating a scroll
+     container — unlike `hidden`, which forces overflow-y:auto and makes
+     position:fixed children pin to this container instead of the viewport. */
+  overflow-x: clip;
 }
 
 /* Top nav: rendered always, hidden on mobile, shown >=768px.
@@ -659,15 +662,6 @@ select:focus-visible,
 /* ── Active-workout desktop sidebar layout (>=1024px) ───────────────────────
    Below 1024 the workout keeps the centered 640px single column (unchanged). */
 @media (min-width: 1024px) {
-  /* `overflow-x: hidden` (set on .app-main for the mobile anti-zoom guard) forces
-     overflow-y to compute as `auto`, which makes .app-main a scroll container and
-     breaks `position: sticky` for the workout sidebar. `clip` clips identically
-     without creating a scroll container, so sticky pins to the viewport again. */
-  .app-main {
-    overflow-x: clip;
-    overflow-y: visible;
-  }
-
   .page--workout {
     max-width: 1080px;
   }
