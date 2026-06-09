@@ -45,22 +45,24 @@ export default function RestTimerBar({
   const [rest, setRest] = useState<number>(() => getExerciseRest(exerciseId))
   // On iOS the layout viewport doesn't shrink when the keyboard opens, so
   // position:fixed; bottom:0 pins behind the keyboard and snaps back late when
-  // it closes. Track the gap between the layout viewport and the visual viewport
-  // and add it to `bottom` so the bar always sits at the visible bottom edge.
+  // it closes. Measure keyboard height as (window.innerHeight - vv.height) —
+  // intentionally ignoring vv.offsetTop because that can go negative during
+  // iOS rubber-band overscroll, which would push the bar upward incorrectly.
+  // We only need the `resize` event (keyboard open/close); the `scroll` event
+  // fires when vv.offsetTop/Left change (overscroll, pinch-zoom) and would
+  // introduce spurious offsets via the old formula.
   const [vpOffset, setVpOffset] = useState(0)
 
   useEffect(() => {
     const vv = typeof window !== 'undefined' ? window.visualViewport : null
     if (!vv) return
     const update = () => {
-      setVpOffset(Math.max(0, Math.round(window.innerHeight - (vv.offsetTop + vv.height))))
+      setVpOffset(Math.max(0, Math.round(window.innerHeight - vv.height)))
     }
     vv.addEventListener('resize', update)
-    vv.addEventListener('scroll', update)
     update()
     return () => {
       vv.removeEventListener('resize', update)
-      vv.removeEventListener('scroll', update)
     }
   }, [])
 
@@ -84,6 +86,10 @@ export default function RestTimerBar({
         borderTop: '1px solid var(--border)',
         boxShadow: '0 -4px 16px rgba(0,0,0,0.4)',
         zIndex: 90,
+        // Promote to own GPU compositing layer so iOS scroll repaints can't
+        // shift the bar. The desktop CSS class already does this via its
+        // translateX(-50%) transform; this covers the mobile (no-transform) case.
+        willChange: 'transform',
       }}
     >
       <div
