@@ -43,28 +43,6 @@ export default function RestTimerBar({
   const [open, setOpen] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
   const [rest, setRest] = useState<number>(() => getExerciseRest(exerciseId))
-  // On iOS the layout viewport doesn't shrink when the keyboard opens, so
-  // position:fixed; bottom:0 pins behind the keyboard and snaps back late when
-  // it closes. Measure keyboard height as (window.innerHeight - vv.height) —
-  // intentionally ignoring vv.offsetTop because that can go negative during
-  // iOS rubber-band overscroll, which would push the bar upward incorrectly.
-  // We only need the `resize` event (keyboard open/close); the `scroll` event
-  // fires when vv.offsetTop/Left change (overscroll, pinch-zoom) and would
-  // introduce spurious offsets via the old formula.
-  const [vpOffset, setVpOffset] = useState(0)
-
-  useEffect(() => {
-    const vv = typeof window !== 'undefined' ? window.visualViewport : null
-    if (!vv) return
-    const update = () => {
-      setVpOffset(Math.max(0, Math.round(window.innerHeight - vv.height)))
-    }
-    vv.addEventListener('resize', update)
-    update()
-    return () => {
-      vv.removeEventListener('resize', update)
-    }
-  }, [])
 
   useEffect(() => {
     setRest(getExerciseRest(exerciseId))
@@ -80,8 +58,8 @@ export default function RestTimerBar({
       className="wo-fixed-bar"
       style={{
         position: 'fixed',
-        bottom: `${bottomOffsetPx + vpOffset}px`,
-        paddingBottom: bottomOffsetPx === 0 && vpOffset === 0 ? 'env(safe-area-inset-bottom)' : 0,
+        bottom: bottomOffsetPx,
+        paddingBottom: bottomOffsetPx === 0 ? 'env(safe-area-inset-bottom)' : 0,
         backgroundColor: 'var(--surface-elevated)',
         borderTop: '1px solid var(--border)',
         boxShadow: '0 -4px 16px rgba(0,0,0,0.4)',
