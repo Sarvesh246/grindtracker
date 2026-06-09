@@ -363,7 +363,14 @@ export default function ActiveWorkout({ day }: { day: string }) {
     if (!logEntry || !sessionId || logEntry.checked) return
 
     const weight = logEntry.weight !== '' ? parseFloat(logEntry.weight) : null
-    const reps = logEntry.reps !== '' ? parseInt(logEntry.reps) : null
+
+    // If reps not entered, carry forward the previous set's reps
+    let repsStr = logEntry.reps
+    if (repsStr === '' && setNumber > 1) {
+      const prevReps = logs[`${exerciseId}-${setNumber - 1}`]?.reps
+      if (prevReps && prevReps !== '') repsStr = prevReps
+    }
+    const reps = repsStr !== '' ? parseInt(repsStr) : null
 
     const prevBest = previousBests[exerciseId]
     const isPR =
@@ -392,7 +399,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
 
     setLogs(prev => ({
       ...prev,
-      [key]: { ...prev[key], checked: true, skipped: false, isPR, logId: saved?.id },
+      [key]: { ...prev[key], reps: repsStr, checked: true, skipped: false, isPR, logId: saved?.id },
     }))
 
     if (isPR && weight !== null) {
