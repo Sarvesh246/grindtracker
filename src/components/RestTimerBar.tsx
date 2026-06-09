@@ -86,10 +86,6 @@ export default function RestTimerBar({
         borderTop: '1px solid var(--border)',
         boxShadow: '0 -4px 16px rgba(0,0,0,0.4)',
         zIndex: 90,
-        // Promote to own GPU compositing layer so iOS scroll repaints can't
-        // shift the bar. The desktop CSS class already does this via its
-        // translateX(-50%) transform; this covers the mobile (no-transform) case.
-        willChange: 'transform',
       }}
     >
       <div
