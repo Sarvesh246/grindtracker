@@ -1673,6 +1673,7 @@ function ExerciseCard({
           }
           const isBonus = setNum > exercise.sets_target
           const editing = editingKey === key
+          const prevReps = setNum > 1 ? (logs[`${exercise.id}-${setNum - 1}`]?.reps ?? '') : ''
           return (
             <SetRow
               key={key}
@@ -1680,6 +1681,7 @@ function ExerciseCard({
               isBonus={isBonus}
               editing={editing}
               logEntry={logEntry}
+              prevReps={prevReps}
               onCheck={() => onCheck(exercise.id, setNum)}
               onSaveEdit={() => onSaveEdit(exercise.id, setNum)}
               onStartEdit={() => onStartEdit(key)}
@@ -1891,6 +1893,7 @@ interface SetRowProps {
   isBonus: boolean
   editing: boolean
   logEntry: SetState
+  prevReps: string
   onCheck: () => void
   onSaveEdit: () => void
   onStartEdit: () => void
@@ -1905,7 +1908,7 @@ interface SetRowProps {
 
 function SetRow({
   setNumber, isBonus, editing,
-  logEntry,
+  logEntry, prevReps,
   onCheck, onSaveEdit, onStartEdit,
   onWeightChange, onRepsChange, onNoteChange, onNoteBlur,
   onToggleWarmup, onSkip, onUnskip,
@@ -1928,9 +1931,9 @@ function SetRow({
 
   function handleCheck() {
     if (logEntry.checked) return
-    // A non-skipped set marked done must have a rep count — otherwise an empty
-    // set would silently count as completed. Nudge the user to the reps field.
-    if (logEntry.reps.trim() === '') {
+    // If reps are empty but a previous set has reps, let the parent auto-fill.
+    // Only block + nudge when there is genuinely nothing to copy from.
+    if (logEntry.reps.trim() === '' && !prevReps) {
       setNeedsReps(true)
       repsRef.current?.focus()
       return
