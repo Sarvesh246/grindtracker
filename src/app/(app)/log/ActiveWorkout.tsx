@@ -370,7 +370,9 @@ export default function ActiveWorkout({ day }: { day: string }) {
       const prevReps = logs[`${exerciseId}-${setNumber - 1}`]?.reps
       if (prevReps && prevReps !== '') repsStr = prevReps
     }
-    const reps = repsStr !== '' ? parseInt(repsStr) : null
+    // No reps and nothing to copy from — require the user to fill it in
+    if (repsStr === '') return
+    const reps = parseInt(repsStr)
 
     const prevBest = previousBests[exerciseId]
     const isPR =
