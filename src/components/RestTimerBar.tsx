@@ -43,6 +43,26 @@ export default function RestTimerBar({
   const [open, setOpen] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
   const [rest, setRest] = useState<number>(() => getExerciseRest(exerciseId))
+  // On iOS the layout viewport doesn't shrink when the keyboard opens, so
+  // position:fixed; bottom:0 pins behind the keyboard and snaps back late when
+  // it closes. Track the gap between the layout viewport and the visual viewport
+  // and add it to `bottom` so the bar always sits at the visible bottom edge.
+  const [vpOffset, setVpOffset] = useState(0)
+
+  useEffect(() => {
+    const vv = typeof window !== 'undefined' ? window.visualViewport : null
+    if (!vv) return
+    const update = () => {
+      setVpOffset(Math.max(0, Math.round(window.innerHeight - (vv.offsetTop + vv.height))))
+    }
+    vv.addEventListener('resize', update)
+    vv.addEventListener('scroll', update)
+    update()
+    return () => {
+      vv.removeEventListener('resize', update)
+      vv.removeEventListener('scroll', update)
+    }
+  }, [])
 
   useEffect(() => {
     setRest(getExerciseRest(exerciseId))
@@ -58,8 +78,8 @@ export default function RestTimerBar({
       className="wo-fixed-bar"
       style={{
         position: 'fixed',
-        bottom: `${bottomOffsetPx}px`,
-        paddingBottom: bottomOffsetPx === 0 ? 'env(safe-area-inset-bottom)' : 0,
+        bottom: `${bottomOffsetPx + vpOffset}px`,
+        paddingBottom: bottomOffsetPx === 0 && vpOffset === 0 ? 'env(safe-area-inset-bottom)' : 0,
         backgroundColor: 'var(--surface-elevated)',
         borderTop: '1px solid var(--border)',
         boxShadow: '0 -4px 16px rgba(0,0,0,0.4)',
