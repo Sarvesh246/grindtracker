@@ -240,7 +240,7 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
                 borderRadius: '8px',
                 color: 'var(--text-primary)',
                 fontFamily: "'DM Sans', sans-serif",
-                fontSize: '14px',
+                fontSize: '16px', // ≥16px — anything smaller makes iOS auto-zoom on focus
                 outline: 'none',
                 boxSizing: 'border-box',
               }}

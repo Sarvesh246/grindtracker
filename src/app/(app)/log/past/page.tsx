@@ -540,7 +540,7 @@ function LogPastContent() {
                 borderRadius: '8px',
                 padding: '10px 12px',
                 color: 'var(--text-primary)',
-                fontSize: '15px',
+                fontSize: '16px', // ≥16px — anything smaller makes iOS auto-zoom on focus
                 fontFamily: "'DM Sans', sans-serif",
                 outline: 'none',
               }}
@@ -845,7 +845,7 @@ function LogPastContent() {
                                 borderRadius: '8px',
                                 padding: '8px 36px 8px 10px',
                                 color: 'var(--text-primary)',
-                                fontSize: '14px',
+                                fontSize: '16px', // ≥16px — anything smaller makes iOS auto-zoom on focus
                                 fontFamily: "'JetBrains Mono', monospace",
                                 outline: 'none',
                                 boxSizing: 'border-box',
@@ -876,7 +876,7 @@ function LogPastContent() {
                                 borderRadius: '8px',
                                 padding: '8px 32px 8px 10px',
                                 color: 'var(--text-primary)',
-                                fontSize: '14px',
+                                fontSize: '16px', // ≥16px — anything smaller makes iOS auto-zoom on focus
                                 fontFamily: "'JetBrains Mono', monospace",
                                 outline: 'none',
                                 boxSizing: 'border-box',
