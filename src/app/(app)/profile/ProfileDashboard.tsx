@@ -369,7 +369,7 @@ export default function ProfileDashboard({
                       borderRadius: '8px',
                       color: 'var(--text-primary)',
                       fontFamily: "'DM Sans', sans-serif",
-                      fontSize: '13px',
+                      fontSize: '16px', // ≥16px — anything smaller makes iOS auto-zoom on focus
                       outline: 'none',
                       minWidth: 0,
                     }}
@@ -687,7 +687,7 @@ export default function ProfileDashboard({
                 style={{
                   width: '28px', background: 'transparent', border: 'none', outline: 'none',
                   color: 'var(--text-primary)', fontFamily: "'JetBrains Mono', monospace",
-                  fontSize: '14px', textAlign: 'right',
+                  fontSize: '16px', textAlign: 'right', // ≥16px input prevents iOS auto-zoom on focus
                 }}
               />
               <span style={{ color: 'var(--text-muted)', fontFamily: "'JetBrains Mono', monospace", fontSize: '14px' }}>:</span>
@@ -702,7 +702,7 @@ export default function ProfileDashboard({
                 style={{
                   width: '28px', background: 'transparent', border: 'none', outline: 'none',
                   color: 'var(--text-primary)', fontFamily: "'JetBrains Mono', monospace",
-                  fontSize: '14px', textAlign: 'left',
+                  fontSize: '16px', textAlign: 'left', // ≥16px input prevents iOS auto-zoom on focus
                 }}
               />
             </div>

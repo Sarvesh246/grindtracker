@@ -12,6 +12,7 @@ import { deleteIncompleteSessions } from '@/lib/utils/sessions'
 import { advanceIndex, effectiveSequence } from '@/lib/utils/rotation'
 import type { UserRotation } from '@/lib/types'
 import { useRestTimer } from '@/lib/hooks/useRestTimer'
+import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
 import RestTimerBar from '@/components/RestTimerBar'
 import PlateCalculator from '@/components/PlateCalculator'
 import CompletionModal from './CompletionModal'
@@ -101,6 +102,9 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const [showNoteHint, setShowNoteHint] = useState(false)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   const restTimer = useRestTimer()
+  // Keeps the fixed finish bar glued to the visible bottom edge while the
+  // on-screen keyboard is open (RestTimerBar does the same internally).
+  const keyboardInset = useKeyboardInset()
 
   // Surface the long-press-for-note affordance once (it's otherwise invisible).
   useEffect(() => {
@@ -1403,7 +1407,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
                 borderRadius: 'var(--radius-sm)',
                 color: 'var(--text-primary)',
                 fontFamily: 'var(--font-sans)',
-                fontSize: '14px',
+                fontSize: '16px', // ≥16px — anything smaller makes iOS auto-zoom on focus
                 padding: '10px 12px',
                 resize: 'vertical',
                 minHeight: '54px',
@@ -1415,15 +1419,17 @@ export default function ActiveWorkout({ day }: { day: string }) {
        </div>{/* .wo-layout */}
       </div>
 
-      {/* Finish button — hidden while the rest bar owns the bottom edge */}
+      {/* Finish button — hidden while the rest bar owns the bottom edge.
+          Like the rest bar, it glues to the visible bottom while the on-screen
+          keyboard is open so iOS can't pan it mid-content. */}
       {!restTimer.active && (
       <div className="wo-fixed-bar" style={{
         position: 'fixed',
-        bottom: 0,
+        bottom: keyboardInset,
         paddingTop: '12px',
         paddingLeft: '16px',
         paddingRight: '16px',
-        paddingBottom: 'calc(12px + env(safe-area-inset-bottom))',
+        paddingBottom: keyboardInset === 0 ? 'calc(12px + env(safe-area-inset-bottom))' : '12px',
         backgroundColor: 'var(--bg)',
         borderTop: '1px solid var(--border)',
         zIndex: 50,
@@ -1806,7 +1812,7 @@ function ExerciseSwapModal({ currentExerciseId, allExercises, currentExercises, 
               borderRadius: 'var(--radius-sm)',
               color: 'var(--text-primary)',
               fontFamily: 'var(--font-sans)',
-              fontSize: '14px',
+              fontSize: '16px', // ≥16px — anything smaller makes iOS auto-zoom on focus
               padding: '10px 12px',
               outline: 'none',
             }}
@@ -2245,7 +2251,7 @@ function SetRow({
               borderRadius: 'var(--radius-sm)',
               color: 'var(--text-primary)',
               fontFamily: 'var(--font-sans)',
-              fontSize: '13px',
+              fontSize: '16px', // ≥16px — anything smaller makes iOS auto-zoom on focus
               padding: '6px 10px',
               outline: 'none',
             }}
