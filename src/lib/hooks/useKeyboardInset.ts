@@ -34,15 +34,27 @@ export function useKeyboardInset(): number {
     const vv = window.visualViewport
     if (!vv) return
     let raf = 0
+    let keyboardWasOpen = false
 
     const measure = () => {
       raf = 0
       const keyboard = window.innerHeight - vv.height
+      const keyboardOpen = keyboard > KEYBOARD_MIN_PX
       const next =
-        keyboard > KEYBOARD_MIN_PX && editableHasFocus()
+        keyboardOpen && editableHasFocus()
           ? Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop))
           : 0
       setInset(prev => (prev === next ? prev : next))
+
+      // Keyboard just closed. In standalone iOS PWAs WebKit can leave the
+      // layout viewport panned past its resting position, which strands
+      // position:fixed elements mid-screen until the next real scroll. A
+      // same-position scrollTo is a no-op for the page but forces WebKit to
+      // clamp the pan and re-anchor its fixed layers.
+      if (keyboardWasOpen && !keyboardOpen) {
+        requestAnimationFrame(() => window.scrollTo(window.scrollX, window.scrollY))
+      }
+      keyboardWasOpen = keyboardOpen
     }
     // Coalesce the bursty vv scroll/resize streams into one measure per frame.
     const schedule = () => {

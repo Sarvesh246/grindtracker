@@ -99,24 +99,11 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const [resumeToast, setResumeToast] = useState<string | null>(null)
   const [discarding, setDiscarding] = useState(false)
   const [plateCalcTarget, setPlateCalcTarget] = useState<{ key: string; current: number } | null>(null)
-  const [showNoteHint, setShowNoteHint] = useState(false)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   const restTimer = useRestTimer()
   // Keeps the fixed finish bar glued to the visible bottom edge while the
   // on-screen keyboard is open (RestTimerBar does the same internally).
   const keyboardInset = useKeyboardInset()
-
-  // Surface the long-press-for-note affordance once (it's otherwise invisible).
-  useEffect(() => {
-    if (typeof window !== 'undefined' && !localStorage.getItem('grind.hint.setnote')) {
-      setShowNoteHint(true)
-    }
-  }, [])
-
-  function dismissNoteHint() {
-    setShowNoteHint(false)
-    if (typeof window !== 'undefined') localStorage.setItem('grind.hint.setnote', '1')
-  }
 
   useEffect(() => {
     timerRef.current = setInterval(() => {
@@ -1311,42 +1298,6 @@ export default function ActiveWorkout({ day }: { day: string }) {
 
         {/* Exercise cards */}
         <div className="wo-main-inner" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {showNoteHint && (
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '8px',
-                fontSize: '12px',
-                color: 'var(--text-muted)',
-                padding: '2px 2px 2px 0',
-              }}
-            >
-              <span style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                  <path d="M12 20h9" />
-                  <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
-                </svg>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  Tip — press &amp; hold a set to add a note
-                </span>
-              </span>
-              <button
-                onClick={dismissNoteHint}
-                aria-label="Dismiss tip"
-                style={{
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  color: 'var(--text-muted)', padding: '4px', flexShrink: 0,
-                  display: 'flex', alignItems: 'center',
-                }}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              </button>
-            </div>
-          )}
           {exercises.map((ex) => (
             <ExerciseCard
               key={ex.id}
@@ -1922,7 +1873,11 @@ function SetRow({
   const { fromDisplay, fmt } = useUnit()
   const [justChecked, setJustChecked] = useState(false)
   const [needsReps, setNeedsReps] = useState(false)
-  const [noteOpen, setNoteOpen] = useState(false)
+  // null = auto: a row with a saved note starts open (notes can arrive after
+  // mount when an in-progress session loads), an empty one starts closed.
+  // The chevron under the set label sets it explicitly.
+  const [noteOpen, setNoteOpen] = useState<boolean | null>(null)
+  const noteVisible = noteOpen ?? logEntry.note !== ''
   // logEntry.weight is stored canonically in lbs. We show it in the active display unit.
   // While the field is focused we keep the raw typed string in `rawWeight` so the user can
   // type freely (decimals, partial entries) without conversion fighting the keystrokes; on
@@ -1930,7 +1885,6 @@ function SetRow({
   const [rawWeight, setRawWeight] = useState<string | null>(null)
   const weightRef = useRef<HTMLInputElement>(null)
   const repsRef = useRef<HTMLInputElement>(null)
-  const longPressTimer = useRef<NodeJS.Timeout | null>(null)
 
   // Editable when not yet checked, OR currently in the edit window.
   const inputsDisabled = (logEntry.checked && !editing) || logEntry.skipped
@@ -1946,24 +1900,18 @@ function SetRow({
     }
     setJustChecked(true)
     setTimeout(() => setJustChecked(false), 300)
+    // On iOS, tapping the check button does NOT blur the input the user just
+    // typed in, so the keyboard would linger (with the layout viewport panned)
+    // right as the rest timer bar mounts. Dismiss it deterministically.
+    if (document.activeElement === repsRef.current || document.activeElement === weightRef.current) {
+      ;(document.activeElement as HTMLElement).blur()
+    }
     onCheck()
   }
 
   function handleRepsChange(v: string) {
     if (needsReps && v.trim() !== '') setNeedsReps(false)
     onRepsChange(v)
-  }
-
-  function handleRowLongPressStart() {
-    longPressTimer.current = setTimeout(() => {
-      setNoteOpen(true)
-    }, 500)
-  }
-  function handleRowLongPressEnd() {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current)
-      longPressTimer.current = null
-    }
   }
 
   // Show 'BW' only when the set is checked/saved with weight 0 —
@@ -2008,24 +1956,41 @@ function SetRow({
         backgroundColor: editing ? 'rgba(200,241,53,0.05)' : 'transparent',
       }}
     >
-      <div
-        style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px' }}
-        onMouseDown={handleRowLongPressStart}
-        onMouseUp={handleRowLongPressEnd}
-        onMouseLeave={handleRowLongPressEnd}
-        onTouchStart={handleRowLongPressStart}
-        onTouchEnd={handleRowLongPressEnd}
-        onTouchCancel={handleRowLongPressEnd}
-      >
-        <span style={{
-          fontSize: '12px',
-          color: isBonus ? 'var(--accent-dim)' : 'var(--text-muted)',
-          fontFamily: "'DM Sans', sans-serif",
-          minWidth: '38px', fontWeight: 500,
-          textDecoration: logEntry.skipped ? 'line-through' : 'none',
-        }}>
-          {isBonus ? `+${setNumber - 1}` : `SET ${setNumber}`}
-        </span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px' }}>
+        {/* Set label + note chevron: tapping toggles the per-set note input. */}
+        <button
+          onClick={() => setNoteOpen(!noteVisible)}
+          aria-expanded={noteVisible}
+          aria-label={noteVisible ? `Hide note for set ${setNumber}` : `Show note for set ${setNumber}`}
+          style={{
+            background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+            display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px',
+            minWidth: '38px',
+          }}
+        >
+          <span style={{
+            fontSize: '12px',
+            color: isBonus ? 'var(--accent-dim)' : 'var(--text-muted)',
+            fontFamily: "'DM Sans', sans-serif",
+            fontWeight: 500,
+            textDecoration: logEntry.skipped ? 'line-through' : 'none',
+          }}>
+            {isBonus ? `+${setNumber - 1}` : `SET ${setNumber}`}
+          </span>
+          <svg
+            width="12" height="12" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+            style={{
+              // Accent when a note exists so it's findable while collapsed.
+              color: logEntry.note ? 'var(--accent-text)' : 'var(--text-muted)',
+              transform: noteVisible ? 'rotate(180deg)' : 'none',
+              transition: 'transform 150ms ease',
+              marginLeft: '6px',
+            }}
+          >
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
 
         {/* Warm-up toggle. The "W" pill is intentionally minimal; a small caption
            under the first set of each exercise states what it does without repeating
@@ -2230,7 +2195,7 @@ function SetRow({
         )}
       </div>
 
-      {(noteOpen || logEntry.note) && (
+      {noteVisible && (
         <div style={{ padding: '0 16px 8px' }}>
           <input
             type="text"
