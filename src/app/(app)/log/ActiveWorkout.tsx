@@ -1371,8 +1371,9 @@ export default function ActiveWorkout({ day }: { day: string }) {
       </div>
 
       {/* Finish button — hidden while the rest bar owns the bottom edge.
-          Like the rest bar, it glues to the visible bottom while the on-screen
-          keyboard is open so iOS can't pan it mid-content. */}
+          Like the rest bar, it glues to the visible bottom edge: lifted while
+          the on-screen keyboard is open, pushed back down while WebKit leaves
+          the layout viewport panned after the keyboard closes. */}
       {!restTimer.active && (
       <div className="wo-fixed-bar" style={{
         position: 'fixed',
@@ -1380,7 +1381,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         paddingTop: '12px',
         paddingLeft: '16px',
         paddingRight: '16px',
-        paddingBottom: keyboardInset === 0 ? 'calc(12px + env(safe-area-inset-bottom))' : '12px',
+        paddingBottom: keyboardInset <= 0 ? 'calc(12px + env(safe-area-inset-bottom))' : '12px',
         backgroundColor: 'var(--bg)',
         borderTop: '1px solid var(--border)',
         zIndex: 50,

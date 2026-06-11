@@ -37,6 +37,11 @@ export async function generateViewport(): Promise<Viewport> {
     maximumScale: 1,
     userScalable: false,
     viewportFit: 'cover',
+    // Where supported (Chrome 108+, Firefox 132+ — not yet Safari), shrink the
+    // LAYOUT viewport when the on-screen keyboard opens so position:fixed
+    // bottom bars natively ride on top of it instead of being panned offscreen.
+    // On Safari this is ignored and useKeyboardInset compensates instead.
+    interactiveWidget: 'resizes-content',
     themeColor: theme === 'light' ? '#ecebe7' : '#0f0f0f',
   }
 }
