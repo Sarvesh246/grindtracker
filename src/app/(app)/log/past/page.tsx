@@ -89,6 +89,8 @@ function LogPastContent() {
   const [selectedDayType, setSelectedDayType] = useState<string | null>(null)
   const [existingSession, setExistingSession] = useState<ExistingSession | null>(null)
   const existingSessionRef = useRef<ExistingSession | null>(null)
+  // Incremented on every checkExistingSession call; async callbacks bail out if stale.
+  const checkGenRef = useRef(0)
   const [exercises, setExercises] = useState<Exercise[]>([])
   const [setInputs, setSetInputs] = useState<Record<string, SetInput[]>>({})
   const [skippedExercises, setSkippedExercises] = useState<Set<string>>(new Set())
@@ -117,11 +119,21 @@ function LogPastContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Next.js router cache keeps this component alive across navigations, so
+  // useState(initialDate) won't reinitialize when the URL param changes.
+  // This effect re-syncs selectedDate whenever the ?date= param changes.
+  useEffect(() => {
+    const target = paramDate && paramDate <= yesterday ? paramDate : yesterday
+    setSelectedDate(target)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paramDate])
+
   useEffect(() => {
     checkExistingSession(selectedDate)
   }, [selectedDate])
 
   async function checkExistingSession(date: string) {
+    const gen = ++checkGenRef.current
     setCheckingDate(true)
     setSelectedDayType(null)
     setExercises([])
@@ -133,7 +145,7 @@ function LogPastContent() {
     setExistingSession(null)
 
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setCheckingDate(false); return }
+    if (!user || gen !== checkGenRef.current) { setCheckingDate(false); return }
 
     const dayStart = new Date(date + 'T00:00:00').toISOString()
     const dayEnd = new Date(date + 'T23:59:59').toISOString()
@@ -149,6 +161,8 @@ function LogPastContent() {
       .limit(1)
       .maybeSingle()
 
+    if (gen !== checkGenRef.current) return
+
     if (existing) {
       existingSessionRef.current = existing
       setExistingSession(existing)
@@ -156,7 +170,7 @@ function LogPastContent() {
       await loadExercises(existing.day_type, existing.id)
     }
 
-    setCheckingDate(false)
+    if (gen === checkGenRef.current) setCheckingDate(false)
   }
 
   async function loadExercises(dayType: string, existingSessionId?: string) {
