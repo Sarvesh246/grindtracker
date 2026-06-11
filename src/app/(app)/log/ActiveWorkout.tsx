@@ -1380,7 +1380,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         paddingTop: '12px',
         paddingLeft: '16px',
         paddingRight: '16px',
-        paddingBottom: keyboardInset === 0 ? 'calc(12px + env(safe-area-inset-bottom))' : '12px',
+        paddingBottom: keyboardInset > 0 ? '12px' : 'calc(12px + env(safe-area-inset-bottom))',
         backgroundColor: 'var(--bg)',
         borderTop: '1px solid var(--border)',
         zIndex: 50,
