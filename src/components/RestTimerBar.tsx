@@ -44,9 +44,10 @@ export default function RestTimerBar({
   const [open, setOpen] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
   const [rest, setRest] = useState<number>(() => getExerciseRest(exerciseId))
-  // While the on-screen keyboard is open, glue the bar to the visible bottom
-  // edge (on top of the keyboard) instead of letting iOS pan it mid-content.
-  // 0 whenever no keyboard is up, so the resting state is plain bottom:0.
+  // Glue the bar to the visible bottom edge: positive while the on-screen
+  // keyboard is open (sits on top of it), negative when iOS leaves the layout
+  // viewport panned after dismissal (would otherwise strand the bar mid-screen),
+  // 0 in the normal aligned state so the resting position is plain bottom:0.
   const keyboardInset = useKeyboardInset()
   const bottomPx = bottomOffsetPx + keyboardInset
 
@@ -66,8 +67,9 @@ export default function RestTimerBar({
         position: 'fixed',
         bottom: bottomPx,
         // The safe area is covered by the keyboard while it's open, so the
-        // inset padding only applies when the bar sits at the true screen edge.
-        paddingBottom: bottomPx === 0 ? 'env(safe-area-inset-bottom)' : 0,
+        // inset padding only applies when the bar sits at the true screen edge
+        // (offset <= 0 — at rest, or re-glued down over a stranded viewport pan).
+        paddingBottom: bottomPx > 0 ? 0 : 'env(safe-area-inset-bottom)',
         backgroundColor: 'var(--surface-elevated)',
         borderTop: '1px solid var(--border)',
         boxShadow: '0 -4px 16px rgba(0,0,0,0.4)',
