@@ -912,30 +912,61 @@ function LogPastContent() {
 
         {/* Submit */}
         {selectedDayType && exercises.length > 0 && !loadingExercises && (
-          <button
-            onClick={() => handleSubmit(false)}
-            disabled={submitting}
-            style={{
-              width: '100%',
-              height: '52px',
-              backgroundColor: submitting ? 'var(--text-muted)' : 'var(--accent)',
-              color: 'var(--on-accent)',
-              border: 'none',
-              borderRadius: '12px',
-              fontFamily: "'Bebas Neue', sans-serif",
-              fontSize: '20px',
-              letterSpacing: '1px',
-              cursor: submitting ? 'default' : 'pointer',
-              transition: 'opacity 150ms ease',
-              marginTop: '4px',
-            }}
-            onMouseDown={e => { if (!submitting) e.currentTarget.style.opacity = '0.85' }}
-            onMouseUp={e => { if (!submitting) e.currentTarget.style.opacity = '1' }}
-            onTouchStart={e => { if (!submitting) e.currentTarget.style.opacity = '0.85' }}
-            onTouchEnd={e => { if (!submitting) e.currentTarget.style.opacity = '1' }}
-          >
-            {submitting ? (isEditing ? 'UPDATING...' : 'LOGGING...') : (isEditing ? 'UPDATE WORKOUT' : 'LOG WORKOUT')}
-          </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '4px' }}>
+            <button
+              onClick={() => handleSubmit(false)}
+              disabled={submitting}
+              style={{
+                width: '100%',
+                height: '52px',
+                backgroundColor: submitting ? 'var(--text-muted)' : 'var(--accent)',
+                color: 'var(--on-accent)',
+                border: 'none',
+                borderRadius: '12px',
+                fontFamily: "'Bebas Neue', sans-serif",
+                fontSize: '20px',
+                letterSpacing: '1px',
+                cursor: submitting ? 'default' : 'pointer',
+                transition: 'opacity 150ms ease',
+              }}
+              onMouseDown={e => { if (!submitting) e.currentTarget.style.opacity = '0.85' }}
+              onMouseUp={e => { if (!submitting) e.currentTarget.style.opacity = '1' }}
+              onTouchStart={e => { if (!submitting) e.currentTarget.style.opacity = '0.85' }}
+              onTouchEnd={e => { if (!submitting) e.currentTarget.style.opacity = '1' }}
+            >
+              {submitting ? (isEditing ? 'UPDATING...' : 'LOGGING...') : (isEditing ? 'UPDATE WORKOUT' : 'LOG WORKOUT')}
+            </button>
+
+            {isEditing && !confirmDelete && (
+              <button
+                onClick={() => setConfirmDelete(true)}
+                disabled={deleting}
+                style={{
+                  width: '100%',
+                  height: '44px',
+                  backgroundColor: 'transparent',
+                  color: 'var(--danger)',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  borderRadius: '12px',
+                  fontFamily: "'Bebas Neue', sans-serif",
+                  fontSize: '16px',
+                  letterSpacing: '1px',
+                  cursor: deleting ? 'default' : 'pointer',
+                  transition: 'background-color 150ms ease, border-color 150ms ease',
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.06)'
+                  e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.5)'
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.backgroundColor = 'transparent'
+                  e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.3)'
+                }}
+              >
+                DELETE WORKOUT
+              </button>
+            )}
+          </div>
         )}
       </div>
     </div>

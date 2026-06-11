@@ -3,7 +3,7 @@ import { useSyncExternalStore } from 'react'
 import { useRouter } from 'next/navigation'
 import { Session, UserStats } from '@/lib/types'
 import { getLevel, getXpInCurrentLevel, getXpRequiredForLevel, getXpToNextLevel } from '@/lib/utils/gamification'
-import { formatHeaderDate, formatShortDate } from '@/lib/utils/formatting'
+import { formatHeaderDate, formatShortDate, localDateKey } from '@/lib/utils/formatting'
 import { overdueDays } from '@/lib/utils/rotation'
 import WorkoutCalendar from '@/components/WorkoutCalendar'
 import { useUnit } from '@/lib/contexts/UnitContext'
@@ -509,7 +509,7 @@ export default function HomeDashboard({
               borderBottom: '1px solid var(--border)',
               display: 'flex',
               justifyContent: 'space-between',
-              alignItems: 'baseline',
+              alignItems: 'center',
               gap: '14px',
             }}>
               <span style={{
@@ -519,9 +519,44 @@ export default function HomeDashboard({
               }}>
                 {dayLabel(lastSession.day_type)}
               </span>
-              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                {formatShortDate(lastSession.completed_at!)}
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                  {formatShortDate(lastSession.completed_at!)}
+                </span>
+                <button
+                  onClick={() => router.push(`/log/past?date=${localDateKey(new Date(lastSession.completed_at!))}`)}
+                  title="Edit or delete this workout"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    background: 'none',
+                    border: '1px solid var(--border)',
+                    borderRadius: '8px',
+                    padding: '4px 9px',
+                    color: 'var(--text-secondary)',
+                    fontSize: '11px',
+                    fontFamily: "'Bebas Neue', sans-serif",
+                    letterSpacing: '0.5px',
+                    cursor: 'pointer',
+                    transition: 'color 150ms ease, border-color 150ms ease',
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.color = 'var(--text-primary)'
+                    e.currentTarget.style.borderColor = 'var(--border-strong)'
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.color = 'var(--text-secondary)'
+                    e.currentTarget.style.borderColor = 'var(--border)'
+                  }}
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                  </svg>
+                  EDIT
+                </button>
+              </div>
             </div>
             <div style={{ padding: '12px 0' }}>
               {lastSessionLogs.map((log, i) => (
