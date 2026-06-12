@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Exercise, UserRotation } from '@/lib/types'
@@ -66,16 +66,14 @@ const DAY_ICONS: Record<string, React.FC> = {
 
 export default function DaySelect() {
   const router = useRouter()
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
   const [exercises, setExercises] = useState<Exercise[]>([])
   const [rotation, setRotation] = useState<UserRotation | null>(null)
   const [flexDays, setFlexDays] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [showManager, setShowManager] = useState(false)
 
-  useEffect(() => { load() }, [])
-
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
     const [exRes, rotRes, flexRes] = await Promise.all([
@@ -93,7 +91,10 @@ export default function DaySelect() {
     setRotation((rotRes.data as UserRotation | null) ?? null)
     setFlexDays(new Set((flexRes.data ?? []).map(r => r.day_key)))
     setLoading(false)
-  }
+  }, [supabase])
+
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { load() }, [load])
 
   const grouped: Record<string, Exercise[]> = {}
   for (const ex of exercises) {

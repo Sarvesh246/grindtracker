@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useTheme } from '@/lib/contexts/ThemeContext'
@@ -56,7 +56,7 @@ function resolveTextColor(type: string, extraTypes: string[], isLight: boolean):
 
 export default function WorkoutCalendar() {
   const router = useRouter()
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
   const { theme } = useTheme()
   const isLight = theme === 'light'
 
@@ -72,9 +72,7 @@ export default function WorkoutCalendar() {
   const [workoutDays, setWorkoutDays] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => { loadMonth() }, [currentMonth])
-
-  async function loadMonth() {
+  const loadMonth = useCallback(async () => {
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setLoading(false); return }
@@ -99,7 +97,10 @@ export default function WorkoutCalendar() {
     }
     setWorkoutDays(map)
     setLoading(false)
-  }
+  }, [supabase, currentMonth])
+
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { loadMonth() }, [loadMonth])
 
   const year = currentMonth.getFullYear()
   const month = currentMonth.getMonth()

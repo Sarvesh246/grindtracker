@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Exercise } from '@/lib/types'
@@ -73,7 +73,7 @@ function dayLabel(day: string): string {
 
 export default function ActiveWorkout({ day }: { day: string }) {
   const router = useRouter()
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
 
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [exercises, setExercises] = useState<Exercise[]>([])
@@ -112,15 +112,13 @@ export default function ActiveWorkout({ day }: { day: string }) {
     return () => { if (timerRef.current) clearInterval(timerRef.current) }
   }, [startedAt])
 
-  useEffect(() => {
-    initSession()
-  }, [day])
-
   // Auto-clear undo state when the 5s window expires.
   useEffect(() => {
     if (!undoState) return
     const remaining = undoState.expiresAt - Date.now()
     if (remaining <= 0) {
+      // Already expired on (re)mount — clear immediately rather than scheduling.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setUndoState(null)
       return
     }
@@ -138,7 +136,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workoutNote])
 
-  async function initSession() {
+  const initSession = useCallback(async () => {
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/login'); return }
@@ -284,7 +282,10 @@ export default function ActiveWorkout({ day }: { day: string }) {
     setStartedAt(sessionStart)
     setElapsed(Math.floor((Date.now() - sessionStart.getTime()) / 1000))
     setLoading(false)
-  }
+  }, [day, supabase, router])
+
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { initSession() }, [initSession])
 
   /**
    * Recompute the live "best" for an exercise from a candidate logs map.

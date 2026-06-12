@@ -13,6 +13,22 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
   ]),
+  {
+    rules: {
+      // Allow the idiomatic "strip a field via rest-destructure" pattern
+      // (e.g. `const { omitted, ...rest } = row`) and intentionally-unused
+      // bindings prefixed with `_`.
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        {
+          ignoreRestSiblings: true,
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+        },
+      ],
+    },
+  },
 ]);
 
 export default eslintConfig;

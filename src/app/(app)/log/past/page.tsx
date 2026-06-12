@@ -124,12 +124,21 @@ function LogPastContent() {
   // This effect re-syncs selectedDate whenever the ?date= param changes.
   useEffect(() => {
     const target = paramDate && paramDate <= yesterday ? paramDate : yesterday
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSelectedDate(target)
+    // Re-sync only when the URL param changes; `yesterday` is recomputed each
+    // render and intentionally excluded.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paramDate])
 
+  // checkExistingSession is intentionally NOT a useCallback: it depends on `fmt`
+  // (which changes on unit toggle) and resets all in-progress inputs, so adding
+  // it to the dep array would wipe a half-entered log when the user flips kg/lbs.
+  // It only ever needs to re-run when the selected date changes.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/immutability
     checkExistingSession(selectedDate)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDate])
 
   async function checkExistingSession(date: string) {

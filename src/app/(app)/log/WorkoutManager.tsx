@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Exercise, DayCategory, UserRotation } from '@/lib/types'
 import { autoSequence, effectiveSequence } from '@/lib/utils/rotation'
@@ -22,7 +22,7 @@ type DeleteTarget =
   | { type: 'exercise'; id: string; name: string; dayKey: string }
 
 export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerProps) {
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
   const [exercises, setExercises] = useState<Exercise[]>([])
   const [dayCategories, setDayCategories] = useState<Record<string, DayCategory>>({})
   const [flexDays, setFlexDays] = useState<Set<string>>(new Set())
@@ -46,9 +46,7 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
   const [formReps, setFormReps] = useState('8')
   const [formError, setFormError] = useState('')
 
-  useEffect(() => { load() }, [])
-
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
@@ -78,7 +76,10 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
     } finally {
       setLoading(false)
     }
-  }
+  }, [supabase])
+
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { load() }, [load])
 
   const grouped: Record<string, Exercise[]> = {}
   for (const ex of exercises) {

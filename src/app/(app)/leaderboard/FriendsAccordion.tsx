@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { UserProfile } from '@/lib/types'
 
@@ -24,7 +24,7 @@ interface Props {
 }
 
 export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [open, setOpen] = useState(false)
@@ -105,12 +105,16 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
     onFriendsChange(friendRows.map(f => f.profile.id))
   }, [userId, supabase, onFriendsChange])
 
+  // Initial + dependency-driven load of the friendship graph from Supabase.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { loadFriendsData() }, [loadFriendsData])
 
   // Debounced username search
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
     const q = query.trim().toLowerCase()
+    // Clear stale results as the user types; the lookup below is debounced.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!q) { setSearchResults([]); return }
 
     debounceRef.current = setTimeout(async () => {
@@ -128,7 +132,7 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
         .limit(6)
       setSearchResults((data ?? []) as UserProfile[])
     }, 350)
-  }, [query, userId, friends, pending, sent])
+  }, [query, userId, friends, pending, sent, supabase])
 
   async function sendRequest(targetId: string) {
     await supabase.from('friendships').insert({ requester_id: userId, addressee_id: targetId })

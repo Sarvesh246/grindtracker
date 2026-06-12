@@ -23,7 +23,11 @@ function initials(name: string) {
 export default function ShareCard({ entry, rank, category, onClose }: ShareCardProps) {
   const { unitLabel, fmt } = useUnit()
   const [canShare, setCanShare] = useState(false)
+  // Feature-detect the Web Share API after mount. This must run client-side
+  // only (navigator is undefined during SSR), so it's a legitimate one-shot
+  // sync effect rather than a render-time / lazy-init value.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCanShare(typeof navigator !== 'undefined' && 'share' in navigator)
   }, [])
   const categoryLabel = {

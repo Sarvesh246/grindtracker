@@ -1,5 +1,5 @@
 'use client'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Exercise } from '@/lib/types'
 import { formatHeaderDate } from '@/lib/utils/formatting'
@@ -53,7 +53,7 @@ function epley(weight: number, reps: number): number {
 }
 
 export default function ProgressPage() {
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
   const { unitLabel, toDisplay } = useUnit()
 
   const [exercises, setExercises] = useState<Exercise[]>([])
@@ -96,13 +96,7 @@ export default function ProgressPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  useEffect(() => {
-    if (!selectedId) return
-    loadRawLogs(selectedId)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId])
-
-  async function loadRawLogs(exerciseId: string) {
+  const loadRawLogs = useCallback(async (exerciseId: string) => {
     setLoadingChart(true)
 
     const { data: { user } } = await supabase.auth.getUser()
@@ -129,7 +123,13 @@ export default function ProgressPage() {
 
     setRawLogs((logs ?? []) as RawLog[])
     setLoadingChart(false)
-  }
+  }, [supabase])
+
+  useEffect(() => {
+    if (!selectedId) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadRawLogs(selectedId)
+  }, [selectedId, loadRawLogs])
 
   const recomputeForMetric = useCallback((logs: RawLog[], m: Metric, ul: string) => {
     interface SessionAgg {
@@ -228,8 +228,11 @@ export default function ProgressPage() {
     setRecentSessions(recent)
   }, [toDisplay])
 
+  // Recompute the chart/stats from the raw logs whenever they or the selected
+  // metric change (recomputeForMetric does the setState work internally).
   useEffect(() => {
     if (rawLogs.length === 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setChartData([])
       setStats({ bestWeight: null, sessionCount: 0, lastWeight: null, prCount: 0 })
       setRecentSessions([])

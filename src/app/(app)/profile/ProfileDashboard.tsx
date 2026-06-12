@@ -110,7 +110,7 @@ export default function ProfileDashboard({
   allBadges,
 }: Props) {
   const router = useRouter()
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
   const { unit, toggleUnit } = useUnit()
   const { theme } = useTheme()
   const [tooltipBadgeId, setTooltipBadgeId] = useState<string | null>(null)
@@ -119,8 +119,11 @@ export default function ProfileDashboard({
   const [restMin, setRestMin] = useState(2)
   const [restSec, setRestSec] = useState(0)
 
+  // Hydrate the default rest time from localStorage (client-only external
+  // store) after mount.
   useEffect(() => {
     const total = getDefaultRest()
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setRestMin(Math.floor(total / 60))
     setRestSec(total % 60)
   }, [])
@@ -146,6 +149,9 @@ export default function ProfileDashboard({
   useEffect(() => {
     if (!editingUsername) return
     if (debounceRef.current) clearTimeout(debounceRef.current)
+    // Clear the prior result immediately as the user types, then debounce the
+    // availability lookup against Supabase (an external system).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setUsernameAvailable(null)
     setUsernameError(null)
 
@@ -164,7 +170,7 @@ export default function ProfileDashboard({
       setUsernameChecking(false)
       setUsernameAvailable(!data)
     }, 400)
-  }, [newUsername, editingUsername, username])
+  }, [newUsername, editingUsername, username, supabase])
 
   function openUsernameEdit() {
     setNewUsername(username)
@@ -284,6 +290,10 @@ export default function ProfileDashboard({
         {/* Avatar + name row */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '16px' }}>
           {avatarUrl ? (
+            // External avatar URL (Google / Supabase storage) at a fixed 56px —
+            // next/image would require remote-domain config and add no real
+            // benefit at this size, so a plain <img> is intentional here.
+            // eslint-disable-next-line @next/next/no-img-element
             <img
               src={avatarUrl}
               alt={displayName}

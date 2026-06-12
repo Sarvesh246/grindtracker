@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
@@ -7,7 +7,7 @@ const USERNAME_RE = /^[a-z0-9_]{3,20}$/
 
 export default function SetupPage() {
   const router = useRouter()
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [username, setUsername] = useState('')
@@ -18,6 +18,9 @@ export default function SetupPage() {
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
+    // Reset the prior result immediately as the user types, then debounce the
+    // availability lookup against Supabase (an external system).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setAvailable(null)
     setError(null)
 
@@ -34,7 +37,7 @@ export default function SetupPage() {
       setChecking(false)
       setAvailable(!data)
     }, 400)
-  }, [username])
+  }, [username, supabase])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()

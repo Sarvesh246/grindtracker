@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { LeaderboardEntry } from '@/lib/types'
 import FriendsAccordion from './FriendsAccordion'
@@ -30,7 +30,7 @@ interface Props {
 }
 
 export default function LeaderboardClient({ userId }: Props) {
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
   const { unitLabel, fmt } = useUnit()
   const [category, setCategory] = useState<Category>('overall')
   const [entries, setEntries] = useState<LeaderboardEntry[]>([])
@@ -57,6 +57,7 @@ export default function LeaderboardClient({ userId }: Props) {
 
   // Refetch when category or friends change
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchLeaderboard(category, friendIds)
   }, [category, friendIds, fetchLeaderboard])
 

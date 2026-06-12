@@ -51,7 +51,10 @@ export default function RestTimerBar({
   const keyboardInset = useKeyboardInset()
   const bottomPx = bottomOffsetPx + keyboardInset
 
+  // Re-sync the per-exercise rest preference from localStorage whenever the
+  // active exercise changes (an external store, read client-side only).
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setRest(getExerciseRest(exerciseId))
   }, [exerciseId])
 

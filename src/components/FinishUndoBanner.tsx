@@ -32,7 +32,10 @@ export default function FinishUndoBanner() {
   const [undoing, setUndoing] = useState(false)
 
   useEffect(() => {
+    // Hydrate from the localStorage undo token (client-only external store) and
+    // then poll it every second for expiry/changes.
     const t = readToken()
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (t) { setToken(t); setRemaining(t.expiresAt - Date.now()) }
 
     const interval = setInterval(() => {
