@@ -138,18 +138,30 @@ export default function ActiveWorkout({ day }: { day: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workoutNote])
 
+  // Keep skipped-set state in localStorage so it survives a page reload.
+  useEffect(() => {
+    if (!sessionId) return
+    const skipped = Object.keys(logs).filter(k => logs[k].skipped)
+    if (skipped.length === 0) {
+      localStorage.removeItem(`grind_skipped_${sessionId}`)
+    } else {
+      localStorage.setItem(`grind_skipped_${sessionId}`, JSON.stringify(skipped))
+    }
+  }, [logs, sessionId])
+
   async function initSession() {
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/login'); return }
 
-    const { data: exs } = await supabase
+    const { data: exsData } = await supabase
       .from('exercises')
       .select('*')
       .eq('day_type', day)
       .order('sort_order', { ascending: true })
 
-    if (!exs || exs.length === 0) { setLoading(false); return }
+    const exs = (exsData ?? []).filter(e => !e.disabled)
+    if (exs.length === 0) { setLoading(false); return }
     setExercises(exs)
 
     const { data: allExsData } = await supabase
@@ -243,6 +255,20 @@ export default function ActiveWorkout({ day }: { day: string }) {
           logId: log.id,
         }
       }
+
+      // Restore skipped state from localStorage (skipped sets are not in session_logs).
+      const skippedRaw = typeof window !== 'undefined' ? localStorage.getItem(`grind_skipped_${sid}`) : null
+      if (skippedRaw) {
+        try {
+          const skippedKeys: string[] = JSON.parse(skippedRaw)
+          for (const key of skippedKeys) {
+            if (restored[key] && !restored[key].checked) {
+              restored[key] = { ...restored[key], skipped: true }
+            }
+          }
+        } catch { /* ignore malformed data */ }
+      }
+
       setLogs(restored)
 
       const ageMs = Date.now() - sessionStart.getTime()
@@ -673,6 +699,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       return
     }
 
+    if (sessionId) localStorage.removeItem(`grind_skipped_${sessionId}`)
     setSessionId(null)
     setDiscarding(false)
     router.replace('/log')
@@ -836,6 +863,9 @@ export default function ActiveWorkout({ day }: { day: string }) {
     } catch {
       // Rotation is a non-critical convenience; swallow and move on.
     }
+
+    // Clear persisted skipped state — session is now complete.
+    if (typeof window !== 'undefined') localStorage.removeItem(`grind_skipped_${sessionId}`)
 
     // Store a 10-minute undo token so the user can resume if they finished by accident.
     if (typeof window !== 'undefined') {
