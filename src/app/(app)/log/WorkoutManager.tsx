@@ -224,6 +224,14 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
     }
   }
 
+  async function toggleExerciseDisabled(ex: Exercise) {
+    const next = !ex.disabled
+    const { error } = await supabase.from('exercises').update({ disabled: next }).eq('id', ex.id)
+    if (error) return
+    setExercises(prev => prev.map(e => e.id === ex.id ? { ...e, disabled: next } : e))
+    onChanged()
+  }
+
   async function toggleFlex(dayKey: string) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
@@ -828,16 +836,42 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
                           display: 'flex', alignItems: 'center',
                           padding: '14px 16px', gap: '12px',
                           borderBottom: '1px solid var(--border)',
+                          opacity: ex.disabled ? 0.55 : 1,
+                          transition: 'opacity 150ms ease',
                         }}
                       >
                         <div style={{ flex: 1 }}>
-                          <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '2px' }}>
+                          <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '15px', fontWeight: 600, color: ex.disabled ? 'var(--text-muted)' : 'var(--text-primary)', marginBottom: '2px' }}>
                             {ex.name}
                           </div>
                           <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
-                            {ex.sets_target} sets × {ex.reps_target} reps
+                            {ex.disabled ? 'Disabled — skipped in workouts' : `${ex.sets_target} sets × ${ex.reps_target} reps`}
                           </div>
                         </div>
+                        {/* Enable/disable toggle */}
+                        <button
+                          onClick={() => toggleExerciseDisabled(ex)}
+                          aria-label={ex.disabled ? 'Enable exercise' : 'Disable exercise'}
+                          title={ex.disabled ? 'Enable' : 'Disable'}
+                          style={{
+                            background: 'none', border: 'none', cursor: 'pointer',
+                            padding: '6px', display: 'flex', alignItems: 'center',
+                          }}
+                        >
+                          <div style={{
+                            width: '36px', height: '22px', borderRadius: '9999px', flexShrink: 0,
+                            backgroundColor: ex.disabled ? 'var(--border)' : 'var(--accent)',
+                            position: 'relative', transition: 'background-color 150ms ease',
+                          }}>
+                            <div style={{
+                              position: 'absolute', top: '2px',
+                              left: ex.disabled ? '2px' : '16px',
+                              width: '18px', height: '18px', borderRadius: '50%',
+                              backgroundColor: ex.disabled ? 'var(--text-muted)' : 'var(--bg)',
+                              transition: 'left 150ms ease',
+                            }} />
+                          </div>
+                        </button>
                         <button
                           onClick={() => openExerciseForm(dayKey, ex)}
                           style={{
