@@ -471,10 +471,18 @@ select:focus-visible,
   grid-template-columns: 1fr;
 }
 
-/* Active-workout fixed bars: full-width on mobile. */
+/* Active-workout fixed bars: full-width on mobile.
+   `will-change: transform` promotes the bar to its own compositor layer so the
+   per-second timer re-render can't repaint-shift it during scroll (iOS would
+   otherwise momentarily nudge a main-layer fixed element on scroll repaints).
+   `translateZ(0)` forces the layer even on mobile, where no other transform is
+   set — the desktop media query replaces it with translateX(-50%), which also
+   composites, so the bar stays on its own layer in every breakpoint. */
 .wo-fixed-bar {
   left: 0;
   right: 0;
+  transform: translateZ(0);
+  will-change: transform;
 }
 
 /* ── Active-workout desktop layout ──────────────────────────────────────────

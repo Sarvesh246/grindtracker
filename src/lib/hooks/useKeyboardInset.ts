@@ -9,24 +9,37 @@ import { useEffect, useState } from 'react'
 //
 // This hook reports the offset (px) that a fixed bottom bar must apply to sit
 // flush against the *visible* bottom edge:
-//   - positive while the keyboard is up (bar rides on top of the keyboard);
-//   - negative when the keyboard is closed but WebKit left the layout viewport
-//     panned past its resting position — a standalone-PWA bug that otherwise
-//     strands fixed bars mid-screen, sliding around on every scroll;
-//   - 0 in the normal aligned state, i.e. plain bottom:0.
+//   - positive while the keyboard is up (bar rides on top of the keyboard),
+//     tracking the visual-viewport bottom continuously as you scroll;
+//   - negative ONLY for a genuine stranded pan — when iOS leaves the layout
+//     viewport panned past its resting position after the keyboard dismisses (a
+//     standalone-PWA WebKit bug) — and only once the viewport has settled;
+//   - 0 in every other state, i.e. plain bottom:0.
 //
-// Guard rails (this measurement has burned us before — see the git history on
-// RestTimerBar): the positive (keyboard) offset engages only while a text field
-// actually has focus AND the visual viewport is shorter than the layout
-// viewport by more than a real keyboard's worth of pixels. The negative
-// (stranded-pan) offset engages only when the keyboard is fully closed and the
-// misalignment exceeds a couple of pixels, so rubber-band overscroll and
-// safe-area quirks still report 0.
+// History / guard rails (this measurement has burned us repeatedly — see the
+// git log on RestTimerBar and this file):
+//   * The keyboard-closed resting target is ALWAYS 0. A negative `gap` while the
+//     keyboard is closed is usually transient rubber-band overscroll, which
+//     springs back within a few hundred ms. Applying it per-scroll-frame yanked
+//     the bar off the bottom edge and made it slide on every springy scroll
+//     (the exact bug). So the negative (strand) correction now engages only
+//     after the viewport has been SETTLED for STRAND_SETTLE_MS, distinguishing a
+//     persistent stranded pan from a transient overscroll bounce.
+//   * The stranded-pan WebKit bug is standalone-only, so the negative correction
+//     is gated to standalone display-mode. Regular mobile Safari (dynamic URL
+//     toolbar, different mechanics) therefore always resolves to 0 and behaves
+//     exactly like the rock-solid dashboard bottom nav.
+//   * The positive (keyboard) offset engages only while a text field actually
+//     has focus AND the visual viewport is shorter than the layout viewport by
+//     more than a real keyboard's worth of pixels.
 
 const KEYBOARD_MIN_PX = 100
-// Residual layout-viewport pan (px) worth correcting. Tiny negatives can
-// flicker by while WebKit settles; a genuine stranding is keyboard-sized.
+// Residual layout-viewport pan (px) worth correcting. Tiny negatives flicker by
+// while WebKit settles; a genuine stranding is keyboard-sized.
 const STRAND_MIN_PX = 2
+// How long the viewport must hold a misaligned reading before we treat it as a
+// real stranded pan rather than a transient overscroll bounce.
+const STRAND_SETTLE_MS = 300
 
 function editableHasFocus(): boolean {
   const el = document.activeElement
@@ -35,34 +48,75 @@ function editableHasFocus(): boolean {
   return tag === 'INPUT' || tag === 'TEXTAREA' || (el as HTMLElement).isContentEditable
 }
 
+// The stranded-pan correction only models a standalone-PWA WebKit quirk. In a
+// regular browser tab the negative branch is pure downside, so we gate it off.
+function isStandaloneDisplay(): boolean {
+  if (typeof window === 'undefined') return false
+  const iosStandalone = (window.navigator as Navigator & { standalone?: boolean }).standalone === true
+  const displayModeStandalone =
+    typeof window.matchMedia === 'function' &&
+    (window.matchMedia('(display-mode: standalone)').matches ||
+      window.matchMedia('(display-mode: fullscreen)').matches)
+  return iosStandalone || displayModeStandalone
+}
+
 export function useKeyboardInset(): number {
   const [inset, setInset] = useState(0)
 
   useEffect(() => {
     const vv = window.visualViewport
     if (!vv) return
+    const standalone = isStandaloneDisplay()
     let raf = 0
     let keyboardWasOpen = false
     let healTimers: number[] = []
+    let strandTimer = 0
 
     // A same-position scrollTo is a no-op for the page but forces WebKit to
     // clamp a leftover viewport pan and re-anchor its fixed layers.
     const reanchor = () => window.scrollTo(window.scrollX, window.scrollY)
 
+    const apply = (next: number) => setInset(prev => (prev === next ? prev : next))
+
+    const gapNow = () => window.innerHeight - vv.height - vv.offsetTop
+    const keyboardOpenNow = () => window.innerHeight - vv.height > KEYBOARD_MIN_PX
+
     const measure = () => {
       raf = 0
-      // Distance from the layout-viewport bottom down to the visual-viewport
-      // bottom. Positive = keyboard covering the bottom; negative = layout
-      // viewport panned up past its resting position (stranded fixed bars).
-      const gap = window.innerHeight - vv.height - vv.offsetTop
-      const keyboardOpen = window.innerHeight - vv.height > KEYBOARD_MIN_PX
-      let next = 0
+      const keyboardOpen = keyboardOpenNow()
+
       if (keyboardOpen) {
-        if (editableHasFocus()) next = Math.max(0, Math.round(gap))
-      } else if (gap < -STRAND_MIN_PX) {
-        next = Math.round(gap)
+        // Keyboard up: glue continuously to the visible bottom while a field is
+        // focused (so it tracks the pan as you scroll); otherwise rest at 0.
+        clearTimeout(strandTimer)
+        strandTimer = 0
+        apply(editableHasFocus() ? Math.max(0, Math.round(gapNow())) : 0)
+      } else {
+        // Keyboard down: the resting target is plain bottom:0. A negative gap is
+        // almost always transient overscroll — never act on it inline. Only a
+        // *persistent* misalignment in a standalone PWA is a genuine stranded
+        // pan, and even then we re-anchor first and fall back to a negative
+        // offset only if WebKit refuses to clamp.
+        if (standalone && gapNow() < -STRAND_MIN_PX) {
+          if (!strandTimer) {
+            strandTimer = window.setTimeout(() => {
+              strandTimer = 0
+              if (keyboardOpenNow()) return
+              if (gapNow() >= -STRAND_MIN_PX) { apply(0); return }
+              // Held misaligned with the keyboard closed → real strand. Clamp it.
+              reanchor()
+              const finalGap = gapNow()
+              apply(finalGap < -STRAND_MIN_PX ? Math.round(finalGap) : 0)
+            }, STRAND_SETTLE_MS)
+          }
+          // Leave the current offset untouched while we wait for it to settle —
+          // do NOT apply the live negative gap (that's the overscroll slide bug).
+        } else {
+          clearTimeout(strandTimer)
+          strandTimer = 0
+          apply(0)
+        }
       }
-      setInset(prev => (prev === next ? prev : next))
 
       // Keyboard just closed. Re-anchor now and again after the dismissal
       // animation — a single attempt mid-animation can be a true no-op that
@@ -95,6 +149,7 @@ export function useKeyboardInset(): number {
     measure()
     return () => {
       if (raf) cancelAnimationFrame(raf)
+      if (strandTimer) clearTimeout(strandTimer)
       healTimers.forEach(clearTimeout)
       vv.removeEventListener('resize', schedule)
       vv.removeEventListener('scroll', schedule)
