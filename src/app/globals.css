@@ -144,19 +144,23 @@ html.light {
   -webkit-tap-highlight-color: transparent;
 }
 
-html {
-  height: -webkit-fill-available;
+html,
+body {
+  height: 100%;
 }
 
 body {
   background-color: var(--bg);
   color: var(--text-primary);
   font-family: var(--font-sans);
-  overscroll-behavior: none;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  min-height: 100dvh;
-  min-height: -webkit-fill-available;
+  /* The app is a fixed, non-scrolling shell (.app-shell): only .app-main
+     scrolls. Locking body scroll is what makes the fixed bottom bars rock
+     solid in an iOS standalone PWA — a scrolling <body> is what let them
+     strand mid-screen (home nav) and detach after keyboard dismissal. */
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 /* Leaderboard share card is a dark-branded artifact (meant to look identical for
@@ -216,12 +220,11 @@ select:focus-visible,
   border: 0;
 }
 
-/* Bottom nav — defined here so safe-area-inset-bottom is applied before JS hydration */
+/* Bottom nav — a normal flow flex child at the bottom of the .app-shell column,
+   NOT position:fixed. As a flow element in a non-scrolling shell it is pinned to
+   the bottom edge by layout and can never strand mid-screen. */
 .bottom-nav {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
+  flex: 0 0 auto;
   background-color: var(--surface);
   border-top: 1px solid var(--border);
   display: flex;
@@ -352,15 +355,33 @@ select:focus-visible,
    JS width detection and no hydration/resize jank at the breakpoint.
    --------------------------------------------------------------------------- */
 
-/* Main content padding (moved off inline styles so media queries can override). */
+/* The app shell: a fixed, full-viewport, non-scrolling flex column. Because the
+   shell itself never scrolls, the bottom nav (a flow child below) is pinned to
+   the bottom edge by layout — it cannot strand mid-screen — and the body can
+   never be left panned after the iOS keyboard dismisses. This single structural
+   choice is what makes all the bottom bars permanently stable in a standalone
+   PWA. (No `transform`/`filter`/`will-change:transform` here or on .app-main —
+   those would create a containing block and re-trap position:fixed bars.) */
+.app-shell {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--bg);
+}
+
+/* The ONLY scroll container. Page content scrolls here, not on <body>.
+   position:fixed bars still anchor to the viewport (overflow does not create a
+   containing block for fixed), so the finish/rest bars sit over this region. */
 .app-main {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  /* Keep the rubber-band inside this container so it can't bubble to the shell. */
+  overscroll-behavior-y: contain;
   padding-top: env(safe-area-inset-top);
-  padding-bottom: calc(64px + env(safe-area-inset-bottom));
-  min-height: 100dvh;
-  /* clip prevents horizontal overflow (anti-zoom) without creating a scroll
-     container — unlike `hidden`, which forces overflow-y:auto and makes
-     position:fixed children pin to this container instead of the viewport. */
-  overflow-x: clip;
 }
 
 /* Top nav: rendered always, hidden on mobile, shown >=768px.
@@ -471,18 +492,14 @@ select:focus-visible,
   grid-template-columns: 1fr;
 }
 
-/* Active-workout fixed bars: full-width on mobile.
-   `will-change: transform` promotes the bar to its own compositor layer so the
-   per-second timer re-render can't repaint-shift it during scroll (iOS would
-   otherwise momentarily nudge a main-layer fixed element on scroll repaints).
-   `translateZ(0)` forces the layer even on mobile, where no other transform is
-   set — the desktop media query replaces it with translateX(-50%), which also
-   composites, so the bar stays on its own layer in every breakpoint. */
+/* Active-workout fixed bars: full-width on mobile. They anchor to the viewport
+   bottom; `bottom` is offset up by the keyboard height (useKeyboardInset) so the
+   bar rides on top of the on-screen keyboard while typing reps/weights. No
+   compositor hack needed — content scrolls inside .app-main, not <body>, so the
+   viewport-fixed bar is never repaint-shifted by scrolling. */
 .wo-fixed-bar {
   left: 0;
   right: 0;
-  transform: translateZ(0);
-  will-change: transform;
 }
 
 /* ── Active-workout desktop layout ──────────────────────────────────────────

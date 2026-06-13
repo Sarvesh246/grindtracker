@@ -1109,7 +1109,6 @@ export default function ActiveWorkout({ day }: { day: string }) {
           remainingMs={restTimer.remainingMs}
           durationMs={restTimer.durationMs}
           paused={restTimer.paused}
-          bottomOffsetPx={0}
           onStop={restTimer.stop}
           onAdd={restTimer.addSeconds}
           onPause={restTimer.pause}
