@@ -1371,11 +1371,11 @@ export default function ActiveWorkout({ day }: { day: string }) {
       {!restTimer.active && (
       <div className="wo-fixed-bar" style={{
         position: 'fixed',
-        bottom: 0,
+        bottom: 'calc(env(safe-area-inset-bottom) - 34px)',
         paddingTop: '12px',
         paddingLeft: '16px',
         paddingRight: '16px',
-        paddingBottom: 'max(16px, env(safe-area-inset-bottom))',
+        paddingBottom: '16px',
         backgroundColor: 'var(--bg)',
         borderTop: '1px solid var(--border)',
         zIndex: 50,

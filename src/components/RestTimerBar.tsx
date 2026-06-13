@@ -59,11 +59,11 @@ export default function RestTimerBar({
       className="wo-fixed-bar"
       style={{
         position: 'fixed',
-        bottom: 0,
-        // Fill flush to the physical bottom: the bar background extends through
-        // the home-indicator safe area (so there's no black strip below it) while
-        // the controls stay clear of the indicator. Min 8px when there's no inset.
-        paddingBottom: 'max(8px, env(safe-area-inset-bottom))',
+        // Drop to the true physical bottom. Under viewport-fit=cover this is 0
+        // (env = the indicator height); without cover env is 0, so this pushes the
+        // bar down by the indicator height into that zone instead of resting above it.
+        bottom: 'calc(env(safe-area-inset-bottom) - 34px)',
+        paddingBottom: '8px',
         backgroundColor: 'var(--surface-elevated)',
         borderTop: '1px solid var(--border)',
         boxShadow: '0 -4px 16px rgba(0,0,0,0.4)',
