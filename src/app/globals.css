@@ -220,20 +220,28 @@ select:focus-visible,
   border: 0;
 }
 
-/* Bottom nav — a normal flow flex child at the bottom of the .app-shell column,
-   NOT position:fixed. As a flow element in a non-scrolling shell it is pinned to
-   the bottom edge by layout and can never strand mid-screen. */
+/* Bottom nav — position:fixed, anchored to the TRUE viewport bottom (bottom:0),
+   exactly like the finish/rest bars below it. It is safe to fix here because
+   <body> is locked (overflow:hidden) and neither .app-shell nor .app-main create
+   a containing block (no transform/filter/will-change) — so this anchors to the
+   layout viewport and can't strand mid-screen on iOS.
+   The home-indicator inset is absorbed INTO the bar's own height (height =
+   content 64px + inset, with the inset as padding-bottom) rather than pushing the
+   whole bar upward, so the bar background reaches the physical screen edge while
+   the icons stay clear of the indicator. Bar height is controlled by the 64px
+   below. */
 .bottom-nav {
-  flex: 0 0 auto;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
   background-color: var(--surface);
   border-top: 1px solid var(--border);
   display: flex;
   align-items: stretch;
   z-index: 100;
-  /* Fills through the home-indicator safe area to the true bottom; min 8px when
-     there's no inset. (env is real now that the app declares standalone — see
-     layout.tsx apple-mobile-web-app-capable.) */
-  padding-bottom: max(8px, env(safe-area-inset-bottom));
+  height: calc(64px + env(safe-area-inset-bottom));
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 /* Workout Manager modal — bottom sheet on mobile, centered dialog on desktop */
@@ -359,12 +367,11 @@ select:focus-visible,
    --------------------------------------------------------------------------- */
 
 /* The app shell: a fixed, full-viewport, non-scrolling flex column. Because the
-   shell itself never scrolls, the bottom nav (a flow child below) is pinned to
-   the bottom edge by layout — it cannot strand mid-screen — and the body can
-   never be left panned after the iOS keyboard dismisses. This single structural
-   choice is what makes all the bottom bars permanently stable in a standalone
-   PWA. (No `transform`/`filter`/`will-change:transform` here or on .app-main —
-   those would create a containing block and re-trap position:fixed bars.) */
+   shell itself never scrolls and <body> is locked, the body can never be left
+   panned after the iOS keyboard dismisses, and the fixed bottom bars (nav,
+   finish, rest) all anchor to the layout viewport bottom. Keep this and .app-main
+   free of `transform`/`filter`/`will-change:transform` — those would create a
+   containing block and re-trap those position:fixed bars to the shell. */
 .app-shell {
   position: fixed;
   /* Explicit longhand offsets + an explicit dynamic-viewport height so the shell
@@ -393,6 +400,10 @@ select:focus-visible,
   /* Keep the rubber-band inside this container so it can't bubble to the shell. */
   overscroll-behavior-y: contain;
   padding-top: env(safe-area-inset-top);
+  /* Clear the now-fixed bottom nav (64px + home-indicator inset) so the last of
+     the page content can scroll fully above it. Overridden on desktop (>=768px),
+     where the bottom nav is hidden. */
+  padding-bottom: calc(64px + env(safe-area-inset-bottom));
 }
 
 /* Top nav: rendered always, hidden on mobile, shown >=768px.
