@@ -364,7 +364,15 @@ select:focus-visible,
    those would create a containing block and re-trap position:fixed bars.) */
 .app-shell {
   position: fixed;
-  inset: 0;
+  /* Explicit longhand offsets + an explicit dynamic-viewport height so the shell
+     fills the whole screen even where iOS doesn't stretch a fixed box from
+     top:0/bottom:0 alone (without the height it sizes to its content, which
+     pinned the nav to the bottom of the CONTENT instead of the screen). */
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   background-color: var(--bg);
