@@ -1,7 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { REST_PRESETS, getExerciseRest, setExerciseRest } from '@/lib/hooks/useRestTimer'
-import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
 
 interface Props {
   exerciseId: string
@@ -9,7 +8,6 @@ interface Props {
   remainingMs: number
   durationMs: number
   paused: boolean
-  bottomOffsetPx?: number
   onStop: () => void
   onAdd: (sec: number) => void
   onPause: () => void
@@ -35,7 +33,6 @@ export default function RestTimerBar({
   remainingMs,
   durationMs,
   paused,
-  bottomOffsetPx = 0,
   onStop,
   onAdd,
   onPause,
@@ -44,12 +41,6 @@ export default function RestTimerBar({
   const [open, setOpen] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
   const [rest, setRest] = useState<number>(() => getExerciseRest(exerciseId))
-  // Glue the bar to the visible bottom edge: positive while the on-screen
-  // keyboard is open (sits on top of it), negative when iOS leaves the layout
-  // viewport panned after dismissal (would otherwise strand the bar mid-screen),
-  // 0 in the normal aligned state so the resting position is plain bottom:0.
-  const keyboardInset = useKeyboardInset()
-  const bottomPx = bottomOffsetPx + keyboardInset
 
   // Re-sync the per-exercise rest preference from localStorage whenever the
   // active exercise changes (an external store, read client-side only).
@@ -68,11 +59,11 @@ export default function RestTimerBar({
       className="wo-fixed-bar"
       style={{
         position: 'fixed',
-        bottom: bottomPx,
-        // The safe area is covered by the keyboard while it's open, so the
-        // inset padding only applies when the bar sits at the true screen edge
-        // (offset <= 0 — at rest, or re-glued down over a stranded viewport pan).
-        paddingBottom: bottomPx > 0 ? 0 : 'env(safe-area-inset-bottom)',
+        // Drop to the true physical bottom. Under viewport-fit=cover this is 0
+        // (env = the indicator height); without cover env is 0, so this pushes the
+        // bar down by the indicator height into that zone instead of resting above it.
+        bottom: 'calc(env(safe-area-inset-bottom) - 34px)',
+        paddingBottom: '8px',
         backgroundColor: 'var(--surface-elevated)',
         borderTop: '1px solid var(--border)',
         boxShadow: '0 -4px 16px rgba(0,0,0,0.4)',
