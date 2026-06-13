@@ -1375,7 +1375,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         paddingTop: '12px',
         paddingLeft: '16px',
         paddingRight: '16px',
-        paddingBottom: 'calc(12px + env(safe-area-inset-bottom))',
+        paddingBottom: '16px',
         backgroundColor: 'var(--bg)',
         borderTop: '1px solid var(--border)',
         zIndex: 50,

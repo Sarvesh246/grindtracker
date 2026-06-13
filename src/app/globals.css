@@ -230,7 +230,8 @@ select:focus-visible,
   display: flex;
   align-items: stretch;
   z-index: 100;
-  padding-bottom: env(safe-area-inset-bottom);
+  /* Sit flush at the very bottom — no home-indicator reserve. */
+  padding-bottom: 8px;
 }
 
 /* Workout Manager modal — bottom sheet on mobile, centered dialog on desktop */

@@ -60,9 +60,9 @@ export default function RestTimerBar({
       style={{
         position: 'fixed',
         bottom: 0,
-        // Always pinned to the bottom; pad for the home indicator. The keyboard
+        // Sit flush at the very bottom (no home-indicator reserve). The keyboard
         // simply appears on top of the bar — the bar never moves.
-        paddingBottom: 'env(safe-area-inset-bottom)',
+        paddingBottom: '8px',
         backgroundColor: 'var(--surface-elevated)',
         borderTop: '1px solid var(--border)',
         boxShadow: '0 -4px 16px rgba(0,0,0,0.4)',
