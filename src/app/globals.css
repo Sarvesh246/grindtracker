@@ -230,10 +230,10 @@ select:focus-visible,
   display: flex;
   align-items: stretch;
   z-index: 100;
-  padding-bottom: 8px;
-  /* Drop to the true physical bottom: 0 under viewport-fit=cover (env = the
-     indicator height), or pushed down into the indicator zone without cover. */
-  margin-bottom: calc(env(safe-area-inset-bottom) - 34px);
+  /* Fills through the home-indicator safe area to the true bottom; min 8px when
+     there's no inset. (env is real now that the app declares standalone — see
+     layout.tsx apple-mobile-web-app-capable.) */
+  padding-bottom: max(8px, env(safe-area-inset-bottom));
 }
 
 /* Workout Manager modal — bottom sheet on mobile, centered dialog on desktop */
