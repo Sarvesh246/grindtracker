@@ -49,7 +49,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <meta name="mobile-web-app-capable" content="yes" />
+        {/* iOS only enters true edge-to-edge standalone mode — honoring
+            black-translucent and exposing env(safe-area-inset-*) — via the
+            apple-prefixed flag. Next's appleWebApp.capable emits only the
+            non-prefixed `mobile-web-app-capable`, so without this the bottom
+            safe area stays 0 and fixed bars can't reach under the home indicator. */}
+        <meta name="apple-mobile-web-app-capable" content="yes" />
       </head>
       <body>
         <ThemeProvider initialTheme={theme}>{children}</ThemeProvider>

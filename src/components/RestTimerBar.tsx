@@ -59,11 +59,11 @@ export default function RestTimerBar({
       className="wo-fixed-bar"
       style={{
         position: 'fixed',
-        // Drop to the true physical bottom. Under viewport-fit=cover this is 0
-        // (env = the indicator height); without cover env is 0, so this pushes the
-        // bar down by the indicator height into that zone instead of resting above it.
-        bottom: 'calc(env(safe-area-inset-bottom) - 34px)',
-        paddingBottom: '8px',
+        bottom: 0,
+        // Bar background fills through the home-indicator safe area to the true
+        // bottom; controls stay clear of the indicator. (env is real now that the
+        // app declares apple-mobile-web-app-capable — see layout.tsx.)
+        paddingBottom: 'max(8px, env(safe-area-inset-bottom))',
         backgroundColor: 'var(--surface-elevated)',
         borderTop: '1px solid var(--border)',
         boxShadow: '0 -4px 16px rgba(0,0,0,0.4)',
