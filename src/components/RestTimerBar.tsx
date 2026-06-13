@@ -60,9 +60,10 @@ export default function RestTimerBar({
       style={{
         position: 'fixed',
         bottom: 0,
-        // Sit flush at the very bottom (no home-indicator reserve). The keyboard
-        // simply appears on top of the bar — the bar never moves.
-        paddingBottom: '8px',
+        // Fill flush to the physical bottom: the bar background extends through
+        // the home-indicator safe area (so there's no black strip below it) while
+        // the controls stay clear of the indicator. Min 8px when there's no inset.
+        paddingBottom: 'max(8px, env(safe-area-inset-bottom))',
         backgroundColor: 'var(--surface-elevated)',
         borderTop: '1px solid var(--border)',
         boxShadow: '0 -4px 16px rgba(0,0,0,0.4)',

@@ -230,8 +230,9 @@ select:focus-visible,
   display: flex;
   align-items: stretch;
   z-index: 100;
-  /* Sit flush at the very bottom — no home-indicator reserve. */
-  padding-bottom: 8px;
+  /* Fill flush to the physical bottom through the home-indicator safe area
+     (once viewport-fit=cover is active); min 8px when there's no inset. */
+  padding-bottom: max(8px, env(safe-area-inset-bottom));
 }
 
 /* Workout Manager modal — bottom sheet on mobile, centered dialog on desktop */
