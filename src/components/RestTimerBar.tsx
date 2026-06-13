@@ -1,7 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { REST_PRESETS, getExerciseRest, setExerciseRest } from '@/lib/hooks/useRestTimer'
-import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
 
 interface Props {
   exerciseId: string
@@ -42,10 +41,6 @@ export default function RestTimerBar({
   const [open, setOpen] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
   const [rest, setRest] = useState<number>(() => getExerciseRest(exerciseId))
-  // Lift the bar to ride on top of the keyboard while it's open; 0 at rest, where
-  // the bar pins to the viewport bottom. (Resting stability comes from the fixed
-  // app shell — see useKeyboardInset.)
-  const bottomPx = useKeyboardInset()
 
   // Re-sync the per-exercise rest preference from localStorage whenever the
   // active exercise changes (an external store, read client-side only).
@@ -64,10 +59,10 @@ export default function RestTimerBar({
       className="wo-fixed-bar"
       style={{
         position: 'fixed',
-        bottom: bottomPx,
-        // At rest, pad for the home indicator; while the keyboard covers the
-        // bottom (bottomPx > 0) that safe area is hidden, so drop the padding.
-        paddingBottom: bottomPx > 0 ? 0 : 'env(safe-area-inset-bottom)',
+        bottom: 0,
+        // Always pinned to the bottom; pad for the home indicator. The keyboard
+        // simply appears on top of the bar — the bar never moves.
+        paddingBottom: 'env(safe-area-inset-bottom)',
         backgroundColor: 'var(--surface-elevated)',
         borderTop: '1px solid var(--border)',
         boxShadow: '0 -4px 16px rgba(0,0,0,0.4)',

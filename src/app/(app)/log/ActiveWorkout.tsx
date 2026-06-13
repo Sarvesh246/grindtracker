@@ -12,7 +12,6 @@ import { deleteIncompleteSessions } from '@/lib/utils/sessions'
 import { advanceIndex, effectiveSequence } from '@/lib/utils/rotation'
 import type { UserRotation } from '@/lib/types'
 import { useRestTimer } from '@/lib/hooks/useRestTimer'
-import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
 import RestTimerBar from '@/components/RestTimerBar'
 import PlateCalculator from '@/components/PlateCalculator'
 import CompletionModal from './CompletionModal'
@@ -101,9 +100,6 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const [plateCalcTarget, setPlateCalcTarget] = useState<{ key: string; current: number } | null>(null)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   const restTimer = useRestTimer()
-  // Keeps the fixed finish bar glued to the visible bottom edge while the
-  // on-screen keyboard is open (RestTimerBar does the same internally).
-  const keyboardInset = useKeyboardInset()
 
   useEffect(() => {
     timerRef.current = setInterval(() => {
@@ -1371,16 +1367,15 @@ export default function ActiveWorkout({ day }: { day: string }) {
       </div>
 
       {/* Finish button — hidden while the rest bar owns the bottom edge.
-          Like the rest bar, it glues to the visible bottom while the on-screen
-          keyboard is open so iOS can't pan it mid-content. */}
+          Always pinned to the viewport bottom; the keyboard appears on top of it. */}
       {!restTimer.active && (
       <div className="wo-fixed-bar" style={{
         position: 'fixed',
-        bottom: keyboardInset,
+        bottom: 0,
         paddingTop: '12px',
         paddingLeft: '16px',
         paddingRight: '16px',
-        paddingBottom: keyboardInset > 0 ? '12px' : 'calc(12px + env(safe-area-inset-bottom))',
+        paddingBottom: 'calc(12px + env(safe-area-inset-bottom))',
         backgroundColor: 'var(--bg)',
         borderTop: '1px solid var(--border)',
         zIndex: 50,

@@ -500,11 +500,10 @@ select:focus-visible,
   grid-template-columns: 1fr;
 }
 
-/* Active-workout fixed bars: full-width on mobile. They anchor to the viewport
-   bottom; `bottom` is offset up by the keyboard height (useKeyboardInset) so the
-   bar rides on top of the on-screen keyboard while typing reps/weights. No
-   compositor hack needed — content scrolls inside .app-main, not <body>, so the
-   viewport-fixed bar is never repaint-shifted by scrolling. */
+/* Active-workout fixed bars: full-width on mobile, pinned to the viewport bottom.
+   No keyboard tracking — the keyboard just appears on top of the bar. No
+   compositor hack needed either: content scrolls inside .app-main, not <body>,
+   so the viewport-fixed bar is never repaint-shifted by scrolling. */
 .wo-fixed-bar {
   left: 0;
   right: 0;
