@@ -13,7 +13,12 @@ export const metadata: Metadata = {
   },
   appleWebApp: {
     capable: true,
-    statusBarStyle: 'black-translucent',
+    // Do NOT set statusBarStyle to 'black-translucent' — it triggers a confirmed
+    // iOS 26+ WebKit bug where the viewport is offset upward by the status bar
+    // height (~59px), leaving an equal dead gap at the bottom of the screen.
+    // With 'default' (or omitted), iOS standalone mode uses display:standalone +
+    // the manifest background_color to fill safe areas correctly.
+    statusBarStyle: 'default',
     title: 'GRIND',
   },
 }
@@ -49,11 +54,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        {/* iOS only enters true edge-to-edge standalone mode — honoring
-            black-translucent and exposing env(safe-area-inset-*) — via the
-            apple-prefixed flag. Next's appleWebApp.capable emits only the
-            non-prefixed `mobile-web-app-capable`, so without this the bottom
-            safe area stays 0 and fixed bars can't reach under the home indicator. */}
+        {/* Next.js appleWebApp.capable only emits the non-prefixed
+            `mobile-web-app-capable` meta tag. The apple-prefixed version is
+            still required on iOS for proper standalone mode behaviour. */}
         <meta name="apple-mobile-web-app-capable" content="yes" />
       </head>
       <body>
