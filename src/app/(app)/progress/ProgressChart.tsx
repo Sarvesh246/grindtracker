@@ -94,11 +94,15 @@ export default function ProgressChart({ data }: { data: ChartPoint[] }) {
   const showAllLabels = data.length <= 6
   const tickInterval = showAllLabels ? 0 : Math.floor(data.length / 5)
 
+  // Size the y-axis gutter from the widest tick label so 4–5 digit values don't clip.
+  const maxTickLen = Math.max(String(yMin).length, String(yMax).length)
+  const yAxisWidth = Math.max(36, maxTickLen * 9 + 8)
+
   return (
-    <ResponsiveContainer width="100%" height={200}>
+    <ResponsiveContainer width="100%" height={216}>
       <LineChart
         data={data}
-        margin={{ top: 8, right: 28, bottom: 8, left: -8 }}
+        margin={{ top: 8, right: 32, bottom: 4, left: 4 }}
       >
         <CartesianGrid
           strokeDasharray="3 3"
@@ -112,6 +116,8 @@ export default function ProgressChart({ data }: { data: ChartPoint[] }) {
           tickLine={false}
           axisLine={false}
           interval={tickInterval}
+          height={36}
+          tickMargin={12}
         />
         <YAxis
           stroke="transparent"
@@ -120,7 +126,7 @@ export default function ProgressChart({ data }: { data: ChartPoint[] }) {
           axisLine={false}
           domain={[yMin, yMax]}
           tickFormatter={(v) => v === 0 ? 'BW' : String(v)}
-          width={36}
+          width={yAxisWidth}
         />
         <Tooltip
           content={<CustomTooltip />}
