@@ -79,7 +79,7 @@ export default function LeaderboardClient({ userId }: Props) {
 
   return (
     <div className="page page--narrow" style={{
-      minHeight: '100dvh',
+      minHeight: '100%',
       backgroundColor: 'var(--bg)',
       padding: '24px 16px',
       paddingBottom: 'calc(80px + env(safe-area-inset-bottom))',

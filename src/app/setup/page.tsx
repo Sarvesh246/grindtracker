@@ -104,8 +104,10 @@ export default function SetupPage() {
 
   return (
     <div style={{
-      minHeight: '100dvh',
+      minHeight: '100%',
       backgroundColor: 'var(--bg)',
+      color: 'var(--text-primary)',
+      fontFamily: "'DM Sans', sans-serif",
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
