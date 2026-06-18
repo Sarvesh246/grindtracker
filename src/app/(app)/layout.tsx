@@ -13,8 +13,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <UnitProvider initialUnit={initialUnit}>
     {/* Fixed, non-scrolling app shell. Only .app-main scrolls; the bottom nav is
-        a flow child pinned at the bottom by layout (never position:fixed), so it
-        can't strand. See .app-shell in globals.css. */}
+        position:fixed at the viewport bottom (like the finish/rest bars) and
+        can't strand because <body> is locked and nothing creates a containing
+        block. See .bottom-nav / .app-shell in globals.css. */}
     <div className="app-shell">
       {/* Top nav (desktop) and bottom nav (mobile) are both rendered; CSS at the
           768px breakpoint shows exactly one — no JS width detection. */}
