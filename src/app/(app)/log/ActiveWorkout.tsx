@@ -100,6 +100,11 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const [plateCalcTarget, setPlateCalcTarget] = useState<{ key: string; current: number } | null>(null)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   const restTimer = useRestTimer()
+  // handleCheck reads this after an `await`, by which point another set may have
+  // been checked (and re-rendered) in the meantime — the `logs` captured in its
+  // own closure would be stale. The ref always reflects the latest committed state.
+  const logsRef = useRef<LogMap>(logs)
+  useEffect(() => { logsRef.current = logs }, [logs])
 
   useEffect(() => {
     timerRef.current = setInterval(() => {
@@ -402,11 +407,13 @@ export default function ActiveWorkout({ day }: { day: string }) {
     setUndoState({ key, exerciseId, setNumber, expiresAt: Date.now() + 5000 })
 
     // Don't start a rest countdown when this check completes the whole workout —
-    // there's nothing left to rest for. `logs` still holds the pre-check state, so
-    // treat the just-checked key as processed when projecting completion.
+    // there's nothing left to rest for. Read from the ref (latest committed state)
+    // rather than the `logs` closed over at call time — another set may have been
+    // checked while this one's upsert was in flight above. The pre-check state
+    // still needs the just-checked key treated as processed when projecting completion.
     const willAllBeProcessed =
       totalSets() > 0 &&
-      Object.entries(logs).every(([k, l]) => (k === key ? true : l.checked || l.skipped))
+      Object.entries(logsRef.current).every(([k, l]) => (k === key ? true : l.checked || l.skipped))
 
     if (!logEntry.isWarmup && !willAllBeProcessed) {
       restTimer.start(exerciseId)
@@ -520,6 +527,59 @@ export default function ActiveWorkout({ day }: { day: string }) {
     }))
   }
 
+  /**
+   * Remove an added (bonus) set entirely — as opposed to skipping, which keeps
+   * the slot but marks it not-done. Only valid for sets beyond sets_target.
+   * Any bonus sets after the deleted one are shifted down by one so the
+   * remaining sets stay contiguous (set_number 1..total, no gaps).
+   */
+  async function handleDeleteSet(exerciseId: string, setNumber: number) {
+    const ex = exercises.find(e => e.id === exerciseId)
+    if (!ex) return
+    const currentExtras = extraSets[exerciseId] ?? 0
+    const total = ex.sets_target + currentExtras
+    if (setNumber <= ex.sets_target || setNumber > total) return
+
+    if (sessionId) {
+      await supabase
+        .from('session_logs')
+        .delete()
+        .eq('session_id', sessionId)
+        .eq('exercise_id', exerciseId)
+        .eq('set_number', setNumber)
+      // Shift every later bonus set's DB row down by one to fill the gap.
+      for (let s = setNumber; s < total; s++) {
+        await supabase
+          .from('session_logs')
+          .update({ set_number: s })
+          .eq('session_id', sessionId)
+          .eq('exercise_id', exerciseId)
+          .eq('set_number', s + 1)
+      }
+    }
+
+    setLogs(prev => {
+      const next = { ...prev }
+      for (let s = setNumber; s < total; s++) {
+        const laterKey = `${exerciseId}-${s + 1}`
+        if (next[laterKey]) next[`${exerciseId}-${s}`] = next[laterKey]
+      }
+      delete next[`${exerciseId}-${total}`]
+      // The deleted set may have held the live PR — recompute the best.
+      setPreviousBests(pb => ({ ...pb, [exerciseId]: bestFromLogs(exerciseId, next) }))
+      return next
+    })
+    setExtraSets(prev => ({ ...prev, [exerciseId]: currentExtras - 1 }))
+    // The shift above moves every later set's data down one slot, so an in-progress
+    // edit needs to follow it — otherwise editingKey keeps pointing at a set number
+    // that now holds a DIFFERENT set's data, putting the wrong row in edit mode.
+    if (editingKey?.startsWith(`${exerciseId}-`)) {
+      const editNum = parseInt(editingKey.slice(exerciseId.length + 1), 10)
+      if (editNum === setNumber) setEditingKey(null)
+      else if (editNum > setNumber) setEditingKey(`${exerciseId}-${editNum - 1}`)
+    }
+  }
+
   async function handleSkipSet(exerciseId: string, setNumber: number) {
     const key = `${exerciseId}-${setNumber}`
     const entry = logs[key]
@@ -589,6 +649,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
   async function handleSwapExercise(newExercise: Exercise) {
     if (!swapTarget || !sessionId) return
     const oldExercise = exercises.find(e => e.id === swapTarget)
+    const oldExtras = extraSets[swapTarget] ?? 0
 
     await supabase
       .from('session_logs')
@@ -616,6 +677,12 @@ export default function ActiveWorkout({ day }: { day: string }) {
         setPreviousBests(prev => ({ ...prev, [newExercise.id]: prevBest }))
       }
     }
+    // Seed the baseline too — bestFromLogs (used by undo/edit/delete-set to
+    // recompute the live PR bar) falls back to baselineBests, which is otherwise
+    // only ever populated in initSession. Without this, the first undo/edit/delete
+    // on the swapped-in exercise would collapse its PR bar to null even though a
+    // real previous best was just fetched above.
+    setBaselineBests(prev => (prev[newExercise.id] !== undefined ? prev : { ...prev, [newExercise.id]: prevBest }))
 
     setExercises(prev => {
       const idx = prev.findIndex(e => e.id === swapTarget)
@@ -628,7 +695,12 @@ export default function ActiveWorkout({ day }: { day: string }) {
     setLogs(prev => {
       const next = { ...prev }
       if (oldExercise) {
-        for (let s = 1; s <= oldExercise.sets_target; s++) {
+        // Clear every set for the old exercise, including bonus sets beyond
+        // sets_target — otherwise their stale entries (with logIds pointing at
+        // DB rows already deleted above) linger in state and can resurface as
+        // already-"checked" sets if this same exercise is swapped back in later.
+        const oldTotal = oldExercise.sets_target + oldExtras
+        for (let s = 1; s <= oldTotal; s++) {
           delete next[`${swapTarget}-${s}`]
         }
       }
@@ -645,6 +717,17 @@ export default function ActiveWorkout({ day }: { day: string }) {
       }
       return next
     })
+    // Bonus sets don't carry across a swap — both sides start clean at their
+    // own sets_target, same as a freshly loaded exercise.
+    setExtraSets(prev => {
+      if (!(swapTarget in prev) && !(newExercise.id in prev)) return prev
+      const next = { ...prev }
+      delete next[swapTarget]
+      delete next[newExercise.id]
+      return next
+    })
+    // An in-progress edit on the exercise being swapped out no longer applies.
+    if (editingKey?.startsWith(`${swapTarget}-`)) setEditingKey(null)
 
     setSwapTarget(null)
   }
@@ -1307,6 +1390,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
               onSwap={() => setSwapTarget(ex.id)}
               onSkipSet={handleSkipSet}
               onUnskipSet={handleUnskipSet}
+              onDeleteSet={handleDeleteSet}
               onSkipExercise={handleSkipExercise}
               onUnskipExercise={handleUnskipExercise}
               onToggleWarmup={toggleWarmup}
@@ -1428,6 +1512,7 @@ interface ExerciseCardProps {
   onSwap: () => void
   onSkipSet: (exerciseId: string, setNumber: number) => void
   onUnskipSet: (exerciseId: string, setNumber: number) => void
+  onDeleteSet: (exerciseId: string, setNumber: number) => void
   onSkipExercise: (exerciseId: string) => void
   onUnskipExercise: (exerciseId: string) => void
   onToggleWarmup: (exerciseId: string, setNumber: number) => void
@@ -1441,7 +1526,7 @@ interface ExerciseCardProps {
 function ExerciseCard({
   exercise, extraSets, logs, previousBest, editingKey,
   onCheck, onUpdate, onSwap,
-  onSkipSet, onUnskipSet,
+  onSkipSet, onUnskipSet, onDeleteSet,
   onSkipExercise, onUnskipExercise,
   onToggleWarmup, onAddSet, onStartEdit, onSaveEdit, onPersistNote,
   onOpenPlateCalc,
@@ -1644,6 +1729,7 @@ function ExerciseCard({
               onToggleWarmup={() => onToggleWarmup(exercise.id, setNum)}
               onSkip={() => onSkipSet(exercise.id, setNum)}
               onUnskip={() => onUnskipSet(exercise.id, setNum)}
+              onDelete={() => onDeleteSet(exercise.id, setNum)}
             />
           )
         })}
@@ -1856,6 +1942,7 @@ interface SetRowProps {
   onToggleWarmup: () => void
   onSkip: () => void
   onUnskip: () => void
+  onDelete: () => void
 }
 
 function SetRow({
@@ -1863,7 +1950,7 @@ function SetRow({
   logEntry, prevReps,
   onCheck, onSaveEdit, onStartEdit,
   onWeightChange, onRepsChange, onNoteChange, onNoteBlur,
-  onToggleWarmup, onSkip, onUnskip,
+  onToggleWarmup, onSkip, onUnskip, onDelete,
 }: SetRowProps) {
   const { fromDisplay, fmt } = useUnit()
   const [justChecked, setJustChecked] = useState(false)
@@ -1893,6 +1980,9 @@ function SetRow({
       repsRef.current?.focus()
       return
     }
+    // The set is about to be saved (directly or via carried-forward reps) —
+    // any earlier "needs reps" warning no longer applies.
+    if (needsReps) setNeedsReps(false)
     setJustChecked(true)
     setTimeout(() => setJustChecked(false), 300)
     // On iOS, tapping the check button does NOT blur the input the user just
@@ -2104,32 +2194,63 @@ function SetRow({
           </span>
         )}
 
-        {/* Skip / unskip set button. Also enabled in edit mode so the user can
-            skip a previously logged set (handleSkipSet will delete the DB row). */}
-        <button
-          onClick={logEntry.skipped ? onUnskip : (logEntry.checked && !editing ? undefined : onSkip)}
-          disabled={logEntry.checked && !editing}
-          title={logEntry.skipped ? 'Undo skip' : 'Skip this set'}
-          aria-label={logEntry.skipped ? `Undo skip on set ${setNumber}` : `Skip set ${setNumber}`}
-          style={{
-            width: '44px', height: '44px', minWidth: '44px',
-            borderRadius: '9999px',
-            border: `2px solid ${logEntry.skipped ? 'rgba(239,68,68,0.5)' : 'var(--border)'}`,
-            backgroundColor: logEntry.skipped ? 'rgba(239,68,68,0.1)' : 'transparent',
-            cursor: (logEntry.checked && !editing) ? 'default' : 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            flexShrink: 0,
-            transition: 'border-color 150ms ease, background-color 150ms ease',
-            opacity: (logEntry.checked && !editing) ? 0.3 : 1,
-          }}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-           style={{ color: logEntry.skipped ? 'var(--danger)' : 'var(--border-strong)' }}>
-            <line x1="5" y1="12" x2="19" y2="12" />
-          </svg>
-        </button>
+        {/* Bonus sets (added via + ADD SET) get a Delete button that removes the
+            slot entirely — skipping doesn't make sense for a set that isn't part
+            of the planned workout. Sets that are part of the day keep Skip/Undo. */}
+        {isBonus ? (
+          <button
+            onClick={onDelete}
+            title="Delete this set"
+            aria-label={`Delete set ${setNumber}`}
+            style={{
+              width: '44px', height: '44px', minWidth: '44px',
+              borderRadius: '9999px',
+              border: '2px solid var(--border)',
+              backgroundColor: 'transparent',
+              cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+              transition: 'border-color 150ms ease, background-color 150ms ease',
+            }}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor"
+              strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+              style={{ color: 'var(--text-muted)' }}>
+              <polyline points="3 6 5 6 21 6" />
+              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+              <path d="M10 11v6" /><path d="M14 11v6" />
+              <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+            </svg>
+          </button>
+        ) : (
+          /* Skip / unskip set button. Also enabled in edit mode so the user can
+             skip a previously logged set (handleSkipSet will delete the DB row). */
+          <button
+            onClick={logEntry.skipped ? onUnskip : (logEntry.checked && !editing ? undefined : onSkip)}
+            disabled={logEntry.checked && !editing}
+            title={logEntry.skipped ? 'Undo skip' : 'Skip this set'}
+            aria-label={logEntry.skipped ? `Undo skip on set ${setNumber}` : `Skip set ${setNumber}`}
+            style={{
+              width: '44px', height: '44px', minWidth: '44px',
+              borderRadius: '9999px',
+              border: `2px solid ${logEntry.skipped ? 'rgba(239,68,68,0.5)' : 'var(--border)'}`,
+              backgroundColor: logEntry.skipped ? 'rgba(239,68,68,0.1)' : 'transparent',
+              cursor: (logEntry.checked && !editing) ? 'default' : 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+              transition: 'border-color 150ms ease, background-color 150ms ease',
+              opacity: (logEntry.checked && !editing) ? 0.3 : 1,
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+             style={{ color: logEntry.skipped ? 'var(--danger)' : 'var(--border-strong)' }}>
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+          </button>
+        )}
 
         {/* Check / Save button */}
         {editing ? (

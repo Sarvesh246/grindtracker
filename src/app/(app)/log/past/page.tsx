@@ -193,26 +193,38 @@ function LogPastContent() {
     const exs = data ?? []
     setExercises(exs)
 
+    const existingLogs = existingSessionId
+      ? (await supabase
+          .from('session_logs')
+          .select('exercise_id, set_number, weight, reps')
+          .eq('session_id', existingSessionId)).data ?? []
+      : []
+
+    // A live-logged session can have bonus sets beyond sets_target (added via
+    // + ADD SET in the active workout). Size each exercise's input array to fit
+    // the highest set_number actually saved — otherwise those rows are silently
+    // dropped from the form, and submitting this edit (which replaces ALL of the
+    // session's logs with exactly what's in setInputs) would permanently delete them.
+    const maxSetByExercise = new Map<string, number>()
+    for (const log of existingLogs) {
+      const cur = maxSetByExercise.get(log.exercise_id) ?? 0
+      if (log.set_number > cur) maxSetByExercise.set(log.exercise_id, log.set_number)
+    }
+
     const inputs: Record<string, SetInput[]> = {}
     for (const ex of exs) {
-      inputs[ex.id] = Array.from({ length: ex.sets_target }, () => ({
+      const length = Math.max(ex.sets_target, maxSetByExercise.get(ex.id) ?? 0)
+      inputs[ex.id] = Array.from({ length }, () => ({
         weight: '',
         reps: parseDefaultReps(ex.reps_target),
       }))
     }
 
-    if (existingSessionId) {
-      const { data: existingLogs } = await supabase
-        .from('session_logs')
-        .select('exercise_id, set_number, weight, reps')
-        .eq('session_id', existingSessionId)
-
-      for (const log of existingLogs ?? []) {
-        if (inputs[log.exercise_id]?.[log.set_number - 1]) {
-          inputs[log.exercise_id][log.set_number - 1] = {
-            weight: log.weight !== null ? fmt(log.weight) : '',
-            reps: log.reps !== null ? String(log.reps) : '',
-          }
+    for (const log of existingLogs) {
+      if (inputs[log.exercise_id]?.[log.set_number - 1]) {
+        inputs[log.exercise_id][log.set_number - 1] = {
+          weight: log.weight !== null ? fmt(log.weight) : '',
+          reps: log.reps !== null ? String(log.reps) : '',
         }
       }
     }
@@ -354,7 +366,14 @@ function LogPastContent() {
         const reps = s.reps !== '' ? parseInt(s.reps) : null
         const prevBest = prevBests[ex.id] ?? null
         const isPR = weight !== null && prevBest !== null && weight > prevBest
-        if (isPR) prCount++
+        if (isPR) {
+          prCount++
+          // Raise the bar so later sets of the same exercise in this same
+          // submission compare against the new best, not the pre-workout one —
+          // otherwise three ascending sets all above the old best would each
+          // score as a separate PR instead of only the first that clears it.
+          prevBests[ex.id] = weight
+        }
         logsToInsert.push({ session_id: sessionId, exercise_id: ex.id, set_number: i + 1, weight, reps, is_pr: isPR })
       }
     }

@@ -37,19 +37,13 @@ export default async function HomePage() {
     stats = newStats
   }
 
-  // Reset stale streak: if the last workout was more than 1 day ago (a full day
-  // was missed), the streak is broken and should show 0.
-  if (stats && stats.current_streak > 0 && stats.last_workout_date) {
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const lastDate = new Date(stats.last_workout_date + 'T12:00:00')
-    lastDate.setHours(0, 0, 0, 0)
-    const diffDays = Math.round((today.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24))
-    if (diffDays > 1) {
-      await supabase.from('user_stats').update({ current_streak: 0 }).eq('user_id', user.id)
-      stats = { ...stats, current_streak: 0 }
-    }
-  }
+  // Stale-streak reset (if the last workout was more than 1 day ago) is done
+  // client-side in HomeDashboard, using the viewer's own local date — this
+  // server component runs on the server's clock/timezone, which for a global
+  // user base is very often NOT the viewer's, and would zero (or fail to zero)
+  // the streak up to a day early/late around the boundary. Same reasoning as
+  // `overdueDays` below, which was already moved client-side for this exact
+  // class of bug.
 
   // Last completed session
   const { data: lastSession } = await supabase
@@ -148,23 +142,9 @@ export default async function HomePage() {
     .eq('day_type', nextDay)
     .order('sort_order', { ascending: true })
 
-  // Stats: workouts this week
-  const weekStart = getWeekStart()
-  const { count: weeklyCount } = await supabase
-    .from('sessions')
-    .select('*', { count: 'exact', head: true })
-    .eq('user_id', user.id)
-    .not('completed_at', 'is', null)
-    .gte('completed_at', weekStart.toISOString())
-
-  // Stats: workouts this month
-  const monthStart = getMonthStart()
-  const { count: monthlyCount } = await supabase
-    .from('sessions')
-    .select('*', { count: 'exact', head: true })
-    .eq('user_id', user.id)
-    .not('completed_at', 'is', null)
-    .gte('completed_at', monthStart.toISOString())
+  // Weekly/monthly workout counts are bucketed client-side (HomeDashboard) from
+  // `completedDays` below, using the viewer's local week/month boundaries —
+  // same timezone reasoning as the streak reset above.
 
   // Total PRs
   const { count: totalPRs } = await supabase
@@ -175,6 +155,7 @@ export default async function HomePage() {
 
   return (
     <HomeDashboard
+      userId={user.id}
       stats={stats}
       lastSession={lastSession ?? null}
       lastSessionLogs={lastSessionLogs}
@@ -185,23 +166,8 @@ export default async function HomePage() {
       rotationIndex={rotation?.current_index ?? -1}
       lastTrainedByDay={lastTrainedByDay}
       firstName={firstName}
-      weeklyWorkouts={weeklyCount ?? 0}
-      monthlyWorkouts={monthlyCount ?? 0}
+      completedAt={(completedDays ?? []).map(r => r.completed_at).filter((v): v is string => v !== null)}
       totalPRs={totalPRs ?? 0}
     />
   )
-}
-
-function getMonthStart(): Date {
-  const now = new Date()
-  return new Date(now.getFullYear(), now.getMonth(), 1)
-}
-
-function getWeekStart(): Date {
-  const now = new Date()
-  const day = now.getDay()
-  const diff = now.getDate() - day + (day === 0 ? -6 : 1) // Monday
-  const monday = new Date(now.setDate(diff))
-  monday.setHours(0, 0, 0, 0)
-  return monday
 }

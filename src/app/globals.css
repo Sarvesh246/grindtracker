@@ -142,6 +142,12 @@ html.light {
   margin: 0;
   padding: 0;
   -webkit-tap-highlight-color: transparent;
+  /* Disables iOS Safari's ~300ms double-tap-to-zoom detection delay. Without
+     this, a tap that triggers a layout shift (e.g. expanding a note field)
+     can have its deferred "click" re-targeted at whatever element slides
+     under the original touch point by the time WebKit dispatches it —
+     symptom: tapping a control sometimes fires the one below/after it. */
+  touch-action: manipulation;
 }
 
 html,
@@ -767,4 +773,28 @@ select:focus-visible,
 }
 .wo-jump-item:hover {
   background-color: var(--surface-elevated);
+}
+
+/* ── Landscape phones ─────────────────────────────────────────────────────────
+   A rotated phone can be nearly as wide as a small desktop window (up to
+   ~930px) but only ~320–430px tall — a real desktop browser window in that
+   width range is essentially never that short, so max-height is a safe signal
+   for "rotated phone" that won't misfire on an actual narrow desktop window.
+   Without this, pages that treat "wide viewport" as "desktop" — page--workout
+   in particular, capped at 640px until the 1024px sidebar layout kicks in —
+   leave a big chunk of the extra width as unused side margin that portrait
+   mode never had. Guarded to max-width:1023px so an actual landscape TABLET
+   (which clears 1024px width and already gets the fuller sidebar/grid layouts,
+   and is comfortably taller than 500px anyway) is untouched. */
+@media (orientation: landscape) and (max-height: 500px) and (max-width: 1023px) {
+  .page--narrow,
+  .page--workout,
+  .page--profile,
+  .page--progress,
+  .page--wide {
+    max-width: 900px;
+  }
+  .wo-fixed-bar {
+    max-width: 900px;
+  }
 }
