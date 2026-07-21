@@ -14,7 +14,10 @@ interface Props {
   onResume: () => void
 }
 
-const ADD_OPTIONS: { label: string; sec: number }[] = [
+const ADJUST_OPTIONS: { label: string; sec: number }[] = [
+  { label: '−1:00', sec: -60 },
+  { label: '−30s', sec: -30 },
+  { label: '−15s', sec: -15 },
   { label: '+15s', sec: 15 },
   { label: '+30s', sec: 30 },
   { label: '+1:00', sec: 60 },
@@ -164,11 +167,11 @@ export default function RestTimerBar({
           )}
         </button>
 
-        {/* Add time (popover) */}
+        {/* Adjust time (popover) — add or subtract from the countdown */}
         <div style={{ position: 'relative', flexShrink: 0 }}>
           <button
             onClick={() => setAddOpen(o => !o)}
-            aria-label="Add time to rest timer"
+            aria-label="Adjust rest timer"
             aria-expanded={addOpen}
             style={{
               backgroundColor: 'var(--surface)',
@@ -187,16 +190,23 @@ export default function RestTimerBar({
               lineHeight: 1,
             }}
           >
-            +
+            ±
           </button>
           {addOpen && (
+            // 3x2 grid (subtract row, then add row) instead of one 6-wide row —
+            // six inline pill buttons don't fit a narrow phone (≤375px) without
+            // either overflowing the viewport or getting clipped by the popover's
+            // own edge. A fixed-width grid stays compact and never overflows
+            // regardless of where the ± button sits in the bar.
             <div
               style={{
                 position: 'absolute',
                 bottom: 'calc(100% + 8px)',
                 right: 0,
-                display: 'flex',
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, 1fr)',
                 gap: '6px',
+                width: '198px',
                 padding: '8px',
                 backgroundColor: 'var(--surface-elevated)',
                 border: '1px solid var(--border)',
@@ -205,7 +215,7 @@ export default function RestTimerBar({
                 zIndex: 1,
               }}
             >
-              {ADD_OPTIONS.map(opt => (
+              {ADJUST_OPTIONS.map(opt => (
                 <button
                   key={opt.sec}
                   onClick={() => {
@@ -214,15 +224,14 @@ export default function RestTimerBar({
                   }}
                   style={{
                     height: '34px',
-                    minWidth: '52px',
                     borderRadius: 'var(--radius-pill, 9999px)',
                     border: '1px solid var(--border)',
                     backgroundColor: 'transparent',
-                    color: 'var(--text-secondary)',
+                    color: opt.sec < 0 ? 'var(--danger)' : 'var(--text-secondary)',
                     fontSize: '13px',
                     fontFamily: 'var(--font-mono)',
                     cursor: 'pointer',
-                    padding: '0 12px',
+                    padding: '0 4px',
                     whiteSpace: 'nowrap',
                   }}
                 >

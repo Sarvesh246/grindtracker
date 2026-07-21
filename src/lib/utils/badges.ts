@@ -100,8 +100,13 @@ export async function checkAndAwardBadges(
 
   for (const [badgeId, condition] of Object.entries(conditions)) {
     if (condition && !earnedSet.has(badgeId)) {
-      await supabase.from('user_badges').insert({ user_id: userId, badge_id: badgeId })
-      newlyEarned.push(badgeId)
+      // Only report it as newly earned if the row actually persisted — otherwise
+      // a transient failure (or a concurrent insert from another tab/device)
+      // would still trigger the "badge earned!" celebration for a badge that
+      // was never saved, and re-fire on every subsequent workout since
+      // `earnedSet` would never come to include it.
+      const { error } = await supabase.from('user_badges').insert({ user_id: userId, badge_id: badgeId })
+      if (!error) newlyEarned.push(badgeId)
     }
   }
 

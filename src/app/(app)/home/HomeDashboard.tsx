@@ -1,12 +1,31 @@
 'use client'
-import { useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
 import { Session, UserStats } from '@/lib/types'
 import { getLevel, getXpInCurrentLevel, getXpRequiredForLevel, getXpToNextLevel } from '@/lib/utils/gamification'
 import { formatHeaderDate, formatShortDate, localDateKey } from '@/lib/utils/formatting'
 import { overdueDays } from '@/lib/utils/rotation'
 import WorkoutCalendar from '@/components/WorkoutCalendar'
 import { useUnit } from '@/lib/contexts/UnitContext'
+
+// "This week"/"this month" start in the VIEWER's local timezone — computed here
+// (client) rather than on the server, whose clock/timezone is very often not
+// the viewer's and would bucket a workout into the wrong week/month right
+// around the boundary. Same reasoning as `overdueDays`, computed client-side below.
+function getWeekStart(): Date {
+  const now = new Date()
+  const day = now.getDay()
+  const diff = now.getDate() - day + (day === 0 ? -6 : 1) // Monday
+  const monday = new Date(now)
+  monday.setDate(diff)
+  monday.setHours(0, 0, 0, 0)
+  return monday
+}
+function getMonthStart(): Date {
+  const now = new Date()
+  return new Date(now.getFullYear(), now.getMonth(), 1)
+}
 
 // The dismissed-overdue signature lives in localStorage and is read via
 // useSyncExternalStore so hydration stays clean (server snapshot = null, client
@@ -28,6 +47,7 @@ function readDismissedSig(): string | null {
 }
 
 interface Props {
+  userId: string
   stats: UserStats | null
   lastSession: Session | null
   lastSessionLogs: { exercise_name: string; weight: number | null; sets: number; reps: number | null }[]
@@ -38,8 +58,7 @@ interface Props {
   rotationIndex: number
   lastTrainedByDay: Record<string, string | null>
   firstName: string
-  weeklyWorkouts: number
-  monthlyWorkouts: number
+  completedAt: string[]
   totalPRs: number
 }
 
@@ -85,6 +104,7 @@ function ChevronRight({ color = 'currentColor' }: { color?: string }) {
 }
 
 export default function HomeDashboard({
+  userId,
   stats,
   lastSession,
   lastSessionLogs,
@@ -95,11 +115,11 @@ export default function HomeDashboard({
   rotationIndex,
   lastTrainedByDay,
   firstName,
-  weeklyWorkouts,
-  monthlyWorkouts,
+  completedAt,
   totalPRs,
 }: Props) {
   const router = useRouter()
+  const supabase = useMemo(() => createClient(), [])
   const { unitLabel, fmt } = useUnit()
 
   const xpTotal = stats?.xp_total ?? 0
@@ -108,9 +128,42 @@ export default function HomeDashboard({
   const levelSize = getXpRequiredForLevel(level)
   const xpToNext = getXpToNextLevel(xpTotal)
   const xpPercent = (xpInLevel / levelSize) * 100
-  const currentStreak = stats?.current_streak ?? 0
   const longestStreak = stats?.longest_streak ?? 0
   const totalWorkouts = stats?.total_workouts ?? 0
+
+  // Stale-streak reset, using the viewer's own local "today" (a server component
+  // would otherwise use the server's clock/timezone — see getWeekStart/getMonthStart
+  // above for the same reasoning). If the last workout is more than 1 local day
+  // ago, the streak is broken: reflect that immediately and persist the zero once.
+  const [streakOverride, setStreakOverride] = useState<number | null>(null)
+  const correctedStaleStreak = useRef(false)
+  useEffect(() => {
+    if (correctedStaleStreak.current) return
+    if (!stats || stats.current_streak <= 0 || !stats.last_workout_date) return
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const lastDate = new Date(stats.last_workout_date + 'T12:00:00')
+    lastDate.setHours(0, 0, 0, 0)
+    const diffDays = Math.round((today.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24))
+    if (diffDays > 1) {
+      correctedStaleStreak.current = true
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setStreakOverride(0)
+      supabase.from('user_stats').update({ current_streak: 0 }).eq('user_id', userId)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stats?.current_streak, stats?.last_workout_date])
+  const currentStreak = streakOverride ?? stats?.current_streak ?? 0
+
+  // Bucketed from the viewer's local time — see getWeekStart/getMonthStart above.
+  const weeklyWorkouts = useMemo(() => {
+    const start = getWeekStart().getTime()
+    return completedAt.filter(iso => new Date(iso).getTime() >= start).length
+  }, [completedAt])
+  const monthlyWorkouts = useMemo(() => {
+    const start = getMonthStart().getTime()
+    return completedAt.filter(iso => new Date(iso).getTime() >= start).length
+  }, [completedAt])
 
   const exercisePreview = nextDayExercises.length <= 2
     ? nextDayExercises.join(', ')

@@ -144,14 +144,17 @@ export function useRestTimer() {
   function addSeconds(delta: number) {
     setState(s => {
       if (!s.exerciseId) return s
-      const remainingMs = s.remainingMs + delta * 1000
+      // Clamp at 0 so subtracting more than what's left doesn't go negative
+      // (a negative remaining would render as e.g. "-0:05" until the next tick).
+      const remainingMs = Math.max(0, s.remainingMs + delta * 1000)
+      const durationMs = Math.max(0, s.durationMs + delta * 1000)
       // Re-arm the 10s/0s haptics if adding time lifts us back above the threshold.
       if (remainingMs > 10_000) tenSecFired.current = false
       if (remainingMs > 0) zeroFired.current = false
       // Bumping durationMs raises the countdown by delta: while running the next
       // tick recomputes remaining = durationMs - elapsed; while paused remainingMs
       // is the source of truth (kept in sync here for the progress bar ratio).
-      return { ...s, durationMs: s.durationMs + delta * 1000, remainingMs }
+      return { ...s, durationMs, remainingMs }
     })
   }
 

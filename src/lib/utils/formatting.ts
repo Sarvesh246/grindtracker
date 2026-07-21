@@ -3,7 +3,16 @@ export function formatDayType(dayType: string): string {
 }
 
 export function formatShortDate(date: string | Date): string {
-  return new Date(date).toLocaleDateString('en-US', {
+  // A bare 'YYYY-MM-DD' string parses as UTC midnight, which shifts the
+  // calendar day backward for any timezone behind UTC (the same trap
+  // localDateKey exists to avoid) — anchor it at local noon like the rest
+  // of the codebase does for stored date keys. Full timestamps (the current
+  // caller passes `completed_at`) already carry a time component and skip
+  // this branch, so behavior there is unchanged.
+  const d = typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)
+    ? new Date(date + 'T12:00:00')
+    : new Date(date)
+  return d.toLocaleDateString('en-US', {
     weekday: 'short',
     month: 'short',
     day: 'numeric',

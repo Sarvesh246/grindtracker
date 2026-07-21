@@ -37,18 +37,23 @@ export default function LeaderboardClient({ userId }: Props) {
   const [friendIds, setFriendIds] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [shareTarget, setShareTarget] = useState<{ entry: LeaderboardEntry; rank: number } | null>(null)
-  const isFetching = useRef(false)
+  // Tracks the most recently issued request. Earlier in-flight requests dropped
+  // their result outright when a newer one started — fine for the same category,
+  // but switching categories fast (e.g. PULL then LEGS before the first resolves)
+  // meant the second fetch was silently skipped, leaving stale/mismatched data
+  // on screen under the newly selected tab. Now every fetch runs; only the
+  // response matching the *latest* request is ever committed to state.
+  const requestIdRef = useRef(0)
 
   const fetchLeaderboard = useCallback(async (cat: Category, fIds: string[]) => {
-    if (isFetching.current) return
-    isFetching.current = true
+    const reqId = ++requestIdRef.current
     setLoading(true)
     const userIds = [userId, ...fIds]
     const { data, error } = await supabase.rpc('get_leaderboard', {
       p_day_type: cat,
       p_user_ids: userIds,
     })
-    isFetching.current = false
+    if (reqId !== requestIdRef.current) return
     setLoading(false)
     if (!error && data) {
       setEntries(data as LeaderboardEntry[])
