@@ -3,6 +3,13 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { UserProfile } from '@/lib/types'
 
+// Pin the projection instead of `select('*')`. Every column here is safe to
+// show to another user; selecting explicitly means a column added to
+// `user_profiles` later can't silently start leaking into friend search.
+const PROFILE_COLUMNS = 'id, username, display_name, avatar_url, created_at'
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 interface FriendRow {
   friendship_id: string
   profile: UserProfile
@@ -68,7 +75,7 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
 
     const { data: profiles } = await supabase
       .from('user_profiles')
-      .select('*')
+      .select(PROFILE_COLUMNS)
       .in('id', allIds)
 
     const profileMap = new Map((profiles ?? []).map(p => [p.id, p as UserProfile]))
@@ -124,11 +131,16 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
         ...pending.map(p => p.profile.id),
         ...sent.map(s => s.profile.id),
       ]
+      // `existingIds` is interpolated into a PostgREST filter string, so every
+      // element must be a syntactically valid uuid — a stray comma or paren
+      // would change the meaning of the filter. They come from Supabase, but
+      // filter that assumption rather than trusting it.
+      const safeIds = existingIds.filter(id => UUID_RE.test(id))
       const { data } = await supabase
         .from('user_profiles')
-        .select('*')
+        .select(PROFILE_COLUMNS)
         .ilike('username', `%${q}%`)
-        .not('id', 'in', `(${existingIds.join(',')})`)
+        .not('id', 'in', `(${safeIds.join(',')})`)
         .limit(6)
       setSearchResults((data ?? []) as UserProfile[])
     }, 350)

@@ -798,3 +798,43 @@ select:focus-visible,
     max-width: 900px;
   }
 }
+
+/* ── Feedback inbox (developer-only, /admin/feedback) ─────────────────────────
+   Two panes side by side once there's room; below 900px exactly one pane is
+   visible at a time (list, or detail after tapping a row) — the same
+   list→detail push a mail app uses on a phone. The wrapper carries
+   data-detail-open so the swap is pure CSS with no width detection in JS. */
+.inbox-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+  align-items: start;
+}
+
+@media (max-width: 899px) {
+  .inbox-layout[data-detail-open='true'] .inbox-list {
+    display: none;
+  }
+  .inbox-layout[data-detail-open='false'] .inbox-detail {
+    display: none;
+  }
+}
+
+@media (min-width: 900px) {
+  .inbox-layout {
+    grid-template-columns: 340px minmax(0, 1fr);
+    gap: 16px;
+  }
+  /* Both panes scroll independently under the fixed top nav. */
+  .inbox-list,
+  .inbox-detail {
+    position: sticky;
+    top: calc(var(--nav-h) + env(safe-area-inset-top) + 16px);
+    max-height: calc(100dvh - var(--nav-h) - env(safe-area-inset-top) - 48px);
+    overflow-y: auto;
+  }
+  /* The back affordance only exists in the stacked mobile layout. */
+  .inbox-back {
+    display: none !important;
+  }
+}

@@ -87,6 +87,24 @@ export interface UserDayCategory {
   created_at: string
 }
 
+export type FeedbackCategory = 'bug' | 'feature' | 'improvement' | 'other'
+
+export interface Feedback {
+  id: string
+  user_id: string
+  /** Identity snapshot taken at submit time — survives username changes. */
+  username: string | null
+  email: string | null
+  category: FeedbackCategory
+  message: string
+  /** Object paths in the private `feedback-images` bucket, not URLs. */
+  image_paths: string[]
+  is_anonymous: boolean
+  is_read: boolean
+  is_starred: boolean
+  created_at: string
+}
+
 export interface UserRotation {
   user_id: string
   mode: 'auto' | 'manual'

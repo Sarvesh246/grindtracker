@@ -10,6 +10,8 @@ import { useUnit } from '@/lib/contexts/UnitContext'
 import { getDefaultRest, setDefaultRest } from '@/lib/hooks/useRestTimer'
 import { useTheme } from '@/lib/contexts/ThemeContext'
 import ThemeToggle from '@/components/ThemeToggle'
+import FeedbackModal from '@/components/FeedbackModal'
+import Link from 'next/link'
 
 function FlameIcon({ size = 24, color = 'var(--accent-text)' }: { size?: number; color?: string }) {
   return (
@@ -96,6 +98,7 @@ interface Props {
   totalSets: number
   activeDayTimestamps: string[]
   allBadges: BadgeDefinition[]
+  isAdmin: boolean
 }
 
 export default function ProfileDashboard({
@@ -108,6 +111,7 @@ export default function ProfileDashboard({
   totalSets,
   activeDayTimestamps,
   allBadges,
+  isAdmin,
 }: Props) {
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
@@ -115,6 +119,7 @@ export default function ProfileDashboard({
   const { theme } = useTheme()
   const [tooltipBadgeId, setTooltipBadgeId] = useState<string | null>(null)
   const [badgesOpen, setBadgesOpen] = useState(false)
+  const [feedbackOpen, setFeedbackOpen] = useState(false)
   // Default rest time (min:sec), persisted to localStorage via the rest-timer hook.
   const [restMin, setRestMin] = useState(2)
   const [restSec, setRestSec] = useState(0)
@@ -717,8 +722,84 @@ export default function ProfileDashboard({
               />
             </div>
           </div>
+
+          <div style={{ height: '1px', backgroundColor: 'var(--border)' }} />
+
+          {/* Send feedback — the only entry point users have to reach me. */}
+          <button
+            onClick={() => setFeedbackOpen(true)}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              gap: '12px', width: '100%',
+              background: 'transparent', border: 'none', padding: 0,
+              cursor: 'pointer', textAlign: 'left',
+            }}
+          >
+            <div>
+              <div style={{ fontSize: '14px', color: 'var(--text-primary)', fontWeight: 600, marginBottom: '2px' }}>
+                Send Feedback
+              </div>
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                Report a bug or request a feature
+              </div>
+            </div>
+            <span style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: '32px', height: '32px', flexShrink: 0,
+              borderRadius: '9999px',
+              backgroundColor: 'var(--surface-elevated)',
+              border: '1px solid var(--border)',
+              color: 'var(--accent-text)',
+            }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+              </svg>
+            </span>
+          </button>
+
+          {/* Developer inbox. Rendered only for the admin account; the route
+              404s and RLS returns nothing for anyone else regardless. */}
+          {isAdmin && (
+            <>
+              <div style={{ height: '1px', backgroundColor: 'var(--border)' }} />
+              <Link
+                href="/admin/feedback"
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  gap: '12px', textDecoration: 'none',
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: '14px', color: 'var(--text-primary)', fontWeight: 600, marginBottom: '2px' }}>
+                    Feedback Inbox
+                  </div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                    Everything users have sent in
+                  </div>
+                </div>
+                <span style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: '32px', height: '32px', flexShrink: 0,
+                  borderRadius: '9999px',
+                  backgroundColor: 'var(--accent-wash)',
+                  border: '1px solid var(--border)',
+                  color: 'var(--accent-text)',
+                }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M4 4h16v16H4z" />
+                    <polyline points="4 7 12 13 20 7" />
+                  </svg>
+                </span>
+              </Link>
+            </>
+          )}
         </div>
       </div>
+
+      {/* Mounted only while open so each visit starts from a clean form. */}
+      {feedbackOpen && <FeedbackModal onClose={() => setFeedbackOpen(false)} />}
 
       {/* Badges */}
       <div style={{ marginBottom: '32px' }}>

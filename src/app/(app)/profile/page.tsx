@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import ProfileDashboard from './ProfileDashboard'
 import { ALL_BADGES } from '@/lib/utils/badges'
+import { isAdminEmail } from '@/lib/utils/admin'
 
 export default async function ProfilePage() {
   const supabase = await createClient()
@@ -79,6 +80,9 @@ export default async function ProfilePage() {
       totalSets={totalSets ?? 0}
       activeDayTimestamps={activeDayTimestamps}
       allBadges={ALL_BADGES}
+      // Controls only whether the inbox link is rendered — /admin/feedback
+      // guards itself and RLS is the real gate. See lib/utils/admin.ts.
+      isAdmin={isAdminEmail(user.email)}
     />
   )
 }

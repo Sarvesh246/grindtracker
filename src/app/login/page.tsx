@@ -1,11 +1,32 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
 export default function LoginPage() {
   const supabase = createClient()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Surface a failed OAuth round trip. /auth/callback redirects here with
+  // ?error=... when the provider refuses or the code exchange fails; without
+  // this the user just lands back on the login screen with no explanation.
+  // Read from location rather than useSearchParams so this stays a plain
+  // client component with no Suspense boundary.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const reason = params.get('error')
+    if (!reason) return
+    // Reading the URL is exactly the "sync from an external system" case; the
+    // effect runs once on mount and the state settles immediately.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setError(
+      reason === 'missing_code'
+        ? 'Sign in did not complete. Please try again.'
+        : `Could not sign you in: ${reason}`
+    )
+    // Drop the param so a refresh doesn't re-show a stale error.
+    window.history.replaceState({}, '', window.location.pathname)
+  }, [])
 
   const handleGoogleLogin = async () => {
     if (loading) return
