@@ -122,6 +122,11 @@ it can't be used to farm streak bonuses. `sessions.local_date` stores it.
   ids with the caller's accepted friendships — it previously trusted the client's
   array, which let any user read any other user's stats by uuid (fixed in `10`).
 - **Never trust a client-supplied number that feeds a leaderboard.** Derive it.
+- **A single `FOR ALL` policy is rarely right for a table two parties share.**
+  `friendships` had one, testing only "am I involved in this row" — which let a
+  requester accept their own request and let anyone insert a pre-accepted
+  friendship naming someone else as requester (fixed in `12`). Split by command
+  and assert what each one actually means: who may create, who may approve.
 - Security headers (CSP, HSTS, `frame-ancestors 'none'`) live in `next.config.ts`.
 - `src/proxy.ts` uses `getClaims()` (local JWKS verification) rather than
   `getUser()` (a network round trip per request), and caches the "profile exists"

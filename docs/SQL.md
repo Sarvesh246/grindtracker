@@ -15,7 +15,11 @@ Schema changes ship as standalone SQL snippets in [docs/sql/](sql/). Apply each 
 | [10-leaderboard-authz.sql](sql/10-leaderboard-authz.sql) | 10 | **Security fix.** `get_leaderboard` accepted any `p_user_ids` and ran `security definer`, so any signed-in user could read any other user's stats by uuid. Now intersects the request with the caller's own id + accepted friendships, pins `search_path`, and restricts EXECUTE to `authenticated`. Adds the indexes the RPC and username search need, plus sanity CHECK constraints on `session_logs.weight`/`reps`. |
 | [11-server-side-xp.sql](sql/11-server-side-xp.sql) | 11 | **Security fix.** XP/level/streak were computed in the browser and written straight to `user_stats` — anyone could set their own XP from devtools. Stats are now DERIVED server-side from `sessions` + `session_logs` by `grind_recompute_stats()`, exposed through the `complete_session` / `uncomplete_session` / `delete_session` / `refresh_stats` RPCs. Revokes client UPDATE on `user_stats` and column-restricts UPDATE on `sessions`. Adds `sessions.local_date` (streaks need the user's calendar date, not UTC) and seeds `user_stats` on signup. |
 
-Apply in order. **`09` must be applied before the feedback button will work** — until then, submitting fails and `/admin/feedback` shows an empty inbox. Once `02` is in, warm-up sets are excluded from PR detection and previous-best prefill. Once `03` is in, the profile page's body-weight card starts persisting. Until `06` is applied the rotation falls back to automatic (every day once) for everyone. **`07` is required for multi-user privacy** — until it's applied, every account shares (and can edit) one exercise catalog.
+| [12-friendship-authz.sql](sql/12-friendship-authz.sql) | 12 | **Security fix.** `friendships` had one `ALL` policy testing only "am I involved in this row", so a requester could accept their own request — or insert a pre-accepted friendship naming someone else as requester. Split into per-command policies: INSERT only as yourself and only `pending`, UPDATE only by the addressee and only `pending`→`accepted`, DELETE by either party. Adds status/no-self CHECKs and a unique index per pair. Also narrows `user_profiles` SELECT from `public` (readable by `anon` with just the publishable key) to `authenticated`. |
+
+Apply in order. **`10` does not actually close the leaderboard hole until `12` is
+applied** — `get_leaderboard` authorizes on `status = 'accepted'`, and until `12`
+any user can mint that acceptance for themselves. **`09` must be applied before the feedback button will work** — until then, submitting fails and `/admin/feedback` shows an empty inbox. Once `02` is in, warm-up sets are excluded from PR detection and previous-best prefill. Once `03` is in, the profile page's body-weight card starts persisting. Until `06` is applied the rotation falls back to automatic (every day once) for everyone. **`07` is required for multi-user privacy** — until it's applied, every account shares (and can edit) one exercise catalog.
 
 If you have multiple Supabase environments (e.g., preview + prod), run the same scripts on each.
 
@@ -33,8 +37,21 @@ this repo already calls the RPCs it introduces. The two must ship together:
    All-zero deltas mean applying `11` changes enforcement only. Non-zero deltas
    mean the stored values had drifted and will be corrected to what the logs
    justify.
-2. Apply `10`, then `11`.
+2. Apply `10`, then `11`, then `12`.
 3. Deploy the app.
+
+**`07` may never have been applied.** A `pg_tables` dump on 2026-07-22 showed
+`exercises.rowsecurity = false`, which is impossible if `07` ran to completion —
+it ends with `enable row level security`. Until it is applied, the exercise
+catalog has no row filtering at all: every account shares one catalog and, if
+`anon` holds table grants, an unauthenticated request carrying the publishable
+key can read and delete all of it. Check with:
+
+```sql
+select relrowsecurity from pg_class where relname = 'exercises';
+select column_name from information_schema.columns
+ where table_name='exercises' and column_name='user_id';
+```
 
 Deploying the app *before* the migrations breaks workout completion (the RPCs
 won't exist). Applying `11` *before* deploying breaks it too (the old client

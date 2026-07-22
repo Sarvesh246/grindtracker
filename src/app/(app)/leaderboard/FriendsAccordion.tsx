@@ -41,6 +41,10 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
   const [pending, setPending] = useState<PendingRow[]>([])
   const [sent, setSent] = useState<SentRow[]>([])
   const [revealRemove, setRevealRemove] = useState<string | null>(null)
+  // Surfaced when a friendship mutation is rejected — most often the unique-pair
+  // index, now that duplicate requests are a constraint violation rather than a
+  // silently-inserted second row.
+  const [actionError, setActionError] = useState<string | null>(null)
   const longPressRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const loadFriendsData = useCallback(async () => {
@@ -147,14 +151,46 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
   }, [query, userId, friends, pending, sent, supabase])
 
   async function sendRequest(targetId: string) {
-    await supabase.from('friendships').insert({ requester_id: userId, addressee_id: targetId })
+    // `status` is set explicitly rather than left to the column default: the
+    // INSERT policy (docs/sql/12-friendship-authz.sql) requires 'pending', and
+    // relying on a default to satisfy a policy is a silent dependency.
+    const { error } = await supabase.from('friendships').insert({
+      requester_id: userId,
+      addressee_id: targetId,
+      status: 'pending',
+    })
+
+    if (error) {
+      // Most likely the unique-pair index: a relationship already exists in one
+      // direction or the other.
+      setActionError(
+        error.code === '23505'
+          ? 'You already have a request or friendship with that user.'
+          : 'Could not send the request. Try again.'
+      )
+      return
+    }
+
+    setActionError(null)
     setQuery('')
     setSearchResults([])
     loadFriendsData()
   }
 
   async function acceptRequest(friendshipId: string) {
-    await supabase.from('friendships').update({ status: 'accepted' }).eq('id', friendshipId)
+    // Only the addressee can accept, enforced in Postgres — the requester has
+    // no UPDATE path at all, which is what prevents accepting your own request.
+    const { error } = await supabase
+      .from('friendships')
+      .update({ status: 'accepted' })
+      .eq('id', friendshipId)
+
+    if (error) {
+      setActionError('Could not accept the request. Try again.')
+      return
+    }
+
+    setActionError(null)
     loadFriendsData()
   }
 
@@ -239,6 +275,17 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
 
       {open && (
         <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {actionError && (
+            <div role="alert" style={{
+              fontSize: '13px',
+              color: 'var(--danger)',
+              fontFamily: "'DM Sans', sans-serif",
+              lineHeight: 1.4,
+            }}>
+              {actionError}
+            </div>
+          )}
+
           {/* Search */}
           <div>
             <input
