@@ -160,8 +160,19 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
     setSaving(true)
     setDeleteError('')
     try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        setDeleteError('Session expired. Sign in again and retry.')
+        return
+      }
+
       const { error } = deleteTarget.type === 'day'
-        ? await supabase.from('exercises').delete().eq('day_type', deleteTarget.key)
+        // Scope the day-wide delete to the owner explicitly. RLS ("own
+        // exercises") already constrains this, but a delete whose only filter
+        // is `day_type` is one policy regression away from wiping every user's
+        // "push" day. Defense in depth: never send an unscoped destructive
+        // filter over the wire.
+        ? await supabase.from('exercises').delete().eq('user_id', user.id).eq('day_type', deleteTarget.key)
         : await supabase.from('exercises').delete().eq('id', deleteTarget.id)
 
       if (error) {

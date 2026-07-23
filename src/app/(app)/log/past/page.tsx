@@ -2,10 +2,10 @@
 import { Suspense, useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Exercise } from '@/lib/types'
-import { getLevel } from '@/lib/utils/gamification'
+import { Exercise, UserStats } from '@/lib/types'
 import { checkAndAwardBadges } from '@/lib/utils/badges'
 import { haptic } from '@/lib/utils/haptics'
+import { localDateKey } from '@/lib/utils/formatting'
 import { useUnit } from '@/lib/contexts/UnitContext'
 
 function parseDefaultReps(repsTarget: string): string {
@@ -22,57 +22,6 @@ type SetInput = { weight: string; reps: string }
 
 type ExistingSession = { id: string; day_type: string; xp_earned: number }
 
-async function recalculateStreak(
-  supabase: ReturnType<typeof createClient>,
-  userId: string,
-  targetDate?: string,
-): Promise<{ current_streak: number; longest_streak: number; last_workout_date: string | null; streak_at_target: number }> {
-  const { data: sessions } = await supabase
-    .from('sessions')
-    .select('completed_at')
-    .eq('user_id', userId)
-    .not('completed_at', 'is', null)
-    .order('completed_at', { ascending: true })
-
-  if (!sessions || sessions.length === 0) {
-    return { current_streak: 0, longest_streak: 0, last_workout_date: null, streak_at_target: 0 }
-  }
-
-  const dateSet = new Set<string>()
-  for (const s of sessions) {
-    const d = new Date(s.completed_at)
-    dateSet.add(
-      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
-    )
-  }
-  const dates = Array.from(dateSet).sort()
-
-  let streak = 1
-  let longest = 1
-  // Track the running streak count at the specific date being saved
-  let streak_at_target = dates[0] === targetDate ? 1 : 0
-
-  for (let i = 1; i < dates.length; i++) {
-    const prev = new Date(dates[i - 1] + 'T12:00:00')
-    const curr = new Date(dates[i] + 'T12:00:00')
-    const diffDays = Math.round((curr.getTime() - prev.getTime()) / (1000 * 60 * 60 * 24))
-    if (diffDays === 1) {
-      streak++
-      if (streak > longest) longest = streak
-    } else {
-      streak = 1
-    }
-    if (dates[i] === targetDate) streak_at_target = streak
-  }
-
-  // Zero out streak if the last workout is more than 1 day from today (a missed day)
-  const todayMs = new Date().setHours(0, 0, 0, 0)
-  const lastMs = new Date(dates[dates.length - 1] + 'T12:00:00').setHours(0, 0, 0, 0)
-  const diffFromToday = Math.round((todayMs - lastMs) / (1000 * 60 * 60 * 24))
-  const activeStreak = diffFromToday > 1 ? 0 : streak
-
-  return { current_streak: activeStreak, longest_streak: longest, last_workout_date: dates[dates.length - 1], streak_at_target }
-}
 
 function LogPastContent() {
   const router = useRouter()
@@ -281,21 +230,14 @@ function LogPastContent() {
       }
     }
 
-    let { data: statsData } = await supabase
+    // Seeded by the `seed_user_stats` trigger; the client can't insert it (see
+    // docs/sql/11-server-side-xp.sql). Only read here to give the badge check a
+    // baseline — `refresh_stats` below is what actually settles the numbers.
+    const { data: statsData } = await supabase
       .from('user_stats')
       .select('*')
       .eq('user_id', user.id)
       .maybeSingle()
-
-    if (!statsData) {
-      const { data: created } = await supabase
-        .from('user_stats')
-        .insert({ user_id: user.id })
-        .select()
-        .maybeSingle()
-      statsData = created
-    }
-    if (!statsData) { setError('Could not load stats.'); setSubmitting(false); return }
 
     // Get prior sessions for PR detection (before this day only)
     const { data: priorSessions } = await supabase
@@ -332,7 +274,17 @@ function LogPastContent() {
       const completed = new Date(selectedDate + 'T13:00:00').toISOString()
       const { data: newSession, error: sessionErr } = await supabase
         .from('sessions')
-        .insert({ user_id: user.id, day_type: selectedDayType, started_at: started, completed_at: completed, xp_earned: 0 })
+        // `local_date` is what the server's streak derivation keys off — without
+        // it a backdated workout would be bucketed by its UTC completed_at and
+        // could land on the wrong calendar day (docs/sql/11-server-side-xp.sql).
+        .insert({
+          user_id: user.id,
+          day_type: selectedDayType,
+          started_at: started,
+          completed_at: completed,
+          local_date: selectedDate,
+          xp_earned: 0,
+        })
         .select()
         .single()
 
@@ -382,54 +334,37 @@ function LogPastContent() {
       .from('session_logs')
       .upsert(logsToInsert, { onConflict: 'session_id,exercise_id,set_number' })
 
-    if (isEditing) {
-      // Editing: only update session logs, never touch XP or stats
-      haptic('medium')
-      setDone({ xpEarned: 0, prCount, isEdit: true, isDelete: false })
+    // Settle stats server-side. XP, level, streaks and PR flags are all derived
+    // from the logs we just wrote (docs/sql/11-server-side-xp.sql), so the same
+    // call handles both the "new backdated workout" and "edited an existing one"
+    // cases. Editing used to skip this entirely, which left XP stale whenever an
+    // edit changed which sets counted as PRs.
+    const { data: refreshed, error: refreshError } = await supabase.rpc('refresh_stats', {
+      p_local_date: localDateKey(new Date()),
+    })
+
+    if (refreshError) {
+      setError('Saved the workout, but could not update your stats. Reload to retry.')
       setSubmitting(false)
       return
     }
 
-    const streakData = await recalculateStreak(supabase, user.id, selectedDate)
+    // The per-session XP the server settled on, for the confirmation screen.
+    const { data: settled } = await supabase
+      .from('sessions')
+      .select('xp_earned')
+      .eq('id', sessionId)
+      .maybeSingle()
+    const xpEarned = settled?.xp_earned ?? 0
 
-    let xpEarned = 100 + prCount * 25
-    if (streakData.streak_at_target > 0 && streakData.streak_at_target % 7 === 0) {
-      xpEarned += 50
-    }
-    await supabase.from('sessions').update({ xp_earned: xpEarned }).eq('id', sessionId)
-
-    const newXpTotal = statsData.xp_total + xpEarned
-    const newLevel = getLevel(newXpTotal)
-    const newTotalWorkouts = statsData.total_workouts + 1
-
-    const updatedStats = {
-      ...statsData,
-      xp_total: newXpTotal,
-      level: newLevel,
-      total_workouts: newTotalWorkouts,
-      current_streak: streakData.current_streak,
-      longest_streak: Math.max(statsData.longest_streak, streakData.longest_streak),
-      last_workout_date: streakData.last_workout_date,
-      updated_at: new Date().toISOString(),
-    }
-
-    await supabase
-      .from('user_stats')
-      .update({
-        xp_total: newXpTotal,
-        level: newLevel,
-        total_workouts: newTotalWorkouts,
-        current_streak: streakData.current_streak,
-        longest_streak: Math.max(statsData.longest_streak, streakData.longest_streak),
-        last_workout_date: streakData.last_workout_date,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('user_id', user.id)
-
-    await checkAndAwardBadges(supabase, user.id, updatedStats)
+    await checkAndAwardBadges(
+      supabase,
+      user.id,
+      { ...statsData, ...(refreshed as Partial<UserStats>) } as UserStats,
+    )
 
     haptic('medium')
-    setDone({ xpEarned, prCount, isEdit: false, isDelete: false })
+    setDone({ xpEarned, prCount, isEdit: isEditing, isDelete: false })
     setSubmitting(false)
   }
 
@@ -442,34 +377,19 @@ function LogPastContent() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setError('Not logged in.'); setDeleting(false); return }
 
-    const { data: statsData } = await supabase
-      .from('user_stats')
-      .select('*')
-      .eq('user_id', user.id)
-      .maybeSingle()
+    // One server-side call: deletes the session (logs cascade) and re-derives
+    // stats from what remains. Subtracting the stored xp_earned client-side, as
+    // this used to, drifted whenever that value was stale.
+    const { error: deleteError } = await supabase.rpc('delete_session', {
+      p_session_id: session.id,
+      p_local_date: localDateKey(new Date()),
+    })
 
-    if (!statsData) { setError('Could not load stats.'); setDeleting(false); return }
-
-    await supabase.from('session_logs').delete().eq('session_id', session.id)
-    await supabase.from('sessions').delete().eq('id', session.id)
-
-    const streakData = await recalculateStreak(supabase, user.id)
-    const newXpTotal = Math.max(0, statsData.xp_total - session.xp_earned)
-    const newLevel = getLevel(newXpTotal)
-    const newTotalWorkouts = Math.max(0, statsData.total_workouts - 1)
-
-    await supabase
-      .from('user_stats')
-      .update({
-        xp_total: newXpTotal,
-        level: newLevel,
-        total_workouts: newTotalWorkouts,
-        current_streak: streakData.current_streak,
-        longest_streak: streakData.longest_streak,
-        last_workout_date: streakData.last_workout_date,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('user_id', user.id)
+    if (deleteError) {
+      setError('Could not delete the workout. Try again.')
+      setDeleting(false)
+      return
+    }
 
     setDone({ xpEarned: session.xp_earned, prCount: 0, isEdit: false, isDelete: true })
     setDeleting(false)

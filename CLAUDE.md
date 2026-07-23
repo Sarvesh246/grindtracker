@@ -72,8 +72,12 @@ Both share `UnitContext`, so the kg/lbs toggle stays in sync across them.
 - user_rotation — user_id (PK), mode ('auto'|'manual'), sequence (jsonb array of
   day_keys, may repeat), current_index (pointer to last completed slot). Drives the
   home page's suggested next day. See Rotation below.
+- feedback — user_id, username/email (identity snapshot at submit time),
+  category ('bug'|'feature'|'improvement'|'other'), message, image_paths (text[]
+  of objects in the private `feedback-images` bucket), is_anonymous, is_read,
+  is_starred. See Feedback below and migration `09-feedback.sql`.
 RLS on exercises, sessions, session_logs, user_stats, user_badges, body_weights,
-user_day_categories, user_rotation (and delete policies on sessions/session_logs for discard).
+user_day_categories, user_rotation, feedback (and delete policies on sessions/session_logs for discard).
 `get_leaderboard(p_day_type, p_user_ids)` RPC ranks overall by XP, or
 push/pull/legs by heaviest working-set lift (category-aware, security definer).
 
@@ -91,6 +95,43 @@ stale streak when the last workout was more than 1 day ago.
 PR: weight > max non-warm-up weight in any previous completed session for that exercise.
 14 badges in src/lib/utils/badges.ts.
 
+**Stats are server-authoritative (migration `11-server-side-xp.sql`).** The rules
+above are now implemented in Postgres, not the browser. `grind_recompute_stats()`
+DERIVES xp/level/streaks/`is_pr` from `sessions` + `session_logs` — nothing is
+stored that isn't recomputable — and the client has **no UPDATE privilege on
+`user_stats`** at all. Never reintroduce a direct write; go through the RPCs:
+
+| RPC | Called from |
+| --- | --- |
+| `complete_session(session_id, local_date, note)` | `ActiveWorkout.handleFinish` |
+| `uncomplete_session(session_id, local_date)` | `ActiveWorkout.handleUndoFinish`, `FinishUndoBanner` |
+| `delete_session(session_id, local_date)` | `log/past` delete |
+| `refresh_stats(local_date)` | `log/past` save, `HomeDashboard` stale-streak lapse |
+
+`src/lib/utils/gamification.ts` still holds `getLevel`/`getXpInCurrentLevel` etc.
+for DISPLAY. `grind_level_for_xp()` in SQL mirrors `getLevel` — **change one,
+change both.** Every RPC takes `p_local_date` because streaks depend on the
+user's calendar day and Postgres only sees UTC; it's clamped to ±1 day of UTC so
+it can't be used to farm streak bonuses. `sessions.local_date` stores it.
+
+### Security model
+- **RLS is the boundary, never the UI.** Route guards (`isAdminEmail`) only pick
+  404-vs-render; `is_grind_admin()` in Postgres is the real gate.
+- **`security definer` functions bypass RLS**, so each one must authorize its own
+  caller and pin `set search_path`. `get_leaderboard` intersects the requested
+  ids with the caller's accepted friendships — it previously trusted the client's
+  array, which let any user read any other user's stats by uuid (fixed in `10`).
+- **Never trust a client-supplied number that feeds a leaderboard.** Derive it.
+- **A single `FOR ALL` policy is rarely right for a table two parties share.**
+  `friendships` had one, testing only "am I involved in this row" — which let a
+  requester accept their own request and let anyone insert a pre-accepted
+  friendship naming someone else as requester (fixed in `12`). Split by command
+  and assert what each one actually means: who may create, who may approve.
+- Security headers (CSP, HSTS, `frame-ancestors 'none'`) live in `next.config.ts`.
+- `src/proxy.ts` uses `getClaims()` (local JWKS verification) rather than
+  `getUser()` (a network round trip per request), and caches the "profile exists"
+  check in the `grind_profile_ok` cookie instead of querying on every navigation.
+
 ### Rotation (src/lib/utils/rotation.ts)
 The suggested "next day" comes from a per-user rotation — an ordered loop of day_keys
 that may repeat (e.g. [push, abs, pull, abs, legs, abs]). `auto` mode derives the order
@@ -102,6 +143,35 @@ list). `home/page.tsx` reads `nextDay(effectiveSequence(row, dayKeys), current_i
 completion (backdated `log/past` entries deliberately don't). The suggestion is
 non-binding — DaySelect still lets you pick any day, and marks the suggested one "UP NEXT".
 Helpers are pure (no Supabase import). Apply migration `06-user-rotation.sql` first.
+
+### Feedback (src/components/FeedbackModal.tsx, (app)/admin/feedback/)
+Users reach the developer through a "Send Feedback" row in Profile → Settings,
+which opens a modal (type chips, message, up to 3 images ≤5 MB, optional
+"send anonymously"). Images upload to the private `feedback-images` bucket keyed
+`{user_id}/{uuid}.{ext}` before the row is written; the row stores object paths,
+never URLs, and the inbox mints short-lived signed URLs server-side.
+
+Rate limit: **3 submissions per 10 minutes and 20 per day, per user**, enforced by
+the `feedback_rate_limit` BEFORE INSERT trigger — not by RLS (a policy on
+`feedback` that subqueries `feedback` would recurse) and not by the client. The
+modal pre-checks the same counts before uploading so a blocked submission fails
+fast and doesn't strand images in the bucket, and maps the trigger's tagged
+exception to plain English. **If you change the limits, change them in both
+places** (`09-feedback.sql` and the constants in `FeedbackModal.tsx`).
+
+The inbox lives at `/admin/feedback` — an email-style two-pane client (list +
+detail, stacked below 900px via `.inbox-layout`) with search, read/starred
+filters, type filter, sorting, mark read/unread, star, delete, and mark-all-read.
+Mutations are optimistic and revert with a toast on failure.
+
+**Access is enforced in Postgres, not the UI.** `is_grind_admin()` (see
+`09-feedback.sql`) checks `auth.users.email` against the admin address and backs
+the RLS policies: everyone can insert their own feedback, only the admin can
+select all rows, update, or delete. `src/lib/utils/admin.ts` mirrors the address
+for routing only — it decides whether the Profile link renders and whether
+`/admin/feedback` 404s, and grants nothing on its own. "Anonymous" is a display
+choice: `user_id` is always recorded (abuse control) and the inbox has a
+"reveal sender" affordance.
 
 ### Dates & timezones (important)
 Streak/calendar logic is timezone-sensitive. Always derive a date key from local
@@ -146,8 +216,11 @@ src/
       progress/page.tsx + ProgressChart.tsx + loading.tsx
       profile/page.tsx + ProfileDashboard.tsx + BodyWeightCard.tsx + loading.tsx
       leaderboard/page.tsx + LeaderboardClient.tsx + FriendsAccordion.tsx + ShareCard.tsx
+      admin/feedback/page.tsx + FeedbackInbox.tsx — developer-only inbox (404s
+                                     for everyone else; RLS is the real gate)
   components/
     BottomNav.tsx, TopNav.tsx, WorkoutCalendar.tsx, PlateCalculator.tsx, RestTimerBar.tsx
+    FeedbackModal.tsx
     ui/ (Button, Card, IconButton, Input, SectionLabel, StatTile, index)
   lib/
     supabase/client.ts + server.ts
@@ -155,6 +228,7 @@ src/
     hooks/useRestTimer.ts
     types/index.ts
     utils/gamification.ts + formatting.ts + badges.ts + haptics.ts + sessions.ts + rotation.ts
+         + admin.ts (admin-email check for routing/UI only)
     brand-icon.tsx
   proxy.ts                        — auth gate + redirect to /setup if no profile
                                     (Next 16 renamed the Middleware convention to Proxy)

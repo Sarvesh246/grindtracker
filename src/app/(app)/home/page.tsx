@@ -21,21 +21,15 @@ export default async function HomePage() {
   const fullName = ((user.user_metadata?.full_name as string) || profile?.display_name || '').trim()
   const firstName = fullName.split(/\s+/)[0] || profile?.username || 'there'
 
-  // Get or create user_stats
-  let { data: stats } = await supabase
+  // The row is seeded by the `seed_user_stats` trigger on signup and backfilled
+  // for existing accounts (docs/sql/11-server-side-xp.sql), so the client no
+  // longer creates it — and no longer has the privilege to. A missing row is
+  // handled downstream as "no stats yet" rather than being papered over here.
+  const { data: stats } = await supabase
     .from('user_stats')
     .select('*')
     .eq('user_id', user.id)
     .maybeSingle()
-
-  if (!stats) {
-    const { data: newStats } = await supabase
-      .from('user_stats')
-      .insert({ user_id: user.id })
-      .select()
-      .maybeSingle()
-    stats = newStats
-  }
 
   // Stale-streak reset (if the last workout was more than 1 day ago) is done
   // client-side in HomeDashboard, using the viewer's own local date — this
@@ -155,7 +149,6 @@ export default async function HomePage() {
 
   return (
     <HomeDashboard
-      userId={user.id}
       stats={stats}
       lastSession={lastSession ?? null}
       lastSessionLogs={lastSessionLogs}

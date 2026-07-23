@@ -4,13 +4,12 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Exercise } from '@/lib/types'
 import { checkAndAwardBadges } from '@/lib/utils/badges'
-import { getLevel } from '@/lib/utils/gamification'
 import { localDateKey } from '@/lib/utils/formatting'
 import { haptic } from '@/lib/utils/haptics'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { deleteIncompleteSessions } from '@/lib/utils/sessions'
 import { advanceIndex, effectiveSequence } from '@/lib/utils/rotation'
-import type { UserRotation } from '@/lib/types'
+import type { UserRotation, UserStats } from '@/lib/types'
 import { useRestTimer } from '@/lib/hooks/useRestTimer'
 import RestTimerBar from '@/components/RestTimerBar'
 import PlateCalculator from '@/components/PlateCalculator'
@@ -56,14 +55,29 @@ export interface FinishUndoToken {
   day: string
   userId: string
   xpEarned: number
-  prevXpTotal: number
-  prevLevel: number
-  prevStreak: number
-  prevLongestStreak: number
-  prevLastWorkoutDate: string | null
-  prevTotalWorkouts: number
+  /**
+   * Rotation pointer to restore. Stats are NOT stored here anymore: undo calls
+   * `uncomplete_session`, which reopens the session and lets the server
+   * re-derive every stat from the logs. Storing "previous XP" client-side was
+   * how a replayed or tampered undo token could mint XP out of nothing.
+   */
   prevRotationIndex: number
   expiresAt: number
+}
+
+/** Shape returned by the `complete_session` RPC (docs/sql/11-server-side-xp.sql). */
+export interface CompleteSessionResult {
+  xp_earned: number
+  xp_total: number
+  prev_level: number
+  level: number
+  leveled_up: boolean
+  current_streak: number
+  longest_streak: number
+  last_workout_date: string | null
+  total_workouts: number
+  pr_count: number
+  pr_exercises: { name: string; weight: number }[]
 }
 
 function dayLabel(day: string): string {
@@ -808,18 +822,25 @@ export default function ActiveWorkout({ day }: { day: string }) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user || user.id !== token.userId) return
 
-    await Promise.all([
-      supabase.from('sessions').update({ completed_at: null, xp_earned: 0 }).eq('id', token.sessionId),
-      supabase.from('user_stats').update({
-        xp_total: token.prevXpTotal,
-        level: token.prevLevel,
-        current_streak: token.prevStreak,
-        longest_streak: token.prevLongestStreak,
-        last_workout_date: token.prevLastWorkoutDate,
-        total_workouts: token.prevTotalWorkouts,
-      }).eq('user_id', user.id),
-      supabase.from('user_rotation').update({ current_index: token.prevRotationIndex }).eq('user_id', user.id),
-    ])
+    // Reopen the session server-side; stats are re-derived from the remaining
+    // logs rather than restored from values the client was holding. A tampered
+    // or replayed token can therefore only reopen a session you own — it can't
+    // dictate what your XP becomes.
+    const { error: undoError } = await supabase.rpc('uncomplete_session', {
+      p_session_id: token.sessionId,
+      p_local_date: localDateKey(new Date()),
+    })
+
+    if (undoError) {
+      setResumeToast('Could not undo. Try again.')
+      setTimeout(() => setResumeToast(null), 4000)
+      return
+    }
+
+    await supabase
+      .from('user_rotation')
+      .update({ current_index: token.prevRotationIndex })
+      .eq('user_id', user.id)
 
     localStorage.removeItem('grind_finish_undo')
     setCompletionData(null)
@@ -833,128 +854,96 @@ export default function ActiveWorkout({ day }: { day: string }) {
     }
     setFinishing(true)
 
-    // The whole finish is wrapped so a network failure on any essential write
-    // can't leave the button stuck on "SAVING…" or silently drop the workout.
-    // Every set is already saved to session_logs as it's checked, so on failure
-    // we simply don't mark the session complete — it stays in-progress and
-    // resumes right where it left off. Idempotent writes are retried first so a
-    // transient blip or a just-expired auth token recovers on its own.
+    // The whole finish is wrapped so a network failure can't leave the button
+    // stuck on "SAVING…" or silently drop the workout. Every set is already
+    // saved to session_logs as it's checked, so on failure the session simply
+    // isn't marked complete — it stays in-progress and resumes right where it
+    // left off. `runWithRetry` gives a transient blip, or an auth token that
+    // just expired on a long session, a chance to recover on its own.
     try {
       const { data: userData } = await runWithRetry(() => supabase.auth.getUser())
       const user = userData?.user
       if (!user) { router.push('/login'); return }
 
-      const prSets = Object.values(logs).filter(l => l.isPR && !l.skipped && !l.isWarmup)
-      const prCount = prSets.length
+      // Completion is a single server-side transaction.
+      //
+      // XP, level, streak and PR flags used to be computed here and written
+      // straight to `user_stats` — which meant anyone could set their own XP
+      // from devtools. The server now derives all of it from the session logs
+      // themselves (docs/sql/11-server-side-xp.sql) and the client has no
+      // UPDATE privilege on `user_stats` at all. We send only the local
+      // calendar date, because Postgres can't know the user's timezone and
+      // streaks depend on it.
+      const { data: finishData, error: finishError } = await runWithRetry(() =>
+        supabase.rpc('complete_session', {
+          p_session_id: sessionId,
+          p_local_date: localDateKey(new Date()),
+          p_note: workoutNote || null,
+        }),
+      )
 
-      const prExercises: { name: string; weight: number }[] = []
-      for (const ex of exercises) {
-        const total = ex.sets_target + (extraSets[ex.id] ?? 0)
-        for (let s = 1; s <= total; s++) {
-          const key = `${ex.id}-${s}`
-          const log = logs[key]
-          if (log?.isPR && !log.skipped && !log.isWarmup && log.weight !== '') {
-            if (!prExercises.find(p => p.name === ex.name)) {
-              prExercises.push({ name: ex.name, weight: parseFloat(log.weight) })
-            }
-          }
+      let result: CompleteSessionResult
+      if (finishError || !finishData) {
+        // The RPC is not naturally idempotent across a lost response: if the
+        // first attempt committed server-side but the reply never arrived,
+        // runWithRetry's second call correctly gets refused with
+        // SESSION_NOT_OPEN (the session is already completed). That specific
+        // error means success, not failure — re-read what the server already
+        // settled on instead of telling the user it failed.
+        const alreadyDone = String(
+          (finishError as { message?: string } | null)?.message ?? ''
+        ).includes('SESSION_NOT_OPEN')
+
+        if (!alreadyDone) throw finishError ?? new Error('Finish failed')
+
+        const [{ data: sessionRow }, { data: statsRow }] = await Promise.all([
+          supabase.from('sessions').select('xp_earned').eq('id', sessionId).maybeSingle(),
+          supabase.from('user_stats').select('*').eq('user_id', user.id).maybeSingle(),
+        ])
+        if (!sessionRow || !statsRow) throw finishError ?? new Error('Finish failed')
+
+        result = {
+          xp_earned: sessionRow.xp_earned,
+          xp_total: statsRow.xp_total,
+          prev_level: statsRow.level,
+          level: statsRow.level,
+          // Can't recover whether THIS completion leveled the user up once the
+          // original response is lost; under-reporting a level-up banner is a
+          // harmless cosmetic miss, unlike mis-reporting XP.
+          leveled_up: false,
+          current_streak: statsRow.current_streak,
+          longest_streak: statsRow.longest_streak,
+          last_workout_date: statsRow.last_workout_date,
+          total_workouts: statsRow.total_workouts,
+          pr_count: 0,
+          pr_exercises: [],
         }
+      } else {
+        result = finishData as CompleteSessionResult
       }
 
-      let xpEarned = 100 + (prCount * 25)
-
-      // A previous attempt may have already marked this session complete (and
-      // applied the stats delta) before failing on a later step. If the user
-      // taps FINISH again, don't re-apply the XP/streak delta — that would
-      // double-count. We still re-run the (idempotent) session write below.
-      const { data: sessionRow } = await runWithRetry(() =>
-        supabase.from('sessions').select('completed_at').eq('id', sessionId).maybeSingle(),
-      )
-      const alreadyCompleted = !!sessionRow?.completed_at
-
-      const statsFetch = await runWithRetry(() =>
-        supabase.from('user_stats').select('*').eq('user_id', user.id).maybeSingle(),
-      )
-      if (statsFetch.error) throw statsFetch.error
-      let currentStats = statsFetch.data
-
-      if (!currentStats) {
-        const created = await runWithRetry(() =>
-          supabase.from('user_stats').insert({ user_id: user.id }).select().maybeSingle(),
-        )
-        if (created.error) throw created.error
-        currentStats = created.data
-      }
-      if (!currentStats) throw new Error('Missing user stats')
-
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
-      // Parse the stored date key at local noon so the comparison stays in the
-      // user's timezone (avoids the UTC-midnight off-by-one that breaks streaks).
-      const lastDate = currentStats.last_workout_date
-        ? new Date(currentStats.last_workout_date + 'T12:00:00')
-        : null
-
-      let newStreak = 1
-      if (lastDate) {
-        lastDate.setHours(0, 0, 0, 0)
-        const diffDays = Math.floor((today.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24))
-        if (diffDays === 0) {
-          newStreak = currentStats.current_streak
-        } else if (diffDays === 1) {
-          newStreak = currentStats.current_streak + 1
-        } else {
-          newStreak = 1
-        }
-      }
-
-      if (newStreak % 7 === 0) {
-        xpEarned += 50
-      }
-
-      const newXpTotal = currentStats.xp_total + xpEarned
-      const oldLevel = getLevel(currentStats.xp_total)
-      const newLevel = getLevel(newXpTotal)
-      const leveledUp = newLevel > oldLevel
-
-      const newLongest = Math.max(currentStats.longest_streak, newStreak)
-
-      // Essential write #1: mark the session complete. If this can't be saved
-      // after retries, bail out (caught below) — the workout stays in-progress.
-      const sessionUpdate = await runWithRetry(() =>
-        supabase
-          .from('sessions')
-          .update({
-            completed_at: new Date().toISOString(),
-            xp_earned: xpEarned,
-            note: workoutNote || null,
-          })
-          .eq('id', sessionId),
-      )
-      if (sessionUpdate.error) throw sessionUpdate.error
+      const xpEarned = result.xp_earned
+      const prCount = result.pr_count
+      const prExercises = result.pr_exercises ?? []
+      const newLevel = result.level
+      const leveledUp = result.leveled_up
 
       haptic('medium')
 
+      // Authoritative post-completion stats, for the badge check below.
       const updatedStats = {
-        xp_total: newXpTotal,
-        level: newLevel,
-        current_streak: newStreak,
-        longest_streak: newLongest,
-        last_workout_date: localDateKey(today),
-        total_workouts: currentStats.total_workouts + 1,
+        xp_total: result.xp_total,
+        level: result.level,
+        current_streak: result.current_streak,
+        longest_streak: result.longest_streak,
+        last_workout_date: result.last_workout_date,
+        total_workouts: result.total_workouts,
         updated_at: new Date().toISOString(),
       }
-      // Essential write #2: apply the XP/streak delta — but only if a prior
-      // attempt hadn't already done so (see alreadyCompleted above).
-      if (!alreadyCompleted) {
-        const statsUpdate = await runWithRetry(() =>
-          supabase.from('user_stats').update(updatedStats).eq('user_id', user.id),
-        )
-        if (statsUpdate.error) throw statsUpdate.error
-      }
 
-      // Advance the rotation pointer so the home page suggests the next day after
-      // this one. Best-effort — a failure here must never block completion.
+      // Advance the rotation pointer so the home page suggests the next day
+      // after this one. Best-effort — a failure here must never block
+      // completion.
       let prevRotationIndex = 0
       try {
         const [{ data: dayTypeRows }, { data: rotationRow }, { data: flexRows }] = await Promise.all([
@@ -982,19 +971,14 @@ export default function ActiveWorkout({ day }: { day: string }) {
         // Rotation is a non-critical convenience; swallow and move on.
       }
 
-      // Store a 10-minute undo token so the user can resume if they finished by accident.
+      // Store a 10-minute undo token so the user can resume if they finished
+      // by accident.
       if (typeof window !== 'undefined') {
         const token: FinishUndoToken = {
           sessionId,
           day,
           userId: user.id,
           xpEarned,
-          prevXpTotal: currentStats.xp_total,
-          prevLevel: getLevel(currentStats.xp_total),
-          prevStreak: currentStats.current_streak,
-          prevLongestStreak: currentStats.longest_streak,
-          prevLastWorkoutDate: currentStats.last_workout_date,
-          prevTotalWorkouts: currentStats.total_workouts,
           prevRotationIndex,
           expiresAt: Date.now() + 10 * 60 * 1000,
         }
@@ -1007,7 +991,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         newBadges = await checkAndAwardBadges(
           supabase,
           user.id,
-          { ...currentStats, ...updatedStats },
+          { user_id: user.id, ...updatedStats } as UserStats,
         )
       } catch {
         newBadges = []
@@ -1025,7 +1009,8 @@ export default function ActiveWorkout({ day }: { day: string }) {
       })
     } catch {
       // The workout is untouched (or safely resumable) — tell the user and let
-      // them try again. Reuse the top toast so the message is impossible to miss.
+      // them try again. Reuse the top toast so the message is impossible to
+      // miss.
       setResumeToast('Could not finish workout. Check your connection and try again.')
       setTimeout(() => setResumeToast(null), 5000)
     } finally {

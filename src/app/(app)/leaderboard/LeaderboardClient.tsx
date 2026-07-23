@@ -15,6 +15,9 @@ const CATEGORIES: { key: Category; label: string }[] = [
   { key: 'overall', label: 'OVERALL' },
 ]
 
+/** Minimum gap between focus-triggered leaderboard refetches. */
+const FOCUS_REFETCH_MS = 60_000
+
 const RANK_COLORS: Record<number, string> = {
   1: '#FFD700',
   2: '#C0C0C0',
@@ -44,9 +47,12 @@ export default function LeaderboardClient({ userId }: Props) {
   // on screen under the newly selected tab. Now every fetch runs; only the
   // response matching the *latest* request is ever committed to state.
   const requestIdRef = useRef(0)
+  // Timestamp of the last completed fetch, for the focus throttle below.
+  const lastFetchAtRef = useRef(0)
 
   const fetchLeaderboard = useCallback(async (cat: Category, fIds: string[]) => {
     const reqId = ++requestIdRef.current
+    lastFetchAtRef.current = Date.now()
     setLoading(true)
     const userIds = [userId, ...fIds]
     const { data, error } = await supabase.rpc('get_leaderboard', {
@@ -66,9 +72,21 @@ export default function LeaderboardClient({ userId }: Props) {
     fetchLeaderboard(category, friendIds)
   }, [category, friendIds, fetchLeaderboard])
 
-  // Refetch on window focus
+  // Refetch on window focus — throttled.
+  //
+  // `get_leaderboard` aggregates every completed session and set log for the
+  // caller AND all their friends, so it is by far the most expensive query in
+  // the app. Firing it on every focus event meant an alt-tab storm could issue
+  // dozens of full aggregations per minute per user; at a few thousand users
+  // that alone is enough to saturate the database. Refresh at most once a
+  // minute — leaderboard standings do not move faster than that.
   useEffect(() => {
-    const handler = () => fetchLeaderboard(category, friendIds)
+    const handler = () => {
+      const now = Date.now()
+      if (now - lastFetchAtRef.current < FOCUS_REFETCH_MS) return
+      lastFetchAtRef.current = now
+      fetchLeaderboard(category, friendIds)
+    }
     window.addEventListener('focus', handler)
     return () => window.removeEventListener('focus', handler)
   }, [category, friendIds, fetchLeaderboard])

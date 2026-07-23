@@ -40,6 +40,9 @@ interface RawLog {
 
 const DAY_ORDER: Record<string, number> = { push: 0, pull: 1, legs: 2 }
 
+/** Upper bound on set logs pulled for one exercise's chart (~4 years of 5x5). */
+const MAX_CHART_LOGS = 2000
+
 const METRIC_IDS: { id: Metric; label: string }[] = [
   { id: 'weight', label: 'Weight' },
   { id: 'volume', label: 'Volume' },
@@ -119,9 +122,19 @@ export default function ProgressPage() {
       .eq('is_warmup', false)
       .eq('sessions.user_id', user.id)
       .not('sessions.completed_at', 'is', null)
-      .order('completed_at', { ascending: true, foreignTable: 'sessions' })
+      // Newest-first with a cap, then reversed below for the chart.
+      //
+      // This was an unbounded fetch of every set ever logged for the exercise.
+      // A daily lifter on a 5x5 program generates ~1,300 rows a year, so after a
+      // few years the chart payload grows without limit for the heaviest — i.e.
+      // most engaged — users. MAX_CHART_LOGS covers several years of history at
+      // full resolution and bounds the worst case.
+      .order('completed_at', { ascending: false, foreignTable: 'sessions' })
+      .limit(MAX_CHART_LOGS)
 
-    setRawLogs((logs ?? []) as RawLog[])
+    // Restore ascending (oldest → newest) order the chart expects; the query
+    // sorts descending so that the LIMIT keeps the most recent history.
+    setRawLogs(((logs ?? []) as RawLog[]).slice().reverse())
     setLoadingChart(false)
   }, [supabase])
 

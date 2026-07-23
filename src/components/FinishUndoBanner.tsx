@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { FinishUndoToken } from '@/app/(app)/log/ActiveWorkout'
+import { localDateKey } from '@/lib/utils/formatting'
 
 const UNDO_KEY = 'grind_finish_undo'
 
@@ -54,18 +55,22 @@ export default function FinishUndoBanner() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user || user.id !== token.userId) { setUndoing(false); return }
 
-    await Promise.all([
-      supabase.from('sessions').update({ completed_at: null, xp_earned: 0 }).eq('id', token.sessionId),
-      supabase.from('user_stats').update({
-        xp_total: token.prevXpTotal,
-        level: token.prevLevel,
-        current_streak: token.prevStreak,
-        longest_streak: token.prevLongestStreak,
-        last_workout_date: token.prevLastWorkoutDate,
-        total_workouts: token.prevTotalWorkouts,
-      }).eq('user_id', user.id),
-      supabase.from('user_rotation').update({ current_index: token.prevRotationIndex }).eq('user_id', user.id),
-    ])
+    // Server reopens the session and re-derives stats from the logs (see
+    // ActiveWorkout.handleUndoFinish for the same reasoning).
+    const { error } = await supabase.rpc('uncomplete_session', {
+      p_session_id: token.sessionId,
+      p_local_date: localDateKey(new Date()),
+    })
+
+    if (error) {
+      setUndoing(false)
+      return
+    }
+
+    await supabase
+      .from('user_rotation')
+      .update({ current_index: token.prevRotationIndex })
+      .eq('user_id', user.id)
 
     localStorage.removeItem(UNDO_KEY)
     setToken(null)

@@ -47,7 +47,6 @@ function readDismissedSig(): string | null {
 }
 
 interface Props {
-  userId: string
   stats: UserStats | null
   lastSession: Session | null
   lastSessionLogs: { exercise_name: string; weight: number | null; sets: number; reps: number | null }[]
@@ -104,7 +103,8 @@ function ChevronRight({ color = 'currentColor' }: { color?: string }) {
 }
 
 export default function HomeDashboard({
-  userId,
+  // `userId` is gone: the stale-streak reset now calls the `refresh_stats` RPC,
+  // which resolves the caller from the session rather than a passed-in id.
   stats,
   lastSession,
   lastSessionLogs,
@@ -149,7 +149,11 @@ export default function HomeDashboard({
       correctedStaleStreak.current = true
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setStreakOverride(0)
-      supabase.from('user_stats').update({ current_streak: 0 }).eq('user_id', userId)
+      // The client can no longer write user_stats directly. `refresh_stats`
+      // re-derives everything server-side; passing our local date is what lets
+      // Postgres decide the streak has lapsed in the *user's* timezone rather
+      // than UTC (see CLAUDE.md → Dates & timezones).
+      supabase.rpc('refresh_stats', { p_local_date: localDateKey(new Date()) })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stats?.current_streak, stats?.last_workout_date])
