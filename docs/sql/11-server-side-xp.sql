@@ -130,14 +130,17 @@ begin
    where sl.id = f.id
      and sl.is_pr is distinct from f.pr;
 
-  -- 2. Streak day for every workout date (classic gaps-and-islands: subtracting
-  --    a dense row number from consecutive dates yields a constant per run).
-  create temporary table if not exists _grind_runs (
-    d date primary key, streak_day int, run_len int
-  ) on commit drop;
-  delete from _grind_runs;
-
-  insert into _grind_runs (d, streak_day, run_len)
+  -- 2. Per-session XP → sessions.xp_earned: 100 per completed session, +25 per
+  --    PR set, +50 when that session's streak day is a multiple of 7.
+  --    `streak_day` is the day's position within its consecutive-date run,
+  --    derived by the classic gaps-and-islands trick (a date minus its dense row
+  --    number is constant within a run). Computed inline as a CTE — NOT a temp
+  --    table. A session-local TEMP TABLE with `on commit drop` here poisoned the
+  --    PL/pgSQL plan cache on Supabase's pooled PostgREST connections: the plan
+  --    bound to the temp table's OID, the table was dropped at commit, and the
+  --    next request on the same backend failed with `relation "_grind_runs" does
+  --    not exist`. That deterministically broke workout completion (the retry on
+  --    the client can't recover a deterministic server error). See migration 13.
   with dates as (
     select distinct local_date as d
       from sessions
@@ -149,39 +152,11 @@ begin
     select d, d - (row_number() over (order by d))::int as grp
       from dates
   ),
-  numbered as (
-    select d, grp,
-           row_number() over (partition by grp order by d)::int as streak_day,
-           count(*)     over (partition by grp)::int             as run_len
+  runs as (
+    select d,
+           row_number() over (partition by grp order by d)::int as streak_day
       from grouped
   )
-  select d, streak_day, run_len from numbered;
-
-  -- 3. XP: 100 per completed session, +25 per PR set, +50 when that session's
-  --    streak day is a multiple of 7.
-  with per_session as (
-    select s.id,
-           s.local_date,
-           100
-           + 25 * coalesce((
-               select count(*) from session_logs sl
-                where sl.session_id = s.id and sl.is_pr = true
-             ), 0)
-           + case
-               when r.streak_day is not null and r.streak_day % 7 = 0 then 50
-               else 0
-             end as xp
-      from sessions s
-      left join _grind_runs r on r.d = s.local_date
-     where s.user_id = p_user
-       and s.completed_at is not null
-  )
-  select coalesce(sum(xp), 0), count(*)
-    into v_xp_total, v_total_workouts
-    from per_session;
-
-  -- Keep each session's own xp_earned consistent with the derivation, so the
-  -- "this will remove N XP" copy on the delete-past-workout screen is honest.
   update sessions s
      set xp_earned = ps.xp
     from (
@@ -196,25 +171,51 @@ begin
                  else 0
                end as xp
         from sessions s2
-        left join _grind_runs r on r.d = s2.local_date
+        left join runs r on r.d = s2.local_date
        where s2.user_id = p_user
          and s2.completed_at is not null
     ) ps
    where s.id = ps.id
      and s.xp_earned is distinct from ps.xp;
 
-  -- 4. Streaks.
-  select max(d), max(run_len) into v_last_date, v_longest_streak from _grind_runs;
+  -- 3. Totals straight off the freshly-written per-session XP — one source of
+  --    truth, no duplicated arithmetic.
+  select coalesce(sum(xp_earned), 0), count(*)
+    into v_xp_total, v_total_workouts
+    from sessions
+   where user_id = p_user
+     and completed_at is not null;
 
-  if v_last_date is not null then
-    -- A streak survives only if the last workout was today or yesterday, in the
-    -- user's own calendar. Otherwise it has lapsed.
-    if v_today - v_last_date <= 1 then
-      select run_len into v_current_streak from _grind_runs where d = v_last_date;
-    else
-      v_current_streak := 0;
-    end if;
-  end if;
+  -- 4. Streaks — the same gaps-and-islands runs, collapsed to the three numbers
+  --    we store. A streak survives only if the last workout was today or
+  --    yesterday in the user's own calendar; otherwise it has lapsed.
+  with dates as (
+    select distinct local_date as d
+      from sessions
+     where user_id = p_user
+       and completed_at is not null
+       and local_date is not null
+  ),
+  grouped as (
+    select d, d - (row_number() over (order by d))::int as grp
+      from dates
+  ),
+  runs as (
+    select d, count(*) over (partition by grp)::int as run_len
+      from grouped
+  ),
+  last_run as (
+    select d, run_len from runs order by d desc limit 1
+  )
+  select
+    (select d from last_run),
+    (select coalesce(max(run_len), 0) from runs),
+    case
+      when (select d from last_run) is null then 0
+      when v_today - (select d from last_run) <= 1 then (select run_len from last_run)
+      else 0
+    end
+  into v_last_date, v_longest_streak, v_current_streak;
 
   -- 5. Persist.
   insert into user_stats (
