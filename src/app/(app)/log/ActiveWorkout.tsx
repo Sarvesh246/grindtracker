@@ -894,7 +894,14 @@ export default function ActiveWorkout({ day }: { day: string }) {
           (finishError as { message?: string } | null)?.message ?? ''
         ).includes('SESSION_NOT_OPEN')
 
-        if (!alreadyDone) throw finishError ?? new Error('Finish failed')
+        if (!alreadyDone) {
+          // Surface the real server error before the generic toast swallows it —
+          // a persistent, connection-looking failure is almost always a
+          // deterministic RPC error (not the network), and without this it's
+          // undebuggable from a phone.
+          console.error('[grind] complete_session failed', finishError, finishData)
+          throw finishError ?? new Error('Finish failed')
+        }
 
         const [{ data: sessionRow }, { data: statsRow }] = await Promise.all([
           supabase.from('sessions').select('xp_earned').eq('id', sessionId).maybeSingle(),
@@ -1007,10 +1014,12 @@ export default function ActiveWorkout({ day }: { day: string }) {
         duration: elapsed,
         setsCompleted: checkedSets(),
       })
-    } catch {
+    } catch (err) {
       // The workout is untouched (or safely resumable) — tell the user and let
       // them try again. Reuse the top toast so the message is impossible to
-      // miss.
+      // miss. Log the underlying error too: if the toast keeps firing on a good
+      // connection it's a server-side RPC failure, and this is the only trace.
+      console.error('[grind] handleFinish failed', err)
       setResumeToast('Could not finish workout. Check your connection and try again.')
       setTimeout(() => setResumeToast(null), 5000)
     } finally {

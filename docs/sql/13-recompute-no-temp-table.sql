@@ -1,19 +1,44 @@
--- Part 2 of 5 of 11-server-side-xp.sql
--- grind_recompute_stats() — the derivation engine
+-- Phase 13: remove the temporary table from grind_recompute_stats().
+-- Idempotent: safe to re-run. Apply this on any environment that already ran 11.
 --
--- The full migration is one ~21KB file, which the Supabase SQL editor
--- truncates mid-function. These parts are split at safe statement
--- boundaries. Run them IN ORDER, each on its own. Every part is
--- idempotent, so re-running one is harmless.
+-- WHY THIS EXISTS
+-- ---------------
+-- `complete_session` (and every other stats RPC) calls `grind_recompute_stats`,
+-- which built a per-run gaps-and-islands table as a session-local TEMP TABLE:
 --
--- Part 5 is the one that REVOKES client stat writes — it breaks the old
--- deployed client, so run it immediately before deploying the new code.
+--     create temporary table if not exists _grind_runs (...) on commit drop;
+--
+-- That is a latent failure under Supabase's pooled PostgREST connections.
+-- PostgREST keeps a pool of backend connections and runs with prepared
+-- statements on. A PL/pgSQL function that references a temp table caches a
+-- query plan bound to that temp table's OID. `on commit drop` destroys the
+-- table at the end of the request's transaction, so the NEXT request that lands
+-- on the same pooled backend recreates `_grind_runs` with a brand-new OID while
+-- the cached plan still points at the old, dropped one. The recompute then
+-- fails deep inside the function with:
+--
+--     ERROR: relation "_grind_runs" does not exist          (or)
+--     ERROR: cache lookup failed for relation NNNNN
+--
+-- The symptom on the client is "Could not finish workout. Check your connection
+-- and try again." on a perfectly good connection — and because the error is
+-- deterministic (it recurs on every warmed backend), the client's retry/backoff
+-- from migration-era hardening can't recover from it. Finishing a workout is the
+-- hottest caller, so it's where users hit it.
+--
+-- THE FIX
+-- -------
+-- Compute the runs inline as ordinary CTEs. No temp table, no cross-transaction
+-- plan cache to invalidate. The derivation is byte-for-byte equivalent:
+--   * per-session XP is written to sessions.xp_earned exactly as before, then
+--     the totals are summed straight off that column (one source of truth
+--     instead of computing the same arithmetic twice), and
+--   * the three streak numbers (last date, longest run, current run) collapse
+--     out of the same gaps-and-islands runs in a single query.
+--
+-- This is a drop-in `create or replace`; grants are unchanged.
 
 begin;
-
--- ── The recompute ───────────────────────────────────────────────────────────
--- Rebuilds every derived value for one user. security definer so it can write
--- `user_stats` after client writes are revoked below.
 
 create or replace function grind_recompute_stats(p_user uuid, p_local_date date default null)
 returns void
@@ -78,12 +103,7 @@ begin
   --    `streak_day` is the day's position within its consecutive-date run,
   --    derived by the classic gaps-and-islands trick (a date minus its dense row
   --    number is constant within a run). Computed inline as a CTE — NOT a temp
-  --    table. A session-local TEMP TABLE with `on commit drop` here poisoned the
-  --    PL/pgSQL plan cache on Supabase's pooled PostgREST connections: the plan
-  --    bound to the temp table's OID, the table was dropped at commit, and the
-  --    next request on the same backend failed with `relation "_grind_runs" does
-  --    not exist`. That deterministically broke workout completion (the retry on
-  --    the client can't recover a deterministic server error). See migration 13.
+  --    table — so nothing survives the transaction to poison a cached plan.
   with dates as (
     select distinct local_date as d
       from sessions
