@@ -70,6 +70,35 @@ function dayLabel(day: string): string {
   return day.replace(/-/g, ' ').toUpperCase() + ' DAY'
 }
 
+/**
+ * Run a Supabase query with a few retries so a transient mobile-network blip —
+ * or an access-token refresh mid-workout (tokens expire after ~60 min, which is
+ * shorter than a long session) — doesn't fail an otherwise-valid save. Retries
+ * on both a thrown fetch error and a returned `{ error }`, with exponential
+ * backoff. The second attempt also gives the Supabase client a beat to refresh a
+ * just-expired token and recover on its own. Only pass idempotent operations
+ * (update-by-id / upsert / select) so re-running a partially-applied attempt is
+ * safe.
+ */
+async function runWithRetry<R extends { error: unknown }>(
+  op: () => PromiseLike<R>,
+  attempts = 3,
+): Promise<R> {
+  let result: R | undefined
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      result = await op()
+      if (!result.error) return result
+    } catch (err) {
+      result = { error: err } as R
+    }
+    if (attempt < attempts - 1) {
+      await new Promise(resolve => setTimeout(resolve, 400 * 2 ** attempt))
+    }
+  }
+  return result as R
+}
+
 export default function ActiveWorkout({ day }: { day: string }) {
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
@@ -374,23 +403,34 @@ export default function ActiveWorkout({ day }: { day: string }) {
       prevBest !== null &&
       weight > prevBest
 
-    const { data: saved } = await supabase
-      .from('session_logs')
-      .upsert(
-        {
-          session_id: sessionId,
-          exercise_id: exerciseId,
-          set_number: setNumber,
-          weight,
-          reps,
-          is_pr: isPR,
-          is_warmup: logEntry.isWarmup,
-          note: logEntry.note || null,
-        },
-        { onConflict: 'session_id,exercise_id,set_number' },
-      )
-      .select('id')
-      .maybeSingle()
+    const { data: saved, error: saveError } = await runWithRetry(() =>
+      supabase
+        .from('session_logs')
+        .upsert(
+          {
+            session_id: sessionId,
+            exercise_id: exerciseId,
+            set_number: setNumber,
+            weight,
+            reps,
+            is_pr: isPR,
+            is_warmup: logEntry.isWarmup,
+            note: logEntry.note || null,
+          },
+          { onConflict: 'session_id,exercise_id,set_number' },
+        )
+        .select('id')
+        .maybeSingle(),
+    )
+
+    // If the set couldn't be persisted, don't mark it checked — that would show
+    // a saved-looking set the DB never received, and it would silently vanish on
+    // resume. Surface it so the user can tap again once the connection recovers.
+    if (saveError) {
+      setResumeToast('Could not save set. Check your connection and try again.')
+      setTimeout(() => setResumeToast(null), 4000)
+      return
+    }
 
     setLogs(prev => ({
       ...prev,
@@ -793,166 +833,204 @@ export default function ActiveWorkout({ day }: { day: string }) {
     }
     setFinishing(true)
 
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setFinishing(false); router.push('/login'); return }
+    // The whole finish is wrapped so a network failure on any essential write
+    // can't leave the button stuck on "SAVING…" or silently drop the workout.
+    // Every set is already saved to session_logs as it's checked, so on failure
+    // we simply don't mark the session complete — it stays in-progress and
+    // resumes right where it left off. Idempotent writes are retried first so a
+    // transient blip or a just-expired auth token recovers on its own.
+    try {
+      const { data: userData } = await runWithRetry(() => supabase.auth.getUser())
+      const user = userData?.user
+      if (!user) { router.push('/login'); return }
 
-    const prSets = Object.values(logs).filter(l => l.isPR && !l.skipped && !l.isWarmup)
-    const prCount = prSets.length
+      const prSets = Object.values(logs).filter(l => l.isPR && !l.skipped && !l.isWarmup)
+      const prCount = prSets.length
 
-    const prExercises: { name: string; weight: number }[] = []
-    for (const ex of exercises) {
-      const total = ex.sets_target + (extraSets[ex.id] ?? 0)
-      for (let s = 1; s <= total; s++) {
-        const key = `${ex.id}-${s}`
-        const log = logs[key]
-        if (log?.isPR && !log.skipped && !log.isWarmup && log.weight !== '') {
-          if (!prExercises.find(p => p.name === ex.name)) {
-            prExercises.push({ name: ex.name, weight: parseFloat(log.weight) })
+      const prExercises: { name: string; weight: number }[] = []
+      for (const ex of exercises) {
+        const total = ex.sets_target + (extraSets[ex.id] ?? 0)
+        for (let s = 1; s <= total; s++) {
+          const key = `${ex.id}-${s}`
+          const log = logs[key]
+          if (log?.isPR && !log.skipped && !log.isWarmup && log.weight !== '') {
+            if (!prExercises.find(p => p.name === ex.name)) {
+              prExercises.push({ name: ex.name, weight: parseFloat(log.weight) })
+            }
           }
         }
       }
-    }
 
-    let xpEarned = 100 + (prCount * 25)
+      let xpEarned = 100 + (prCount * 25)
 
-    let { data: currentStats } = await supabase
-      .from('user_stats')
-      .select('*')
-      .eq('user_id', user.id)
-      .maybeSingle()
-
-    if (!currentStats) {
-      const { data: created } = await supabase
-        .from('user_stats')
-        .insert({ user_id: user.id })
-        .select()
-        .maybeSingle()
-      currentStats = created
-    }
-    if (!currentStats) { setFinishing(false); return }
-
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    // Parse the stored date key at local noon so the comparison stays in the
-    // user's timezone (avoids the UTC-midnight off-by-one that breaks streaks).
-    const lastDate = currentStats.last_workout_date
-      ? new Date(currentStats.last_workout_date + 'T12:00:00')
-      : null
-
-    let newStreak = 1
-    if (lastDate) {
-      lastDate.setHours(0, 0, 0, 0)
-      const diffDays = Math.floor((today.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24))
-      if (diffDays === 0) {
-        newStreak = currentStats.current_streak
-      } else if (diffDays === 1) {
-        newStreak = currentStats.current_streak + 1
-      } else {
-        newStreak = 1
-      }
-    }
-
-    if (newStreak % 7 === 0) {
-      xpEarned += 50
-    }
-
-    const newXpTotal = currentStats.xp_total + xpEarned
-    const oldLevel = getLevel(currentStats.xp_total)
-    const newLevel = getLevel(newXpTotal)
-    const leveledUp = newLevel > oldLevel
-
-    const newLongest = Math.max(currentStats.longest_streak, newStreak)
-
-    await supabase
-      .from('sessions')
-      .update({
-        completed_at: new Date().toISOString(),
-        xp_earned: xpEarned,
-        note: workoutNote || null,
-      })
-      .eq('id', sessionId)
-
-    haptic('medium')
-
-    const updatedStats = {
-      xp_total: newXpTotal,
-      level: newLevel,
-      current_streak: newStreak,
-      longest_streak: newLongest,
-      last_workout_date: localDateKey(today),
-      total_workouts: currentStats.total_workouts + 1,
-      updated_at: new Date().toISOString(),
-    }
-    await supabase
-      .from('user_stats')
-      .update(updatedStats)
-      .eq('user_id', user.id)
-
-    // Advance the rotation pointer so the home page suggests the next day after
-    // this one. Best-effort — a failure here must never block completion.
-    let prevRotationIndex = 0
-    try {
-      const [{ data: dayTypeRows }, { data: rotationRow }, { data: flexRows }] = await Promise.all([
-        supabase.from('exercises').select('day_type'),
-        supabase.from('user_rotation').select('*').eq('user_id', user.id).maybeSingle(),
-        supabase.from('user_flex_days').select('day_key').eq('user_id', user.id),
-      ])
-      const dayKeys = Array.from(new Set((dayTypeRows ?? []).map(r => r.day_type)))
-      const rotation = rotationRow as UserRotation | null
-      prevRotationIndex = rotation?.current_index ?? 0
-      const flexDays = new Set((flexRows ?? []).map((r: { day_key: string }) => r.day_key))
-      const seq = effectiveSequence(rotation, dayKeys, flexDays)
-      const newIndex = advanceIndex(seq, rotation?.current_index ?? -1, day)
-      await supabase.from('user_rotation').upsert(
-        {
-          user_id: user.id,
-          mode: rotation?.mode ?? 'auto',
-          sequence: rotation?.sequence ?? [],
-          current_index: newIndex,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'user_id' },
+      // A previous attempt may have already marked this session complete (and
+      // applied the stats delta) before failing on a later step. If the user
+      // taps FINISH again, don't re-apply the XP/streak delta — that would
+      // double-count. We still re-run the (idempotent) session write below.
+      const { data: sessionRow } = await runWithRetry(() =>
+        supabase.from('sessions').select('completed_at').eq('id', sessionId).maybeSingle(),
       )
-    } catch {
-      // Rotation is a non-critical convenience; swallow and move on.
-    }
+      const alreadyCompleted = !!sessionRow?.completed_at
 
-    // Store a 10-minute undo token so the user can resume if they finished by accident.
-    if (typeof window !== 'undefined') {
-      const token: FinishUndoToken = {
-        sessionId,
-        day,
-        userId: user.id,
-        xpEarned,
-        prevXpTotal: currentStats.xp_total,
-        prevLevel: getLevel(currentStats.xp_total),
-        prevStreak: currentStats.current_streak,
-        prevLongestStreak: currentStats.longest_streak,
-        prevLastWorkoutDate: currentStats.last_workout_date,
-        prevTotalWorkouts: currentStats.total_workouts,
-        prevRotationIndex,
-        expiresAt: Date.now() + 10 * 60 * 1000,
+      const statsFetch = await runWithRetry(() =>
+        supabase.from('user_stats').select('*').eq('user_id', user.id).maybeSingle(),
+      )
+      if (statsFetch.error) throw statsFetch.error
+      let currentStats = statsFetch.data
+
+      if (!currentStats) {
+        const created = await runWithRetry(() =>
+          supabase.from('user_stats').insert({ user_id: user.id }).select().maybeSingle(),
+        )
+        if (created.error) throw created.error
+        currentStats = created.data
       }
-      localStorage.setItem('grind_finish_undo', JSON.stringify(token))
+      if (!currentStats) throw new Error('Missing user stats')
+
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      // Parse the stored date key at local noon so the comparison stays in the
+      // user's timezone (avoids the UTC-midnight off-by-one that breaks streaks).
+      const lastDate = currentStats.last_workout_date
+        ? new Date(currentStats.last_workout_date + 'T12:00:00')
+        : null
+
+      let newStreak = 1
+      if (lastDate) {
+        lastDate.setHours(0, 0, 0, 0)
+        const diffDays = Math.floor((today.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24))
+        if (diffDays === 0) {
+          newStreak = currentStats.current_streak
+        } else if (diffDays === 1) {
+          newStreak = currentStats.current_streak + 1
+        } else {
+          newStreak = 1
+        }
+      }
+
+      if (newStreak % 7 === 0) {
+        xpEarned += 50
+      }
+
+      const newXpTotal = currentStats.xp_total + xpEarned
+      const oldLevel = getLevel(currentStats.xp_total)
+      const newLevel = getLevel(newXpTotal)
+      const leveledUp = newLevel > oldLevel
+
+      const newLongest = Math.max(currentStats.longest_streak, newStreak)
+
+      // Essential write #1: mark the session complete. If this can't be saved
+      // after retries, bail out (caught below) — the workout stays in-progress.
+      const sessionUpdate = await runWithRetry(() =>
+        supabase
+          .from('sessions')
+          .update({
+            completed_at: new Date().toISOString(),
+            xp_earned: xpEarned,
+            note: workoutNote || null,
+          })
+          .eq('id', sessionId),
+      )
+      if (sessionUpdate.error) throw sessionUpdate.error
+
+      haptic('medium')
+
+      const updatedStats = {
+        xp_total: newXpTotal,
+        level: newLevel,
+        current_streak: newStreak,
+        longest_streak: newLongest,
+        last_workout_date: localDateKey(today),
+        total_workouts: currentStats.total_workouts + 1,
+        updated_at: new Date().toISOString(),
+      }
+      // Essential write #2: apply the XP/streak delta — but only if a prior
+      // attempt hadn't already done so (see alreadyCompleted above).
+      if (!alreadyCompleted) {
+        const statsUpdate = await runWithRetry(() =>
+          supabase.from('user_stats').update(updatedStats).eq('user_id', user.id),
+        )
+        if (statsUpdate.error) throw statsUpdate.error
+      }
+
+      // Advance the rotation pointer so the home page suggests the next day after
+      // this one. Best-effort — a failure here must never block completion.
+      let prevRotationIndex = 0
+      try {
+        const [{ data: dayTypeRows }, { data: rotationRow }, { data: flexRows }] = await Promise.all([
+          supabase.from('exercises').select('day_type'),
+          supabase.from('user_rotation').select('*').eq('user_id', user.id).maybeSingle(),
+          supabase.from('user_flex_days').select('day_key').eq('user_id', user.id),
+        ])
+        const dayKeys = Array.from(new Set((dayTypeRows ?? []).map(r => r.day_type)))
+        const rotation = rotationRow as UserRotation | null
+        prevRotationIndex = rotation?.current_index ?? 0
+        const flexDays = new Set((flexRows ?? []).map((r: { day_key: string }) => r.day_key))
+        const seq = effectiveSequence(rotation, dayKeys, flexDays)
+        const newIndex = advanceIndex(seq, rotation?.current_index ?? -1, day)
+        await supabase.from('user_rotation').upsert(
+          {
+            user_id: user.id,
+            mode: rotation?.mode ?? 'auto',
+            sequence: rotation?.sequence ?? [],
+            current_index: newIndex,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'user_id' },
+        )
+      } catch {
+        // Rotation is a non-critical convenience; swallow and move on.
+      }
+
+      // Store a 10-minute undo token so the user can resume if they finished by accident.
+      if (typeof window !== 'undefined') {
+        const token: FinishUndoToken = {
+          sessionId,
+          day,
+          userId: user.id,
+          xpEarned,
+          prevXpTotal: currentStats.xp_total,
+          prevLevel: getLevel(currentStats.xp_total),
+          prevStreak: currentStats.current_streak,
+          prevLongestStreak: currentStats.longest_streak,
+          prevLastWorkoutDate: currentStats.last_workout_date,
+          prevTotalWorkouts: currentStats.total_workouts,
+          prevRotationIndex,
+          expiresAt: Date.now() + 10 * 60 * 1000,
+        }
+        localStorage.setItem('grind_finish_undo', JSON.stringify(token))
+      }
+
+      // Badge awards are a bonus — never fail an already-saved finish over them.
+      let newBadges: string[] = []
+      try {
+        newBadges = await checkAndAwardBadges(
+          supabase,
+          user.id,
+          { ...currentStats, ...updatedStats },
+        )
+      } catch {
+        newBadges = []
+      }
+
+      setCompletionData({
+        xpEarned,
+        leveledUp,
+        newLevel,
+        prCount,
+        prExercises,
+        newBadges,
+        duration: elapsed,
+        setsCompleted: checkedSets(),
+      })
+    } catch {
+      // The workout is untouched (or safely resumable) — tell the user and let
+      // them try again. Reuse the top toast so the message is impossible to miss.
+      setResumeToast('Could not finish workout. Check your connection and try again.')
+      setTimeout(() => setResumeToast(null), 5000)
+    } finally {
+      setFinishing(false)
     }
-
-    const newBadges = await checkAndAwardBadges(
-      supabase,
-      user.id,
-      { ...currentStats, ...updatedStats },
-    )
-
-    setCompletionData({
-      xpEarned,
-      leveledUp,
-      newLevel,
-      prCount,
-      prExercises,
-      newBadges,
-      duration: elapsed,
-      setsCompleted: checkedSets(),
-    })
-    setFinishing(false)
   }
 
   if (loading) {
