@@ -72,12 +72,17 @@ Both share `UnitContext`, so the kg/lbs toggle stays in sync across them.
 - user_rotation — user_id (PK), mode ('auto'|'manual'), sequence (jsonb array of
   day_keys, may repeat), current_index (pointer to last completed slot). Drives the
   home page's suggested next day. See Rotation below.
+- user_rest_settings — user_id (PK), weekdays (int[], 0=Sunday…6=Saturday). The
+  days you plan not to train. See Rest days below.
+- user_rest_dates — (user_id, rest_date) one-off "rest passes". **Server-written
+  only** — client INSERT/UPDATE/DELETE is revoked; `claim_rest_days` is the door.
 - feedback — user_id, username/email (identity snapshot at submit time),
   category ('bug'|'feature'|'improvement'|'other'), message, image_paths (text[]
   of objects in the private `feedback-images` bucket), is_anonymous, is_read,
   is_starred. See Feedback below and migration `09-feedback.sql`.
 RLS on exercises, sessions, session_logs, user_stats, user_badges, body_weights,
-user_day_categories, user_rotation, feedback (and delete policies on sessions/session_logs for discard).
+user_day_categories, user_rotation, user_rest_settings, user_rest_dates, feedback
+(and delete policies on sessions/session_logs for discard).
 `get_leaderboard(p_day_type, p_user_ids)` RPC ranks overall by XP, or
 push/pull/legs by heaviest working-set lift (category-aware, security definer).
 
@@ -89,9 +94,10 @@ XP: +100 per completed workout, +25 per PR set, +50 when the new streak hits a
 multiple of 7. Warm-up sets never count toward PRs.
 Level: triangular curve — XP to advance from level n to n+1 is `500 * n`, so
 cumulative XP for level n is `500 * n * (n-1) / 2`. `getLevel(xp)` inverts this.
-Streak: continues only on consecutive calendar days (gap of exactly 1 day
-increments; same day keeps it; any larger gap resets to 1). Home page zeroes a
-stale streak when the last workout was more than 1 day ago.
+Streak: a run of workout days broken only by a day that is neither trained nor a
+rest day (see Rest days). The number counts WORKOUTS in the run, never rest days,
+so resting can't inflate it. Home zeroes a stale streak when an uncovered day has
+passed since the last workout.
 PR: weight > max non-warm-up weight in any previous completed session for that exercise.
 14 badges in src/lib/utils/badges.ts.
 
@@ -106,7 +112,8 @@ stored that isn't recomputable — and the client has **no UPDATE privilege on
 | `complete_session(session_id, local_date, note)` | `ActiveWorkout.handleFinish` |
 | `uncomplete_session(session_id, local_date)` | `ActiveWorkout.handleUndoFinish`, `FinishUndoBanner` |
 | `delete_session(session_id, local_date)` | `log/past` delete |
-| `refresh_stats(local_date)` | `log/past` save, `HomeDashboard` stale-streak lapse |
+| `refresh_stats(local_date)` | `log/past` save, `HomeDashboard` stale-streak lapse, `RestDaysCard` schedule change |
+| `claim_rest_days(dates[], local_date)` | `HomeDashboard` streak-rescue prompt |
 
 `src/lib/utils/gamification.ts` still holds `getLevel`/`getXpInCurrentLevel` etc.
 for DISPLAY. `grind_level_for_xp()` in SQL mirrors `getLevel` — **change one,
@@ -131,6 +138,36 @@ it can't be used to farm streak bonuses. `sessions.local_date` stores it.
 - `src/proxy.ts` uses `getClaims()` (local JWKS verification) rather than
   `getUser()` (a network round trip per request), and caches the "profile exists"
   check in the `grind_profile_ok` cookie instead of querying on every navigation.
+
+### Rest days (src/lib/utils/restDays.ts, docs/sql/14-rest-days.sql)
+A streak used to require consecutive calendar dates, which no real program
+produces — the app's main consistency signal punished the rest day the program
+prescribes. Two mechanisms, deliberately different in kind:
+
+- **Scheduled** — weekdays in `user_rest_settings.weekdays` (0=Sun…6=Sat). Part of
+  your program, so unlimited and free. Configured in Profile → Settings → Rest Days
+  (`RestDaysCard`), capped at 6 so at least one training day survives.
+- **Rest passes** — `user_rest_dates`, an ad-hoc "count yesterday as rest" claimed
+  from the Home streak-rescue prompt. **2 per rolling 7 days, claimable only for the
+  last 7 days.**
+
+A rest day **bridges** a gap; it never **counts**. `grind_recompute_stats` starts a
+new run only when the gap back to the previous workout holds a non-rest day, and
+`streak_day` is still the workout's position in the run — so the +50 XP milestone
+fires every 7th *workout* of a run rather than every 7th calendar day (reachable
+for the first time by anyone training fewer than 7 days a week).
+
+Rationing lives in `claim_rest_days`, not in RLS: a policy on `user_rest_dates`
+that counted `user_rest_dates` would recurse, and the client obviously can't count
+for us — so client writes to that table are revoked outright. **If you change the
+limits, change them in both places** (`14-rest-days.sql` and the constants in
+`restDays.ts`, which exist only so the UI can pre-check and explain).
+
+Because stats are derived, there is nothing to migrate: editing your rest days
+re-derives history on the next recompute, and claiming a pass can restore a streak
+that had already been zeroed. `RestDaysCard` therefore calls `refresh_stats` after
+every schedule change — without it Home keeps showing a streak computed under the
+old schedule.
 
 ### Rotation (src/lib/utils/rotation.ts)
 The suggested "next day" comes from a per-user rotation — an ordered loop of day_keys
@@ -173,6 +210,30 @@ for routing only — it decides whether the Profile link renders and whether
 choice: `user_id` is always recorded (abuse control) and the inbox has a
 "reveal sender" affordance.
 
+### Onboarding (src/components/onboarding/, OnboardingContext)
+Two mechanisms, not one, because they answer different questions:
+
+- **Scripted tours** (`useTour(id, steps, { active })` → `CoachMark`) walk a page's
+  layout once: Home, DaySelect, WorkoutManager (days + day-edit), Progress,
+  Leaderboard, Profile. Steps anchor to `data-onboard="…"` attributes resolved at
+  render time, so a step whose target isn't on screen silently degrades to a
+  centered card rather than pointing at nothing. `CoachMark` scrolls its target
+  into view before spotlighting it — without that, a step anchored below the fold
+  dimmed the page and aimed at empty space.
+- **Feature tooltips** (`useFeatureTooltip`) are one-off functional hints inside
+  ActiveWorkout, fired the first time a control is genuinely in use. A process-wide
+  coordinator shows one at a time so a busy first workout queues instead of
+  stacking. These deliberately ignore "Skip all tours" — they're instructions, not
+  a welcome mat.
+
+Seen-state is per user in `localStorage` (`grind_onboarding_{id}`), read through
+`useSyncExternalStore` so hydration stays clean. **Always gate a tour's `active`
+on "content loaded AND no modal/sheet/confirm open"** — a coach mark drawn over a
+modal, or pointing at a control that just navigated away, is worse than no
+onboarding. When you add a `data-onboard` anchor to a conditionally-rendered
+element, check every branch still carries it (the Home streak card renders three
+different ways and all three keep `home-streak`).
+
 ### Dates & timezones (important)
 Streak/calendar logic is timezone-sensitive. Always derive a date key from local
 components via `localDateKey()` in `src/lib/utils/formatting.ts` — never
@@ -214,20 +275,23 @@ src/
       log/page.tsx + DaySelect.tsx + ActiveWorkout.tsx + CompletionModal.tsx
                   + WorkoutManager.tsx + past/page.tsx (log/edit/delete past)
       progress/page.tsx + ProgressChart.tsx + loading.tsx
-      profile/page.tsx + ProfileDashboard.tsx + BodyWeightCard.tsx + loading.tsx
+      profile/page.tsx + ProfileDashboard.tsx + BodyWeightCard.tsx
+                      + RestDaysCard.tsx + loading.tsx
       leaderboard/page.tsx + LeaderboardClient.tsx + FriendsAccordion.tsx + ShareCard.tsx
       admin/feedback/page.tsx + FeedbackInbox.tsx — developer-only inbox (404s
                                      for everyone else; RLS is the real gate)
   components/
     BottomNav.tsx, TopNav.tsx, WorkoutCalendar.tsx, PlateCalculator.tsx, RestTimerBar.tsx
-    FeedbackModal.tsx
+    FeedbackModal.tsx, FinishUndoBanner.tsx, ThemeToggle.tsx
+    onboarding/ (Tour.tsx, CoachMark.tsx, Tooltip.tsx, useFeatureTooltip.tsx, anchor.ts)
     ui/ (Button, Card, IconButton, Input, SectionLabel, StatTile, index)
   lib/
     supabase/client.ts + server.ts
-    contexts/UnitContext.tsx
-    hooks/useRestTimer.ts
+    contexts/UnitContext.tsx + ThemeContext.tsx + ToastContext.tsx + OnboardingContext.tsx
+    hooks/useRestTimer.ts + useKeyboardInset.ts
     types/index.ts
     utils/gamification.ts + formatting.ts + badges.ts + haptics.ts + sessions.ts + rotation.ts
+         + restDays.ts (pure rest-day/streak-gap helpers, mirrors migration 14)
          + admin.ts (admin-email check for routing/UI only)
     brand-icon.tsx
   proxy.ts                        — auth gate + redirect to /setup if no profile

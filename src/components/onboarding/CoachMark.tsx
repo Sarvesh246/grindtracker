@@ -58,6 +58,22 @@ export default function CoachMark({
     return () => window.removeEventListener('resize', check)
   }, [])
 
+  // Bring the target on screen before spotlighting it. Without this a step whose
+  // anchor sits below the fold (the home calendar, the workout manager's order
+  // row) dimmed the page and pointed a bubble at empty space — the ring was
+  // simply off-screen. Runs once per step, as soon as the anchor is found;
+  // `scrollIntoView` walks up to whichever container actually scrolls, which in
+  // this app is `.app-main` or a sheet's own scroll region, not the body.
+  const scrolledForStep = useRef<number | null>(null)
+  useEffect(() => {
+    if (scrolledForStep.current === step) return
+    const el = getEl()
+    if (!el) return
+    scrolledForStep.current = step
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: reduced ? 'auto' : 'smooth' })
+  }, [step, getEl, anchor])
+
   // Move focus into the card on mount / step change so it's keyboard reachable,
   // and let Escape skip the tour (matches the app's modal dismissal affordances).
   useEffect(() => {

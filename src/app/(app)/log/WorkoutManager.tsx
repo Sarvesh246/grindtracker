@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Exercise, DayCategory, UserRotation } from '@/lib/types'
 import { autoSequence, effectiveSequence } from '@/lib/utils/rotation'
 import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
+import { useTour, type TourStep } from '@/components/onboarding/Tour'
 
 interface WorkoutManagerProps {
   onClose: () => void
@@ -355,8 +356,35 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
     screen.id === 'day' ? screen.dayKey.replace(/-/g, ' ').toUpperCase() :
     screen.exercise ? 'EDIT EXERCISE' : 'ADD EXERCISE'
 
+  // ── Walkthroughs ────────────────────────────────────────────────────────────
+  // Two, because the manager is two genuinely different screens and a single
+  // tour can't step across a navigation. Both render as siblings of the backdrop
+  // (z-index 701 vs the sheet's 500), so the spotlight lands over the sheet.
+  //
+  // Each is gated on the screen it describes AND on nothing else being open, so
+  // a coach mark can never point at a control that just slid away.
+  const managerSteps: TourStep[] = [
+    { target: 'wm-day-row', title: 'Your workout days', body: 'Tap a day to edit the exercises in it — or rename and delete it from the icons on the right.' },
+    { target: 'wm-add-day', title: 'Add a day', body: 'Create as many days as your program needs. Push, Pull, Legs, Abs, Cardio — whatever you actually train.' },
+    { target: 'wm-order', title: 'Workout order', body: 'GRIND suggests your next day from this loop. Reorder it, or repeat a day, whenever your program changes.' },
+  ]
+  const managerTour = useTour('log-manager', managerSteps, {
+    active: !loading && screen.id === 'days' && dayKeys.length > 0 && !deleteTarget,
+  })
+
+  const dayEditSteps: TourStep[] = [
+    { target: 'wm-add-exercise', title: 'Build the day', body: 'Add each exercise with its target sets and reps. You can still change weight, reps and set count live during a workout.' },
+    { target: 'wm-category', title: 'Leaderboard category', body: 'Optional — map a custom day onto push, pull or legs so its lifts count on that leaderboard tab.' },
+    { target: 'wm-flex', title: 'Flex days', body: "Mark a day flex and it stays out of the rotation — it'll never be suggested as UP NEXT, but you can still train it any time." },
+  ]
+  const dayEditTour = useTour('log-manager-day', dayEditSteps, {
+    active: !loading && screen.id === 'day' && !deleteTarget,
+  })
+
   return (
     <>
+      {managerTour}
+      {dayEditTour}
       {/* Backdrop */}
       <div
         className="wm-backdrop"
@@ -430,10 +458,14 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
                     No workout days yet. Add one below.
                   </div>
                 ) : (
-                  dayKeys.map(key => {
+                  dayKeys.map((key, dayIdx) => {
                     const exs = grouped[key]
                     return (
-                      <div key={key} style={{ borderBottom: '1px solid var(--border)' }}>
+                      <div
+                        key={key}
+                        data-onboard={dayIdx === 0 ? 'wm-day-row' : undefined}
+                        style={{ borderBottom: '1px solid var(--border)' }}
+                      >
                         <div style={{
                           display: 'flex', alignItems: 'center',
                           padding: '16px',
@@ -521,6 +553,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
 
                 {/* Add Day */}
                 <button
+                  data-onboard="wm-add-day"
                   onClick={() => { setNewDayInput(''); setScreen({ id: 'new-day' }) }}
                   style={{
                     width: '100%', textAlign: 'left',
@@ -545,6 +578,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
                     the default auto rotation needs no attention. */}
                 {dayKeys.length > 0 && (
                   <button
+                    data-onboard="wm-order"
                     onClick={() => { setRotationError(''); setAddingSlot(false); setScreen({ id: 'rotation' }) }}
                     style={{
                       width: '100%', textAlign: 'left',
@@ -907,6 +941,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
                   )}
 
                   <button
+                    data-onboard="wm-add-exercise"
                     onClick={() => openExerciseForm(dayKey)}
                     style={{
                       width: '100%', textAlign: 'left',
@@ -933,6 +968,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
                       the picker on tap. Set once, it decides which competitive
                       tab this day feeds. */}
                   <button
+                    data-onboard="wm-category"
                     onClick={() => { setCategoryError(''); setScreen({ id: 'category-picker', dayKey }) }}
                     style={{
                       width: '100%', textAlign: 'left',
@@ -960,6 +996,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
 
                   {/* Flex day toggle */}
                   <button
+                    data-onboard="wm-flex"
                     onClick={() => toggleFlex(dayKey)}
                     style={{
                       width: '100%', textAlign: 'left',

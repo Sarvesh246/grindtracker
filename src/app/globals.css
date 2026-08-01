@@ -288,6 +288,69 @@ select:focus-visible,
   }
 }
 
+/* ---------------------------------------------------------------------------
+   Workout-complete sheet. Same shape as .wm-sheet (bottom sheet on a phone,
+   centered dialog once there's room) but with a THREE-part structure: only
+   .done-scroll scrolls, so the header and the footer's actions are always on
+   screen no matter how many PRs and badges a session produced.
+   --------------------------------------------------------------------------- */
+.done-backdrop {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.78);
+  z-index: 300;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.done-sheet {
+  width: 100%;
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  max-height: 92dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.done-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Four 25% tiles at 360px would truncate "VOLUME" and a five-figure number, so
+   the row is two-up until there's room for four. */
+.done-stats {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, 1fr);
+}
+
+@media (min-width: 430px) {
+  .done-stats {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+@media (min-width: 640px) {
+  .done-backdrop {
+    align-items: center;
+    padding: 24px;
+  }
+
+  .done-sheet {
+    max-width: 460px;
+    border-radius: var(--radius-lg);
+    border-bottom: 1px solid var(--border);
+    max-height: min(88dvh, 760px);
+  }
+}
+
 /* Delete confirm overlay */
 .wm-confirm-overlay {
   position: fixed;
@@ -532,6 +595,22 @@ select:focus-visible,
   display: grid;
   gap: 8px;
   grid-template-columns: 1fr 1fr;
+}
+
+/* Home's three-up stat row. A 20px gap costs 40px of a 328px content width on a
+   360px phone — enough to squeeze the numbers — so it tightens on mobile and
+   opens back up where the two-column dashboard needs the same rhythm as the
+   cards around it. */
+.home-stat-row {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+}
+
+@media (min-width: 768px) {
+  .home-stat-row {
+    gap: 20px;
+  }
 }
 .badge-grid {
   display: grid;
@@ -844,6 +923,62 @@ select:focus-visible,
   grid-template-columns: 1fr;
   gap: 14px;
   align-items: start;
+}
+
+/* Toolbar. Everything in it is 40px tall so the rows read as one block rather
+   than a scatter of differently-sized controls. On a phone the segmented filter
+   takes a full row of its own and the two selects split the next one evenly;
+   once there's width they all sit on a single line. */
+.inbox-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 18px 0 14px;
+}
+
+.inbox-search-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.inbox-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.inbox-segment {
+  display: flex;
+  flex: 1 1 100%;
+  background-color: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 3px;
+}
+
+.inbox-segment button {
+  flex: 1;
+  min-width: 0;
+}
+
+.inbox-select {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+@media (min-width: 560px) {
+  .inbox-segment {
+    flex: 0 0 auto;
+  }
+  .inbox-segment button {
+    flex: 0 0 auto;
+  }
+  .inbox-select {
+    flex: 0 0 auto;
+    min-width: 132px;
+  }
 }
 
 @media (max-width: 899px) {

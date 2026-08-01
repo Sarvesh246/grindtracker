@@ -1,8 +1,9 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { FinishUndoToken } from '@/app/(app)/log/ActiveWorkout'
+import { isCompletionSheetOpen, subscribeCompletionSheet } from '@/app/(app)/log/CompletionModal'
 import { localDateKey } from '@/lib/utils/formatting'
 
 const UNDO_KEY = 'grind_finish_undo'
@@ -32,6 +33,15 @@ export default function FinishUndoBanner() {
   const [remaining, setRemaining] = useState(0)
   const [undoing, setUndoing] = useState(false)
 
+  // The completion sheet carries its own "Resume workout" action. While it's up
+  // this banner would float over its footer offering the same thing twice, so it
+  // stands down — its job is the period AFTER you've navigated away.
+  const completionOpen = useSyncExternalStore(
+    subscribeCompletionSheet,
+    isCompletionSheetOpen,
+    () => false,
+  )
+
   useEffect(() => {
     // Hydrate from the localStorage undo token (client-only external store) and
     // then poll it every second for expiry/changes.
@@ -47,7 +57,7 @@ export default function FinishUndoBanner() {
     return () => clearInterval(interval)
   }, [])
 
-  if (!token) return null
+  if (!token || completionOpen) return null
 
   async function handleUndo() {
     if (!token || undoing) return
