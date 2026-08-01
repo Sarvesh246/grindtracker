@@ -7,11 +7,13 @@ import { localDateKey } from '@/lib/utils/formatting'
 import { BadgeDefinition } from '@/lib/utils/badges'
 import BodyWeightCard from './BodyWeightCard'
 import { useUnit } from '@/lib/contexts/UnitContext'
+import { useToast } from '@/lib/contexts/ToastContext'
 import { getDefaultRest, setDefaultRest } from '@/lib/hooks/useRestTimer'
 import { useTheme } from '@/lib/contexts/ThemeContext'
 import ThemeToggle from '@/components/ThemeToggle'
 import FeedbackModal from '@/components/FeedbackModal'
 import Link from 'next/link'
+import { useTour, type TourStep } from '@/components/onboarding/Tour'
 
 function FlameIcon({ size = 24, color = 'var(--accent-text)' }: { size?: number; color?: string }) {
   return (
@@ -117,6 +119,7 @@ export default function ProfileDashboard({
   const supabase = useMemo(() => createClient(), [])
   const { unit, toggleUnit } = useUnit()
   const { theme } = useTheme()
+  const toast = useToast()
   const [tooltipBadgeId, setTooltipBadgeId] = useState<string | null>(null)
   const [badgesOpen, setBadgesOpen] = useState(false)
   const [feedbackOpen, setFeedbackOpen] = useState(false)
@@ -214,6 +217,7 @@ export default function ProfileDashboard({
 
     setUsername(trimmed)
     setEditingUsername(false)
+    toast.show('Username updated')
   }
 
   function usernameStatusText() {
@@ -267,11 +271,24 @@ export default function ProfileDashboard({
     router.push('/login')
   }
 
+  // Settings walkthrough. Paused while the username field is being edited (its
+  // pencil target is swapped out) or the feedback modal is open.
+  const profileSteps: TourStep[] = [
+    { target: 'profile-username', title: 'Change your handle', body: 'Tap the pencil to change your @handle.' },
+    { target: 'profile-unit', title: 'Weight units', body: 'Switch how weights display app-wide. Everything is still stored consistently under the hood.' },
+    { target: 'profile-rest', title: 'Default rest time', body: 'Set your default rest between sets — override per-exercise from the rest timer during a workout.' },
+    { target: 'profile-badges', title: 'Badges', body: 'Tap a badge to see how to earn it.' },
+  ]
+  const profileTour = useTour('profile', profileSteps, {
+    active: !editingUsername && !feedbackOpen,
+  })
+
   return (
     <div className="page page--profile" style={{
       fontFamily: "'DM Sans', sans-serif",
       padding: '0 16px 48px',
     }}>
+      {profileTour}
 
       {/* Header */}
       <div style={{ paddingTop: '24px', marginBottom: '20px' }}>
@@ -350,6 +367,7 @@ export default function ProfileDashboard({
                   {username ? `@${username}` : '—'}
                 </span>
                 <button
+                  data-onboard="profile-username"
                   onClick={openUsernameEdit}
                   title="Change username"
                   style={{
@@ -618,6 +636,7 @@ export default function ProfileDashboard({
             </div>
           </div>
           <button
+            data-onboard="profile-unit"
             onClick={toggleUnit}
             style={{
               display: 'flex',
@@ -675,7 +694,7 @@ export default function ProfileDashboard({
           <div style={{ height: '1px', backgroundColor: 'var(--border)' }} />
 
           {/* Default rest time */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div data-onboard="profile-rest" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
               <div style={{ fontSize: '14px', color: 'var(--text-primary)', fontWeight: 600, marginBottom: '2px' }}>
                 Default Rest Time
@@ -804,6 +823,7 @@ export default function ProfileDashboard({
       {/* Badges */}
       <div style={{ marginBottom: '32px' }}>
         <button
+          data-onboard="profile-badges"
           onClick={() => setBadgesOpen(v => !v)}
           style={{
             display: 'flex', justifyContent: 'space-between', alignItems: 'center',

@@ -10,6 +10,7 @@ import {
 } from 'recharts'
 import { createClient } from '@/lib/supabase/client'
 import { useUnit } from '@/lib/contexts/UnitContext'
+import { useToast } from '@/lib/contexts/ToastContext'
 
 interface Row {
   weight: number
@@ -24,6 +25,7 @@ function todayDateKey(): string {
 export default function BodyWeightCard() {
   const supabase = createClient()
   const { unitLabel, toDisplay, fromDisplay, fmt } = useUnit()
+  const toast = useToast()
   const [rows, setRows] = useState<Row[]>([])
   const [draft, setDraft] = useState('')
   const [editingDate, setEditingDate] = useState<string | null>(null)
@@ -72,7 +74,8 @@ export default function BodyWeightCard() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setSaving(false); return }
 
-    await supabase.from('body_weights').upsert(
+    const wasEditing = editingDate !== null
+    const { error } = await supabase.from('body_weights').upsert(
       { user_id: user.id, weight: fromDisplay(w), recorded_at: editingDate ?? todayDateKey() },
       { onConflict: 'user_id,recorded_at' },
     )
@@ -80,6 +83,7 @@ export default function BodyWeightCard() {
     setDraft('')
     setEditingDate(null)
     setSaving(false)
+    if (!error) toast.show(wasEditing ? 'Weight updated' : 'Weight logged')
   }
 
   const latest = rows.length > 0 ? rows[rows.length - 1] : null

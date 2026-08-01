@@ -2,6 +2,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { UserProfile } from '@/lib/types'
+import { useToast } from '@/lib/contexts/ToastContext'
 
 // Pin the projection instead of `select('*')`. Every column here is safe to
 // show to another user; selecting explicitly means a column added to
@@ -32,6 +33,7 @@ interface Props {
 
 export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
   const supabase = useMemo(() => createClient(), [])
+  const toast = useToast()
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [open, setOpen] = useState(false)
@@ -175,6 +177,7 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
     setQuery('')
     setSearchResults([])
     loadFriendsData()
+    toast.show('Request sent')
   }
 
   async function acceptRequest(friendshipId: string) {
@@ -192,6 +195,7 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
 
     setActionError(null)
     loadFriendsData()
+    toast.show('Friend added')
   }
 
   async function declineRequest(friendshipId: string) {

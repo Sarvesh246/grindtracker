@@ -39,6 +39,40 @@ export default async function HomePage() {
   // `overdueDays` below, which was already moved client-side for this exact
   // class of bug.
 
+  // In-progress (not-yet-completed) session, if any — powers the dashboard's
+  // resume / save / discard controls so a workout interrupted by closing the app
+  // is one tap away instead of buried behind the day picker. Newest-first; the
+  // client decides whether it's from *today* (the viewer's local day) before
+  // surfacing it, matching ActiveWorkout's resume window so "Resume" always
+  // continues this session rather than silently forking a new one.
+  const { data: activeRow } = await supabase
+    .from('sessions')
+    .select('id, day_type, started_at')
+    .eq('user_id', user.id)
+    .is('completed_at', null)
+    .order('started_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  let activeSession:
+    | { id: string; day_type: string; started_at: string; loggedSets: number }
+    | null = null
+  if (activeRow) {
+    // Logged-set count gates the "Save" action — completing a session with zero
+    // logged sets would mint XP for an empty workout, exactly what ActiveWorkout
+    // guards against with its `checkedSets() === 0` check.
+    const { count } = await supabase
+      .from('session_logs')
+      .select('id', { count: 'exact', head: true })
+      .eq('session_id', activeRow.id)
+    activeSession = {
+      id: activeRow.id,
+      day_type: activeRow.day_type,
+      started_at: activeRow.started_at,
+      loggedSets: count ?? 0,
+    }
+  }
+
   // Last completed session
   const { data: lastSession } = await supabase
     .from('sessions')
@@ -150,6 +184,7 @@ export default async function HomePage() {
   return (
     <HomeDashboard
       stats={stats}
+      activeSession={activeSession}
       lastSession={lastSession ?? null}
       lastSessionLogs={lastSessionLogs}
       nextDay={nextDay}

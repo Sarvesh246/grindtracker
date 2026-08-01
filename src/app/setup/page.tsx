@@ -2,6 +2,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
 
 const USERNAME_RE = /^[a-z0-9_]{3,20}$/
 
@@ -15,6 +16,7 @@ export default function SetupPage() {
   const [available, setAvailable] = useState<boolean | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const keyboardInset = useKeyboardInset()
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -113,6 +115,10 @@ export default function SetupPage() {
       alignItems: 'center',
       justifyContent: 'center',
       padding: '24px',
+      // Keep the centered form (and its Claim Username button) above the iOS
+      // keyboard on this must-complete first-run screen.
+      paddingBottom: keyboardInset > 0 ? keyboardInset + 24 : 24,
+      transition: 'padding-bottom 180ms ease',
     }}>
       <div style={{ width: '100%', maxWidth: '360px' }}>
         {/* Logo */}

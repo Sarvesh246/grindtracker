@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { useUnit } from '@/lib/contexts/UnitContext'
+import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
 
 // Plate / bar denominations differ by unit system. The calculator works entirely in the
 // active display unit and converts back to canonical lbs at the apply boundary.
@@ -41,6 +42,7 @@ interface Props {
 
 export default function PlateCalculator({ initialTarget, onClose, onApply }: Props) {
   const { unitLabel, fromDisplay } = useUnit()
+  const keyboardInset = useKeyboardInset()
   const metric = unitLabel === 'kg'
   const plateSet = metric ? PLATES_KG : PLATES_LB
   const barPresets = metric ? BAR_PRESETS_KG : BAR_PRESETS_LB
@@ -70,6 +72,10 @@ export default function PlateCalculator({ initialTarget, onClose, onApply }: Pro
         alignItems: 'flex-end',
         justifyContent: 'center',
         zIndex: 600,
+        // Lift the sheet above the iOS keyboard so the result + USE button stay
+        // visible while the target weight is being typed.
+        paddingBottom: keyboardInset > 0 ? keyboardInset : 0,
+        transition: 'padding-bottom 180ms ease',
       }}
     >
       <div

@@ -342,6 +342,41 @@ select:focus-visible,
   }
 }
 
+/* Bottom-anchored "saved" confirmation entrance (rise up + fade). Keeps the
+   -50% X centering used by the passive save toast in ActiveWorkout. */
+@keyframes save-toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Onboarding (coach marks / tours / contextual tooltips). Subtle 150–200ms
+   ease entrances matching the rest of the app. The dim mask fades in on its
+   own; floating bubbles scale up slightly; the mobile bottom-sheet rises.
+   --------------------------------------------------------------------------- */
+@keyframes onboard-dim-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes onboard-pop-in {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes onboard-sheet-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes onboard-tip-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 /* ---------------------------------------------------------------------------
    Reduced motion — respect user preference. Zero out transitions and
    keyframe animations rather than disabling functionality.

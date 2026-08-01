@@ -9,11 +9,15 @@ import { haptic } from '@/lib/utils/haptics'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { deleteIncompleteSessions } from '@/lib/utils/sessions'
 import { advanceIndex, effectiveSequence } from '@/lib/utils/rotation'
-import type { UserRotation, UserStats } from '@/lib/types'
+import type { UserRotation, UserStats, CompleteSessionResult } from '@/lib/types'
 import { useRestTimer } from '@/lib/hooks/useRestTimer'
+import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
 import RestTimerBar from '@/components/RestTimerBar'
 import PlateCalculator from '@/components/PlateCalculator'
 import CompletionModal from './CompletionModal'
+import { useFeatureTooltip } from '@/components/onboarding/useFeatureTooltip'
+import { onboardTarget } from '@/components/onboarding/anchor'
+import { useOnboarding } from '@/lib/contexts/OnboardingContext'
 
 interface SetState {
   weight: string
@@ -63,21 +67,6 @@ export interface FinishUndoToken {
    */
   prevRotationIndex: number
   expiresAt: number
-}
-
-/** Shape returned by the `complete_session` RPC (docs/sql/11-server-side-xp.sql). */
-export interface CompleteSessionResult {
-  xp_earned: number
-  xp_total: number
-  prev_level: number
-  level: number
-  leveled_up: boolean
-  current_streak: number
-  longest_streak: number
-  last_workout_date: string | null
-  total_workouts: number
-  pr_count: number
-  pr_exercises: { name: string; weight: number }[]
 }
 
 function dayLabel(day: string): string {
@@ -139,10 +128,31 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const [undoState, setUndoState] = useState<UndoState | null>(null)
   const [editingKey, setEditingKey] = useState<string | null>(null)
   const [resumeToast, setResumeToast] = useState<string | null>(null)
+  // Passive "X saved" confirmation, anchored at the bottom. Distinct from the
+  // top undo toast (which is actionable): this one just reassures the user that
+  // an edit/note/swap actually persisted, then fades on its own.
+  const [saveToast, setSaveToast] = useState<string | null>(null)
+  const saveToastTimer = useRef<NodeJS.Timeout | null>(null)
   const [discarding, setDiscarding] = useState(false)
   const [plateCalcTarget, setPlateCalcTarget] = useState<{ key: string; current: number } | null>(null)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   const restTimer = useRestTimer()
+  const keyboardInset = useKeyboardInset()
+  const { hasSeenTooltip, markTooltipSeen } = useOnboarding()
+
+  /**
+   * Flash a short bottom-anchored "saved" confirmation. Re-flashing resets the
+   * timer so rapid edits don't leave a stale message lingering.
+   */
+  const showSaveToast = useCallback((msg: string) => {
+    setSaveToast(msg)
+    if (saveToastTimer.current) clearTimeout(saveToastTimer.current)
+    saveToastTimer.current = setTimeout(() => setSaveToast(null), 1900)
+  }, [])
+
+  // Clear the pending save-toast timer on unmount so it can't fire into a
+  // torn-down component.
+  useEffect(() => () => { if (saveToastTimer.current) clearTimeout(saveToastTimer.current) }, [])
   // handleCheck reads this after an `await`, by which point another set may have
   // been checked (and re-rendered) in the meantime — the `logs` captured in its
   // own closure would be stale. The ref always reflects the latest committed state.
@@ -541,6 +551,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
     })
     setEditingKey(null)
     haptic('medium')
+    showSaveToast(`Set ${setNumber} saved`)
   }
 
   /**
@@ -553,12 +564,13 @@ export default function ActiveWorkout({ day }: { day: string }) {
     const key = `${exerciseId}-${setNumber}`
     const logEntry = logs[key]
     if (!logEntry || !logEntry.checked) return
-    await supabase
+    const { error } = await supabase
       .from('session_logs')
       .update({ note: logEntry.note || null })
       .eq('session_id', sessionId)
       .eq('exercise_id', exerciseId)
       .eq('set_number', setNumber)
+    if (!error) showSaveToast(logEntry.note ? 'Note saved' : 'Note cleared')
   }
 
   function handleAddSet(exerciseId: string) {
@@ -579,6 +591,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         note: '',
       },
     }))
+    showSaveToast('Set added')
   }
 
   /**
@@ -632,6 +645,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       if (editNum === setNumber) setEditingKey(null)
       else if (editNum > setNumber) setEditingKey(`${exerciseId}-${editNum - 1}`)
     }
+    showSaveToast('Set removed')
   }
 
   async function handleSkipSet(exerciseId: string, setNumber: number) {
@@ -784,6 +798,46 @@ export default function ActiveWorkout({ day }: { day: string }) {
     if (editingKey?.startsWith(`${swapTarget}-`)) setEditingKey(null)
 
     setSwapTarget(null)
+    showSaveToast(`Swapped in ${newExercise.name}`)
+  }
+
+  /**
+   * Create a brand-new exercise from the swap sheet (when the one the user wants
+   * isn't in any of their days yet) and immediately swap it into the current
+   * slot. The exercise is added to THIS day's catalog so it persists past the
+   * session, mirroring WorkoutManager's insert (owner-stamped, appended to the
+   * end of the day's sort order). Returns the created row, or null on failure so
+   * the modal can surface an error and keep the form open.
+   */
+  async function createAndSwapExercise(name: string, sets: number, reps: string): Promise<Exercise | null> {
+    if (!swapTarget) return null
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return null
+
+    const sortOrder = allExercises
+      .filter(e => e.day_type === day)
+      .reduce((m, e) => Math.max(m, e.sort_order), 0) + 1
+
+    const { data, error } = await supabase
+      .from('exercises')
+      .insert({
+        user_id: user.id,
+        name: name.trim(),
+        day_type: day,
+        sets_target: sets,
+        reps_target: reps.trim(),
+        sort_order: sortOrder,
+      })
+      .select()
+      .maybeSingle()
+
+    if (error || !data) return null
+
+    const created = data as Exercise
+    // Keep the in-memory catalog in sync so a subsequent swap sees the new row.
+    setAllExercises(prev => [...prev, created])
+    await handleSwapExercise(created)
+    return created
   }
 
   async function handleDiscard() {
@@ -1027,6 +1081,86 @@ export default function ActiveWorkout({ day }: { day: string }) {
     }
   }
 
+  // ── First-time contextual hints (use-case based, one-off; NOT a tour) ─────────
+  // Each fires once ever, the first time its control is genuinely in use. Hooks
+  // must run before the early returns below. Suppressed while any modal/sheet is
+  // open, and — except the rest-timer hint, which explains the very bar that's
+  // counting — during an active rest countdown, so a hint never lands over a
+  // modal or distracts mid-rest. A coordinator inside the hook shows one at a
+  // time so eligible hints queue rather than stack.
+  const anyModalOpen = !!plateCalcTarget || !!swapTarget || !!completionData || showExitConfirm
+  const restCounting = restTimer.active && !restTimer.paused
+  const hintsBlocked = anyModalOpen || restCounting
+  const workoutReady = !loading && exercises.length > 0
+  const hasAnyPR = Object.values(logs).some(l => l.isPR)
+
+  const hintCheck = useFeatureTooltip('aw-check', {
+    when: workoutReady, suppressed: hintsBlocked, getEl: () => onboardTarget('aw-check'),
+    body: 'Tap the checkmark to log this set. Tap a logged set again to edit and re-save it.',
+    preferred: ['top', 'left', 'bottom'],
+  })
+  const hintWarmup = useFeatureTooltip('aw-warmup', {
+    when: workoutReady, suppressed: hintsBlocked, getEl: () => onboardTarget('aw-warmup'),
+    body: "Mark warm-up sets — they're excluded from PR detection.",
+    preferred: ['top', 'bottom'],
+  })
+  const hintPlate = useFeatureTooltip('aw-plate', {
+    when: workoutReady, suppressed: hintsBlocked, getEl: () => onboardTarget('aw-plate'),
+    body: 'Tap here to see which plates to load per side for your target weight.',
+    preferred: ['top', 'bottom'],
+  })
+  const hintNote = useFeatureTooltip('aw-note', {
+    when: workoutReady, suppressed: hintsBlocked, getEl: () => onboardTarget('aw-note'),
+    body: 'Tap the chevron to add a note to this specific set.',
+    preferred: ['bottom', 'right'],
+  })
+  const hintSkip = useFeatureTooltip('aw-skip', {
+    when: workoutReady, suppressed: hintsBlocked, getEl: () => onboardTarget('aw-skip'),
+    body: 'Skip marks a planned set as not-done but keeps the slot. Extra sets you add get a trash icon that removes them instead.',
+    preferred: ['top', 'left'],
+  })
+  const hintAddSet = useFeatureTooltip('aw-addset', {
+    when: workoutReady, suppressed: hintsBlocked, getEl: () => onboardTarget('aw-addset'),
+    body: 'Need an extra set beyond the plan? Add one here.',
+    preferred: ['top', 'bottom'],
+  })
+  const hintSwap = useFeatureTooltip('aw-swap', {
+    when: workoutReady, suppressed: hintsBlocked, getEl: () => onboardTarget('aw-swap'),
+    body: 'Swap this exercise for another from your catalog, or create a new one.',
+    preferred: ['bottom', 'left'],
+  })
+  const hintPR = useFeatureTooltip('aw-pr', {
+    when: hasAnyPR, suppressed: hintsBlocked, getEl: () => onboardTarget('aw-pr'),
+    body: 'New personal record! GRIND compares against your best-ever weight for this exercise.',
+    preferred: ['top', 'bottom'],
+  })
+  // The rest-timer hint is the one exception that may show during a countdown.
+  const hintRest = useFeatureTooltip('aw-rest-adjust', {
+    when: restTimer.active, suppressed: anyModalOpen, getEl: () => onboardTarget('aw-rest-adjust'),
+    body: 'Adjust your rest on the fly, or tap the timer to set a new default for this exercise.',
+    preferred: ['top'],
+  })
+  const activeWorkoutHints = (
+    <>{hintCheck}{hintWarmup}{hintPlate}{hintNote}{hintSkip}{hintAddSet}{hintSwap}{hintPR}{hintRest}</>
+  )
+
+  // Undo hint is folded into the 5s undo toast the first time it appears (see the
+  // toast render) rather than shown as a separate floating bubble. Latched into
+  // its own state so it stays for the whole toast, not just the render before it's
+  // marked seen, then resets when the toast closes and never returns.
+  const [undoHintVisible, setUndoHintVisible] = useState(false)
+  useEffect(() => {
+    // Latching the fold-in hint to the undo toast's lifetime — a sync from the
+    // external undoState transition, not derived render state.
+    if (undoState && !hasSeenTooltip('aw-undo')) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setUndoHintVisible(true)
+      markTooltipSeen('aw-undo')
+    } else if (!undoState) {
+      setUndoHintVisible(false)
+    }
+  }, [undoState, hasSeenTooltip, markTooltipSeen])
+
   if (loading) {
     return (
       <div style={{ padding: '24px 16px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif", fontSize: '14px' }}>
@@ -1081,6 +1215,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
 
   return (
     <>
+      {activeWorkoutHints}
       {completionData && (
         <CompletionModal
           data={completionData}
@@ -1092,9 +1227,11 @@ export default function ActiveWorkout({ day }: { day: string }) {
       {swapTarget && (
         <ExerciseSwapModal
           currentExerciseId={swapTarget}
+          day={day}
           allExercises={allExercises}
           currentExercises={exercises}
           onSelect={handleSwapExercise}
+          onCreate={createAndSwapExercise}
           onClose={() => setSwapTarget(null)}
         />
       )}
@@ -1187,6 +1324,9 @@ export default function ActiveWorkout({ day }: { day: string }) {
             fontWeight: 500,
             zIndex: 300,
             boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+            // Purely informational — never let this strip swallow a tap meant
+            // for the content beneath it while it's on screen.
+            pointerEvents: 'none',
           }}
         >
           {resumeToast}
@@ -1216,10 +1356,22 @@ export default function ActiveWorkout({ day }: { day: string }) {
             zIndex: 300,
             boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
             animation: 'toast-in 180ms ease',
+            // The pill spans most of the width near the top for 5s. Only the
+            // UNDO button should catch taps — otherwise this bar sits over the
+            // top of the content and eats taps aimed at the controls beneath it
+            // (the "I tapped a button but nothing/the wrong thing happened" bug).
+            pointerEvents: 'none',
           }}
         >
-          <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-            Logged set {undoState.setNumber}
+          <span style={{ display: 'flex', flexDirection: 'column', gap: '1px', minWidth: 0 }}>
+            <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+              Logged set {undoState.setNumber}
+            </span>
+            {undoHintVisible && (
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                You have 5 seconds to undo a logged set.
+              </span>
+            )}
           </span>
           <button
             onClick={handleUndo}
@@ -1233,10 +1385,47 @@ export default function ActiveWorkout({ day }: { day: string }) {
               letterSpacing: '1px',
               cursor: 'pointer',
               padding: '4px 8px',
+              pointerEvents: 'auto',
             }}
           >
             UNDO
           </button>
+        </div>
+      )}
+
+      {/* Passive "saved" confirmation — bottom-anchored, non-interactive.
+          Sits above the finish/rest bar, and rides up above the keyboard when
+          one is open so it stays visible while editing. */}
+      {saveToast && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: 'fixed',
+            left: '50%',
+            bottom: `calc(${keyboardInset > 0 ? `${keyboardInset}px` : 'env(safe-area-inset-bottom)'} + ${restTimer.active ? '104px' : '92px'})`,
+            transform: 'translateX(-50%)',
+            backgroundColor: 'var(--surface-elevated)',
+            border: '1px solid var(--accent)',
+            color: 'var(--accent-text)',
+            padding: '9px 16px',
+            borderRadius: 'var(--radius-pill, 9999px)',
+            fontSize: '13px',
+            fontWeight: 600,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '7px',
+            whiteSpace: 'nowrap',
+            zIndex: 60,
+            boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+            animation: 'save-toast-in 160ms ease',
+            pointerEvents: 'none',
+          }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+          {saveToast}
         </div>
       )}
 
@@ -1449,10 +1638,11 @@ export default function ActiveWorkout({ day }: { day: string }) {
 
         {/* Exercise cards */}
         <div className="wo-main-inner" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {exercises.map((ex) => (
+          {exercises.map((ex, exIdx) => (
             <ExerciseCard
               key={ex.id}
               exercise={ex}
+              firstExercise={exIdx === 0}
               extraSets={extraSets[ex.id] ?? 0}
               logs={logs}
               previousBest={previousBests[ex.id] ?? null}
@@ -1575,6 +1765,8 @@ export default function ActiveWorkout({ day }: { day: string }) {
 
 interface ExerciseCardProps {
   exercise: Exercise
+  /** First card in the list — carries the one-off onboarding hint anchors. */
+  firstExercise: boolean
   extraSets: number
   logs: LogMap
   previousBest: number | null
@@ -1596,7 +1788,7 @@ interface ExerciseCardProps {
 }
 
 function ExerciseCard({
-  exercise, extraSets, logs, previousBest, editingKey,
+  exercise, firstExercise, extraSets, logs, previousBest, editingKey,
   onCheck, onUpdate, onSwap,
   onSkipSet, onUnskipSet, onDeleteSet,
   onSkipExercise, onUnskipExercise,
@@ -1683,6 +1875,7 @@ function ExerciseCard({
 
             {/* Swap button */}
             <button
+              data-onboard={firstExercise ? 'aw-swap' : undefined}
               onClick={onSwap}
               title="Swap exercise"
               aria-label={`Swap ${exercise.name} for another exercise`}
@@ -1732,6 +1925,7 @@ function ExerciseCard({
             </span>
             {/* Absolutely positioned so it doesn't affect the flex layout of LBS/REPS */}
             <button
+              data-onboard={firstExercise ? 'aw-plate' : undefined}
               onClick={() => {
                 // Prefer first unchecked+unskipped set; fall back to set 1 when all are done.
                 const target = setNumbers.find(s => {
@@ -1788,6 +1982,7 @@ function ExerciseCard({
               key={key}
               setNumber={setNum}
               isBonus={isBonus}
+              onboardFirst={firstExercise && setNum === 1 && !isBonus}
               editing={editing}
               logEntry={logEntry}
               prevReps={prevReps}
@@ -1808,6 +2003,7 @@ function ExerciseCard({
 
         <div style={{ padding: '6px 16px 4px' }}>
           <button
+            data-onboard={firstExercise ? 'aw-addset' : undefined}
             onClick={onAddSet}
             aria-label={`Add another set to ${exercise.name}`}
             style={{
@@ -1837,14 +2033,25 @@ function ExerciseCard({
 
 interface ExerciseSwapModalProps {
   currentExerciseId: string
+  day: string
   allExercises: Exercise[]
   currentExercises: Exercise[]
   onSelect: (exercise: Exercise) => void
+  onCreate: (name: string, sets: number, reps: string) => Promise<Exercise | null>
   onClose: () => void
 }
 
-function ExerciseSwapModal({ currentExerciseId, allExercises, currentExercises, onSelect, onClose }: ExerciseSwapModalProps) {
+function ExerciseSwapModal({ currentExerciseId, day, allExercises, currentExercises, onSelect, onCreate, onClose }: ExerciseSwapModalProps) {
   const [query, setQuery] = useState('')
+  // 'search' lists existing exercises; 'create' is the inline new-exercise form
+  // reached when the one you want isn't in any of your days yet.
+  const [mode, setMode] = useState<'search' | 'create'>('search')
+  const [formName, setFormName] = useState('')
+  const [formSets, setFormSets] = useState('3')
+  const [formReps, setFormReps] = useState('8-12')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const keyboardInset = useKeyboardInset()
 
   const available = allExercises.filter(
     ex => ex.id === currentExerciseId || !currentExercises.find(ce => ce.id === ex.id)
@@ -1858,11 +2065,61 @@ function ExerciseSwapModal({ currentExerciseId, allExercises, currentExercises, 
     grouped[dt] = filtered.filter(e => e.day_type === dt)
   }
 
+  // Offer to create only when what's typed doesn't already exist anywhere in the
+  // catalog (case-insensitive) — no point minting a duplicate of something
+  // that's already selectable in the list.
+  const trimmedQuery = query.trim()
+  const exactExists = allExercises.some(
+    ex => ex.name.trim().toLowerCase() === trimmedQuery.toLowerCase()
+  )
+  const canOfferCreate = trimmedQuery.length > 0 && !exactExists
+
+  function openCreate() {
+    setFormName(trimmedQuery)
+    setFormSets('3')
+    setFormReps('8-12')
+    setError('')
+    setMode('create')
+  }
+
+  async function submitCreate() {
+    if (saving) return
+    const name = formName.trim()
+    if (!name) { setError('Exercise name is required.'); return }
+    const sets = parseInt(formSets, 10)
+    if (!sets || sets < 1 || sets > 20) { setError('Sets must be between 1 and 20.'); return }
+    if (!formReps.trim()) { setError('Reps is required.'); return }
+    // Same duplicate guard WorkoutManager enforces: unique name within a day.
+    const dupInDay = allExercises.some(
+      ex => ex.day_type === day && ex.name.trim().toLowerCase() === name.toLowerCase()
+    )
+    if (dupInDay) { setError('An exercise with this name already exists for this day.'); return }
+
+    setSaving(true)
+    setError('')
+    const created = await onCreate(name, sets, formReps.trim())
+    if (!created) {
+      setSaving(false)
+      setError('Could not create exercise. Check your connection and try again.')
+      return
+    }
+    // On success the parent swaps it in and closes this sheet — nothing else to do.
+  }
+
+  // On iOS the keyboard shrinks only the visual viewport, so a fixed
+  // bottom-anchored sheet stays pinned behind it. Lift the sheet by the keyboard
+  // height (via backdrop padding) and cap its height to what's still visible, so
+  // the search field and results — or the create form — stay above the keyboard.
+  const lift = keyboardInset
+  const sheetMaxHeight = lift > 0 ? `calc(92dvh - ${lift}px)` : '72vh'
+
   return (
     <div
       style={{
         position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)',
         zIndex: 300, display: 'flex', alignItems: 'flex-end',
+        paddingBottom: lift > 0 ? `${lift}px` : 0,
+        transition: 'padding-bottom 180ms ease',
       }}
       onClick={onClose}
     >
@@ -1870,7 +2127,7 @@ function ExerciseSwapModal({ currentExerciseId, allExercises, currentExercises, 
         style={{
           width: '100%', backgroundColor: 'var(--surface)',
           borderRadius: '16px 16px 0 0',
-          maxHeight: '72vh', display: 'flex', flexDirection: 'column',
+          maxHeight: sheetMaxHeight, display: 'flex', flexDirection: 'column',
           border: '1px solid var(--border)', borderBottom: 'none',
         }}
         onClick={e => e.stopPropagation()}
@@ -1880,17 +2137,35 @@ function ExerciseSwapModal({ currentExerciseId, allExercises, currentExercises, 
           padding: '20px 16px 14px',
           borderBottom: '1px solid var(--border)',
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          gap: '8px',
           flexShrink: 0,
         }}>
-          <h2 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '22px', color: 'var(--text-primary)', letterSpacing: '1px', fontWeight: 'normal' }}>
-            SWAP EXERCISE
-          </h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0 }}>
+            {mode === 'create' && (
+              <button
+                onClick={() => { setMode('search'); setError('') }}
+                aria-label="Back to search"
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  width: '32px', height: '32px', marginLeft: '-6px', flexShrink: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-secondary)' }}>
+                  <polyline points="15 18 9 12 15 6" />
+                </svg>
+              </button>
+            )}
+            <h2 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '22px', color: 'var(--text-primary)', letterSpacing: '1px', fontWeight: 'normal', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {mode === 'create' ? 'NEW EXERCISE' : 'SWAP EXERCISE'}
+            </h2>
+          </div>
           <button
             onClick={onClose}
             aria-label="Close swap dialog"
             style={{
               background: 'none', border: 'none', cursor: 'pointer',
-              width: '44px', height: '44px',
+              width: '44px', height: '44px', flexShrink: 0,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}
           >
@@ -1900,97 +2175,260 @@ function ExerciseSwapModal({ currentExerciseId, allExercises, currentExercises, 
           </button>
         </div>
 
-        {/* Search */}
-        <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-          <input
-            type="search"
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            placeholder="Search exercises..."
-            aria-label="Search exercises"
-            autoFocus
-            style={{
-              width: '100%',
-              backgroundColor: 'var(--surface-elevated)',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-sm)',
-              color: 'var(--text-primary)',
-              fontFamily: 'var(--font-sans)',
-              fontSize: '16px', // ≥16px — anything smaller makes iOS auto-zoom on focus
-              padding: '10px 12px',
-              outline: 'none',
-            }}
-          />
-        </div>
-
-        {/* List */}
-        <div style={{ overflowY: 'auto', flex: 1, paddingBottom: 'env(safe-area-inset-bottom)' }}>
-          {dayTypes.length === 0 && (
-            <div style={{ padding: '24px 16px', color: 'var(--text-muted)', fontSize: '13px', textAlign: 'center' }}>
-              No matches.
+        {mode === 'search' ? (
+          <>
+            {/* Search */}
+            <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+              <input
+                type="search"
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                placeholder="Search or add an exercise..."
+                aria-label="Search exercises"
+                autoFocus
+                style={{
+                  width: '100%',
+                  backgroundColor: 'var(--surface-elevated)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-sm)',
+                  color: 'var(--text-primary)',
+                  fontFamily: 'var(--font-sans)',
+                  fontSize: '16px', // ≥16px — anything smaller makes iOS auto-zoom on focus
+                  padding: '10px 12px',
+                  outline: 'none',
+                }}
+              />
             </div>
-          )}
-          {dayTypes.map(dayType => {
-            const exs = grouped[dayType]
-            if (!exs || exs.length === 0) return null
-            return (
-              <div key={dayType}>
-                <div style={{
-                  padding: '12px 16px 6px',
-                  fontSize: '10px', color: 'var(--text-muted)',
-                  textTransform: 'uppercase', letterSpacing: '1.5px',
-                }}>
-                  {dayType.replace(/-/g, ' ').toUpperCase()}
+
+            {/* List */}
+            <div style={{ overflowY: 'auto', flex: 1, paddingBottom: 'env(safe-area-inset-bottom)' }}>
+              {/* Create affordance — shown as soon as the typed name is new, so
+                  the user is never stuck when what they want isn't listed. */}
+              {canOfferCreate && (
+                <button
+                  onClick={openCreate}
+                  style={{
+                    width: '100%', textAlign: 'left',
+                    background: 'var(--accent-wash)',
+                    border: 'none',
+                    borderBottom: '1px solid var(--border)',
+                    padding: '14px 16px',
+                    cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', gap: '12px',
+                  }}
+                >
+                  <span style={{
+                    width: '28px', height: '28px', borderRadius: '9999px', flexShrink: 0,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    backgroundColor: 'var(--accent)', color: 'var(--on-accent)',
+                  }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                    </svg>
+                  </span>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{
+                      fontSize: '15px', fontWeight: 600, color: 'var(--accent-text)',
+                      fontFamily: "'DM Sans', sans-serif",
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>
+                      Create “{trimmedQuery}”
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
+                      New exercise for this day
+                    </div>
+                  </div>
+                </button>
+              )}
+
+              {dayTypes.length === 0 && !canOfferCreate && (
+                <div style={{ padding: '24px 16px', color: 'var(--text-muted)', fontSize: '13px', textAlign: 'center' }}>
+                  No matches.
                 </div>
-                {exs.map(ex => {
-                  const isCurrent = ex.id === currentExerciseId
-                  return (
-                    <button
-                      key={ex.id}
-                      onClick={() => !isCurrent && onSelect(ex)}
-                      style={{
-                        width: '100%', textAlign: 'left',
-                        background: isCurrent ? 'rgba(200, 241, 53, 0.05)' : 'none',
-                        border: 'none',
-                        borderBottom: '1px solid var(--border)',
-                        padding: '14px 16px',
-                        cursor: isCurrent ? 'default' : 'pointer',
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        gap: '12px',
-                      }}
-                    >
-                      <div>
-                        <div style={{
-                          fontSize: '15px', fontWeight: 600,
-                          color: isCurrent ? 'var(--accent-text)' : 'var(--text-primary)',
-                          fontFamily: "'DM Sans', sans-serif",
-                          marginBottom: '2px',
-                        }}>
-                          {ex.name}
-                        </div>
-                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
-                          {ex.sets_target} sets × {ex.reps_target} reps
-                        </div>
-                      </div>
-                      {isCurrent && (
-                        <span style={{
-                          fontSize: '10px', color: 'var(--accent-text)',
-                          backgroundColor: 'rgba(200, 241, 53, 0.1)',
-                          border: '1px solid rgba(200, 241, 53, 0.25)',
-                          borderRadius: '9999px', padding: '2px 8px',
-                          fontFamily: "'DM Sans', sans-serif", fontWeight: 600,
-                          flexShrink: 0,
-                        }}>
-                          CURRENT
-                        </span>
-                      )}
-                    </button>
-                  )
-                })}
+              )}
+              {dayTypes.map(dayType => {
+                const exs = grouped[dayType]
+                if (!exs || exs.length === 0) return null
+                return (
+                  <div key={dayType}>
+                    <div style={{
+                      padding: '12px 16px 6px',
+                      fontSize: '10px', color: 'var(--text-muted)',
+                      textTransform: 'uppercase', letterSpacing: '1.5px',
+                    }}>
+                      {dayType.replace(/-/g, ' ').toUpperCase()}
+                    </div>
+                    {exs.map(ex => {
+                      const isCurrent = ex.id === currentExerciseId
+                      return (
+                        <button
+                          key={ex.id}
+                          onClick={() => !isCurrent && onSelect(ex)}
+                          style={{
+                            width: '100%', textAlign: 'left',
+                            background: isCurrent ? 'rgba(200, 241, 53, 0.05)' : 'none',
+                            border: 'none',
+                            borderBottom: '1px solid var(--border)',
+                            padding: '14px 16px',
+                            cursor: isCurrent ? 'default' : 'pointer',
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            gap: '12px',
+                          }}
+                        >
+                          <div>
+                            <div style={{
+                              fontSize: '15px', fontWeight: 600,
+                              color: isCurrent ? 'var(--accent-text)' : 'var(--text-primary)',
+                              fontFamily: "'DM Sans', sans-serif",
+                              marginBottom: '2px',
+                            }}>
+                              {ex.name}
+                            </div>
+                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
+                              {ex.sets_target} sets × {ex.reps_target} reps
+                            </div>
+                          </div>
+                          {isCurrent && (
+                            <span style={{
+                              fontSize: '10px', color: 'var(--accent-text)',
+                              backgroundColor: 'rgba(200, 241, 53, 0.1)',
+                              border: '1px solid rgba(200, 241, 53, 0.25)',
+                              borderRadius: '9999px', padding: '2px 8px',
+                              fontFamily: "'DM Sans', sans-serif", fontWeight: 600,
+                              flexShrink: 0,
+                            }}>
+                              CURRENT
+                            </span>
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )
+              })}
+            </div>
+          </>
+        ) : (
+          /* ── Create form ──────────────────────────────────────────────────── */
+          <div style={{ overflowY: 'auto', flex: 1, paddingBottom: 'env(safe-area-inset-bottom)' }}>
+            <div style={{ padding: '18px 16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label htmlFor="swap-new-name" style={{
+                  fontSize: '10px', letterSpacing: 'var(--tracking-label)',
+                  color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 500,
+                }}>
+                  Name
+                </label>
+                <input
+                  id="swap-new-name"
+                  type="text"
+                  value={formName}
+                  onChange={e => { setFormName(e.target.value); if (error) setError('') }}
+                  placeholder="e.g. Incline Dumbbell Press"
+                  autoFocus={formName === ''}
+                  style={{
+                    width: '100%',
+                    backgroundColor: 'var(--surface-elevated)',
+                    border: '1px solid var(--border-strong)',
+                    borderRadius: 'var(--radius-sm)',
+                    color: 'var(--text-primary)',
+                    fontFamily: 'var(--font-sans)',
+                    fontSize: '16px',
+                    padding: '11px 12px',
+                    outline: 'none',
+                  }}
+                />
               </div>
-            )
-          })}
-        </div>
+
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <div style={{ flex: '0 0 96px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label htmlFor="swap-new-sets" style={{
+                    fontSize: '10px', letterSpacing: 'var(--tracking-label)',
+                    color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 500,
+                  }}>
+                    Sets
+                  </label>
+                  <input
+                    id="swap-new-sets"
+                    type="number"
+                    inputMode="numeric"
+                    value={formSets}
+                    onChange={e => { setFormSets(e.target.value); if (error) setError('') }}
+                    onFocus={e => e.target.select()}
+                    min={1}
+                    max={20}
+                    style={{
+                      width: '100%',
+                      backgroundColor: 'var(--surface-elevated)',
+                      border: '1px solid var(--border-strong)',
+                      borderRadius: 'var(--radius-sm)',
+                      color: 'var(--text-primary)',
+                      fontFamily: "'JetBrains Mono', monospace",
+                      fontSize: '16px',
+                      padding: '11px 12px',
+                      textAlign: 'center',
+                      outline: 'none',
+                    }}
+                  />
+                </div>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label htmlFor="swap-new-reps" style={{
+                    fontSize: '10px', letterSpacing: 'var(--tracking-label)',
+                    color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 500,
+                  }}>
+                    Reps
+                  </label>
+                  <input
+                    id="swap-new-reps"
+                    type="text"
+                    value={formReps}
+                    onChange={e => { setFormReps(e.target.value); if (error) setError('') }}
+                    onFocus={e => e.target.select()}
+                    placeholder="e.g. 8-12"
+                    style={{
+                      width: '100%',
+                      backgroundColor: 'var(--surface-elevated)',
+                      border: '1px solid var(--border-strong)',
+                      borderRadius: 'var(--radius-sm)',
+                      color: 'var(--text-primary)',
+                      fontFamily: 'var(--font-sans)',
+                      fontSize: '16px',
+                      padding: '11px 12px',
+                      outline: 'none',
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                Added to your <span style={{ color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{day.replace(/-/g, ' ')}</span> day and swapped in for this workout.
+              </div>
+
+              {error && (
+                <div role="alert" style={{ fontSize: '13px', color: 'var(--danger)' }}>
+                  {error}
+                </div>
+              )}
+
+              <button
+                onClick={submitCreate}
+                disabled={saving}
+                style={{
+                  width: '100%', height: '52px',
+                  backgroundColor: 'var(--accent)', color: 'var(--on-accent)',
+                  border: 'none', borderRadius: 'var(--radius-md)',
+                  fontFamily: "'Bebas Neue', sans-serif",
+                  fontSize: '20px', letterSpacing: '1px',
+                  cursor: saving ? 'default' : 'pointer',
+                  opacity: saving ? 0.6 : 1,
+                  transition: 'opacity 150ms ease',
+                }}
+              >
+                {saving ? 'CREATING…' : 'CREATE & SWAP IN'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -2001,6 +2439,8 @@ function ExerciseSwapModal({ currentExerciseId, allExercises, currentExercises, 
 interface SetRowProps {
   setNumber: number
   isBonus: boolean
+  /** First non-bonus set of the first exercise — carries the one-off hint anchors. */
+  onboardFirst?: boolean
   editing: boolean
   logEntry: SetState
   prevReps: string
@@ -2018,7 +2458,7 @@ interface SetRowProps {
 }
 
 function SetRow({
-  setNumber, isBonus, editing,
+  setNumber, isBonus, onboardFirst, editing,
   logEntry, prevReps,
   onCheck, onSaveEdit, onStartEdit,
   onWeightChange, onRepsChange, onNoteChange, onNoteBlur,
@@ -2071,6 +2511,17 @@ function SetRow({
     onRepsChange(v)
   }
 
+  /**
+   * Pull a just-focused input to the middle of the scroll area once the iOS
+   * keyboard has animated in, so a mid-list set isn't left hidden behind it.
+   * iOS auto-scrolls native inputs into view, but inside our custom scroll
+   * container (with fixed bottom bars it doesn't know about) it often lands the
+   * field under the keyboard — this makes it deterministic.
+   */
+  function ensureVisible(el: HTMLElement) {
+    setTimeout(() => el.scrollIntoView({ block: 'center', behavior: 'smooth' }), 300)
+  }
+
   // Show 'BW' only when the set is checked/saved with weight 0 —
   // not for skipped or unchecked rows, where 0 is just a pre-fill placeholder.
   function fmtWeight(canonical: string): string {
@@ -2116,6 +2567,7 @@ function SetRow({
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px' }}>
         {/* Set label + note chevron: tapping toggles the per-set note input. */}
         <button
+          data-onboard={onboardFirst ? 'aw-note' : undefined}
           onClick={() => setNoteOpen(!noteVisible)}
           aria-expanded={noteVisible}
           aria-label={noteVisible ? `Hide note for set ${setNumber}` : `Show note for set ${setNumber}`}
@@ -2157,6 +2609,7 @@ function SetRow({
           display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '5px',
         }}>
           <button
+            data-onboard={onboardFirst ? 'aw-warmup' : undefined}
             onClick={onToggleWarmup}
             disabled={logEntry.checked && !editing}
             aria-pressed={logEntry.isWarmup}
@@ -2207,6 +2660,7 @@ function SetRow({
               // rather than appending to the 'BW' text.
               if (displayWeight === 'BW') setRawWeight('')
               else e.target.select()
+              ensureVisible(e.currentTarget)
             }}
             onBlur={() => setRawWeight(null)}
             onKeyDown={handleWeightKeyDown}
@@ -2231,7 +2685,7 @@ function SetRow({
             inputMode="numeric"
             value={logEntry.reps}
             onChange={e => handleRepsChange(e.target.value)}
-            onFocus={e => e.target.select()}
+            onFocus={e => { e.target.select(); ensureVisible(e.currentTarget) }}
             onKeyDown={handleRepsKeyDown}
             disabled={inputsDisabled}
             placeholder="0"
@@ -2254,7 +2708,7 @@ function SetRow({
         </div>
 
         {logEntry.isPR && (
-          <span style={{
+          <span data-onboard="aw-pr" style={{
             fontSize: '10px', fontFamily: "'Bebas Neue', sans-serif",
             color: 'var(--accent-text)',
             backgroundColor: 'rgba(200, 241, 53, 0.1)',
@@ -2299,6 +2753,7 @@ function SetRow({
           /* Skip / unskip set button. Also enabled in edit mode so the user can
              skip a previously logged set (handleSkipSet will delete the DB row). */
           <button
+            data-onboard={onboardFirst ? 'aw-skip' : undefined}
             onClick={logEntry.skipped ? onUnskip : (logEntry.checked && !editing ? undefined : onSkip)}
             disabled={logEntry.checked && !editing}
             title={logEntry.skipped ? 'Undo skip' : 'Skip this set'}
@@ -2353,6 +2808,7 @@ function SetRow({
           </button>
         ) : (
           <button
+            data-onboard={onboardFirst ? 'aw-check' : undefined}
             onClick={logEntry.checked ? onStartEdit : handleCheck}
             disabled={logEntry.skipped}
             aria-label={

@@ -1,10 +1,12 @@
 'use client'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Exercise } from '@/lib/types'
 import { formatHeaderDate } from '@/lib/utils/formatting'
 import ProgressChart from './ProgressChart'
 import { useUnit } from '@/lib/contexts/UnitContext'
+import { useTour, type TourStep } from '@/components/onboarding/Tour'
 
 export type Metric = 'weight' | 'volume' | 'e1rm' | 'best'
 
@@ -56,6 +58,7 @@ function epley(weight: number, reps: number): number {
 }
 
 export default function ProgressPage() {
+  const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
   const { unitLabel, toDisplay } = useUnit()
 
@@ -260,6 +263,16 @@ export default function ProgressPage() {
   )
   const exercisesForDay = selectedDay ? exercises.filter(e => e.day_type === selectedDay) : exercises
 
+  // Two-step walkthrough (hook must run before the early returns below). Only
+  // active once exercises exist — the blank-slate hero has nothing to point at.
+  const progressSteps: TourStep[] = [
+    { target: 'progress-selector', title: 'Pick what to chart', body: 'Choose which lift or metric to chart.' },
+    { target: 'progress-chart', title: 'Read your chart', body: 'Each point is a working set; the highlighted ones are PRs.' },
+  ]
+  const progressTour = useTour('progress', progressSteps, {
+    active: !loadingExercises && exercises.length > 0,
+  })
+
   if (loadingExercises) {
     return (
       <div style={{ padding: '24px 16px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif", fontSize: '14px' }}>
@@ -268,8 +281,74 @@ export default function ProgressPage() {
     )
   }
 
+  // Blank slate — no exercises means the day/exercise pickers, metric toggle and
+  // chart would all render as an empty, broken-looking shell (previously "No data
+  // yet for" with no name). Replace the whole thing with one clear hero that
+  // routes into workout setup, matching Home + DaySelect's first-run language.
+  if (exercises.length === 0) {
+    return (
+      <div className="page page--progress" style={{ fontFamily: "'DM Sans', sans-serif", paddingBottom: '32px' }}>
+        <div style={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          padding: '24px 16px 16px',
+        }}>
+          <h1 style={{
+            fontFamily: "'Bebas Neue', sans-serif",
+            fontSize: '32px', color: 'var(--text-primary)', letterSpacing: '1px',
+            fontWeight: 'normal',
+          }}>
+            PROGRESS
+          </h1>
+          <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+            {formatHeaderDate()}
+          </span>
+        </div>
+
+        <div style={{
+          display: 'flex', flexDirection: 'column', alignItems: 'center',
+          textAlign: 'center', gap: '16px', padding: '48px 24px 40px',
+        }}>
+          <span style={{
+            width: '76px', height: '76px', borderRadius: '9999px',
+            backgroundColor: 'var(--accent-wash)', color: 'var(--accent-text)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          }}>
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="20" x2="18" y2="10"/>
+              <line x1="12" y1="20" x2="12" y2="4"/>
+              <line x1="6" y1="20" x2="6" y2="14"/>
+              <line x1="2" y1="20" x2="22" y2="20"/>
+            </svg>
+          </span>
+          <h2 style={{
+            fontFamily: "'Bebas Neue', sans-serif", fontSize: '28px',
+            color: 'var(--text-primary)', letterSpacing: '1px', lineHeight: 1, margin: 0,
+          }}>
+            NO PROGRESS YET
+          </h2>
+          <p style={{ fontSize: '14px', color: 'var(--text-secondary)', maxWidth: '320px', lineHeight: 1.5 }}>
+            Set up a workout and log a session — your lifts chart here, tracking
+            weight, volume, e1RM, and every PR over time.
+          </p>
+          <button
+            onClick={() => router.push('/log?new=1')}
+            style={{
+              marginTop: '4px', height: '52px', padding: '0 32px',
+              backgroundColor: 'var(--accent)', color: 'var(--on-accent)', border: 'none',
+              borderRadius: '12px', fontFamily: "'Bebas Neue', sans-serif",
+              fontSize: '20px', letterSpacing: '1px', cursor: 'pointer',
+            }}
+          >
+            SET UP A WORKOUT
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="page page--progress" style={{ fontFamily: "'DM Sans', sans-serif", paddingBottom: '32px' }}>
+      {progressTour}
 
       {/* Header */}
       <div style={{
@@ -287,6 +366,10 @@ export default function ProgressPage() {
           {formatHeaderDate()}
         </span>
       </div>
+
+      {/* Selector cluster — day picker, exercise picker, and metric toggle. Wrapped
+          so the onboarding coach mark can spotlight the whole "what to chart" area. */}
+      <div data-onboard="progress-selector">
 
       {/* Day picker (level 1) */}
       <div style={{ padding: '0 16px 8px', display: 'flex', gap: '6px', overflowX: 'auto' }} className="scrollbar-hide">
@@ -399,6 +482,8 @@ export default function ProgressPage() {
         </div>
       </div>
 
+      </div>{/* end selector cluster */}
+
       {/* Stats bar */}
       <div style={{ display: 'flex', gap: '6px', padding: '0 16px', marginBottom: '16px' }}>
         {[
@@ -433,7 +518,7 @@ export default function ProgressPage() {
 
       {/* Chart */}
       <div style={{ padding: '0 16px', marginBottom: '24px' }}>
-        <div style={{
+        <div data-onboard="progress-chart" style={{
           backgroundColor: 'var(--surface)',
           border: '1px solid var(--border)',
           borderRadius: '12px',
@@ -457,7 +542,7 @@ export default function ProgressPage() {
               </div>
               <div style={{ fontSize: '14px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
                 No data yet for<br />
-                <span style={{ color: 'var(--text-secondary)' }}>{selectedExercise?.name}</span>
+                <span style={{ color: 'var(--text-secondary)' }}>{selectedExercise?.name ?? 'this exercise'}</span>
               </div>
               <div style={{ fontSize: '12px', color: 'var(--border-strong)', marginTop: '8px' }}>
                 Log this exercise to see progress

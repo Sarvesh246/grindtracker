@@ -3,10 +3,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Exercise, DayCategory, UserRotation } from '@/lib/types'
 import { autoSequence, effectiveSequence } from '@/lib/utils/rotation'
+import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
 
 interface WorkoutManagerProps {
   onClose: () => void
   onChanged: () => void
+  /** Open straight into the "new day" form (used by first-run entry points). */
+  initialNewDay?: boolean
 }
 
 type Screen =
@@ -21,8 +24,11 @@ type DeleteTarget =
   | { type: 'day'; key: string; label: string }
   | { type: 'exercise'; id: string; name: string; dayKey: string }
 
-export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerProps) {
+export default function WorkoutManager({ onClose, onChanged, initialNewDay = false }: WorkoutManagerProps) {
   const supabase = useMemo(() => createClient(), [])
+  // Height hidden behind the iOS keyboard, so the bottom-sheet can ride above it
+  // instead of leaving the day-name / exercise-form inputs pinned underneath.
+  const keyboardInset = useKeyboardInset()
   const [exercises, setExercises] = useState<Exercise[]>([])
   const [dayCategories, setDayCategories] = useState<Record<string, DayCategory>>({})
   const [flexDays, setFlexDays] = useState<Set<string>>(new Set())
@@ -31,7 +37,7 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
   const [savingRotation, setSavingRotation] = useState(false)
   const [addingSlot, setAddingSlot] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [screen, setScreen] = useState<Screen>({ id: 'days' })
+  const [screen, setScreen] = useState<Screen>(initialNewDay ? { id: 'new-day' } : { id: 'days' })
   const [saving, setSaving] = useState(false)
   const [savingCategory, setSavingCategory] = useState(false)
   const [categoryError, setCategoryError] = useState('')
@@ -200,8 +206,13 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
       return
     }
     setNewDayInput('')
-    setCategoryError('')
-    setScreen({ id: 'category-picker', dayKey: key })
+    // Go straight to adding exercises. The leaderboard category is deferred —
+    // it's a concept a brand-new user hasn't met yet, so forcing it before the
+    // very first exercise front-loads friction. It's set later, non-blocking,
+    // via the "leaderboard category" row on the day screen and the amber nudge
+    // on the days list. Until then the day still counts toward Overall XP; it
+    // just doesn't map to a push/pull/legs tab.
+    openExerciseForm(key)
   }
 
   async function saveCategory(dayKey: string, category: DayCategory) {
@@ -320,7 +331,10 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
     if (screen.id === 'days' || screen.id === 'new-day') {
       onClose()
     } else if (screen.id === 'category-picker') {
-      setScreen(grouped[screen.dayKey] ? { id: 'days' } : { id: 'new-day' })
+      // The picker is now reached from the day screen (or the days-list nudge),
+      // never as a forced step before the first exercise — so return to the day
+      // when it exists, falling back to the list otherwise.
+      setScreen(grouped[screen.dayKey] ? { id: 'day', dayKey: screen.dayKey } : { id: 'days' })
     } else if (screen.id === 'day') {
       setScreen({ id: 'days' })
     } else if (screen.id === 'exercise-form') {
@@ -344,9 +358,18 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
   return (
     <>
       {/* Backdrop */}
-      <div className="wm-backdrop" onClick={onClose}>
-        {/* Sheet */}
-        <div className="wm-sheet" onClick={e => e.stopPropagation()}>
+      <div
+        className="wm-backdrop"
+        onClick={onClose}
+        style={keyboardInset > 0 ? { paddingBottom: keyboardInset, transition: 'padding-bottom 180ms ease' } : undefined}
+      >
+        {/* Sheet — cap its height to what's left above the keyboard so the whole
+            form stays reachable; the backdrop padding lifts it clear. */}
+        <div
+          className="wm-sheet"
+          onClick={e => e.stopPropagation()}
+          style={keyboardInset > 0 ? { maxHeight: `calc(92dvh - ${keyboardInset}px)` } : undefined}
+        >
           {/* Header */}
           <div style={{
             padding: '20px 16px 14px',
@@ -903,6 +926,36 @@ export default function WorkoutManager({ onClose, onChanged }: WorkoutManagerPro
                     }}>
                       ADD EXERCISE
                     </span>
+                  </button>
+
+                  {/* Leaderboard category — deferred, not forced. Shows the
+                      current mapping (or an amber "not set" prompt) and opens
+                      the picker on tap. Set once, it decides which competitive
+                      tab this day feeds. */}
+                  <button
+                    onClick={() => { setCategoryError(''); setScreen({ id: 'category-picker', dayKey }) }}
+                    style={{
+                      width: '100%', textAlign: 'left',
+                      background: 'none', border: 'none',
+                      padding: '16px',
+                      borderBottom: '1px solid var(--border)',
+                      cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px',
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '2px' }}>
+                        Leaderboard category
+                      </div>
+                      <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '12px', color: dayCategories[dayKey] ? 'var(--text-muted)' : '#F59E0B' }}>
+                        {dayCategories[dayKey]
+                          ? `Counts toward ${dayCategories[dayKey]!.toUpperCase()}`
+                          : 'Not set — tap to choose (optional)'}
+                      </div>
+                    </div>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-muted)', flexShrink: 0 }}>
+                      <polyline points="9 18 15 12 9 6" />
+                    </svg>
                   </button>
 
                   {/* Flex day toggle */}

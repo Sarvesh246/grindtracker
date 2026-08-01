@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
 import type { FeedbackCategory } from '@/lib/types'
 
 const CATEGORIES: { key: FeedbackCategory; label: string }[] = [
@@ -55,6 +56,7 @@ function extensionFor(file: File): string {
  */
 export default function FeedbackModal({ onClose }: { onClose: () => void }) {
   const supabase = useMemo(() => createClient(), [])
+  const keyboardInset = useKeyboardInset()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -239,7 +241,14 @@ export default function FeedbackModal({ onClose }: { onClose: () => void }) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: 'max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom))',
+        paddingTop: 'max(16px, env(safe-area-inset-top))',
+        paddingLeft: '16px',
+        paddingRight: '16px',
+        // When the iOS keyboard is up, pad the bottom by its height so the
+        // centered dialog re-centers in the visible area above it — otherwise
+        // the SEND button and the bottom of the textarea sit behind the keyboard.
+        paddingBottom: keyboardInset > 0 ? keyboardInset + 16 : 'max(16px, env(safe-area-inset-bottom))',
+        transition: 'padding-bottom 180ms ease',
       }}
     >
       <div

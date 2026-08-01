@@ -1,0 +1,96 @@
+'use client'
+import { useCallback, useEffect, useState } from 'react'
+import { useOnboarding } from '@/lib/contexts/OnboardingContext'
+import { onboardTarget } from './anchor'
+import CoachMark from './CoachMark'
+
+export interface TourStep {
+  /** `data-onboard` attribute value of the element this step highlights. */
+  target: string
+  title: string
+  body: string
+}
+
+export interface UseTourOptions {
+  /**
+   * Gate: the tour only starts (and only stays visible) while this is true.
+   * Pages pass `loaded && noModalOpen && noUndoToast` — so the tour waits for
+   * content and pauses/defers instead of ever drawing over a modal or toast.
+   */
+  active: boolean
+  /** Settle delay after `active` first becomes true, so nothing shifts under a finger. */
+  settleMs?: number
+  /** First-ever coach mark (Home, first session): also offer "Skip all tours". */
+  firstEver?: boolean
+}
+
+/**
+ * Orchestrates an ordered array of coach-mark steps: tracks the current index,
+ * persists completion/skip via OnboardingContext (so nothing shows twice), and
+ * respects the `active` gate. Returns the node to render (or null).
+ *
+ * - Next / × advance; the last step's Done finishes and marks the tour seen.
+ * - "Skip tour" ends the tour now (still marks it seen).
+ * - "Skip all tours" (first mark only) opts out of every future scripted tour.
+ */
+export function useTour(tourId: string, steps: TourStep[], opts: UseTourOptions): React.ReactNode {
+  const { hasSeenTour, markTourSeen, skipAllTours } = useOnboarding()
+  const { active, settleMs = 500, firstEver = false } = opts
+
+  const seen = hasSeenTour(tourId)
+  const [started, setStarted] = useState(false)
+  const [index, setIndex] = useState(0)
+
+  // Start once, after the gate opens and a short settle delay. If the gate closes
+  // (a modal opens) before the timer fires, the start is cancelled.
+  useEffect(() => {
+    if (seen || started || !active || steps.length === 0) return
+    const t = window.setTimeout(() => setStarted(true), settleMs)
+    return () => window.clearTimeout(t)
+  }, [seen, started, active, steps.length, settleMs])
+
+  const finish = useCallback(() => {
+    setStarted(false)
+    markTourSeen(tourId)
+  }, [markTourSeen, tourId])
+
+  const advance = useCallback(() => {
+    setIndex(i => {
+      if (i >= steps.length - 1) {
+        finish()
+        return i
+      }
+      return i + 1
+    })
+  }, [steps.length, finish])
+
+  const back = useCallback(() => setIndex(i => Math.max(0, i - 1)), [])
+
+  const skipTour = useCallback(() => finish(), [finish])
+  const skipAll = useCallback(() => {
+    setStarted(false)
+    skipAllTours()
+  }, [skipAllTours])
+
+  const step = steps[index]
+  const getEl = useCallback(() => (step ? onboardTarget(step.target) : null), [step])
+
+  // Render only while genuinely running and the gate is open (pause on modal/toast).
+  if (seen || !started || !active || !step) return null
+
+  return (
+    <CoachMark
+      key={step.target}
+      getEl={getEl}
+      step={index + 1}
+      total={steps.length}
+      title={step.title}
+      body={step.body}
+      isLast={index === steps.length - 1}
+      onAdvance={advance}
+      onBack={index > 0 ? back : undefined}
+      onSkipTour={skipTour}
+      onSkipAll={firstEver && index === 0 ? skipAll : undefined}
+    />
+  )
+}

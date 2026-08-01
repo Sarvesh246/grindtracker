@@ -170,6 +170,7 @@ export default function RestTimerBar({
         {/* Adjust time (popover) — add or subtract from the countdown */}
         <div style={{ position: 'relative', flexShrink: 0 }}>
           <button
+            data-onboard="aw-rest-adjust"
             onClick={() => setAddOpen(o => !o)}
             aria-label="Adjust rest timer"
             aria-expanded={addOpen}

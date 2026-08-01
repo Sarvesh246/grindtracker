@@ -5,6 +5,7 @@ import { LeaderboardEntry } from '@/lib/types'
 import FriendsAccordion from './FriendsAccordion'
 import ShareCard from './ShareCard'
 import { useUnit } from '@/lib/contexts/UnitContext'
+import { useTour, type TourStep } from '@/components/onboarding/Tour'
 
 type Category = 'push' | 'pull' | 'legs' | 'overall'
 
@@ -94,6 +95,20 @@ export default function LeaderboardClient({ userId }: Props) {
   const myEntry = entries.find(e => e.user_id === userId)
   const myRank = myEntry ? entries.indexOf(myEntry) + 1 : null
 
+  // Walkthrough. The share step is only included when the user actually has a
+  // ranked entry (otherwise the share icon isn't rendered). Paused while the
+  // share-card modal is open.
+  const leaderboardSteps: TourStep[] = [
+    { target: 'leaderboard-friends', title: 'Add friends', body: 'Add friends to compare progress. Rankings without friends only show you.' },
+    { target: 'leaderboard-tabs', title: 'Ranking categories', body: 'Overall ranks by XP; the lift categories rank by heaviest working set.' },
+    ...(myEntry && myRank
+      ? [{ target: 'leaderboard-share', title: 'Share your rank', body: 'Share your current rank as an image.' } as TourStep]
+      : []),
+  ]
+  const leaderboardTour = useTour('leaderboard', leaderboardSteps, {
+    active: !loading && !shareTarget,
+  })
+
   function statDisplay(entry: LeaderboardEntry) {
     if (category === 'overall') return `${entry.xp_total.toLocaleString()} XP`
     if (entry.best_lift === 0) return '—'
@@ -107,6 +122,7 @@ export default function LeaderboardClient({ userId }: Props) {
       padding: '24px 16px',
       paddingBottom: 'calc(80px + env(safe-area-inset-bottom))',
     }}>
+      {leaderboardTour}
       {/* Header */}
       <div style={{
         display: 'flex',
@@ -123,6 +139,7 @@ export default function LeaderboardClient({ userId }: Props) {
         }}>RANKS</div>
         {myEntry && myRank && (
           <button
+            data-onboard="leaderboard-share"
             onClick={() => setShareTarget({ entry: myEntry, rank: myRank })}
             title="Share your rank"
             style={{
@@ -149,10 +166,12 @@ export default function LeaderboardClient({ userId }: Props) {
       </div>
 
       {/* Friends accordion */}
-      <FriendsAccordion userId={userId} onFriendsChange={setFriendIds} />
+      <div data-onboard="leaderboard-friends">
+        <FriendsAccordion userId={userId} onFriendsChange={setFriendIds} />
+      </div>
 
       {/* Category tabs */}
-      <div style={{
+      <div data-onboard="leaderboard-tabs" style={{
         display: 'flex',
         gap: '8px',
         marginBottom: '16px',

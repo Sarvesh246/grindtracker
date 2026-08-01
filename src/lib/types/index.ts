@@ -112,3 +112,18 @@ export interface UserRotation {
   current_index: number
   updated_at: string
 }
+
+/** Shape returned by the `complete_session` RPC (docs/sql/11-server-side-xp.sql). */
+export interface CompleteSessionResult {
+  xp_earned: number
+  xp_total: number
+  prev_level: number
+  level: number
+  leveled_up: boolean
+  current_streak: number
+  longest_streak: number
+  last_workout_date: string | null
+  total_workouts: number
+  pr_count: number
+  pr_exercises: { name: string; weight: number }[]
+}

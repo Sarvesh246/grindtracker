@@ -2,12 +2,15 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Session, UserStats } from '@/lib/types'
+import { Session, UserStats, UserRotation, CompleteSessionResult } from '@/lib/types'
 import { getLevel, getXpInCurrentLevel, getXpRequiredForLevel, getXpToNextLevel } from '@/lib/utils/gamification'
 import { formatHeaderDate, formatShortDate, localDateKey } from '@/lib/utils/formatting'
-import { overdueDays } from '@/lib/utils/rotation'
+import { advanceIndex, effectiveSequence, overdueDays } from '@/lib/utils/rotation'
+import { deleteIncompleteSessions } from '@/lib/utils/sessions'
+import { checkAndAwardBadges } from '@/lib/utils/badges'
 import WorkoutCalendar from '@/components/WorkoutCalendar'
 import { useUnit } from '@/lib/contexts/UnitContext'
+import { useTour, type TourStep } from '@/components/onboarding/Tour'
 
 // "This week"/"this month" start in the VIEWER's local timezone — computed here
 // (client) rather than on the server, whose clock/timezone is very often not
@@ -46,8 +49,16 @@ function readDismissedSig(): string | null {
   try { return localStorage.getItem(OVERDUE_DISMISS_KEY) } catch { return null }
 }
 
+interface ActiveSession {
+  id: string
+  day_type: string
+  started_at: string
+  loggedSets: number
+}
+
 interface Props {
   stats: UserStats | null
+  activeSession: ActiveSession | null
   lastSession: Session | null
   lastSessionLogs: { exercise_name: string; weight: number | null; sets: number; reps: number | null }[]
   nextDay: string
@@ -106,6 +117,7 @@ export default function HomeDashboard({
   // `userId` is gone: the stale-streak reset now calls the `refresh_stats` RPC,
   // which resolves the caller from the session rather than a passed-in id.
   stats,
+  activeSession,
   lastSession,
   lastSessionLogs,
   nextDay,
@@ -159,6 +171,139 @@ export default function HomeDashboard({
   }, [stats?.current_streak, stats?.last_workout_date])
   const currentStreak = streakOverride ?? stats?.current_streak ?? 0
 
+  // ── Active-session controls (resume / save / discard) ──────────────────────
+  // Only surface the in-progress session when it was started on the viewer's
+  // local calendar day — the same window ActiveWorkout will actually resume into
+  // (its lookup is bounded to today's `started_at`), so tapping Resume continues
+  // this session rather than forking a fresh one. A stale prior-day session is
+  // left alone, exactly as the rest of the app already treats it.
+  const activeIsToday = useMemo(() => {
+    if (!activeSession) return false
+    const started = new Date(activeSession.started_at)
+    started.setHours(0, 0, 0, 0)
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    return started.getTime() === today.getTime()
+  }, [activeSession])
+
+  // The "is it today?" test reads the local clock, which is UTC on the server and
+  // the viewer's zone in the browser — so it can disagree across the hydration
+  // boundary. Defer the decision to after mount: SSR and the first client render
+  // both see `mounted === false` (identical output, no mismatch), then the client
+  // resolves it. A present-but-not-today session is treated as "no active session"
+  // (a stale prior-day orphan), falling back to the normal start CTA / welcome.
+  const [mounted, setMounted] = useState(false)
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { setMounted(true) }, [])
+  const showResume = !!activeSession && mounted && activeIsToday
+  const noActiveForUi = !activeSession || (mounted && !activeIsToday)
+
+  const [savingActive, setSavingActive] = useState(false)
+  const [exiting, setExiting] = useState(false)
+  const [exitConfirm, setExitConfirm] = useState(false)
+  const [actionToast, setActionToast] = useState<string | null>(null)
+
+  function flashToast(msg: string) {
+    setActionToast(msg)
+    setTimeout(() => setActionToast(null), 4000)
+  }
+
+  function handleResume() {
+    if (!activeSession) return
+    router.push(`/log?day=${activeSession.day_type}`)
+  }
+
+  // Quick-save from the dashboard. This is the same authoritative finish path as
+  // ActiveWorkout — `complete_session` derives XP/streak/PRs server-side — plus
+  // the two best-effort follow-ups a live finish also does (advance the rotation
+  // pointer, award badges). It deliberately skips the celebratory modal and the
+  // 10-minute undo token: this is the "just bank it" path. A completed workout
+  // is still reversible from Log → past if needed.
+  async function handleSaveActive() {
+    if (!activeSession || savingActive) return
+    // Never complete an empty session — that would mint the +100 completion XP
+    // for no work. The button is disabled in this state; this is the backstop.
+    if (activeSession.loggedSets === 0) return
+    setSavingActive(true)
+    const dayType = activeSession.day_type
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { router.push('/login'); return }
+
+      const { data, error } = await supabase.rpc('complete_session', {
+        p_session_id: activeSession.id,
+        p_local_date: localDateKey(new Date()),
+        p_note: null,
+      })
+      if (error || !data) throw error ?? new Error('Save failed')
+      const result = data as CompleteSessionResult
+
+      // Advance the rotation so the next suggested day moves past this one.
+      // Best-effort — a rotation hiccup must never make a saved workout look failed.
+      try {
+        const [{ data: dayTypeRows }, { data: rotationRow }, { data: flexRows }] = await Promise.all([
+          supabase.from('exercises').select('day_type'),
+          supabase.from('user_rotation').select('*').eq('user_id', user.id).maybeSingle(),
+          supabase.from('user_flex_days').select('day_key').eq('user_id', user.id),
+        ])
+        const dayKeys = Array.from(new Set((dayTypeRows ?? []).map(r => r.day_type)))
+        const rot = rotationRow as UserRotation | null
+        const flex = new Set((flexRows ?? []).map((r: { day_key: string }) => r.day_key))
+        const seq = effectiveSequence(rot, dayKeys, flex)
+        const newIndex = advanceIndex(seq, rot?.current_index ?? -1, dayType)
+        await supabase.from('user_rotation').upsert(
+          {
+            user_id: user.id,
+            mode: rot?.mode ?? 'auto',
+            sequence: rot?.sequence ?? [],
+            current_index: newIndex,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'user_id' },
+        )
+      } catch { /* non-critical */ }
+
+      // Award any badges this completion unlocked (e.g. first_workout). Best-effort.
+      try {
+        await checkAndAwardBadges(supabase, user.id, {
+          user_id: user.id,
+          xp_total: result.xp_total,
+          level: result.level,
+          current_streak: result.current_streak,
+          longest_streak: result.longest_streak,
+          last_workout_date: result.last_workout_date,
+          total_workouts: result.total_workouts,
+          updated_at: new Date().toISOString(),
+        } as UserStats)
+      } catch { /* non-critical */ }
+
+      flashToast(result.xp_earned ? `Workout saved · +${result.xp_earned} XP` : 'Workout saved')
+      router.refresh()
+    } catch {
+      flashToast('Could not save workout. Check your connection and try again.')
+    } finally {
+      setSavingActive(false)
+    }
+  }
+
+  async function handleExitActive() {
+    if (!activeSession || exiting) return
+    setExiting(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { router.push('/login'); return }
+      const result = await deleteIncompleteSessions(supabase, user.id, activeSession.day_type)
+      if (!result.ok) throw new Error(result.error)
+      setExitConfirm(false)
+      flashToast('Workout discarded')
+      router.refresh()
+    } catch {
+      flashToast('Could not discard. Try again.')
+    } finally {
+      setExiting(false)
+    }
+  }
+
   // Bucketed from the viewer's local time — see getWeekStart/getMonthStart above.
   const weeklyWorkouts = useMemo(() => {
     const start = getWeekStart().getTime()
@@ -199,8 +344,32 @@ export default function HomeDashboard({
     padding: '24px',
   }
 
+  // First-run walkthrough. Empty-state users (no workouts yet) get only the two
+  // meaningful steps — the primary CTA (anchored to the welcome hero) and the
+  // history calendar; level/streak/stats aren't meaningful with zero data.
+  const homeSteps: TourStep[] = totalWorkouts === 0
+    ? [
+        { target: 'home-welcome-cta', title: 'Start a workout', body: 'Tap here to jump into your suggested next workout. GRIND rotates through your days automatically.' },
+        { target: 'home-calendar', title: 'Workout history', body: "See every day you've trained, and revisit or edit past sessions." },
+      ]
+    : [
+        { target: 'home-level', title: 'Your level', body: 'This is your level. Every completed workout and PR earns XP toward the next one.' },
+        { target: 'home-streak', title: 'Your streak', body: 'Keep your streak alive by training on consecutive days — miss a day and it resets.' },
+        { target: 'home-cta', title: 'Start a workout', body: 'Tap here to jump into your suggested next workout. GRIND rotates through your days automatically.' },
+        { target: 'home-stats', title: 'Your stats', body: 'Track your volume at a glance.' },
+        { target: 'home-calendar', title: 'Workout history', body: "See every day you've trained, and revisit or edit past sessions." },
+      ]
+  // Don't fire over the resume/exit flow; wait for mount so the active-session
+  // state is real. This is the first coach mark a user ever sees, so it also
+  // offers "Skip all tours".
+  const homeTour = useTour('home', homeSteps, {
+    active: mounted && noActiveForUi && !exitConfirm,
+    firstEver: true,
+  })
+
   return (
     <div className="page page--dashboard" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+      {homeTour}
 
       {/* Mobile-only wordmark — desktop carries the brand in the fixed TopNav. */}
       <h1 className="home-brand" style={{
@@ -214,22 +383,40 @@ export default function HomeDashboard({
         GRIND
       </h1>
 
-      {/* First-run welcome */}
-      {totalWorkouts === 0 && (
+      {/* First-run welcome — two honest states. A brand-new user with no plan
+          yet is guided to BUILD one ("set up your first day"); a user who has
+          days but hasn't trained is invited to START their first session. The
+          hero is the single primary action for a zero-workout user, so the
+          duplicate CTA + streak button below are suppressed while it shows.
+          Yields entirely to the resume block when a workout is mid-flight — a
+          user picking up an interrupted session isn't "brand new" anymore. */}
+      {totalWorkouts === 0 && noActiveForUi && (
         <div
           style={{
             ...card,
-            padding: '32px 24px',
+            padding: '36px 24px',
             marginBottom: '24px',
             marginTop: '16px',
             textAlign: 'center',
             display: 'flex',
             flexDirection: 'column',
-            gap: '12px',
+            gap: '14px',
             alignItems: 'center',
           }}
         >
-          <span style={{ color: 'var(--accent-text)' }}><BarbellIcon size={48} /></span>
+          <span style={{
+            width: '72px',
+            height: '72px',
+            borderRadius: '9999px',
+            backgroundColor: 'var(--accent-wash)',
+            color: 'var(--accent-text)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+          }}>
+            <BarbellIcon size={34} />
+          </span>
           <h2
             style={{
               fontFamily: 'var(--font-display)',
@@ -242,11 +429,14 @@ export default function HomeDashboard({
           >
             WELCOME TO GRIND
           </h2>
-          <p style={{ fontSize: '14px', color: 'var(--text-secondary)', maxWidth: '280px', lineHeight: 1.4 }}>
-            Pick today&apos;s workout to begin. Your first session unlocks your streak.
+          <p style={{ fontSize: '14px', color: 'var(--text-secondary)', maxWidth: '300px', lineHeight: 1.45 }}>
+            {hasDays
+              ? "Your plan's ready. Log your first session to start your streak."
+              : "Let's build your first workout. Create a day, add your exercises, and you're ready to train."}
           </p>
           <button
-            onClick={() => router.push('/log')}
+            data-onboard="home-welcome-cta"
+            onClick={() => router.push(hasDays ? `/log?day=${nextDay}` : '/log?new=1')}
             style={{
               marginTop: '4px',
               height: '48px',
@@ -262,7 +452,7 @@ export default function HomeDashboard({
               cursor: 'pointer',
             }}
           >
-            START YOUR FIRST WORKOUT
+            {hasDays ? `START ${dayLabel(nextDay)}` : 'SET UP YOUR FIRST DAY'}
           </button>
         </div>
       )}
@@ -294,7 +484,7 @@ export default function HomeDashboard({
       </div>
 
       {/* Level + XP Card */}
-      <div style={card}>
+      <div style={card} data-onboard="home-level">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
           <div>
             <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '2px' }}>
@@ -340,9 +530,40 @@ export default function HomeDashboard({
         </div>
       </div>
 
-      {/* Streak Card */}
+      {/* Streak Card. Three states:
+          • brand-new (no workouts) → a calm, non-clickable "starts here" card,
+            so it doesn't compete with the welcome hero's single CTA;
+          • lapsed (has history, streak reset to 0) → a clickable re-engagement
+            nudge back into the next workout;
+          • active → the live streak + best. */}
       {currentStreak === 0 ? (
+        totalWorkouts === 0 ? (
+          <div
+            style={{
+              ...card,
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '16px',
+            }}
+          >
+            <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2c0 4-4 6-4 10a4 4 0 0 0 8 0c0-4-4-6-4-10z"/><path d="M12 12c0 2-1.5 3-1.5 4.5a1.5 1.5 0 0 0 3 0C13.5 15 12 14 12 12z"/>
+              </svg>
+            </span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '2px' }}>
+                Your streak starts here
+              </div>
+              <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                Finish a workout to light it up.
+              </div>
+            </div>
+          </div>
+        ) : (
         <button
+          data-onboard="home-streak"
           onClick={() => router.push(hasDays ? `/log?day=${nextDay}` : '/log')}
           style={{
             ...card,
@@ -369,8 +590,9 @@ export default function HomeDashboard({
           </div>
           <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}><ChevronRight /></span>
         </button>
+        )
       ) : (
-        <div style={{
+        <div data-onboard="home-streak" style={{
           ...card,
           display: 'flex',
           alignItems: 'center',
@@ -412,10 +634,180 @@ export default function HomeDashboard({
         </div>
       )}
 
-      {/* Primary CTA — start the suggested day, or (for a brand-new blank-slate
-          user with no days yet) set up the first day so the button is never a
-          dead end into an empty workout. */}
+      {/* Resume block — takes the primary-action slot whenever a workout is in
+          progress today. One tap continues it; below, a quick Save banks it (same
+          server-authoritative finish as ActiveWorkout) and Exit discards it, each
+          without having to re-enter the session first. */}
+      {showResume && activeSession && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <button
+            onClick={handleResume}
+            title={DAY_MUSCLES[activeSession.day_type]}
+            style={{
+              width: '100%',
+              minHeight: '96px',
+              padding: '0 24px',
+              backgroundColor: 'var(--accent)',
+              color: 'var(--on-accent)',
+              border: 'none',
+              borderRadius: '20px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '18px',
+              transition: 'opacity 150ms ease',
+            }}
+            onMouseEnter={e => (e.currentTarget.style.opacity = '0.88')}
+            onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
+            onMouseDown={e => (e.currentTarget.style.opacity = '0.75')}
+            onMouseUp={e => (e.currentTarget.style.opacity = '0.88')}
+            onTouchStart={e => (e.currentTarget.style.opacity = '0.85')}
+            onTouchEnd={e => (e.currentTarget.style.opacity = '1')}
+          >
+            <span style={{ flexShrink: 0, display: 'flex' }}>
+              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="var(--on-accent)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <polygon points="10 8 16 12 10 16 10 8" fill="var(--on-accent)" stroke="none" />
+              </svg>
+            </span>
+            <span style={{ flex: 1, textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                <span style={{
+                  width: '7px', height: '7px', borderRadius: '9999px',
+                  backgroundColor: 'var(--on-accent)', opacity: 0.85, flexShrink: 0,
+                }} />
+                <span style={{
+                  fontSize: '10px', fontWeight: 700, letterSpacing: '1.5px',
+                  textTransform: 'uppercase', color: 'var(--on-accent)', opacity: 0.75,
+                }}>
+                  In progress
+                </span>
+              </span>
+              <span style={{
+                fontFamily: "'Bebas Neue', sans-serif",
+                fontSize: '28px',
+                letterSpacing: '1px',
+                lineHeight: 1,
+              }}>
+                RESUME {dayLabel(activeSession.day_type)}
+              </span>
+              <span style={{
+                fontSize: '12px',
+                fontWeight: 500,
+                color: 'var(--on-accent)',
+                opacity: 0.7,
+                lineHeight: 1.2,
+              }}>
+                {activeSession.loggedSets > 0
+                  ? `${activeSession.loggedSets} set${activeSession.loggedSets === 1 ? '' : 's'} logged`
+                  : 'No sets logged yet'}
+              </span>
+            </span>
+            <span style={{ flexShrink: 0 }}><ChevronRight color="var(--on-accent)" /></span>
+          </button>
+
+          {/* Save / Exit row — collapses into a discard confirmation when Exit is
+              tapped, so a logged workout can't be thrown away on a single mis-tap. */}
+          {!exitConfirm ? (
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={handleSaveActive}
+                disabled={savingActive || exiting || activeSession.loggedSets === 0}
+                title={activeSession.loggedSets === 0 ? 'Log a set before saving' : undefined}
+                style={{
+                  flex: 1,
+                  height: '48px',
+                  backgroundColor: 'var(--surface)',
+                  border: '1px solid var(--border)',
+                  borderRadius: '14px',
+                  color: activeSession.loggedSets === 0 ? 'var(--text-muted)' : 'var(--accent-text)',
+                  fontFamily: "'DM Sans', sans-serif",
+                  fontSize: '14px',
+                  fontWeight: 700,
+                  cursor: (savingActive || exiting || activeSession.loggedSets === 0) ? 'default' : 'pointer',
+                  opacity: (savingActive || exiting) ? 0.6 : 1,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                  transition: 'border-color 150ms ease',
+                }}
+              >
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                  <polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" />
+                </svg>
+                {savingActive ? 'Saving…' : 'Save workout'}
+              </button>
+              <button
+                onClick={() => setExitConfirm(true)}
+                disabled={savingActive || exiting}
+                style={{
+                  flex: 1,
+                  height: '48px',
+                  backgroundColor: 'transparent',
+                  border: '1px solid var(--border)',
+                  borderRadius: '14px',
+                  color: 'var(--text-secondary)',
+                  fontFamily: "'DM Sans', sans-serif",
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  cursor: (savingActive || exiting) ? 'default' : 'pointer',
+                  opacity: (savingActive || exiting) ? 0.6 : 1,
+                }}
+              >
+                Exit without saving
+              </button>
+            </div>
+          ) : (
+            <div style={{
+              display: 'flex', flexDirection: 'column', gap: '10px',
+              padding: '14px 16px',
+              backgroundColor: 'var(--surface)',
+              border: '1px solid rgba(239,68,68,0.3)',
+              borderRadius: '14px',
+            }}>
+              <div style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                Discard this workout? Your logged sets will be permanently deleted.
+              </div>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button
+                  onClick={() => setExitConfirm(false)}
+                  disabled={exiting}
+                  style={{
+                    flex: 1, height: '44px',
+                    backgroundColor: 'var(--surface-elevated)',
+                    border: '1px solid var(--border)', borderRadius: '10px',
+                    color: 'var(--text-primary)', fontFamily: "'DM Sans', sans-serif",
+                    fontSize: '14px', fontWeight: 600, cursor: 'pointer',
+                  }}
+                >
+                  Keep
+                </button>
+                <button
+                  onClick={handleExitActive}
+                  disabled={exiting}
+                  style={{
+                    flex: 1, height: '44px',
+                    backgroundColor: 'rgba(239,68,68,0.15)',
+                    border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px',
+                    color: 'var(--danger)', fontFamily: "'DM Sans', sans-serif",
+                    fontSize: '14px', fontWeight: 700,
+                    cursor: exiting ? 'default' : 'pointer',
+                  }}
+                >
+                  {exiting ? 'Discarding…' : 'Discard'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Primary CTA — start the suggested day. Hidden for a zero-workout user,
+          whose single primary action is the welcome hero above, and hidden while
+          a workout is in progress (the resume block owns the slot). This keeps one
+          clear next step instead of competing "start" affordances. */}
+      {noActiveForUi && totalWorkouts > 0 && (
       <button
+        data-onboard="home-cta"
         onClick={() => router.push(hasDays ? `/log?day=${nextDay}` : '/log')}
         title={hasDays ? DAY_MUSCLES[nextDay] : undefined}
         style={{
@@ -461,6 +853,7 @@ export default function HomeDashboard({
         </span>
         <span style={{ flexShrink: 0 }}><ChevronRight color="var(--on-accent)" /></span>
       </button>
+      )}
 
       {/* Overdue nudge — a slim, dismissible line that surfaces a day the rotation
           skipped past (trained out of order and left behind), so you don't have to
@@ -681,7 +1074,7 @@ export default function HomeDashboard({
       <div className="home-col hg-right" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
       {/* Stats Row — three equal-width, equal-height cards. */}
-      <div style={{ display: 'flex', gap: '20px', alignItems: 'stretch' }}>
+      <div data-onboard="home-stats" style={{ display: 'flex', gap: '20px', alignItems: 'stretch' }}>
         {[
           { value: weeklyWorkouts, label: 'WORKOUTS', sub: 'This Week' },
           { value: monthlyWorkouts, label: 'WORKOUTS', sub: 'This Month' },
@@ -737,13 +1130,40 @@ export default function HomeDashboard({
         }}>
           WORKOUT HISTORY
         </div>
-        <div style={{ flex: 1, minHeight: 0 }}>
+        <div style={{ flex: 1, minHeight: 0 }} data-onboard="home-calendar">
           <WorkoutCalendar />
         </div>
       </div>
 
       </div>{/* end right column */}
       </div>{/* end home-grid */}
+
+      {/* Passive confirmation for the resume-block actions (save / discard). */}
+      {actionToast && (
+        <div
+          role="status"
+          style={{
+            position: 'fixed',
+            left: '50%',
+            bottom: 'calc(84px + env(safe-area-inset-bottom))',
+            transform: 'translateX(-50%)',
+            zIndex: 60,
+            maxWidth: 'calc(100% - 32px)',
+            padding: '11px 18px',
+            backgroundColor: 'var(--surface-elevated)',
+            border: '1px solid var(--border-strong)',
+            borderRadius: '9999px',
+            color: 'var(--text-primary)',
+            fontFamily: "'DM Sans', sans-serif",
+            fontSize: '13px',
+            fontWeight: 600,
+            boxShadow: '0 6px 20px rgba(0,0,0,0.35)',
+            textAlign: 'center',
+          }}
+        >
+          {actionToast}
+        </div>
+      )}
 
     </div>
   )

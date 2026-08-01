@@ -99,6 +99,10 @@ export default function FinishUndoBanner() {
         gap: '12px',
         zIndex: 400,
         boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+        // The left text block is dead space; only the buttons need to catch
+        // taps. Let everything else fall through so the banner can't swallow a
+        // tap on the content beneath it while it lingers.
+        pointerEvents: 'none',
       }}
     >
       <div style={{ minWidth: 0 }}>
@@ -109,7 +113,7 @@ export default function FinishUndoBanner() {
           Resume available for {formatRemaining(remaining)}
         </div>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, pointerEvents: 'auto' }}>
         <button
           onClick={() => { localStorage.removeItem(UNDO_KEY); setToken(null) }}
           style={{

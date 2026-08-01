@@ -1,11 +1,12 @@
 'use client'
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Exercise, UserRotation } from '@/lib/types'
 import { haptic } from '@/lib/utils/haptics'
 import { effectiveSequence, nextDay as nextDayFromRotation } from '@/lib/utils/rotation'
 import WorkoutManager from './WorkoutManager'
+import { useTour, type TourStep } from '@/components/onboarding/Tour'
 
 function PushIcon() {
   return (
@@ -66,12 +67,42 @@ const DAY_ICONS: Record<string, React.FC> = {
 
 export default function DaySelect() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const supabase = useMemo(() => createClient(), [])
   const [exercises, setExercises] = useState<Exercise[]>([])
   const [rotation, setRotation] = useState<UserRotation | null>(null)
   const [flexDays, setFlexDays] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [showManager, setShowManager] = useState(false)
+  // When true, the manager opens straight into the "new day" form — used by the
+  // blank-slate hero and the `?new=1` deep link from Home, so "create a day" is
+  // a single tap rather than a hunt for the gear icon.
+  const [managerNewDay, setManagerNewDay] = useState(false)
+
+  const openCreateDay = useCallback(() => {
+    setManagerNewDay(true)
+    setShowManager(true)
+  }, [])
+
+  const closeManager = useCallback(() => {
+    setShowManager(false)
+    setManagerNewDay(false)
+  }, [])
+
+  // Deep link from the first-run CTAs (`/log?new=1`) opens the create-day form
+  // once, then strips the param so a refresh or back-nav doesn't reopen it.
+  const autoOpened = useRef(false)
+  useEffect(() => {
+    if (autoOpened.current) return
+    if (searchParams.get('new')) {
+      autoOpened.current = true
+      // Syncing a one-shot URL intent into local state on mount — the same
+      // "read from an external system once" case the login page handles this way.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      openCreateDay()
+      router.replace('/log')
+    }
+  }, [searchParams, router, openCreateDay])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -106,10 +137,26 @@ export default function DaySelect() {
   // Non-binding hint: the day the rotation suggests next (flex days excluded).
   const upNext = nextDayFromRotation(effectiveSequence(rotation, dayKeys, flexDays), rotation?.current_index ?? -1)
 
+  // Walkthrough only applies once the user actually has days (the MANAGE button
+  // and "log a past workout" link that steps 2/3 point at don't exist on the
+  // blank slate). Paused while the manager sheet is open.
+  const daySteps: TourStep[] = [
+    { target: 'dayselect-days', title: 'Pick a day', body: 'Tap a day to start logging. UP NEXT highlights what GRIND suggests based on your rotation.' },
+    { target: 'dayselect-manage', title: 'Manage days', body: 'Add, edit, reorder, or remove your workout days and exercises here.' },
+    { target: 'dayselect-past', title: 'Log a past workout', body: 'Forgot to log a session live? Add it retroactively here.' },
+  ]
+  const dayTour = useTour('log-dayselect', daySteps, {
+    active: !loading && dayKeys.length > 0 && !showManager,
+  })
+
   return (
     <>
+      {dayTour}
       <div className="page page--wide" style={{ padding: '24px 16px', fontFamily: "'DM Sans', sans-serif" }}>
-        {/* Header row */}
+        {/* Header row — hidden on the blank slate so the setup hero owns the
+            screen (there's nothing to "choose" yet, and the hero carries its own
+            create button, so the gear would just be visual noise). */}
+        {(loading || dayKeys.length > 0) && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
           <h1 style={{
             fontFamily: "'Bebas Neue', sans-serif",
@@ -121,6 +168,7 @@ export default function DaySelect() {
             CHOOSE YOUR DAY
           </h1>
           <button
+            data-onboard="dayselect-manage"
             onClick={() => setShowManager(true)}
             style={{
               display: 'flex', alignItems: 'center', gap: '6px',
@@ -144,23 +192,59 @@ export default function DaySelect() {
             </span>
           </button>
         </div>
+        )}
 
         {loading ? (
           <div style={{ color: 'var(--text-muted)', fontSize: '14px' }}>Loading...</div>
         ) : dayKeys.length === 0 ? (
-          <div style={{ color: 'var(--text-muted)', fontSize: '14px', lineHeight: 1.6 }}>
-            No workout days yet.{' '}
+          /* Blank-slate hero — the direct continuation of Home's "SET UP YOUR
+             FIRST DAY". Same visual language (accent icon badge, Bebas title,
+             lime button) so the CTA the user tapped simply grows into this
+             screen, and one obvious button opens the create-day form. */
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            textAlign: 'center',
+            gap: '16px',
+            padding: '56px 24px 40px',
+          }}>
+            <span style={{
+              width: '76px', height: '76px', borderRadius: '9999px',
+              backgroundColor: 'var(--accent-wash)', color: 'var(--accent-text)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            }}>
+              <DefaultDayIcon />
+            </span>
+            <h2 style={{
+              fontFamily: "'Bebas Neue', sans-serif", fontSize: '28px',
+              color: 'var(--text-primary)', letterSpacing: '1px', lineHeight: 1, margin: 0,
+            }}>
+              SET UP YOUR FIRST DAY
+            </h2>
+            <p style={{ fontSize: '14px', color: 'var(--text-secondary)', maxWidth: '320px', lineHeight: 1.5 }}>
+              Create a workout day — like Push, Pull, or Legs — add your exercises,
+              and you&apos;re ready to train. Takes about a minute.
+            </p>
             <button
-              onClick={() => setShowManager(true)}
-              style={{ background: 'none', border: 'none', color: 'var(--accent-text)', cursor: 'pointer', fontSize: '14px', padding: 0, fontFamily: "'DM Sans', sans-serif", fontWeight: 600 }}
+              onClick={openCreateDay}
+              style={{
+                marginTop: '4px', height: '52px', padding: '0 32px',
+                backgroundColor: 'var(--accent)', color: 'var(--on-accent)', border: 'none',
+                borderRadius: '12px', fontFamily: "'Bebas Neue', sans-serif",
+                fontSize: '20px', letterSpacing: '1px', cursor: 'pointer',
+                display: 'inline-flex', alignItems: 'center', gap: '10px',
+              }}
             >
-              Add one
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+              CREATE A DAY
             </button>
-            {' '}to get started.
           </div>
         ) : (
           <div className="day-grid">
-            {dayKeys.map(key => {
+            {dayKeys.map((key, idx) => {
               const exs = grouped[key]
               const Icon = DAY_ICONS[key] ?? DefaultDayIcon
               const description = exs.slice(0, 3).map(e => e.name).join(', ') + (exs.length > 3 ? '…' : '')
@@ -168,6 +252,7 @@ export default function DaySelect() {
               return (
                 <button
                   key={key}
+                  data-onboard={idx === 0 ? 'dayselect-days' : undefined}
                   onClick={() => {
                     haptic('heavy')
                     router.push(`/log?day=${key}`)
@@ -236,9 +321,13 @@ export default function DaySelect() {
           </div>
         )}
 
-        {!loading && (
+        {/* "Log a past workout" is a power feature — only surface it once the
+            user actually has days/history. On the blank slate it would just pull
+            focus away from the one thing that matters: creating a day. */}
+        {!loading && dayKeys.length > 0 && (
           <div style={{ textAlign: 'center', marginTop: '20px' }}>
             <button
+              data-onboard="dayselect-past"
               onClick={() => router.push('/log/past')}
               style={{
                 background: 'none',
@@ -263,8 +352,9 @@ export default function DaySelect() {
 
       {showManager && (
         <WorkoutManager
-          onClose={() => setShowManager(false)}
+          onClose={closeManager}
           onChanged={() => load()}
+          initialNewDay={managerNewDay}
         />
       )}
     </>
