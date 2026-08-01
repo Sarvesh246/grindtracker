@@ -255,7 +255,11 @@ export default function FeedbackModal({ onClose }: { onClose: () => void }) {
         style={{
           width: '100%',
           maxWidth: '480px',
-          maxHeight: '100%',
+          // dvh (not the parent's percentage height) tracks the true visible
+          // viewport on mobile Safari, where the address bar/home-indicator
+          // area otherwise let the sheet's bottom edge render a few px past
+          // the visible fold. Matches .wm-sheet's max-height: 88dvh.
+          maxHeight: '90dvh',
           overflowY: 'auto',
           backgroundColor: 'var(--surface)',
           border: '1px solid var(--border)',
