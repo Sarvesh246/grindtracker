@@ -113,6 +113,33 @@ export interface UserRotation {
   updated_at: string
 }
 
+/** Scheduled weekly rest days (docs/sql/14-rest-days.sql). 0 = Sunday … 6 = Saturday. */
+export interface UserRestSettings {
+  user_id: string
+  weekdays: number[]
+  updated_at: string
+}
+
+/** A rest pass claimed for one specific date. Server-written only. */
+export interface UserRestDate {
+  user_id: string
+  rest_date: string
+  created_at: string
+}
+
+/** Shape returned by the `claim_rest_days` RPC. */
+export interface ClaimRestDaysResult {
+  xp_total: number
+  level: number
+  current_streak: number
+  longest_streak: number
+  total_workouts: number
+  last_workout_date: string | null
+  passes_used: number
+  passes_limit: number
+  passes_remaining: number
+}
+
 /** Shape returned by the `complete_session` RPC (docs/sql/11-server-side-xp.sql). */
 export interface CompleteSessionResult {
   xp_earned: number

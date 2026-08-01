@@ -54,15 +54,16 @@ export function useTour(tourId: string, steps: TourStep[], opts: UseTourOptions)
     markTourSeen(tourId)
   }, [markTourSeen, tourId])
 
+  // Decided outside the updater on purpose: `finish()` triggers its own state
+  // writes, and a setState updater has to stay pure (React invokes it twice in
+  // development to catch exactly this).
   const advance = useCallback(() => {
-    setIndex(i => {
-      if (i >= steps.length - 1) {
-        finish()
-        return i
-      }
-      return i + 1
-    })
-  }, [steps.length, finish])
+    if (index >= steps.length - 1) {
+      finish()
+      return
+    }
+    setIndex(i => i + 1)
+  }, [index, steps.length, finish])
 
   const back = useCallback(() => setIndex(i => Math.max(0, i - 1)), [])
 

@@ -14,7 +14,7 @@ import { useRestTimer } from '@/lib/hooks/useRestTimer'
 import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
 import RestTimerBar from '@/components/RestTimerBar'
 import PlateCalculator from '@/components/PlateCalculator'
-import CompletionModal from './CompletionModal'
+import CompletionModal, { type CompletionData } from './CompletionModal'
 import { useFeatureTooltip } from '@/components/onboarding/useFeatureTooltip'
 import { onboardTarget } from '@/components/onboarding/anchor'
 import { useOnboarding } from '@/lib/contexts/OnboardingContext'
@@ -41,17 +41,6 @@ type LogMap = Record<string, SetState>
 
 interface PreviousBest {
   [exerciseId: string]: number | null
-}
-
-interface CompletionData {
-  xpEarned: number
-  leveledUp: boolean
-  newLevel: number
-  prCount: number
-  prExercises: { name: string; weight: number }[]
-  newBadges: string[]
-  duration: number
-  setsCompleted: number
 }
 
 export interface FinishUndoToken {
@@ -376,6 +365,23 @@ export default function ActiveWorkout({ day }: { day: string }) {
 
   function skippedSets(): number {
     return Object.values(logs).filter(l => l.skipped).length
+  }
+
+  /**
+   * Working-set volume for the completion summary, in CANONICAL LBS — `weight`
+   * in a SetState is already canonical (the input converts on the way in via
+   * `fromDisplay`), so this must not be converted again here; the modal converts
+   * once, at display time. Warm-ups are excluded for the same reason they don't
+   * count toward PRs: they aren't work.
+   */
+  function completedVolume(): number {
+    return Object.values(logs).reduce((sum, l) => {
+      if (!l.checked || l.isWarmup) return sum
+      const w = Number(l.weight)
+      const r = Number(l.reps)
+      if (!Number.isFinite(w) || !Number.isFinite(r) || w <= 0 || r <= 0) return sum
+      return sum + w * r
+    }, 0)
   }
 
   function progressPercent(): number {
@@ -866,15 +872,21 @@ export default function ActiveWorkout({ day }: { day: string }) {
     router.replace('/log')
   }
 
-  async function handleUndoFinish() {
+  /**
+   * Reopen a just-finished session. Returns whether it worked, so the completion
+   * sheet can report the failure INSIDE itself — the old version wrote to
+   * `resumeToast`, which renders behind the overlay and was therefore invisible
+   * at exactly the moment it mattered.
+   */
+  async function handleUndoFinish(): Promise<boolean> {
     const raw = typeof window !== 'undefined' ? localStorage.getItem('grind_finish_undo') : null
-    if (!raw) return
+    if (!raw) return false
     let token: FinishUndoToken
-    try { token = JSON.parse(raw) } catch { return }
-    if (Date.now() > token.expiresAt) { localStorage.removeItem('grind_finish_undo'); return }
+    try { token = JSON.parse(raw) } catch { return false }
+    if (Date.now() > token.expiresAt) { localStorage.removeItem('grind_finish_undo'); return false }
 
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user || user.id !== token.userId) return
+    if (!user || user.id !== token.userId) return false
 
     // Reopen the session server-side; stats are re-derived from the remaining
     // logs rather than restored from values the client was holding. A tampered
@@ -885,11 +897,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       p_local_date: localDateKey(new Date()),
     })
 
-    if (undoError) {
-      setResumeToast('Could not undo. Try again.')
-      setTimeout(() => setResumeToast(null), 4000)
-      return
-    }
+    if (undoError) return false
 
     await supabase
       .from('user_rotation')
@@ -898,6 +906,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
 
     localStorage.removeItem('grind_finish_undo')
     setCompletionData(null)
+    return true
   }
 
   async function handleFinish() {
@@ -1033,15 +1042,19 @@ export default function ActiveWorkout({ day }: { day: string }) {
       }
 
       // Store a 10-minute undo token so the user can resume if they finished
-      // by accident.
+      // by accident. `undoUntil` mirrors it into the completion sheet, which
+      // hides "Resume workout" once the window has closed rather than offering
+      // a button that would quietly do nothing.
+      let undoUntil: number | null = null
       if (typeof window !== 'undefined') {
+        undoUntil = Date.now() + 10 * 60 * 1000
         const token: FinishUndoToken = {
           sessionId,
           day,
           userId: user.id,
           xpEarned,
           prevRotationIndex,
-          expiresAt: Date.now() + 10 * 60 * 1000,
+          expiresAt: undoUntil,
         }
         localStorage.setItem('grind_finish_undo', JSON.stringify(token))
       }
@@ -1060,6 +1073,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
 
       setCompletionData({
         xpEarned,
+        xpTotal: result.xp_total,
         leveledUp,
         newLevel,
         prCount,
@@ -1067,6 +1081,11 @@ export default function ActiveWorkout({ day }: { day: string }) {
         newBadges,
         duration: elapsed,
         setsCompleted: checkedSets(),
+        volume: completedVolume(),
+        currentStreak: result.current_streak,
+        longestStreak: result.longest_streak,
+        dayType: day,
+        undoUntil,
       })
     } catch (err) {
       // The workout is untouched (or safely resumable) — tell the user and let

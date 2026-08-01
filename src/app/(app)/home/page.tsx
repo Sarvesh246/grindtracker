@@ -174,6 +174,23 @@ export default async function HomePage() {
   // `completedDays` below, using the viewer's local week/month boundaries —
   // same timezone reasoning as the streak reset above.
 
+  // Rest days (docs/sql/14-rest-days.sql). The rolling-window pass count and the
+  // "is the streak actually broken?" test are both done client-side, against the
+  // VIEWER's local today — same timezone reasoning as the streak reset above — so
+  // this deliberately over-fetches a month of passes rather than applying a
+  // UTC-based cutoff that could clip a boundary row.
+  const passCutoff = new Date()
+  passCutoff.setDate(passCutoff.getDate() - 30)
+  const [{ data: restSettings }, { data: restDates }] = await Promise.all([
+    supabase.from('user_rest_settings').select('weekdays').eq('user_id', user.id).maybeSingle(),
+    supabase
+      .from('user_rest_dates')
+      .select('rest_date')
+      .eq('user_id', user.id)
+      .gte('rest_date', passCutoff.toISOString().slice(0, 10))
+      .order('rest_date', { ascending: false }),
+  ])
+
   // Total PRs
   const { count: totalPRs } = await supabase
     .from('session_logs')
@@ -196,6 +213,8 @@ export default async function HomePage() {
       firstName={firstName}
       completedAt={(completedDays ?? []).map(r => r.completed_at).filter((v): v is string => v !== null)}
       totalPRs={totalPRs ?? 0}
+      restWeekdays={(restSettings?.weekdays as number[] | null) ?? []}
+      restClaimedDates={(restDates ?? []).map(r => r.rest_date as string)}
     />
   )
 }

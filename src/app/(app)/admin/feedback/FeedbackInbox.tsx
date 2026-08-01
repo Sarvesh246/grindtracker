@@ -193,34 +193,49 @@ export default function FeedbackInbox({
     return row.username ?? row.email ?? 'Unknown user'
   }
 
-  const selectStyle = {
-    height: '34px',
+  // One control height for the whole toolbar. Mixed 34/40px controls were what
+  // made the header read as "random buttons" — every affordance now lines up.
+  const CONTROL_H = '40px'
+
+  const controlStyle = {
+    height: CONTROL_H,
     backgroundColor: 'var(--surface-elevated)',
     border: '1px solid var(--border)',
     borderRadius: 'var(--radius-sm)',
     color: 'var(--text-secondary)',
     fontFamily: 'var(--font-sans)',
     fontSize: '13px',
-    padding: '0 8px',
+    padding: '0 10px',
     cursor: 'pointer',
     outline: 'none',
   } as const
 
+  const allVisibleRead = visible.every(r => r.is_read)
+
   return (
-    <div className="page page--wide" style={{ fontFamily: "'DM Sans', sans-serif", paddingBottom: '24px' }}>
-      {/* ── Header ─────────────────────────────────────────────────────── */}
+    <div className="page page--wide" style={{
+      fontFamily: "'DM Sans', sans-serif",
+      // The page container itself has no padding (see .page in globals.css), so
+      // without this the title sat flush against the top of the scroll area and
+      // the panes ran edge-to-edge on a phone. Matches DaySelect's gutters.
+      padding: '24px 16px 32px',
+    }}>
+      {/* ── Header ─────────────────────────────────────────────────────────
+          Title, the counts it describes, and the one action that operates on
+          those counts. Nothing else lives up here. */}
       <div style={{
         display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between',
-        gap: '12px', marginBottom: '4px',
+        gap: '12px', flexWrap: 'wrap',
       }}>
         <div>
-          <div style={{
+          <h1 style={{
             fontFamily: 'var(--font-display)', fontSize: 'var(--text-display-md)',
             color: 'var(--text-primary)', letterSpacing: '1px', lineHeight: 1,
+            fontWeight: 'normal', margin: 0,
           }}>
             FEEDBACK
-          </div>
-          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '6px' }}>
+          </h1>
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '8px' }}>
             {rows.length} total
             {unreadCount > 0 && (
               <> · <span style={{ color: 'var(--accent-text)', fontWeight: 700 }}>{unreadCount} unread</span></>
@@ -228,23 +243,16 @@ export default function FeedbackInbox({
           </div>
         </div>
         <button
-          onClick={() => router.refresh()}
-          aria-label="Refresh"
+          onClick={markAllRead}
+          disabled={allVisibleRead}
           style={{
-            height: '34px', padding: '0 12px', display: 'inline-flex',
-            alignItems: 'center', gap: '7px',
-            backgroundColor: 'var(--surface-elevated)',
-            border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
-            color: 'var(--text-secondary)', fontFamily: 'var(--font-sans)',
-            fontSize: '13px', cursor: 'pointer', flexShrink: 0,
+            background: 'none', border: 'none', padding: '4px 0',
+            fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 600,
+            color: allVisibleRead ? 'var(--text-disabled)' : 'var(--accent-text)',
+            cursor: allVisibleRead ? 'default' : 'pointer',
           }}
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="23 4 23 10 17 10" />
-            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-          </svg>
-          Refresh
+          Mark all read
         </button>
       </div>
 
@@ -268,36 +276,56 @@ export default function FeedbackInbox({
         </div>
       )}
 
-      {/* ── Toolbar ────────────────────────────────────────────────────── */}
-      <div style={{ margin: '16px 0 14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        <div style={{ position: 'relative' }}>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)"
-            strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-            style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>
-            <circle cx="11" cy="11" r="8" />
-            <line x1="21" y1="21" x2="16.65" y2="16.65" />
-          </svg>
-          <input
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            placeholder="Search messages and senders"
+      {/* ── Toolbar ─────────────────────────────────────────────────────────
+          Two rows, one purpose each: find a message, then narrow the list.
+          Refresh sits with the search field because both act on "what's here",
+          and every control shares one height (see .inbox-toolbar). */}
+      <div className="inbox-toolbar">
+        <div className="inbox-search-row">
+          <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)"
+              strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+              style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <input
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Search messages and senders"
+              style={{
+                width: '100%', height: CONTROL_H, boxSizing: 'border-box',
+                backgroundColor: 'var(--surface-elevated)',
+                border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
+                color: 'var(--text-primary)', fontFamily: 'var(--font-sans)',
+                fontSize: '16px', // ≥16px prevents iOS auto-zoom on focus
+                padding: '0 12px 0 34px', outline: 'none',
+              }}
+            />
+          </div>
+          <button
+            onClick={() => router.refresh()}
+            aria-label="Refresh"
+            title="Refresh"
             style={{
-              width: '100%', height: '40px', boxSizing: 'border-box',
-              backgroundColor: 'var(--surface-elevated)',
-              border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
-              color: 'var(--text-primary)', fontFamily: 'var(--font-sans)',
-              fontSize: '16px', // ≥16px prevents iOS auto-zoom on focus
-              padding: '0 12px 0 34px', outline: 'none',
+              ...controlStyle,
+              width: CONTROL_H,
+              padding: 0,
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
             }}
-          />
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="23 4 23 10 17 10" />
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+            </svg>
+          </button>
         </div>
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px' }}>
+        <div className="inbox-filters">
           {/* Read-state filter */}
-          <div style={{
-            display: 'flex', backgroundColor: 'var(--surface-elevated)',
-            border: '1px solid var(--border)', borderRadius: 'var(--radius-pill)', padding: '3px',
-          }}>
+          <div className="inbox-segment">
             {FILTERS.map(f => {
               const active = filter === f.key
               return (
@@ -305,12 +333,13 @@ export default function FeedbackInbox({
                   key={f.key}
                   onClick={() => setFilter(f.key)}
                   style={{
-                    height: '28px', padding: '0 13px',
+                    height: '32px', padding: '0 13px',
                     borderRadius: 'var(--radius-pill)', border: 'none',
                     backgroundColor: active ? 'var(--accent)' : 'transparent',
                     color: active ? 'var(--on-accent)' : 'var(--text-secondary)',
                     fontFamily: 'var(--font-sans)', fontSize: '12px',
                     fontWeight: active ? 700 : 500, cursor: 'pointer',
+                    whiteSpace: 'nowrap',
                     transition: 'background-color 150ms ease',
                   }}
                 >
@@ -322,10 +351,11 @@ export default function FeedbackInbox({
           </div>
 
           <select
+            className="inbox-select"
             value={categoryFilter}
             onChange={e => setCategoryFilter(e.target.value as CategoryFilter)}
             aria-label="Filter by type"
-            style={selectStyle}
+            style={controlStyle}
           >
             <option value="all">All types</option>
             <option value="bug">Bugs</option>
@@ -335,26 +365,14 @@ export default function FeedbackInbox({
           </select>
 
           <select
+            className="inbox-select"
             value={sort}
             onChange={e => setSort(e.target.value as Sort)}
             aria-label="Sort"
-            style={selectStyle}
+            style={controlStyle}
           >
             {SORTS.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
           </select>
-
-          <button
-            onClick={markAllRead}
-            disabled={visible.every(r => r.is_read)}
-            style={{
-              ...selectStyle,
-              marginLeft: 'auto',
-              color: visible.every(r => r.is_read) ? 'var(--text-disabled)' : 'var(--text-secondary)',
-              cursor: visible.every(r => r.is_read) ? 'not-allowed' : 'pointer',
-            }}
-          >
-            Mark all read
-          </button>
         </div>
       </div>
 
@@ -545,72 +563,90 @@ export default function FeedbackInbox({
                 </div>
               </div>
 
-              {/* Actions */}
+              {/* Actions — the two reversible ones on the left, the destructive
+                  one alone on the right. The confirmation REPLACES the row
+                  rather than growing inside it, so the buttons underneath don't
+                  shift out from under a finger mid-tap. */}
               <div style={{
-                display: 'flex', flexWrap: 'wrap', gap: '8px',
                 paddingBottom: '14px', marginBottom: '14px',
                 borderBottom: '1px solid var(--border)',
               }}>
-                <button
-                  onClick={() => patch(selected.id, { is_starred: !selected.is_starred })}
-                  style={{
-                    ...selectStyle,
-                    display: 'inline-flex', alignItems: 'center', gap: '6px',
-                    color: selected.is_starred ? 'var(--accent-text)' : 'var(--text-secondary)',
-                  }}
-                >
-                  <StarIcon filled={selected.is_starred} size={14} />
-                  {selected.is_starred ? 'Starred' : 'Star'}
-                </button>
-
-                <button
-                  onClick={() => patch(selected.id, { is_read: !selected.is_read })}
-                  style={{ ...selectStyle, display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M4 4h16v16H4z" />
-                    <polyline points="4 6 12 13 20 6" />
-                  </svg>
-                  Mark {selected.is_read ? 'unread' : 'read'}
-                </button>
-
                 {confirmDeleteId === selected.id ? (
-                  <span style={{ display: 'inline-flex', gap: '8px', marginLeft: 'auto' }}>
+                  <div style={{
+                    display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px',
+                    backgroundColor: 'var(--danger-bg)',
+                    border: '1px solid var(--danger-bg-hover)',
+                    borderRadius: 'var(--radius-sm)',
+                    padding: '10px 12px',
+                  }}>
+                    <span style={{
+                      flex: 1, minWidth: '160px',
+                      fontSize: '13px', color: 'var(--text-primary)', lineHeight: 1.4,
+                    }}>
+                      Delete this message permanently?
+                    </span>
+                    <button onClick={() => setConfirmDeleteId(null)} style={controlStyle}>
+                      Cancel
+                    </button>
                     <button
                       onClick={() => remove(selected.id)}
                       style={{
-                        ...selectStyle,
-                        backgroundColor: 'var(--danger-bg)',
-                        borderColor: 'var(--danger-bg-hover)',
-                        color: 'var(--danger)', fontWeight: 700,
+                        ...controlStyle,
+                        backgroundColor: 'var(--danger)',
+                        borderColor: 'var(--danger)',
+                        color: '#ffffff', fontWeight: 700,
                       }}
                     >
-                      Delete for good
+                      Delete
                     </button>
-                    <button onClick={() => setConfirmDeleteId(null)} style={selectStyle}>
-                      Cancel
-                    </button>
-                  </span>
+                  </div>
                 ) : (
-                  <button
-                    onClick={() => setConfirmDeleteId(selected.id)}
-                    style={{
-                      ...selectStyle,
-                      marginLeft: 'auto',
-                      display: 'inline-flex', alignItems: 'center', gap: '6px',
-                      color: 'var(--danger)',
-                    }}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <polyline points="3 6 5 6 21 6" />
-                      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                      <path d="M10 11v6M14 11v6" />
-                      <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-                    </svg>
-                    Delete
-                  </button>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px' }}>
+                    <button
+                      onClick={() => patch(selected.id, { is_starred: !selected.is_starred })}
+                      style={{
+                        ...controlStyle,
+                        display: 'inline-flex', alignItems: 'center', gap: '6px',
+                        color: selected.is_starred ? 'var(--accent-text)' : 'var(--text-secondary)',
+                      }}
+                    >
+                      <StarIcon filled={selected.is_starred} size={14} />
+                      {selected.is_starred ? 'Starred' : 'Star'}
+                    </button>
+
+                    <button
+                      onClick={() => patch(selected.id, { is_read: !selected.is_read })}
+                      style={{ ...controlStyle, display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M4 4h16v16H4z" />
+                        <polyline points="4 6 12 13 20 6" />
+                      </svg>
+                      Mark {selected.is_read ? 'unread' : 'read'}
+                    </button>
+
+                    <button
+                      onClick={() => setConfirmDeleteId(selected.id)}
+                      aria-label="Delete message"
+                      title="Delete message"
+                      style={{
+                        ...controlStyle,
+                        marginLeft: 'auto',
+                        width: '40px', padding: 0,
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                        color: 'var(--danger)',
+                      }}
+                    >
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="3 6 5 6 21 6" />
+                        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                        <path d="M10 11v6M14 11v6" />
+                        <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                      </svg>
+                    </button>
+                  </div>
                 )}
               </div>
 

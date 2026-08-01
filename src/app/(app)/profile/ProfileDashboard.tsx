@@ -6,6 +6,8 @@ import { getLevel, getXpInCurrentLevel, getXpRequiredForLevel, getXpToNextLevel 
 import { localDateKey } from '@/lib/utils/formatting'
 import { BadgeDefinition } from '@/lib/utils/badges'
 import BodyWeightCard from './BodyWeightCard'
+import RestDaysCard from './RestDaysCard'
+import { describeRestWeekdays } from '@/lib/utils/restDays'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { useToast } from '@/lib/contexts/ToastContext'
 import { getDefaultRest, setDefaultRest } from '@/lib/hooks/useRestTimer'
@@ -101,6 +103,10 @@ interface Props {
   activeDayTimestamps: string[]
   allBadges: BadgeDefinition[]
   isAdmin: boolean
+  /** Scheduled rest weekdays, 0 = Sunday … 6 = Saturday (docs/sql/14-rest-days.sql). */
+  restWeekdays: number[]
+  /** `YYYY-MM-DD` keys of rest passes claimed inside the current window. */
+  restClaimedDates: string[]
 }
 
 export default function ProfileDashboard({
@@ -114,6 +120,8 @@ export default function ProfileDashboard({
   activeDayTimestamps,
   allBadges,
   isAdmin,
+  restWeekdays,
+  restClaimedDates,
 }: Props) {
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
@@ -277,6 +285,7 @@ export default function ProfileDashboard({
     { target: 'profile-username', title: 'Change your handle', body: 'Tap the pencil to change your @handle.' },
     { target: 'profile-unit', title: 'Weight units', body: 'Switch how weights display app-wide. Everything is still stored consistently under the hood.' },
     { target: 'profile-rest', title: 'Default rest time', body: 'Set your default rest between sets — override per-exercise from the rest timer during a workout.' },
+    { target: 'profile-rest-days', title: 'Rest days', body: "Mark the days you don't train. Your streak carries over them instead of breaking — and if a day gets away from you, GRIND offers a rest pass from the home screen." },
     { target: 'profile-badges', title: 'Badges', body: 'Tap a badge to see how to earn it.' },
   ]
   const profileTour = useTour('profile', profileSteps, {
@@ -546,6 +555,17 @@ export default function ProfileDashboard({
             </div>
           ))}
         </div>
+
+        {/* Why the streak survived a day off — surfaced here rather than only in
+            Settings, because this is where the number itself is being read. */}
+        {restWeekdays.length > 0 && (
+          <div style={{
+            fontSize: '11px', color: 'var(--text-muted)',
+            marginTop: '8px', lineHeight: 1.5,
+          }}>
+            {describeRestWeekdays(restWeekdays)} {restWeekdays.length === 1 ? 'is a rest day' : 'are rest days'} — your streak carries over them.
+          </div>
+        )}
       </div>
 
       {/* Lifetime stats */}
@@ -741,6 +761,11 @@ export default function ProfileDashboard({
               />
             </div>
           </div>
+
+          <div style={{ height: '1px', backgroundColor: 'var(--border)' }} />
+
+          {/* Rest days — expands in place; see RestDaysCard for the model. */}
+          <RestDaysCard initialWeekdays={restWeekdays} claimedDates={restClaimedDates} />
 
           <div style={{ height: '1px', backgroundColor: 'var(--border)' }} />
 

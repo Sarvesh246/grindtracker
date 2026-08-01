@@ -63,6 +63,22 @@ export default async function ProfilePage() {
     .eq('id', user.id)
     .maybeSingle()
 
+  // Rest days (docs/sql/14-rest-days.sql). Claimed passes are fetched for a
+  // generous window rather than exactly REST_PASS_WINDOW_DAYS: the rolling-window
+  // count is done client-side against the VIEWER's local today, and a UTC-based
+  // server cutoff could clip the boundary row a user is entitled to see.
+  const passCutoff = new Date()
+  passCutoff.setDate(passCutoff.getDate() - 30)
+  const [{ data: restSettings }, { data: restDates }] = await Promise.all([
+    supabase.from('user_rest_settings').select('weekdays').eq('user_id', user.id).maybeSingle(),
+    supabase
+      .from('user_rest_dates')
+      .select('rest_date')
+      .eq('user_id', user.id)
+      .gte('rest_date', passCutoff.toISOString().slice(0, 10))
+      .order('rest_date', { ascending: false }),
+  ])
+
   return (
     <ProfileDashboard
       displayName={displayName}
@@ -83,6 +99,8 @@ export default async function ProfilePage() {
       // Controls only whether the inbox link is rendered — /admin/feedback
       // guards itself and RLS is the real gate. See lib/utils/admin.ts.
       isAdmin={isAdminEmail(user.email)}
+      restWeekdays={(restSettings?.weekdays as number[] | null) ?? []}
+      restClaimedDates={(restDates ?? []).map(r => r.rest_date as string)}
     />
   )
 }

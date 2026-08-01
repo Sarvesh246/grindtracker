@@ -120,7 +120,10 @@ export default function LeaderboardClient({ userId }: Props) {
       minHeight: '100%',
       backgroundColor: 'var(--bg)',
       padding: '24px 16px',
-      paddingBottom: 'calc(80px + env(safe-area-inset-bottom))',
+      // The bottom nav is a flow child of the fixed app shell, not an overlay, so
+      // content is never behind it — 80px here was just dead space at the end of
+      // the list. Matches the 32px every other page ends on.
+      paddingBottom: '32px',
     }}>
       {leaderboardTour}
       {/* Header */}
