@@ -8,8 +8,10 @@ import { formatHeaderDate, formatShortDate, localDateKey } from '@/lib/utils/for
 import { advanceIndex, effectiveSequence, overdueDays } from '@/lib/utils/rotation'
 import { deleteIncompleteSessions } from '@/lib/utils/sessions'
 import { checkAndAwardBadges } from '@/lib/utils/badges'
+import { uncoveredDatesBetween } from '@/lib/utils/restDays'
 import WorkoutCalendar from '@/components/WorkoutCalendar'
 import { useUnit } from '@/lib/contexts/UnitContext'
+import { useToast } from '@/lib/contexts/ToastContext'
 import { useTour, type TourStep } from '@/components/onboarding/Tour'
 
 // "This week"/"this month" start in the VIEWER's local timezone — computed here
@@ -36,18 +38,31 @@ function getMonthStart(): Date {
 // since the native 'storage' event doesn't fire in the document that wrote it.
 const OVERDUE_DISMISS_KEY = 'grind_overdue_dismissed'
 const OVERDUE_DISMISS_EVENT = 'grind:overdue-dismissed'
+// Same pattern, second signature — the "missed a day?" rest-day banner below.
+const REST_DISMISS_KEY = 'grind_restday_dismissed'
+const REST_DISMISS_EVENT = 'grind:restday-dismissed'
 
-function subscribeDismiss(cb: () => void): () => void {
-  window.addEventListener('storage', cb)
-  window.addEventListener(OVERDUE_DISMISS_EVENT, cb)
-  return () => {
-    window.removeEventListener('storage', cb)
-    window.removeEventListener(OVERDUE_DISMISS_EVENT, cb)
+function makeDismissStore(storageKey: string, eventName: string) {
+  return {
+    subscribe(cb: () => void): () => void {
+      window.addEventListener('storage', cb)
+      window.addEventListener(eventName, cb)
+      return () => {
+        window.removeEventListener('storage', cb)
+        window.removeEventListener(eventName, cb)
+      }
+    },
+    read(): string | null {
+      try { return localStorage.getItem(storageKey) } catch { return null }
+    },
+    dismiss(sig: string) {
+      try { localStorage.setItem(storageKey, sig) } catch {}
+      window.dispatchEvent(new Event(eventName))
+    },
   }
 }
-function readDismissedSig(): string | null {
-  try { return localStorage.getItem(OVERDUE_DISMISS_KEY) } catch { return null }
-}
+const overdueDismissStore = makeDismissStore(OVERDUE_DISMISS_KEY, OVERDUE_DISMISS_EVENT)
+const restDismissStore = makeDismissStore(REST_DISMISS_KEY, REST_DISMISS_EVENT)
 
 interface ActiveSession {
   id: string
@@ -70,6 +85,8 @@ interface Props {
   firstName: string
   completedAt: string[]
   totalPRs: number
+  recurringRestDays: number[]
+  restDates: string[]
 }
 
 const DAY_LABELS: Record<string, string> = {
@@ -129,10 +146,15 @@ export default function HomeDashboard({
   firstName,
   completedAt,
   totalPRs,
+  recurringRestDays,
+  restDates,
 }: Props) {
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
   const { unitLabel, fmt } = useUnit()
+  const toast = useToast()
+  const recurringRestSet = useMemo(() => new Set(recurringRestDays), [recurringRestDays])
+  const restDateSet = useMemo(() => new Set(restDates), [restDates])
 
   const xpTotal = stats?.xp_total ?? 0
   const level = getLevel(xpTotal)
@@ -145,31 +167,74 @@ export default function HomeDashboard({
 
   // Stale-streak reset, using the viewer's own local "today" (a server component
   // would otherwise use the server's clock/timezone — see getWeekStart/getMonthStart
-  // above for the same reasoning). If the last workout is more than 1 local day
-  // ago, the streak is broken: reflect that immediately and persist the zero once.
+  // above for the same reasoning). A gap since the last workout only breaks the
+  // streak if it ISN'T fully covered by rest days (recurring or one-off
+  // confirmed — see CLAUDE.md → Rest days); a plain adjacent-day gap has no
+  // days strictly between the endpoints, so uncoveredDates is empty either way.
+  const todayKey = useMemo(() => localDateKey(new Date()), [])
+  const lastWorkoutKey = stats?.last_workout_date ?? null
+  const gapUncoveredDates = useMemo(
+    () => lastWorkoutKey ? uncoveredDatesBetween(lastWorkoutKey, todayKey, recurringRestSet, restDateSet) : [],
+    [lastWorkoutKey, todayKey, recurringRestSet, restDateSet],
+  )
+  // Per the rest-day density rule: a gap this small relative to how many
+  // recurring rest days are configured is worth asking about instead of
+  // assuming broken outright.
+  const gapEligibleForPrompt =
+    gapUncoveredDates.length > 0 && gapUncoveredDates.length <= Math.max(1, recurringRestSet.size)
+  const restBannerSig = gapUncoveredDates.join(',')
+  const restBannerDismissedSig = useSyncExternalStore(restDismissStore.subscribe, restDismissStore.read, () => null)
+  const showRestBanner =
+    (stats?.current_streak ?? 0) > 0 && gapEligibleForPrompt && restBannerDismissedSig !== restBannerSig
+
   const [streakOverride, setStreakOverride] = useState<number | null>(null)
+  const [restBannerBusy, setRestBannerBusy] = useState(false)
   const correctedStaleStreak = useRef(false)
   useEffect(() => {
     if (correctedStaleStreak.current) return
     if (!stats || stats.current_streak <= 0 || !stats.last_workout_date) return
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const lastDate = new Date(stats.last_workout_date + 'T12:00:00')
-    lastDate.setHours(0, 0, 0, 0)
-    const diffDays = Math.round((today.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24))
-    if (diffDays > 1) {
-      correctedStaleStreak.current = true
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setStreakOverride(0)
-      // The client can no longer write user_stats directly. `refresh_stats`
-      // re-derives everything server-side; passing our local date is what lets
-      // Postgres decide the streak has lapsed in the *user's* timezone rather
-      // than UTC (see CLAUDE.md → Dates & timezones).
-      supabase.rpc('refresh_stats', { p_local_date: localDateKey(new Date()) })
-    }
+    if (gapUncoveredDates.length === 0) return // no real gap, or fully rest-day-covered — nothing to correct
+    // A small, plausibly-a-rest-day gap gets the banner instead of an
+    // immediate correction — wait for the user's Yes/No before settling.
+    if (gapEligibleForPrompt && restBannerDismissedSig !== restBannerSig) return
+    correctedStaleStreak.current = true
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setStreakOverride(0)
+    // The client can no longer write user_stats directly. `refresh_stats`
+    // re-derives everything server-side; passing our local date is what lets
+    // Postgres decide the streak has lapsed in the *user's* timezone rather
+    // than UTC (see CLAUDE.md → Dates & timezones).
+    supabase.rpc('refresh_stats', { p_local_date: todayKey })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stats?.current_streak, stats?.last_workout_date])
+  }, [stats?.current_streak, stats?.last_workout_date, gapUncoveredDates, gapEligibleForPrompt, restBannerDismissedSig])
   const currentStreak = streakOverride ?? stats?.current_streak ?? 0
+
+  async function confirmRestBanner() {
+    if (restBannerBusy) return
+    setRestBannerBusy(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { router.push('/login'); return }
+      const rows = gapUncoveredDates.map(rest_date => ({ user_id: user.id, rest_date }))
+      const { error } = await supabase.from('user_rest_dates').insert(rows)
+      if (error) throw error
+      await supabase.rpc('refresh_stats', { p_local_date: todayKey })
+      restDismissStore.dismiss(restBannerSig)
+      toast.show('Streak saved')
+      router.refresh()
+    } catch {
+      flashToast("Couldn't save. Try again.")
+    } finally {
+      setRestBannerBusy(false)
+    }
+  }
+
+  function declineRestBanner() {
+    restDismissStore.dismiss(restBannerSig)
+    correctedStaleStreak.current = true
+    setStreakOverride(0)
+    supabase.rpc('refresh_stats', { p_local_date: todayKey })
+  }
 
   // ── Active-session controls (resume / save / discard) ──────────────────────
   // Only surface the in-progress session when it was started on the viewer's
@@ -327,11 +392,8 @@ export default function HomeDashboard({
 
   // Dismissal is keyed to the overdue set, so hiding it sticks across reloads but
   // returns if a *different* day later gets skipped.
-  const dismissedSig = useSyncExternalStore(subscribeDismiss, readDismissedSig, () => null)
-  const dismissOverdue = () => {
-    try { localStorage.setItem(OVERDUE_DISMISS_KEY, overdueSig) } catch {}
-    window.dispatchEvent(new Event(OVERDUE_DISMISS_EVENT))
-  }
+  const dismissedSig = useSyncExternalStore(overdueDismissStore.subscribe, overdueDismissStore.read, () => null)
+  const dismissOverdue = () => overdueDismissStore.dismiss(overdueSig)
   const showOverdue = overdue.length > 0 && dismissedSig !== overdueSig
   const overdueNames = overdue.map(d => dayName(d.dayType))
 
@@ -630,6 +692,67 @@ export default function HomeDashboard({
               {longestStreak}
             </div>
             <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>DAYS</div>
+          </div>
+        </div>
+      )}
+
+      {/* Rest-day banner — offered only for a small, plausibly-a-rest-day gap
+          (see gapEligibleForPrompt above); a bigger gap is just a broken
+          streak and gets no prompt. Confirming marks each missed day a
+          one-off rest date and resettles stats; declining treats the gap as
+          genuinely broken, matching what would've happened anyway. */}
+      {showRestBanner && (
+        <div style={{
+          ...card,
+          padding: '16px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '12px',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+            <span style={{ color: 'var(--accent-text)', flexShrink: 0, marginTop: '1px' }} aria-hidden>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2c0 4-4 6-4 10a4 4 0 0 0 8 0c0-4-4-6-4-10z"/><path d="M12 12c0 2-1.5 3-1.5 4.5a1.5 1.5 0 0 0 3 0C13.5 15 12 14 12 12z"/>
+              </svg>
+            </span>
+            <div style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+              Missed {gapUncoveredDates.length === 1 ? formatShortDate(gapUncoveredDates[0]) : `${gapUncoveredDates.length} days`}?
+              {' '}Mark {gapUncoveredDates.length === 1 ? 'it' : 'them'} as a rest day to keep your{' '}
+              <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{currentStreak}-day streak</span>.
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button
+              onClick={confirmRestBanner}
+              disabled={restBannerBusy}
+              style={{
+                flex: 1, height: '38px',
+                backgroundColor: 'var(--accent)',
+                color: 'var(--on-accent)',
+                border: 'none', borderRadius: '10px',
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: '13px', fontWeight: 700,
+                cursor: restBannerBusy ? 'default' : 'pointer',
+                opacity: restBannerBusy ? 0.7 : 1,
+              }}
+            >
+              {restBannerBusy ? 'Saving…' : 'Yes, keep my streak'}
+            </button>
+            <button
+              onClick={declineRestBanner}
+              disabled={restBannerBusy}
+              style={{
+                flex: 1, height: '38px',
+                backgroundColor: 'transparent',
+                border: '1px solid var(--border)', borderRadius: '10px',
+                color: 'var(--text-secondary)',
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: '13px', fontWeight: 600,
+                cursor: restBannerBusy ? 'default' : 'pointer',
+              }}
+            >
+              No, that&apos;s fine
+            </button>
           </div>
         </div>
       )}

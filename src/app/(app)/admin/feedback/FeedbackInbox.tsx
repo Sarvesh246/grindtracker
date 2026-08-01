@@ -207,11 +207,11 @@ export default function FeedbackInbox({
   } as const
 
   return (
-    <div className="page page--wide" style={{ fontFamily: "'DM Sans', sans-serif", paddingBottom: '24px' }}>
+    <div className="page page--wide" style={{ fontFamily: "'DM Sans', sans-serif", padding: '24px 16px' }}>
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <div style={{
         display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between',
-        gap: '12px', marginBottom: '4px',
+        gap: '12px', marginBottom: '4px', flexWrap: 'wrap',
       }}>
         <div>
           <div style={{
@@ -227,25 +227,40 @@ export default function FeedbackInbox({
             )}
           </div>
         </div>
-        <button
-          onClick={() => router.refresh()}
-          aria-label="Refresh"
-          style={{
-            height: '34px', padding: '0 12px', display: 'inline-flex',
-            alignItems: 'center', gap: '7px',
-            backgroundColor: 'var(--surface-elevated)',
-            border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
-            color: 'var(--text-secondary)', fontFamily: 'var(--font-sans)',
-            fontSize: '13px', cursor: 'pointer', flexShrink: 0,
-          }}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="23 4 23 10 17 10" />
-            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-          </svg>
-          Refresh
-        </button>
+        {/* Page-level actions live together, separate from the filter/sort
+            controls below them. */}
+        <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+          <button
+            onClick={markAllRead}
+            disabled={visible.every(r => r.is_read)}
+            style={{
+              ...selectStyle,
+              color: visible.every(r => r.is_read) ? 'var(--text-disabled)' : 'var(--text-secondary)',
+              cursor: visible.every(r => r.is_read) ? 'not-allowed' : 'pointer',
+            }}
+          >
+            Mark all read
+          </button>
+          <button
+            onClick={() => router.refresh()}
+            aria-label="Refresh"
+            style={{
+              height: '34px', padding: '0 12px', display: 'inline-flex',
+              alignItems: 'center', gap: '7px',
+              backgroundColor: 'var(--surface-elevated)',
+              border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
+              color: 'var(--text-secondary)', fontFamily: 'var(--font-sans)',
+              fontSize: '13px', cursor: 'pointer', flexShrink: 0,
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="23 4 23 10 17 10" />
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+            </svg>
+            Refresh
+          </button>
+        </div>
       </div>
 
       {loadError && (
@@ -342,19 +357,6 @@ export default function FeedbackInbox({
           >
             {SORTS.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
           </select>
-
-          <button
-            onClick={markAllRead}
-            disabled={visible.every(r => r.is_read)}
-            style={{
-              ...selectStyle,
-              marginLeft: 'auto',
-              color: visible.every(r => r.is_read) ? 'var(--text-disabled)' : 'var(--text-secondary)',
-              cursor: visible.every(r => r.is_read) ? 'not-allowed' : 'pointer',
-            }}
-          >
-            Mark all read
-          </button>
         </div>
       </div>
 

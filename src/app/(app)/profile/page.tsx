@@ -63,11 +63,19 @@ export default async function ProfilePage() {
     .eq('id', user.id)
     .maybeSingle()
 
+  // Recurring rest days (see docs/sql/14-rest-days.sql). Plain config data —
+  // no timezone dependency, safe to fetch server-side unlike "today" itself.
+  const { data: restDayRows } = await supabase
+    .from('user_rest_days')
+    .select('day_of_week')
+    .eq('user_id', user.id)
+
   return (
     <ProfileDashboard
       displayName={displayName}
       avatarUrl={avatarUrl}
       username={profile?.username ?? null}
+      recurringRestDays={(restDayRows ?? []).map(r => r.day_of_week)}
       stats={stats ?? {
         xp_total: 0,
         level: 1,

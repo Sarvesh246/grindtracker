@@ -181,9 +181,19 @@ export default async function HomePage() {
     .eq('is_pr', true)
     .eq('sessions.user_id', user.id)
 
+  // Rest-day config (see docs/sql/14-rest-days.sql). Plain data, no timezone
+  // dependency — the gap/eligibility math itself still has to happen
+  // client-side against the viewer's own local "today" (HomeDashboard).
+  const [{ data: restDayRows }, { data: restDateRows }] = await Promise.all([
+    supabase.from('user_rest_days').select('day_of_week').eq('user_id', user.id),
+    supabase.from('user_rest_dates').select('rest_date').eq('user_id', user.id),
+  ])
+
   return (
     <HomeDashboard
       stats={stats}
+      recurringRestDays={(restDayRows ?? []).map(r => r.day_of_week)}
+      restDates={(restDateRows ?? []).map(r => r.rest_date)}
       activeSession={activeSession}
       lastSession={lastSession ?? null}
       lastSessionLogs={lastSessionLogs}

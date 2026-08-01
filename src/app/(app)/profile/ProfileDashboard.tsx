@@ -101,7 +101,10 @@ interface Props {
   activeDayTimestamps: string[]
   allBadges: BadgeDefinition[]
   isAdmin: boolean
+  recurringRestDays: number[]
 }
+
+const REST_DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'] // 0=Sun..6=Sat, matches Date.getDay()/extract(dow)
 
 export default function ProfileDashboard({
   displayName,
@@ -114,6 +117,7 @@ export default function ProfileDashboard({
   activeDayTimestamps,
   allBadges,
   isAdmin,
+  recurringRestDays,
 }: Props) {
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
@@ -142,6 +146,42 @@ export default function ProfileDashboard({
     setRestMin(m)
     setRestSec(s)
     setDefaultRest(Math.max(5, m * 60 + s)) // floor at 5s so the timer is never trivial
+  }
+
+  // Recurring rest days (see docs/sql/14-rest-days.sql). Optimistic toggle
+  // against user_rest_days directly — no recompute needed, since this config
+  // only affects future recomputes (same reasoning as flex days, which never
+  // trigger one either).
+  const [restDays, setRestDays] = useState<Set<number>>(new Set(recurringRestDays))
+  const [savingRestDay, setSavingRestDay] = useState<number | null>(null)
+
+  async function toggleRestDay(dayOfWeek: number) {
+    if (savingRestDay !== null) return
+    const wasActive = restDays.has(dayOfWeek)
+    setSavingRestDay(dayOfWeek)
+    setRestDays(prev => {
+      const next = new Set(prev)
+      if (wasActive) next.delete(dayOfWeek); else next.add(dayOfWeek)
+      return next
+    })
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { setSavingRestDay(null); return }
+
+    const { error } = wasActive
+      ? await supabase.from('user_rest_days').delete().eq('user_id', user.id).eq('day_of_week', dayOfWeek)
+      : await supabase.from('user_rest_days').insert({ user_id: user.id, day_of_week: dayOfWeek })
+
+    setSavingRestDay(null)
+    if (error) {
+      // Revert on failure.
+      setRestDays(prev => {
+        const next = new Set(prev)
+        if (wasActive) next.add(dayOfWeek); else next.delete(dayOfWeek)
+        return next
+      })
+      toast.show("Couldn't save rest day")
+    }
   }
 
   // Username editing
@@ -739,6 +779,56 @@ export default function ProfileDashboard({
                   fontSize: '16px', textAlign: 'left', // ≥16px input prevents iOS auto-zoom on focus
                 }}
               />
+            </div>
+          </div>
+
+          <div style={{ height: '1px', backgroundColor: 'var(--border)' }} />
+
+          {/* Rest days — recurring weekly days off that don't break the streak.
+              A day covered here bridges any gap it falls in automatically; see
+              CLAUDE.md → Rest days for how this connects to the home banner.
+              Stacked (label above, pills below) rather than this card's usual
+              label-left/control-right row — a 7-pill control is wider than
+              any sibling control here and would crowd the label on mobile. */}
+          <div>
+            <div style={{ marginBottom: '10px' }}>
+              <div style={{ fontSize: '14px', color: 'var(--text-primary)', fontWeight: 600, marginBottom: '2px' }}>
+                Rest Days
+              </div>
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                Won&apos;t break your streak
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '6px', justifyContent: 'space-between' }}>
+              {REST_DAY_LABELS.map((label, dayOfWeek) => {
+                const active = restDays.has(dayOfWeek)
+                return (
+                  <button
+                    key={dayOfWeek}
+                    onClick={() => toggleRestDay(dayOfWeek)}
+                    disabled={savingRestDay !== null}
+                    aria-pressed={active}
+                    aria-label={`${['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][dayOfWeek]} rest day`}
+                    style={{
+                      width: '28px',
+                      height: '28px',
+                      borderRadius: '9999px',
+                      border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+                      backgroundColor: active ? 'var(--accent)' : 'var(--surface-elevated)',
+                      color: active ? 'var(--on-accent)' : 'var(--text-muted)',
+                      fontFamily: "'DM Sans', sans-serif",
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      cursor: savingRestDay !== null ? 'default' : 'pointer',
+                      opacity: savingRestDay !== null && savingRestDay !== dayOfWeek ? 0.6 : 1,
+                      transition: 'all 150ms ease',
+                      padding: 0,
+                    }}
+                  >
+                    {label}
+                  </button>
+                )
+              })}
             </div>
           </div>
 

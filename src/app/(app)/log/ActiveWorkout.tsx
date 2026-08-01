@@ -52,6 +52,8 @@ interface CompletionData {
   newBadges: string[]
   duration: number
   setsCompleted: number
+  currentStreak: number
+  isNewBestStreak: boolean
 }
 
 export interface FinishUndoToken {
@@ -1067,6 +1069,8 @@ export default function ActiveWorkout({ day }: { day: string }) {
         newBadges,
         duration: elapsed,
         setsCompleted: checkedSets(),
+        currentStreak: result.current_streak,
+        isNewBestStreak: result.current_streak > 1 && result.current_streak === result.longest_streak,
       })
     } catch (err) {
       // The workout is untouched (or safely resumable) — tell the user and let

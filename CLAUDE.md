@@ -76,8 +76,15 @@ Both share `UnitContext`, so the kg/lbs toggle stays in sync across them.
   category ('bug'|'feature'|'improvement'|'other'), message, image_paths (text[]
   of objects in the private `feedback-images` bucket), is_anonymous, is_read,
   is_starred. See Feedback below and migration `09-feedback.sql`.
+- user_rest_days — (user_id, day_of_week) PK, recurring weekly rest days
+  (0=Sun..6=Sat, matches `extract(dow)`/`Date.getDay()`), configured in
+  Profile. user_rest_dates — (user_id, rest_date) PK, one-off confirmed rest
+  dates (retroactive "missed a day?" confirmation from the home dashboard, or
+  set directly). Both single-owner tables, RLS-protected. See Rest days below
+  and migration `14-rest-days.sql`.
 RLS on exercises, sessions, session_logs, user_stats, user_badges, body_weights,
-user_day_categories, user_rotation, feedback (and delete policies on sessions/session_logs for discard).
+user_day_categories, user_rotation, feedback, user_rest_days, user_rest_dates
+(and delete policies on sessions/session_logs for discard).
 `get_leaderboard(p_day_type, p_user_ids)` RPC ranks overall by XP, or
 push/pull/legs by heaviest working-set lift (category-aware, security definer).
 
@@ -89,9 +96,11 @@ XP: +100 per completed workout, +25 per PR set, +50 when the new streak hits a
 multiple of 7. Warm-up sets never count toward PRs.
 Level: triangular curve — XP to advance from level n to n+1 is `500 * n`, so
 cumulative XP for level n is `500 * n * (n-1) / 2`. `getLevel(xp)` inverts this.
-Streak: continues only on consecutive calendar days (gap of exactly 1 day
-increments; same day keeps it; any larger gap resets to 1). Home page zeroes a
-stale streak when the last workout was more than 1 day ago.
+Streak: continues on consecutive calendar days (gap of exactly 1 day
+increments; same day keeps it), OR across a gap where every day in between is
+a configured rest day (recurring or one-off confirmed — see Rest days below);
+any other gap resets to 1. Home page zeroes a stale streak when the gap since
+the last workout isn't fully covered by rest days.
 PR: weight > max non-warm-up weight in any previous completed session for that exercise.
 14 badges in src/lib/utils/badges.ts.
 
@@ -143,6 +152,24 @@ list). `home/page.tsx` reads `nextDay(effectiveSequence(row, dayKeys), current_i
 completion (backdated `log/past` entries deliberately don't). The suggestion is
 non-binding — DaySelect still lets you pick any day, and marks the suggested one "UP NEXT".
 Helpers are pure (no Supabase import). Apply migration `06-user-rotation.sql` first.
+
+### Rest days (src/lib/utils/restDays.ts, migration `14-rest-days.sql`)
+Two ways to declare a day off without breaking the streak: recurring weekly
+rest days (toggled as day-pills in Profile → Settings, backed by
+`user_rest_days`) and one-off confirmed rest dates (`user_rest_dates`),
+either set the same way or confirmed retroactively via a dismissible "missed
+a day?" banner on the home dashboard. The banner only offers to mark a gap as
+rest days when the gap is small relative to how many recurring rest days are
+already configured (`1 <= uncovered.length <= max(1, recurringRestDays.length)`)
+— a bigger gap is just a broken streak, no prompt. Server-side,
+`grind_dates_connected(user, from, to)` (SQL) tests whether every day
+strictly between two dates is a rest day; `grind_recompute_stats()` uses it
+to group workout dates into rest-day-aware "runs" instead of requiring
+literally-consecutive calendar dates (see Stats below). `restDays.ts` mirrors
+the same connectivity logic in TS (`Date.getDay()` already matches Postgres's
+`extract(dow)` convention, 0=Sun..6=Sat, so no translation needed) so the
+client can compute gaps and eligible banner state using the viewer's own
+local "today" — never the server's, per Dates & timezones below.
 
 ### Feedback (src/components/FeedbackModal.tsx, (app)/admin/feedback/)
 Users reach the developer through a "Send Feedback" row in Profile → Settings,
