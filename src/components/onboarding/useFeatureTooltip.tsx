@@ -1,8 +1,8 @@
 'use client'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useOnboarding } from '@/lib/contexts/OnboardingContext'
 import Tooltip from './Tooltip'
-import type { Side } from './anchor'
+import { ensureVisible, type Side } from './anchor'
 
 /**
  * One-off, use-case-based contextual hint — the ActiveWorkout onboarding model.
@@ -71,14 +71,39 @@ export function useFeatureTooltip(id: string, opts: FeatureTooltipOptions): Reac
   }, [])
   const blockedByOther = activeId !== null && activeId !== id
 
+  // Latest `getEl` in a ref rather than an effect dep: callers pass a fresh arrow
+  // function every render (e.g. `() => onboardTarget('aw-check')`), and while a
+  // rest-timer countdown is running ActiveWorkout re-renders every 250ms — an
+  // identity-based dep would tear down and restart the arm timer on every one of
+  // those renders and the hint would never survive long enough to fire.
+  const getElRef = useRef(getEl)
+  useEffect(() => {
+    getElRef.current = getEl
+  })
+
   // Arm once the condition holds, nothing suppresses it, and no other hint is up.
+  //
+  // The slot is claimed SYNCHRONOUSLY inside the timer callback, not later in the
+  // "visible" effect. On a busy screen many hints arm in the same tick with the
+  // same delay, so their timers fire back-to-back; claiming only after React
+  // committed each one let every timer pass the guard first and they all showed
+  // at once (the crowding bug). Because `activeId` is a module global set the
+  // instant the first timer fires, every sibling timer that runs after it in the
+  // same frame sees the slot taken and stands down — leaving exactly one hint up,
+  // the rest queued behind the COORD_EVENT re-arm.
   useEffect(() => {
     if (seen || visible || !when || suppressed || blockedByOther) return
-    const t = window.setTimeout(() => setVisible(true), delayMs)
+    const t = window.setTimeout(() => {
+      if (activeId !== null && activeId !== id) return
+      claim(id)
+      ensureVisible(getElRef.current())
+      setVisible(true)
+    }, delayMs)
     return () => window.clearTimeout(t)
-  }, [seen, visible, when, suppressed, blockedByOther, delayMs])
+  }, [seen, visible, when, suppressed, blockedByOther, delayMs, id])
 
-  // While visible: own the coordinator slot and mark seen (guarantees once-ever).
+  // While visible: keep the coordinator slot (claim is idempotent) and mark seen
+  // (guarantees once-ever), releasing it for the next queued hint on unmount.
   useEffect(() => {
     if (!visible) return
     claim(id)

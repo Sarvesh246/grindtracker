@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { placePopover, useAnchorRect, type Side } from './anchor'
+import { ensureVisible, placePopover, useAnchorRect, type Side } from './anchor'
 
 /**
  * One onboarding popup anchored to a target element, with a spotlight cutout that
@@ -48,8 +48,20 @@ export default function CoachMark({
   const anchor = useAnchorRect(getEl, true)
   const cardRef = useRef<HTMLDivElement>(null)
   const primaryRef = useRef<HTMLButtonElement>(null)
+  const scrolledRef = useRef(false)
   const [size, setSize] = useState<{ w: number; h: number } | null>(null)
   const [isMobile, setIsMobile] = useState(false)
+
+  // Scroll the highlighted target into view the first time it's located for this
+  // step, so a spotlight/pointer never lands on something below the fold. Tour
+  // remounts this component per step (keyed on target), resetting `scrolledRef`,
+  // so each step scrolls at most once; `ensureVisible` no-ops when it's already
+  // visible, and `useAnchorRect` keeps the mark glued as the page scrolls.
+  useEffect(() => {
+    if (scrolledRef.current || !anchor) return
+    scrolledRef.current = true
+    ensureVisible(getEl())
+  }, [anchor, getEl])
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768)

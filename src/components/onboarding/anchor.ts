@@ -92,10 +92,19 @@ export function placePopover(
 }
 
 /**
- * Track a target element's viewport rect while `active`, re-measuring on scroll
- * (capture phase, so nested scroll containers count), resize, its own size
- * changes, and a low-frequency interval that also catches the element mounting
- * late (route settle) or async content shifting it. Returns null until found.
+ * Track a target element's viewport rect while `active` via a continuous
+ * requestAnimationFrame loop, so the spotlight/pointer stays glued to the target
+ * frame-for-frame no matter what moves it — window scroll, a nested scroll
+ * container, momentum/rubber-band scrolling, a programmatic smooth-scroll
+ * (`ensureVisible`), a resize, late mount (route settle), or async content
+ * shifting it. Returns null until found.
+ *
+ * A per-frame loop replaces the old scroll-listener + interval combo: scroll
+ * events (especially momentum on iOS and smooth-scroll animations) fire at less
+ * than one-per-frame and left the outline visibly lagging behind the element.
+ * The measurement is cheap (one `getBoundingClientRect`), and the unchanged-rect
+ * guard means a stationary target triggers zero re-renders, so an idle overlay
+ * costs only the read, not React work.
  */
 export function useAnchorRect(getEl: () => HTMLElement | null, active: boolean): Rect | null {
   const [rect, setRect] = useState<Rect | null>(null)
@@ -109,48 +118,51 @@ export function useAnchorRect(getEl: () => HTMLElement | null, active: boolean):
       return
     }
     let raf = 0
-    let observed: HTMLElement | null = null
-    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => schedule()) : null
 
-    const measure = () => {
+    const frame = () => {
       const el = getEl()
       if (!el) {
         setRect(prev => (prev === null ? prev : null))
-        return
+      } else {
+        const r = el.getBoundingClientRect()
+        setRect(prev => {
+          if (prev && prev.top === r.top && prev.left === r.left && prev.width === r.width && prev.height === r.height) {
+            return prev
+          }
+          return { top: r.top, left: r.left, width: r.width, height: r.height }
+        })
       }
-      if (ro && observed !== el) {
-        if (observed) ro.unobserve(observed)
-        ro.observe(el)
-        observed = el
-      }
-      const r = el.getBoundingClientRect()
-      setRect(prev => {
-        if (prev && prev.top === r.top && prev.left === r.left && prev.width === r.width && prev.height === r.height) {
-          return prev
-        }
-        return { top: r.top, left: r.left, width: r.width, height: r.height }
-      })
-    }
-    const schedule = () => {
-      cancelAnimationFrame(raf)
-      raf = requestAnimationFrame(measure)
+      raf = requestAnimationFrame(frame)
     }
 
-    measure()
-    window.addEventListener('resize', schedule)
-    window.addEventListener('scroll', schedule, true)
-    const interval = window.setInterval(measure, 200)
-
-    return () => {
-      window.removeEventListener('resize', schedule)
-      window.removeEventListener('scroll', schedule, true)
-      window.clearInterval(interval)
-      cancelAnimationFrame(raf)
-      ro?.disconnect()
-    }
+    raf = requestAnimationFrame(frame)
+    return () => cancelAnimationFrame(raf)
   }, [getEl, active])
 
   return rect
+}
+
+/**
+ * Bring an onboarding target comfortably into view before a hint points at it, so
+ * the thing being highlighted is actually on screen. No-op when it already sits
+ * inside a centered comfort band (clear of the top nav and the bottom nav / rest
+ * bar / mobile sheet), so we never yank the page for something the user can
+ * already see. The smooth scroll is tracked frame-for-frame by `useAnchorRect`,
+ * so the popup rides along and lands attached to the target.
+ */
+export function ensureVisible(el: HTMLElement | null): void {
+  if (!el || typeof window === 'undefined') return
+  const r = el.getBoundingClientRect()
+  const topSafe = 96
+  const bottomSafe = window.innerHeight - 140
+  // A target taller than the comfort band can't fit inside it, so we only ask
+  // that its top edge be within the band; otherwise it must fit entirely.
+  const tallerThanBand = r.height > bottomSafe - topSafe
+  const comfortablyVisible = tallerThanBand
+    ? r.top >= topSafe && r.top <= bottomSafe
+    : r.top >= topSafe && r.bottom <= bottomSafe
+  if (comfortablyVisible) return
+  el.scrollIntoView({ block: 'center', behavior: 'smooth' })
 }
 
 /** Resolve a coach-mark / tooltip target by its `data-onboard` attribute value. */
