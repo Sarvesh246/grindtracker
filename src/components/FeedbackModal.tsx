@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { createClient } from '@/lib/supabase/client'
 import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
 import type { FeedbackCategory } from '@/lib/types'
@@ -226,7 +227,13 @@ export default function FeedbackModal({ onClose }: { onClose: () => void }) {
 
   const remaining = MAX_CHARS - message.length
 
-  return (
+  // Portaled to <body>, not rendered in place: the caller mounts this inside
+  // .app-main, whose `-webkit-overflow-scrolling: touch` traps position:fixed
+  // descendants inside its own scrollable box on iOS instead of the true
+  // viewport — the same reason FinishUndoBanner/ToastContext live outside
+  // .app-main in the layout. Without the portal the backdrop stopped short of
+  // the bottom nav instead of covering the full screen.
+  return createPortal(
     <div
       role="dialog"
       aria-modal="true"
@@ -570,6 +577,7 @@ export default function FeedbackModal({ onClose }: { onClose: () => void }) {
           </>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
