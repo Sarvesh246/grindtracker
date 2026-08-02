@@ -79,6 +79,24 @@ export interface LeaderboardEntry {
   best_lift: number
 }
 
+/** Shape returned by the `get_friend_profile` RPC (docs/sql/19-friend-profile.sql). */
+export interface FriendProfile {
+  user_id: string
+  username: string
+  display_name: string
+  avatar_url: string | null
+  joined_at: string
+  xp_total: number
+  level: number
+  current_streak: number
+  longest_streak: number
+  total_workouts: number
+  total_prs: number
+  total_sets: number
+  days_active: number
+  badge_ids: string[]
+}
+
 export type DayCategory = 'push' | 'pull' | 'legs' | 'other'
 
 export interface UserDayCategory {

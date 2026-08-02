@@ -122,6 +122,9 @@ user_day_categories, user_rotation, feedback, user_rest_days, user_rest_dates
 (and delete policies on sessions/session_logs for discard).
 `get_leaderboard(p_day_type, p_user_ids)` RPC ranks overall by XP, or
 push/pull/legs by heaviest working-set lift (category-aware, security definer).
+`get_friend_profile(p_user_id)` RPC (security definer, same self-or-accepted-
+friend gate as `get_leaderboard`) backs the read-only friend profile view —
+see Friend profiles below and migration `19-friend-profile.sql`.
 
 Schema migrations live in `docs/sql/` (idempotent; apply in order via the
 Supabase SQL editor). See `docs/SQL.md`.
@@ -246,6 +249,21 @@ for XP/streak/PR purposes — a CHECK constraint (`weight is null and reps is
 null` whenever `is_skipped`) enforces that instead of relying on the client
 to always uphold it.
 
+### Friend profiles ((app)/leaderboard/[username]/, migration `19-friend-profile.sql`)
+Tapping a leaderboard row opens a read-only profile at `/leaderboard/[username]`
+— banner (avatar, display name, level, XP bar), streak cards, lifetime stat
+cards, a collapsible badge grid, and a "Grinding since \<month year\>" line
+(`--accent-text`, matching the "never `--accent` for text" rule under
+Theming). Own row goes to the real editable `/profile` instead — no second
+read-only view of yourself. `page.tsx` resolves the username to a user id via
+`user_profiles` (public-readable to any authenticated user, `12-friendship-authz.sql`)
+then calls `get_friend_profile(id)`; `FriendProfileView.tsx` is presentational
+only, styled to match `ProfileDashboard.tsx`'s banner/streak/stat-card JSX
+exactly (same inline styles, same `.stat-grid-4`/`.badge-grid` classes) so the
+two feel like one page. If the RPC rejects (not a friend, or a hand-typed
+username) the page renders a plain "profile unavailable" state rather than a
+hard 404 — RLS/the RPC is the actual gate either way.
+
 ### Feedback (src/components/FeedbackModal.tsx, (app)/admin/feedback/)
 Users reach the developer through a "Send Feedback" row in Profile → Settings,
 which opens a modal (type chips, message, up to 3 images ≤5 MB, optional
@@ -318,6 +336,7 @@ src/
       progress/page.tsx + ProgressChart.tsx + loading.tsx
       profile/page.tsx + ProfileDashboard.tsx + BodyWeightCard.tsx + loading.tsx
       leaderboard/page.tsx + LeaderboardClient.tsx + FriendsAccordion.tsx + ShareCard.tsx
+                  + [username]/page.tsx + FriendProfileView.tsx (read-only friend profile)
       admin/feedback/page.tsx + FeedbackInbox.tsx — developer-only inbox (404s
                                      for everyone else; RLS is the real gate)
   components/

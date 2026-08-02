@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { LeaderboardEntry } from '@/lib/types'
 import FriendsAccordion from './FriendsAccordion'
@@ -34,6 +35,7 @@ interface Props {
 }
 
 export default function LeaderboardClient({ userId }: Props) {
+  const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
   const { unitLabel, fmt } = useUnit()
   const [category, setCategory] = useState<Category>('overall')
@@ -258,17 +260,25 @@ export default function LeaderboardClient({ userId }: Props) {
             const rankColor = RANK_COLORS[rank]
 
             return (
-              <div
+              <button
                 key={entry.user_id}
+                // Own row opens the real (editable) profile; a friend's opens
+                // the read-only view — see (app)/leaderboard/[username].
+                onClick={() => router.push(isMe ? '/profile' : `/leaderboard/${entry.username}`)}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
                   gap: '12px',
                   padding: '12px 14px',
+                  width: '100%',
+                  textAlign: 'left',
                   backgroundColor: 'var(--surface)',
                   border: '1px solid var(--border)',
                   borderRadius: '12px',
                   borderLeft: isMe ? '3px solid var(--accent)' : '1px solid var(--border)',
+                  cursor: 'pointer',
+                  font: 'inherit',
+                  color: 'inherit',
                 }}
               >
                 {/* Rank */}
@@ -371,7 +381,7 @@ export default function LeaderboardClient({ userId }: Props) {
                     {category === 'overall' ? 'XP' : 'BEST LIFT'}
                   </div>
                 </div>
-              </div>
+              </button>
             )
           })}
         </div>
