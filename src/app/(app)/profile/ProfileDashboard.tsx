@@ -5,12 +5,14 @@ import { createClient } from '@/lib/supabase/client'
 import { getLevel, getXpInCurrentLevel, getXpRequiredForLevel, getXpToNextLevel } from '@/lib/utils/gamification'
 import { localDateKey } from '@/lib/utils/formatting'
 import { BadgeDefinition } from '@/lib/utils/badges'
+import BadgeIcon from '@/components/BadgeIcon'
 import BodyWeightCard from './BodyWeightCard'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { useToast } from '@/lib/contexts/ToastContext'
 import { getDefaultRest, setDefaultRest } from '@/lib/hooks/useRestTimer'
 import { useTheme } from '@/lib/contexts/ThemeContext'
 import ThemeToggle from '@/components/ThemeToggle'
+import { useMotionPref } from '@/lib/contexts/MotionContext'
 import FeedbackModal from '@/components/FeedbackModal'
 import Link from 'next/link'
 import { useTour, type TourStep } from '@/components/onboarding/Tour'
@@ -41,44 +43,6 @@ function LockIcon({ size = 14 }: { size?: number }) {
   )
 }
 
-function BadgeIcon({ badgeId, size = 28, earned }: { badgeId: string; size?: number; earned: boolean }) {
-  const color = earned ? 'var(--accent-text)' : 'var(--text-disabled)'
-  const s = { width: size, height: size }
-  const props = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none' as const, stroke: color, strokeWidth: '1.8', strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
-
-  switch (badgeId) {
-    case 'first_workout':
-      return <svg {...props}><line x1="6" y1="12" x2="18" y2="12"/><rect x="3" y="9.5" width="3" height="5" rx="1"/><rect x="18" y="9.5" width="3" height="5" rx="1"/><circle cx="12" cy="5" r="2"/><path d="M12 7v3"/></svg>
-    case 'first_pr':
-      return <svg {...props}><polyline points="8 6 12 2 16 6"/><path d="M12 2v10"/><path d="M5 17l1.5-5h11L19 17"/><path d="M3 22h18"/></svg>
-    case 'streak_3':
-      return <svg {...props}><path d="M12 2c0 4-4 6-4 10a4 4 0 0 0 8 0c0-4-4-6-4-10z"/><path d="M12 12c0 2-1.5 3-1.5 4.5a1.5 1.5 0 0 0 3 0C13.5 15 12 14 12 12z"/></svg>
-    case 'streak_7':
-      return <svg {...props}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-    case 'streak_30':
-      return <svg {...props}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-    case 'workouts_10':
-      return <svg {...props}><polyline points="20 6 9 17 4 12"/></svg>
-    case 'workouts_50':
-      return <svg {...props}><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
-    case 'workouts_100':
-      return <svg {...props}><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7z"/></svg>
-    case 'all_three_days':
-      return <svg {...props}><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="15" x2="8.01" y2="15" strokeWidth="2.5"/><line x1="12" y1="15" x2="12.01" y2="15" strokeWidth="2.5"/><line x1="16" y1="15" x2="16.01" y2="15" strokeWidth="2.5"/></svg>
-    case 'pr_5':
-      return <svg {...props}><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
-    case 'pr_25':
-      return <svg {...props}><path d="M12 2L9.1 8.6 2 9.6l5 4.9-1.2 6.9L12 18l6.2 3.4L17 14.5l5-4.9-7.1-1L12 2z"/><path d="M9 9l2 2 4-4" stroke={color} strokeWidth="1.4"/></svg>
-    case 'level_5':
-      return <svg {...props}><polygon points="12 2 20 12 12 22 4 12 12 2"/><line x1="4" y1="12" x2="20" y2="12"/></svg>
-    case 'level_10':
-      return <svg {...props}><polygon points="12 2 20 12 12 22 4 12 12 2"/><polygon points="12 6 17 12 12 18 7 12 12 6" fill={color} fillOpacity="0.15"/></svg>
-    case 'level_20':
-      return <svg {...props}><polygon points="12 2 15.5 8.5 22 9.5 17 14.5 18.2 21 12 17.8 5.8 21 7 14.5 2 9.5 8.5 8.5 12 2"/><circle cx="12" cy="12" r="2.5" fill={color} fillOpacity="0.3"/></svg>
-    default:
-      return <svg {...props} style={s}><circle cx="12" cy="12" r="10"/></svg>
-  }
-}
 
 interface StatsShape {
   xp_total: number
@@ -123,6 +87,7 @@ export default function ProfileDashboard({
   const supabase = useMemo(() => createClient(), [])
   const { unit, toggleUnit } = useUnit()
   const { theme } = useTheme()
+  const { reduceMotion, toggleReduceMotion } = useMotionPref()
   const toast = useToast()
   const [tooltipBadgeId, setTooltipBadgeId] = useState<string | null>(null)
   const [badgesOpen, setBadgesOpen] = useState(false)
@@ -662,6 +627,49 @@ export default function ProfileDashboard({
               </div>
             </div>
             <ThemeToggle size={32} />
+          </div>
+
+          <div style={{ height: '1px', backgroundColor: 'var(--border)' }} />
+
+          {/* Reduce motion */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ fontSize: '14px', color: 'var(--text-primary)', fontWeight: 600, marginBottom: '2px' }}>
+                Reduce Motion
+              </div>
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                Turns off toast, popup, and badge animations
+              </div>
+            </div>
+            <button
+              onClick={toggleReduceMotion}
+              role="switch"
+              aria-checked={reduceMotion}
+              aria-label="Reduce motion"
+              style={{
+                width: '44px',
+                height: '26px',
+                flexShrink: 0,
+                borderRadius: '9999px',
+                border: 'none',
+                position: 'relative',
+                cursor: 'pointer',
+                backgroundColor: reduceMotion ? 'var(--accent)' : 'var(--surface-elevated)',
+                boxShadow: reduceMotion ? 'none' : 'inset 0 0 0 1px var(--border)',
+                transition: 'background-color 150ms ease',
+              }}
+            >
+              <span style={{
+                position: 'absolute',
+                top: '3px',
+                left: reduceMotion ? '21px' : '3px',
+                width: '20px',
+                height: '20px',
+                borderRadius: '9999px',
+                backgroundColor: reduceMotion ? 'var(--on-accent)' : 'var(--text-muted)',
+                transition: 'left 150ms ease',
+              }} />
+            </button>
           </div>
 
           <div style={{ height: '1px', backgroundColor: 'var(--border)' }} />

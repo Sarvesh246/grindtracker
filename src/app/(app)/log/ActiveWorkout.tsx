@@ -3,7 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Exercise } from '@/lib/types'
-import { checkAndAwardBadges } from '@/lib/utils/badges'
+import { checkAndAwardBadges, ALL_BADGES, type BadgeDefinition } from '@/lib/utils/badges'
+import BadgeUnlockOverlay from '@/components/BadgeUnlockOverlay'
 import { localDateKey } from '@/lib/utils/formatting'
 import { haptic } from '@/lib/utils/haptics'
 import { useUnit } from '@/lib/contexts/UnitContext'
@@ -50,7 +51,6 @@ interface CompletionData {
   newLevel: number
   prCount: number
   prExercises: { name: string; weight: number; reps: number }[]
-  newBadges: string[]
   duration: number
   setsCompleted: number
   currentStreak: number
@@ -130,6 +130,9 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const [loading, setLoading] = useState(true)
   const [finishing, setFinishing] = useState(false)
   const [completionData, setCompletionData] = useState<CompletionData | null>(null)
+  // Non-null right after a finish that earned badges — shown before
+  // CompletionModal (which is already queued in completionData underneath).
+  const [badgeUnlock, setBadgeUnlock] = useState<BadgeDefinition[] | null>(null)
   const [showExitConfirm, setShowExitConfirm] = useState(false)
   const [allExercises, setAllExercises] = useState<Exercise[]>([])
   const [swapTarget, setSwapTarget] = useState<string | null>(null)
@@ -1128,9 +1131,17 @@ export default function ActiveWorkout({ day }: { day: string }) {
           supabase,
           user.id,
           { user_id: user.id, ...updatedStats } as UserStats,
+          { sessionStartedAt: startedAt, hadNoSkips: skippedSets() === 0 && checkedSets() > 0 },
         )
       } catch {
         newBadges = []
+      }
+
+      if (newBadges.length > 0) {
+        const resolved = newBadges
+          .map(id => ALL_BADGES.find(b => b.id === id))
+          .filter((b): b is BadgeDefinition => !!b)
+        if (resolved.length > 0) setBadgeUnlock(resolved)
       }
 
       setCompletionData({
@@ -1139,7 +1150,6 @@ export default function ActiveWorkout({ day }: { day: string }) {
         newLevel,
         prCount,
         prExercises,
-        newBadges,
         duration: elapsed,
         setsCompleted: checkedSets(),
         currentStreak: result.current_streak,
@@ -1293,7 +1303,9 @@ export default function ActiveWorkout({ day }: { day: string }) {
   return (
     <>
       {activeWorkoutHints}
-      {completionData && (
+      {badgeUnlock ? (
+        <BadgeUnlockOverlay badges={badgeUnlock} onContinue={() => setBadgeUnlock(null)} />
+      ) : completionData && (
         <CompletionModal
           data={completionData}
           onDone={() => router.push('/home')}

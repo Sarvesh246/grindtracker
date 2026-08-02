@@ -307,7 +307,7 @@ export default function RestTimerBar({
       {open && (
         <div
           style={{
-            padding: '0 16px 12px',
+            padding: '8px 16px 12px',
             display: 'flex',
             alignItems: 'center',
             gap: '6px',

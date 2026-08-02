@@ -329,17 +329,26 @@ export default function HomeDashboard({
       } catch { /* non-critical */ }
 
       // Award any badges this completion unlocked (e.g. first_workout). Best-effort.
+      // No celebration popup on this path (see the comment on handleSaveActive
+      // above — quick-save deliberately skips the celebratory modal too), but
+      // the badge itself still gets earned so it's there next time the profile
+      // is opened.
       try {
-        await checkAndAwardBadges(supabase, user.id, {
-          user_id: user.id,
-          xp_total: result.xp_total,
-          level: result.level,
-          current_streak: result.current_streak,
-          longest_streak: result.longest_streak,
-          last_workout_date: result.last_workout_date,
-          total_workouts: result.total_workouts,
-          updated_at: new Date().toISOString(),
-        } as UserStats)
+        await checkAndAwardBadges(
+          supabase,
+          user.id,
+          {
+            user_id: user.id,
+            xp_total: result.xp_total,
+            level: result.level,
+            current_streak: result.current_streak,
+            longest_streak: result.longest_streak,
+            last_workout_date: result.last_workout_date,
+            total_workouts: result.total_workouts,
+            updated_at: new Date().toISOString(),
+          } as UserStats,
+          { sessionStartedAt: new Date(activeSession.started_at) },
+        )
       } catch { /* non-critical */ }
 
       flashToast(result.xp_earned ? `Workout saved · +${result.xp_earned} XP` : 'Workout saved')

@@ -48,6 +48,17 @@ backgrounds use `--accent-wash`; cards read `--card-shadow` (none in dark). The
 leaderboard ShareCard and the favicon stay dark-branded (`.share-card-dark` pins
 the dark tokens regardless of theme).
 
+### Reduced motion
+Mirrors the theming pattern exactly: `MotionContext` persists an explicit
+in-app "Reduce Motion" preference via the `grind_motion_pref` cookie (+
+localStorage), the root layout resolves it server-side and sets
+`<html class="reduce-motion">` (alongside `.light`) so there's no flash, and a
+switch in Profile → Settings toggles it. This is layered ON TOP of the
+OS-level `prefers-reduced-motion` media query in `globals.css`, not a
+replacement for it — `html.reduce-motion` gets the identical zero-duration
+treatment as the media query, for anyone who wants animations off in-app
+without changing their whole system.
+
 ### Responsive navigation
 `TopNav` (desktop) and `BottomNav` (mobile) both render in `(app)/layout.tsx`;
 CSS at the 768px breakpoint shows exactly one — there is no JS width detection.
@@ -103,7 +114,33 @@ any other gap resets to 1. Home page zeroes a stale streak when the gap since
 the last workout isn't fully covered by rest days.
 PR: weight × reps (volume) > max non-warm-up volume in any previous completed
 session for that exercise (migration `15-volume-based-prs.sql`).
-14 badges in src/lib/utils/badges.ts.
+
+## Badges (src/lib/utils/badges.ts)
+35 badges — streak/workout-count/PR-count/level tiers, plus lifetime volume
+(100K/500K/1M Club), plate milestones (Two/Three/Four Plates — a single set's
+heaviest weight), time-of-day (early bird/night owl), weekend warrior, a
+comeback badge (14+ day gap since the prior workout), flawless (a session with
+zero skipped sets), rest-day/friend/body-weight-log config badges, and a
+`completionist` meta-badge for earning every other one. `checkAndAwardBadges()`
+takes an optional `BadgeContext` (`sessionStartedAt`, `hadNoSkips`) for the
+session-local conditions — only `ActiveWorkout.handleFinish` (the live-finish
+path) passes both; `HomeDashboard`'s quick-save passes just the start time;
+`log/past` (backdated entries) passes neither, since time-of-day and
+"skipped a set" don't reliably apply to a manually-entered historical workout.
+Lifetime aggregates (volume, heaviest/highest-rep set, exercise variety,
+rest-day/friend/weight-log flags) come from one RPC, `grind_badge_metrics()`
+(migration `16-badge-metrics.sql`) — not security definer, every subquery
+filters on `auth.uid()` directly, so it can only ever report the caller's own
+data. `BadgeIcon` (src/components/BadgeIcon.tsx) is the single shared
+hand-drawn icon set — used by the profile badge grid, and the completion flow.
+
+On the live-finish path only, newly earned badges show as a full-screen
+`BadgeUnlockOverlay` (src/components/BadgeUnlockOverlay.tsx) BEFORE
+`CompletionModal` — `ActiveWorkout` renders one or the other, never both, and
+`CompletionModal` itself no longer has its own "badges earned" section (would
+just repeat the overlay a tap later). The other two callers award badges
+silently in the background with no popup, matching their own "skip the
+celebratory modal" design.
 
 **Stats are server-authoritative (migration `11-server-side-xp.sql`).** The rules
 above are now implemented in Postgres, not the browser. `grind_recompute_stats()`
@@ -248,12 +285,13 @@ src/
                                      for everyone else; RLS is the real gate)
   components/
     BottomNav.tsx, TopNav.tsx, WorkoutCalendar.tsx, PlateCalculator.tsx, RestTimerBar.tsx
-    FeedbackModal.tsx
+    FeedbackModal.tsx, ThemeToggle.tsx
+    BadgeIcon.tsx (shared badge icon set) + BadgeUnlockOverlay.tsx (full-screen unlock celebration)
     ui/ (Button, Card, IconButton, Input, SectionLabel, StatTile, index)
   lib/
     supabase/client.ts + server.ts
-    contexts/UnitContext.tsx
-    hooks/useRestTimer.ts
+    contexts/UnitContext.tsx + ThemeContext.tsx + MotionContext.tsx
+    hooks/useRestTimer.ts + useExitingValue.ts
     types/index.ts
     utils/gamification.ts + formatting.ts + badges.ts + haptics.ts + sessions.ts + rotation.ts
          + admin.ts (admin-email check for routing/UI only)

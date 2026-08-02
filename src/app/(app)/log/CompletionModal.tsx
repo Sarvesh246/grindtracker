@@ -1,6 +1,5 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { ALL_BADGES } from '@/lib/utils/badges'
 import { useUnit } from '@/lib/contexts/UnitContext'
 
 interface CompletionData {
@@ -9,7 +8,6 @@ interface CompletionData {
   newLevel: number
   prCount: number
   prExercises: { name: string; weight: number; reps: number }[]
-  newBadges: string[]
   duration: number
   setsCompleted: number
   currentStreak: number
@@ -227,33 +225,9 @@ export default function CompletionModal({
           </div>
         )}
 
-        {data.newBadges.length > 0 && (
-          <div style={{ marginBottom: '24px', ...sectionStyle(5) }}>
-            <div style={{ fontSize: '12px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '10px' }}>
-              BADGES EARNED
-            </div>
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-              {data.newBadges.map(badgeId => {
-                const badge = ALL_BADGES.find(b => b.id === badgeId)
-                if (!badge) return null
-                return (
-                  <div key={badgeId} style={{
-                    backgroundColor: 'rgba(200, 241, 53, 0.08)',
-                    border: '1px solid rgba(200, 241, 53, 0.25)',
-                    borderRadius: '9999px',
-                    padding: '6px 14px',
-                    display: 'flex', alignItems: 'center', gap: '6px',
-                  }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent-text)' }}>
-                      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-                    </svg>
-                    <span style={{ fontSize: '13px', color: 'var(--accent-text)', fontWeight: 600 }}>{badge.label}</span>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
+        {/* Badges earned get their own full-screen celebration (BadgeUnlockOverlay)
+            shown before this modal on the live-finish path — repeating them here
+            too would just be the same news twice in a row. */}
 
         <div style={{ ...sectionStyle(6) }}>
           <button

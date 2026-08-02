@@ -413,17 +413,33 @@ select:focus-visible,
 
 /* ---------------------------------------------------------------------------
    Reduced motion — respect user preference. Zero out transitions and
-   keyframe animations rather than disabling functionality.
+   keyframe animations rather than disabling functionality. Two independent
+   triggers land on the same rule: the OS-level media query, and the app's own
+   "Reduce Motion" setting (MotionContext, `html.reduce-motion`) for anyone who
+   wants it off in-app without changing their whole system.
    --------------------------------------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    animation-delay: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    transition-delay: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+html.reduce-motion *,
+html.reduce-motion *::before,
+html.reduce-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-delay: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  transition-delay: 0.01ms !important;
+  scroll-behavior: auto !important;
 }
 
 /* ---------------------------------------------------------------------------

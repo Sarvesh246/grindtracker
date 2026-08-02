@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import { cookies } from 'next/headers'
 import { ThemeProvider, type Theme } from '@/lib/contexts/ThemeContext'
+import { MotionProvider, type MotionPref } from '@/lib/contexts/MotionContext'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -30,6 +31,13 @@ async function getInitialTheme(): Promise<Theme> {
   return pref === 'light' ? 'light' : 'dark'
 }
 
+// Same reasoning as theme: resolve server-side so the reduce-motion class is
+// already on <html> for the first paint, no flash of un-reduced animation.
+async function getInitialMotionPref(): Promise<MotionPref> {
+  const pref = (await cookies()).get('grind_motion_pref')?.value
+  return pref === 'reduce' ? 'reduce' : 'no-preference'
+}
+
 export async function generateViewport(): Promise<Viewport> {
   const theme = await getInitialTheme()
   return {
@@ -48,9 +56,13 @@ export async function generateViewport(): Promise<Viewport> {
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const theme = await getInitialTheme()
+  const motionPref = await getInitialMotionPref()
+  const htmlClass = [theme === 'light' ? 'light' : null, motionPref === 'reduce' ? 'reduce-motion' : null]
+    .filter(Boolean)
+    .join(' ') || undefined
 
   return (
-    <html lang="en" className={theme === 'light' ? 'light' : undefined}>
+    <html lang="en" className={htmlClass}>
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
@@ -60,7 +72,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <meta name="apple-mobile-web-app-capable" content="yes" />
       </head>
       <body>
-        <ThemeProvider initialTheme={theme}>{children}</ThemeProvider>
+        <ThemeProvider initialTheme={theme}>
+          <MotionProvider initialPref={motionPref}>{children}</MotionProvider>
+        </ThemeProvider>
       </body>
     </html>
   )
