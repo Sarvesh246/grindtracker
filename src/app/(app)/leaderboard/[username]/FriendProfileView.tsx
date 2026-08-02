@@ -406,11 +406,11 @@ export default function FriendProfileView({ profile, allBadges }: Props) {
         )}
       </div>
 
-      {/* Grinding since — the one deliberately branded line on an otherwise
-          neutral read-only page; "Grinding" in the neon accent, everything
-          else muted. */}
+      {/* GRINDing since — the one deliberately branded line on an otherwise
+          neutral read-only page; "GRINDing" in the neon accent, everything
+          else muted. Same line (and copy) as ProfileDashboard's own footer. */}
       <div style={{ textAlign: 'center', fontSize: '13px', color: 'var(--text-muted)' }}>
-        <span style={{ color: 'var(--accent-text)', fontWeight: 700 }}>Grinding</span> since {joinedLabel}
+        <span style={{ color: 'var(--accent-text)', fontWeight: 700 }}>GRINDing</span> since {joinedLabel}
       </div>
     </div>
   )

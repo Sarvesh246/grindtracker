@@ -252,17 +252,25 @@ to always uphold it.
 ### Friend profiles ((app)/leaderboard/[username]/, migration `19-friend-profile.sql`)
 Tapping a leaderboard row opens a read-only profile at `/leaderboard/[username]`
 — banner (avatar, display name, level, XP bar), streak cards, lifetime stat
-cards, a collapsible badge grid, and a "Grinding since \<month year\>" line
-(`--accent-text`, matching the "never `--accent` for text" rule under
-Theming). Own row goes to the real editable `/profile` instead — no second
-read-only view of yourself. `page.tsx` resolves the username to a user id via
-`user_profiles` (public-readable to any authenticated user, `12-friendship-authz.sql`)
-then calls `get_friend_profile(id)`; `FriendProfileView.tsx` is presentational
-only, styled to match `ProfileDashboard.tsx`'s banner/streak/stat-card JSX
-exactly (same inline styles, same `.stat-grid-4`/`.badge-grid` classes) so the
-two feel like one page. If the RPC rejects (not a friend, or a hand-typed
+cards, and a collapsible badge grid. Own row goes to the real editable
+`/profile` instead — no second read-only view of yourself. `page.tsx` resolves
+the username to a user id via `user_profiles` (public-readable to any
+authenticated user, `12-friendship-authz.sql`) then calls
+`get_friend_profile(id)`; `FriendProfileView.tsx` is presentational only,
+styled to match `ProfileDashboard.tsx`'s banner/streak/stat-card JSX exactly
+(same inline styles, same `.stat-grid-4`/`.badge-grid` classes) so the two
+feel like one page. If the RPC rejects (not a friend, or a hand-typed
 username) the page renders a plain "profile unavailable" state rather than a
 hard 404 — RLS/the RPC is the actual gate either way.
+
+Both `FriendProfileView.tsx` and `ProfileDashboard.tsx` end with the same
+footer: a centered "GRINDing since \<month year\>" line, "GRINDing" in
+`--accent-text` (matching the "never `--accent` for text" rule under
+Theming) — echoing the app name rather than a plain "Grinding". The join date
+is `user_profiles.created_at`; `ProfileDashboard`'s own copy comes from
+`profile/page.tsx`'s `joinedAt` prop (added alongside `username` in the same
+query), the friend view's from `get_friend_profile`'s `joined_at` field. Keep
+the two footers' copy/casing in sync if you change one.
 
 ### Feedback (src/components/FeedbackModal.tsx, (app)/admin/feedback/)
 Users reach the developer through a "Send Feedback" row in Profile → Settings,

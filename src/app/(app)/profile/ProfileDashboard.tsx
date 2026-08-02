@@ -58,6 +58,7 @@ interface Props {
   displayName: string
   avatarUrl: string | null
   username: string | null
+  joinedAt: string | null
   stats: StatsShape
   earnedBadgeIds: string[]
   totalPRs: number
@@ -74,6 +75,7 @@ export default function ProfileDashboard({
   displayName,
   avatarUrl,
   username: initialUsername,
+  joinedAt,
   stats,
   earnedBadgeIds,
   totalPRs,
@@ -272,6 +274,9 @@ export default function ProfileDashboard({
     () => new Set(activeDayTimestamps.map(t => localDateKey(new Date(t)))).size,
     [activeDayTimestamps],
   )
+  const joinedLabel = joinedAt
+    ? new Date(joinedAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+    : null
 
   async function handleSignOut() {
     await supabase.auth.signOut()
@@ -1087,6 +1092,12 @@ export default function ProfileDashboard({
       >
         SIGN OUT
       </button>
+
+      {joinedLabel && (
+        <div style={{ textAlign: 'center', fontSize: '13px', color: 'var(--text-muted)', marginTop: '20px' }}>
+          <span style={{ color: 'var(--accent-text)', fontWeight: 700 }}>GRINDing</span> since {joinedLabel}
+        </div>
+      )}
 
     </div>
   )

@@ -56,10 +56,10 @@ export default async function ProfilePage() {
   const avatarUrl = user.user_metadata?.avatar_url ?? null
   const displayName = user.user_metadata?.full_name ?? user.email ?? 'Athlete'
 
-  // Public profile (username)
+  // Public profile (username, join date for the "GRINDing since" footer)
   const { data: profile } = await supabase
     .from('user_profiles')
-    .select('username')
+    .select('username, created_at')
     .eq('id', user.id)
     .maybeSingle()
 
@@ -75,6 +75,7 @@ export default async function ProfilePage() {
       displayName={displayName}
       avatarUrl={avatarUrl}
       username={profile?.username ?? null}
+      joinedAt={profile?.created_at ?? null}
       recurringRestDays={(restDayRows ?? []).map(r => r.day_of_week)}
       stats={stats ?? {
         xp_total: 0,
