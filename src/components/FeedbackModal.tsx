@@ -230,7 +230,7 @@ export default function FeedbackModal({ onClose }: { onClose: () => void }) {
   // Portaled to <body>, not rendered in place: the caller mounts this inside
   // .app-main, whose `-webkit-overflow-scrolling: touch` traps position:fixed
   // descendants inside its own scrollable box on iOS instead of the true
-  // viewport — the same reason FinishUndoBanner/ToastContext live outside
+  // viewport — the same reason ToastContext live outside
   // .app-main in the layout. Without the portal the backdrop stopped short of
   // the bottom nav instead of covering the full screen.
   return createPortal(

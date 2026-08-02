@@ -355,6 +355,29 @@ select:focus-visible,
   }
 }
 
+/* Exit variants — reverse of the entrances above, played while a toast is
+   being removed instead of just vanishing when its owning state clears. */
+@keyframes toast-out {
+  from {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -8px);
+  }
+}
+@keyframes save-toast-out {
+  from {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+}
+
 /* ---------------------------------------------------------------------------
    Onboarding (coach marks / tours / contextual tooltips). Subtle 150–200ms
    ease entrances matching the rest of the app. The dim mask fades in on its
@@ -375,6 +398,17 @@ select:focus-visible,
 @keyframes onboard-tip-in {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
+}
+@keyframes onboard-tip-out {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(4px); }
+}
+
+/* Small inline popovers (rest-timer adjust grid, default-rest row) — quick
+   fade + settle so they don't just snap into existence. */
+@keyframes popover-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 /* ---------------------------------------------------------------------------

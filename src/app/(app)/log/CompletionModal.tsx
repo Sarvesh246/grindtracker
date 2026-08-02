@@ -8,7 +8,7 @@ interface CompletionData {
   leveledUp: boolean
   newLevel: number
   prCount: number
-  prExercises: { name: string; weight: number }[]
+  prExercises: { name: string; weight: number; reps: number }[]
   newBadges: string[]
   duration: number
   setsCompleted: number
@@ -38,12 +38,24 @@ export default function CompletionModal({
   onUndo?: () => void
 }) {
   const [visible, setVisible] = useState(false)
+  const [closing, setClosing] = useState(false)
   const [xpDisplay, setXpDisplay] = useState(0)
   const { unitLabel, fmt } = useUnit()
 
   useEffect(() => {
     requestAnimationFrame(() => setVisible(true))
   }, [])
+
+  // Play the sheet's own entrance transition in reverse before actually
+  // unmounting, instead of the panel just cutting out the instant the button
+  // is tapped.
+  function requestClose(action: () => void) {
+    if (closing) return
+    setClosing(true)
+    setVisible(false)
+    window.setTimeout(action, 380)
+  }
+  const shown = visible && !closing
 
   // Count the XP total up from 0 as the sheet slides in, instead of rendering
   // the final number immediately — it lands right as the sheet settles.
@@ -88,8 +100,9 @@ export default function CompletionModal({
       position: 'fixed', inset: 0, zIndex: 300,
       backgroundColor: 'rgba(0,0,0,0.7)',
       display: 'flex', alignItems: 'flex-end',
-      opacity: visible ? 1 : 0,
+      opacity: shown ? 1 : 0,
       transition: 'opacity 250ms ease',
+      pointerEvents: closing ? 'none' : 'auto',
     }}>
       <div style={{
         width: '100%',
@@ -98,8 +111,8 @@ export default function CompletionModal({
         border: '1px solid var(--border)',
         borderBottom: 'none',
         padding: '32px 24px 48px',
-        transform: visible ? 'translateY(0)' : 'translateY(100%)',
-        transition: 'transform 380ms cubic-bezier(0.34, 1.56, 0.64, 1)',
+        transform: shown ? 'translateY(0)' : 'translateY(100%)',
+        transition: closing ? 'transform 320ms cubic-bezier(0.4, 0, 1, 1)' : 'transform 380ms cubic-bezier(0.34, 1.56, 0.64, 1)',
         maxHeight: '90dvh',
         overflowY: 'auto',
       }}>
@@ -203,7 +216,7 @@ export default function CompletionModal({
                     fontFamily: "'JetBrains Mono', monospace",
                     fontSize: '14px', color: 'var(--accent-text)',
                   }}>
-                    {fmt(pr.weight)} {unitLabel}
+                    {fmt(pr.weight)} {unitLabel} × {pr.reps}
                   </span>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent-text)' }}>
                     <polyline points="8 6 12 2 16 6"/><path d="M12 2v10"/><path d="M5 17l1.5-5h11L19 17"/><path d="M3 22h18"/>
@@ -244,7 +257,7 @@ export default function CompletionModal({
 
         <div style={{ ...sectionStyle(6) }}>
           <button
-            onClick={onDone}
+            onClick={() => requestClose(onDone)}
             style={{
               width: '100%', height: '56px',
               backgroundColor: 'var(--accent)',
@@ -260,7 +273,7 @@ export default function CompletionModal({
 
           {onUndo && (
             <button
-              onClick={onUndo}
+              onClick={() => requestClose(onUndo)}
               style={{
                 width: '100%', height: '44px', marginTop: '10px',
                 backgroundColor: 'transparent',

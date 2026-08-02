@@ -214,6 +214,7 @@ export default function RestTimerBar({
                 borderRadius: 'var(--radius-md)',
                 boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
                 zIndex: 1,
+                animation: 'popover-in 140ms ease',
               }}
             >
               {ADJUST_OPTIONS.map(opt => (
@@ -264,6 +265,45 @@ export default function RestTimerBar({
         </button>
       </div>
 
+      {/* Small centered chevron — the only visual cue (besides tapping the time)
+          that this bar expands to reveal the default-rest presets. Flips to
+          point down once expanded. */}
+      <button
+        onClick={() => setOpen(o => !o)}
+        aria-label={open ? 'Hide default rest options' : 'Show default rest options'}
+        aria-expanded={open}
+        style={{
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          width: '100%',
+          height: '14px',
+          marginTop: '-6px',
+          background: 'none',
+          border: 'none',
+          cursor: 'pointer',
+          padding: 0,
+        }}
+      >
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          style={{
+            color: 'var(--text-muted)',
+            transform: open ? 'rotate(180deg)' : 'none',
+            transition: 'transform 200ms ease',
+          }}
+        >
+          <polyline points="18 15 12 9 6 15" />
+        </svg>
+      </button>
+
       {open && (
         <div
           style={{
@@ -272,6 +312,7 @@ export default function RestTimerBar({
             alignItems: 'center',
             gap: '6px',
             flexWrap: 'wrap',
+            animation: 'popover-in 140ms ease',
           }}
         >
           <span

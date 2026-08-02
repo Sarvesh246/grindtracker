@@ -12,6 +12,7 @@ import { advanceIndex, effectiveSequence } from '@/lib/utils/rotation'
 import type { UserRotation, UserStats, CompleteSessionResult } from '@/lib/types'
 import { useRestTimer } from '@/lib/hooks/useRestTimer'
 import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
+import { useExitingValue } from '@/lib/hooks/useExitingValue'
 import RestTimerBar from '@/components/RestTimerBar'
 import PlateCalculator from '@/components/PlateCalculator'
 import CompletionModal from './CompletionModal'
@@ -48,7 +49,7 @@ interface CompletionData {
   leveledUp: boolean
   newLevel: number
   prCount: number
-  prExercises: { name: string; weight: number }[]
+  prExercises: { name: string; weight: number; reps: number }[]
   newBadges: string[]
   duration: number
   setsCompleted: number
@@ -111,12 +112,19 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [exercises, setExercises] = useState<Exercise[]>([])
   const [logs, setLogs] = useState<LogMap>({})
-  // `previousBests` is the live "bar to beat" for PR detection. It starts
-  // as the prior-session best (from DB) and advances within this workout
-  // as PRs are logged. `baselineBests` keeps the original DB value so we
-  // can recompute the live best when sets are edited or undone.
+  // `previousBests` is the best WEIGHT on record per exercise — display/prefill
+  // only now (the "prev: X lbs" hint and the weight input's starting value).
+  // `previousBestVolumes` is the live "bar to beat" for PR detection: best
+  // weight x reps on record, which is what actually decides is_pr (mirrors the
+  // server's grind_recompute_stats — see docs/sql/15-volume-based-prs.sql).
+  // Both start as the prior-session best (from DB) and advance within this
+  // workout as sets are logged. `baselineBests`/`baselineBestVolumes` keep the
+  // original DB values so we can recompute the live bests when sets are
+  // edited or undone.
   const [previousBests, setPreviousBests] = useState<PreviousBest>({})
   const [baselineBests, setBaselineBests] = useState<PreviousBest>({})
+  const [previousBestVolumes, setPreviousBestVolumes] = useState<PreviousBest>({})
+  const [baselineBestVolumes, setBaselineBestVolumes] = useState<PreviousBest>({})
   const [startedAt, setStartedAt] = useState<Date>(new Date())
   const [elapsed, setElapsed] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -140,6 +148,11 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   const restTimer = useRestTimer()
   const keyboardInset = useKeyboardInset()
+  // Keep each toast's last content around through its exit animation instead
+  // of yanking it off screen the instant its owning state clears.
+  const undoToastExit = useExitingValue(undoState, 200)
+  const resumeToastExit = useExitingValue(resumeToast, 200)
+  const saveToastExit = useExitingValue(saveToast, 180)
   const { hasSeenTooltip, markTooltipSeen } = useOnboarding()
 
   /**
@@ -213,22 +226,38 @@ export default function ActiveWorkout({ day }: { day: string }) {
       .order('sort_order', { ascending: true })
     setAllExercises(allExsData ?? [])
 
+    // Fetches every prior non-warm-up set (not just the top weight) because
+    // PR detection compares volume (weight x reps), which Postgres can't sort
+    // by without a generated column — the max is reduced client-side below.
+    // `bests` (max weight) stays display/prefill-only; `bestVolumes` (max
+    // weight x reps) is the actual PR bar.
     const bests: PreviousBest = {}
+    const bestVolumes: PreviousBest = {}
     for (const ex of exs) {
       const { data } = await supabase
         .from('session_logs')
-        .select('weight, is_warmup, sessions!inner(user_id, completed_at)')
+        .select('weight, reps, is_warmup, sessions!inner(user_id, completed_at)')
         .eq('exercise_id', ex.id)
         .eq('is_warmup', false)
         .eq('sessions.user_id', user.id)
         .not('sessions.completed_at', 'is', null)
-        .order('weight', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      bests[ex.id] = data?.weight ?? null
+        .not('weight', 'is', null)
+      let maxWeight: number | null = null
+      let maxVolume: number | null = null
+      for (const row of data ?? []) {
+        if (row.weight === null) continue
+        if (maxWeight === null || row.weight > maxWeight) maxWeight = row.weight
+        if (row.reps === null) continue
+        const volume = row.weight * row.reps
+        if (maxVolume === null || volume > maxVolume) maxVolume = volume
+      }
+      bests[ex.id] = maxWeight
+      bestVolumes[ex.id] = maxVolume
     }
     setPreviousBests(bests)
     setBaselineBests(bests)
+    setPreviousBestVolumes(bestVolumes)
+    setBaselineBestVolumes(bestVolumes)
 
     const todayStart = new Date()
     todayStart.setHours(0, 0, 0, 0)
@@ -362,6 +391,23 @@ export default function ActiveWorkout({ day }: { day: string }) {
     return best
   }
 
+  /** Same as bestFromLogs, but the live PR bar: best weight x reps (volume). */
+  function bestVolumeFromLogs(exerciseId: string, logsMap: LogMap): number | null {
+    let best = baselineBestVolumes[exerciseId] ?? null
+    for (const key of Object.keys(logsMap)) {
+      if (!key.startsWith(`${exerciseId}-`)) continue
+      const e = logsMap[key]
+      if (!e.checked || e.isWarmup || e.skipped) continue
+      if (e.weight === '' || e.reps === '') continue
+      const w = parseFloat(e.weight)
+      const r = parseInt(e.reps)
+      if (!Number.isFinite(w) || !Number.isFinite(r)) continue
+      const volume = w * r
+      if (best === null || volume > best) best = volume
+    }
+    return best
+  }
+
   function formatElapsed(seconds: number): string {
     const m = Math.floor(seconds / 60).toString().padStart(2, '0')
     const s = (seconds % 60).toString().padStart(2, '0')
@@ -422,12 +468,13 @@ export default function ActiveWorkout({ day }: { day: string }) {
     if (repsStr === '') return
     const reps = parseInt(repsStr)
 
-    const prevBest = previousBests[exerciseId]
+    const prevBestVolume = previousBestVolumes[exerciseId]
+    const volume = weight !== null ? weight * reps : null
     const isPR =
       !logEntry.isWarmup &&
-      weight !== null &&
-      prevBest !== null &&
-      weight > prevBest
+      volume !== null &&
+      prevBestVolume !== null &&
+      volume > prevBestVolume
 
     const { data: saved, error: saveError } = await runWithRetry(() =>
       supabase
@@ -463,8 +510,15 @@ export default function ActiveWorkout({ day }: { day: string }) {
       [key]: { ...prev[key], reps: repsStr, checked: true, skipped: false, isPR, logId: saved?.id },
     }))
 
-    if (isPR && weight !== null) {
-      setPreviousBests(prev => ({ ...prev, [exerciseId]: weight }))
+    if (isPR && weight !== null && volume !== null) {
+      setPreviousBestVolumes(prev => ({ ...prev, [exerciseId]: volume }))
+      // The weight-only "prev" display should only ever rise to an actual
+      // heavier weight — a volume PR at a lower weight (more reps) shouldn't
+      // knock the displayed reference weight down.
+      setPreviousBests(prev => {
+        const cur = prev[exerciseId] ?? null
+        return cur !== null && cur >= weight ? prev : { ...prev, [exerciseId]: weight }
+      })
       haptic('success')
     } else {
       haptic('light')
@@ -503,9 +557,10 @@ export default function ActiveWorkout({ day }: { day: string }) {
       const cur = prev[key]
       if (!cur) return prev
       const next = { ...prev, [key]: { ...cur, checked: false, isPR: false, logId: undefined } }
-      // The undone set may have been the live PR. Recompute the best so
-      // future sets in this workout compare against the correct value.
+      // The undone set may have been the live PR. Recompute the bests so
+      // future sets in this workout compare against the correct values.
       setPreviousBests(pb => ({ ...pb, [exerciseId]: bestFromLogs(exerciseId, next) }))
+      setPreviousBestVolumes(pb => ({ ...pb, [exerciseId]: bestVolumeFromLogs(exerciseId, next) }))
       return next
     })
   }
@@ -523,12 +578,13 @@ export default function ActiveWorkout({ day }: { day: string }) {
     const weight = logEntry.weight !== '' ? parseFloat(logEntry.weight) : null
     const reps = logEntry.reps !== '' ? parseInt(logEntry.reps) : null
 
-    const prevBest = previousBests[exerciseId]
+    const prevBestVolume = previousBestVolumes[exerciseId]
+    const volume = weight !== null && reps !== null ? weight * reps : null
     const isPR =
       !logEntry.isWarmup &&
-      weight !== null &&
-      prevBest !== null &&
-      weight > prevBest
+      volume !== null &&
+      prevBestVolume !== null &&
+      volume > prevBestVolume
 
     await supabase.from('session_logs').upsert(
       {
@@ -549,6 +605,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       // Editing may have raised or lowered this exercise's best. Recompute
       // so subsequent PR comparisons in this workout are correct.
       setPreviousBests(pb => ({ ...pb, [exerciseId]: bestFromLogs(exerciseId, next) }))
+      setPreviousBestVolumes(pb => ({ ...pb, [exerciseId]: bestVolumeFromLogs(exerciseId, next) }))
       return next
     })
     setEditingKey(null)
@@ -634,8 +691,9 @@ export default function ActiveWorkout({ day }: { day: string }) {
         if (next[laterKey]) next[`${exerciseId}-${s}`] = next[laterKey]
       }
       delete next[`${exerciseId}-${total}`]
-      // The deleted set may have held the live PR — recompute the best.
+      // The deleted set may have held the live PR — recompute the bests.
       setPreviousBests(pb => ({ ...pb, [exerciseId]: bestFromLogs(exerciseId, next) }))
+      setPreviousBestVolumes(pb => ({ ...pb, [exerciseId]: bestVolumeFromLogs(exerciseId, next) }))
       return next
     })
     setExtraSets(prev => ({ ...prev, [exerciseId]: currentExtras - 1 }))
@@ -662,10 +720,11 @@ export default function ActiveWorkout({ day }: { day: string }) {
         .eq('session_id', sessionId)
         .eq('exercise_id', exerciseId)
         .eq('set_number', setNumber)
-      // Recompute live PR bar — the deleted set may have been the best.
+      // Recompute live PR bars — the deleted set may have been the best.
       setLogs(prev => {
         const next = { ...prev, [key]: { ...prev[key], skipped: true, checked: false, isPR: false, logId: undefined } }
         setPreviousBests(pb => ({ ...pb, [exerciseId]: bestFromLogs(exerciseId, next) }))
+        setPreviousBestVolumes(pb => ({ ...pb, [exerciseId]: bestVolumeFromLogs(exerciseId, next) }))
         return next
       })
     } else {
@@ -730,29 +789,43 @@ export default function ActiveWorkout({ day }: { day: string }) {
     let prevBest: number | null = previousBests[newExercise.id] !== undefined
       ? previousBests[newExercise.id]
       : null
+    let prevBestVolume: number | null = previousBestVolumes[newExercise.id] !== undefined
+      ? previousBestVolumes[newExercise.id]
+      : null
 
     if (previousBests[newExercise.id] === undefined) {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
         const { data } = await supabase
           .from('session_logs')
-          .select('weight, sessions!inner(user_id, completed_at)')
+          .select('weight, reps, sessions!inner(user_id, completed_at)')
           .eq('exercise_id', newExercise.id)
           .eq('sessions.user_id', user.id)
           .not('sessions.completed_at', 'is', null)
-          .order('weight', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-        prevBest = data?.weight ?? null
+          .not('weight', 'is', null)
+        let maxWeight: number | null = null
+        let maxVolume: number | null = null
+        for (const row of data ?? []) {
+          if (row.weight === null) continue
+          if (maxWeight === null || row.weight > maxWeight) maxWeight = row.weight
+          if (row.reps === null) continue
+          const vol = row.weight * row.reps
+          if (maxVolume === null || vol > maxVolume) maxVolume = vol
+        }
+        prevBest = maxWeight
+        prevBestVolume = maxVolume
         setPreviousBests(prev => ({ ...prev, [newExercise.id]: prevBest }))
+        setPreviousBestVolumes(prev => ({ ...prev, [newExercise.id]: prevBestVolume }))
       }
     }
-    // Seed the baseline too — bestFromLogs (used by undo/edit/delete-set to
-    // recompute the live PR bar) falls back to baselineBests, which is otherwise
-    // only ever populated in initSession. Without this, the first undo/edit/delete
-    // on the swapped-in exercise would collapse its PR bar to null even though a
+    // Seed the baselines too — bestFromLogs/bestVolumeFromLogs (used by
+    // undo/edit/delete-set to recompute the live PR bars) fall back to
+    // baselineBests/baselineBestVolumes, which are otherwise only ever
+    // populated in initSession. Without this, the first undo/edit/delete on
+    // the swapped-in exercise would collapse its PR bar to null even though a
     // real previous best was just fetched above.
     setBaselineBests(prev => (prev[newExercise.id] !== undefined ? prev : { ...prev, [newExercise.id]: prevBest }))
+    setBaselineBestVolumes(prev => (prev[newExercise.id] !== undefined ? prev : { ...prev, [newExercise.id]: prevBestVolume }))
 
     setExercises(prev => {
       const idx = prev.findIndex(e => e.id === swapTarget)
@@ -1310,7 +1383,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       )}
 
       {/* Resume toast */}
-      {resumeToast && (
+      {resumeToastExit.data && (
         <div
           role="status"
           aria-live="polite"
@@ -1328,24 +1401,25 @@ export default function ActiveWorkout({ day }: { day: string }) {
             fontWeight: 500,
             zIndex: 300,
             boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+            animation: resumeToastExit.closing ? 'toast-out 200ms ease forwards' : 'toast-in 180ms ease',
             // Purely informational — never let this strip swallow a tap meant
             // for the content beneath it while it's on screen.
             pointerEvents: 'none',
           }}
         >
-          {resumeToast}
+          {resumeToastExit.data}
         </div>
       )}
 
       {/* Undo toast — anchored to the top so it's visible wherever you are scrolled.
           Sits just below the resume toast if both happen to show. */}
-      {undoState && (
+      {undoToastExit.data && (
         <div
           role="status"
           aria-live="polite"
           style={{
             position: 'fixed',
-            top: `calc(env(safe-area-inset-top) + ${resumeToast ? '60px' : '12px'})`,
+            top: `calc(env(safe-area-inset-top) + ${resumeToastExit.data ? '60px' : '12px'})`,
             left: '50%',
             transform: 'translateX(-50%)',
             width: 'calc(100% - 32px)',
@@ -1359,7 +1433,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
             justifyContent: 'space-between',
             zIndex: 300,
             boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
-            animation: 'toast-in 180ms ease',
+            animation: undoToastExit.closing ? 'toast-out 200ms ease forwards' : 'toast-in 180ms ease',
             // The pill spans most of the width near the top for 5s. Only the
             // UNDO button should catch taps — otherwise this bar sits over the
             // top of the content and eats taps aimed at the controls beneath it
@@ -1369,7 +1443,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         >
           <span style={{ display: 'flex', flexDirection: 'column', gap: '1px', minWidth: 0 }}>
             <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-              Logged set {undoState.setNumber}
+              Logged set {undoToastExit.data.setNumber}
             </span>
             {undoHintVisible && (
               <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
@@ -1389,7 +1463,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
               letterSpacing: '1px',
               cursor: 'pointer',
               padding: '4px 8px',
-              pointerEvents: 'auto',
+              pointerEvents: undoToastExit.closing ? 'none' : 'auto',
             }}
           >
             UNDO
@@ -1400,7 +1474,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       {/* Passive "saved" confirmation — bottom-anchored, non-interactive.
           Sits above the finish/rest bar, and rides up above the keyboard when
           one is open so it stays visible while editing. */}
-      {saveToast && (
+      {saveToastExit.data && (
         <div
           role="status"
           aria-live="polite"
@@ -1422,14 +1496,14 @@ export default function ActiveWorkout({ day }: { day: string }) {
             whiteSpace: 'nowrap',
             zIndex: 60,
             boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
-            animation: 'save-toast-in 160ms ease',
+            animation: saveToastExit.closing ? 'save-toast-out 180ms ease forwards' : 'save-toast-in 160ms ease',
             pointerEvents: 'none',
           }}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="20 6 9 17 4 12" />
           </svg>
-          {saveToast}
+          {saveToastExit.data}
         </div>
       )}
 

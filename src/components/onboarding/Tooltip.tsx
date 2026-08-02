@@ -19,6 +19,8 @@ export interface TooltipProps {
   title?: string
   /** When set, renders a small × that dismisses just this tooltip. */
   onDismiss?: () => void
+  /** Plays the fade/slide-out variant of the entrance and stops taking clicks. */
+  closing?: boolean
   /** Preferred sides in order. Defaults to below → above → right → left. */
   preferred?: Side[]
   maxWidth?: number
@@ -26,7 +28,7 @@ export interface TooltipProps {
 
 const POINTER = 7
 
-export default function Tooltip({ getEl, body, title, onDismiss, preferred, maxWidth = 250 }: TooltipProps) {
+export default function Tooltip({ getEl, body, title, onDismiss, closing, preferred, maxWidth = 250 }: TooltipProps) {
   const anchor = useAnchorRect(getEl, true)
   const cardRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState<{ w: number; h: number } | null>(null)
@@ -71,8 +73,8 @@ export default function Tooltip({ getEl, body, title, onDismiss, preferred, maxW
         boxShadow: '0 4px 16px rgba(0,0,0,0.45)',
         padding: onDismiss ? '10px 30px 10px 12px' : '10px 12px',
         opacity: ready ? 1 : 0,
-        pointerEvents: ready ? 'auto' : 'none',
-        animation: ready ? 'onboard-tip-in 160ms ease' : 'none',
+        pointerEvents: ready && !closing ? 'auto' : 'none',
+        animation: !ready ? 'none' : closing ? 'onboard-tip-out 160ms ease forwards' : 'onboard-tip-in 160ms ease',
       }}
     >
       <span style={pointerStyle} aria-hidden="true" />

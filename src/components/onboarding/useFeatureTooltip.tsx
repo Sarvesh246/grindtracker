@@ -60,6 +60,23 @@ export function useFeatureTooltip(id: string, opts: FeatureTooltipOptions): Reac
 
   const seen = hasSeenTooltip(id)
   const [visible, setVisible] = useState(false)
+  const [closing, setClosing] = useState(false)
+  const closingRef = useRef(false)
+  const EXIT_MS = 160
+
+  // Fades the bubble out over EXIT_MS before actually unmounting it, instead
+  // of every dismiss path (×, anchor click, suppression, auto-hide) cutting
+  // it out instantly.
+  const requestHide = useCallback(() => {
+    if (closingRef.current) return
+    closingRef.current = true
+    setClosing(true)
+    window.setTimeout(() => {
+      closingRef.current = false
+      setVisible(false)
+      setClosing(false)
+    }, EXIT_MS)
+  }, [])
 
   // Re-render when the coordinator's active tooltip changes, so a queued hint
   // re-arms as soon as the current one is dismissed.
@@ -114,19 +131,30 @@ export function useFeatureTooltip(id: string, opts: FeatureTooltipOptions): Reac
   // A modal opening / rest starting mid-display pulls it (already marked seen).
   // Syncing to an external condition (a modal/rest countdown), not derived state.
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (visible && suppressed) setVisible(false)
-  }, [visible, suppressed])
+    if (visible && !closing && suppressed) requestHide()
+  }, [visible, closing, suppressed, requestHide])
 
   // Transient auto-hide.
   useEffect(() => {
     if (!visible || !autoHideMs) return
-    const t = window.setTimeout(() => setVisible(false), autoHideMs)
+    const t = window.setTimeout(requestHide, autoHideMs)
     return () => window.clearTimeout(t)
-  }, [visible, autoHideMs])
+  }, [visible, autoHideMs, requestHide])
 
-  const dismiss = useCallback(() => setVisible(false), [])
+  // Dismiss the moment the user interacts with the anchor itself — a hint
+  // pointing at a button shouldn't outlive a tap on that button. Without this
+  // a hint like aw-rest-adjust stays on screen (and, being higher z-index,
+  // visually covers) the panel its own target button just opened.
+  useEffect(() => {
+    if (!visible) return
+    const handler = (e: PointerEvent) => {
+      const el = getElRef.current()
+      if (el && e.target instanceof Node && el.contains(e.target)) requestHide()
+    }
+    document.addEventListener('pointerdown', handler, true)
+    return () => document.removeEventListener('pointerdown', handler, true)
+  }, [visible, requestHide])
 
   if (!visible) return null
-  return <Tooltip getEl={getEl} body={body} title={title} onDismiss={dismiss} preferred={preferred} maxWidth={maxWidth} />
+  return <Tooltip getEl={getEl} body={body} title={title} onDismiss={requestHide} closing={closing} preferred={preferred} maxWidth={maxWidth} />
 }

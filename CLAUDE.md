@@ -101,7 +101,8 @@ increments; same day keeps it), OR across a gap where every day in between is
 a configured rest day (recurring or one-off confirmed — see Rest days below);
 any other gap resets to 1. Home page zeroes a stale streak when the gap since
 the last workout isn't fully covered by rest days.
-PR: weight > max non-warm-up weight in any previous completed session for that exercise.
+PR: weight × reps (volume) > max non-warm-up volume in any previous completed
+session for that exercise (migration `15-volume-based-prs.sql`).
 14 badges in src/lib/utils/badges.ts.
 
 **Stats are server-authoritative (migration `11-server-side-xp.sql`).** The rules

@@ -43,7 +43,7 @@ interface TimerState {
 const ZERO: TimerState = { exerciseId: null, startedAt: 0, durationMs: 0, remainingMs: 0, paused: false }
 const ACTIVE_TIMER_KEY = 'grind.rest.active_timer'
 
-/** Restore a persisted timer from localStorage on page remount (e.g. after FinishUndoBanner resume).
+/** Restore a persisted timer from localStorage on page remount (e.g. after navigating away and back).
  *  Uses startedAt + durationMs to recompute remaining so the countdown is live-accurate even
  *  if the user spent time away. Returns ZERO if there's nothing saved or the timer has expired. */
 function readPersistedTimer(): TimerState {
@@ -61,8 +61,7 @@ function readPersistedTimer(): TimerState {
 
 /**
  * Single global rest timer for the active workout.
- * Persists the active timer to localStorage so it survives page navigations
- * (e.g. tapping RESUME in the FinishUndoBanner restores the countdown).
+ * Persists the active timer to localStorage so it survives page navigations.
  * Auto-fires light haptic at 10s remaining and at 0s.
  */
 export function useRestTimer() {

@@ -125,5 +125,5 @@ export interface CompleteSessionResult {
   last_workout_date: string | null
   total_workouts: number
   pr_count: number
-  pr_exercises: { name: string; weight: number }[]
+  pr_exercises: { name: string; weight: number; reps: number }[]
 }

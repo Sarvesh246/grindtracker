@@ -248,18 +248,23 @@ function LogPastContent() {
       .lt('completed_at', dayStart)
 
     const priorIds = (priorSessions ?? []).map(s => s.id)
-    const prevBests: Record<string, number | null> = {}
+    // PR detection is volume-based (weight x reps) — mirrors
+    // grind_recompute_stats() in docs/sql/15-volume-based-prs.sql.
+    const prevBestVolumes: Record<string, number | null> = {}
     if (priorIds.length > 0) {
       const { data: priorLogs } = await supabase
         .from('session_logs')
-        .select('exercise_id, weight')
+        .select('exercise_id, weight, reps')
         .in('session_id', priorIds)
         .not('weight', 'is', null)
+        .not('reps', 'is', null)
 
       for (const log of priorLogs ?? []) {
-        const prev = prevBests[log.exercise_id] ?? null
-        if (log.weight !== null && (prev === null || log.weight > prev)) {
-          prevBests[log.exercise_id] = log.weight
+        if (log.weight === null || log.reps === null) continue
+        const volume = log.weight * log.reps
+        const prev = prevBestVolumes[log.exercise_id] ?? null
+        if (prev === null || volume > prev) {
+          prevBestVolumes[log.exercise_id] = volume
         }
       }
     }
@@ -313,18 +318,19 @@ function LogPastContent() {
       for (let i = 0; i < sets.length; i++) {
         const s = sets[i]
         // Inputs are typed in the display unit; convert back to canonical lbs before
-        // saving. prevBests are stored canonical, so the PR check stays lbs-vs-lbs.
+        // saving. prevBestVolumes are stored canonical, so the PR check stays lbs-vs-lbs.
         const weight = s.weight !== '' ? fromDisplay(parseFloat(s.weight)) : null
         const reps = s.reps !== '' ? parseInt(s.reps) : null
-        const prevBest = prevBests[ex.id] ?? null
-        const isPR = weight !== null && prevBest !== null && weight > prevBest
+        const volume = weight !== null && reps !== null ? weight * reps : null
+        const prevBestVolume = prevBestVolumes[ex.id] ?? null
+        const isPR = volume !== null && prevBestVolume !== null && volume > prevBestVolume
         if (isPR) {
           prCount++
           // Raise the bar so later sets of the same exercise in this same
           // submission compare against the new best, not the pre-workout one —
           // otherwise three ascending sets all above the old best would each
           // score as a separate PR instead of only the first that clears it.
-          prevBests[ex.id] = weight
+          prevBestVolumes[ex.id] = volume
         }
         logsToInsert.push({ session_id: sessionId, exercise_id: ex.id, set_number: i + 1, weight, reps, is_pr: isPR })
       }

@@ -2,7 +2,6 @@ import { Suspense } from 'react'
 import { cookies } from 'next/headers'
 import BottomNav from '@/components/BottomNav'
 import TopNav from '@/components/TopNav'
-import FinishUndoBanner from '@/components/FinishUndoBanner'
 import { UnitProvider } from '@/lib/contexts/UnitContext'
 import { ToastProvider } from '@/lib/contexts/ToastContext'
 import { OnboardingProvider } from '@/lib/contexts/OnboardingContext'
@@ -37,7 +36,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <Suspense fallback={null}>
         <BottomNav />
       </Suspense>
-      <FinishUndoBanner />
     </div>
     </ToastProvider>
     </OnboardingProvider>
