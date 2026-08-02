@@ -8,6 +8,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts'
+import { useMotionPref } from '@/lib/contexts/MotionContext'
 
 interface ChartPoint {
   date: string
@@ -83,6 +84,10 @@ function CustomDot({ cx, cy, payload }: CustomDotProps) {
 }
 
 export default function ProgressChart({ data }: { data: ChartPoint[] }) {
+  // Recharts' line-draw is a JS (react-smooth) animation, not CSS — the
+  // `html.reduce-motion` class in globals.css can't reach it, so it has to be
+  // gated explicitly or it keeps playing with the setting on.
+  const { reduceMotion } = useMotionPref()
   const values = data.map(d => d.value)
   const minV = Math.min(...values)
   const maxV = Math.max(...values)
@@ -139,6 +144,7 @@ export default function ProgressChart({ data }: { data: ChartPoint[] }) {
           strokeWidth={2}
           dot={<CustomDot />}
           activeDot={{ r: 6, fill: 'var(--accent)', stroke: 'var(--surface)', strokeWidth: 2 }}
+          isAnimationActive={!reduceMotion}
         />
       </LineChart>
     </ResponsiveContainer>

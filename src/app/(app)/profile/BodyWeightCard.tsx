@@ -11,6 +11,7 @@ import {
 import { createClient } from '@/lib/supabase/client'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { useToast } from '@/lib/contexts/ToastContext'
+import { useMotionPref } from '@/lib/contexts/MotionContext'
 
 interface Row {
   weight: number
@@ -26,6 +27,10 @@ export default function BodyWeightCard() {
   const supabase = createClient()
   const { unitLabel, toDisplay, fromDisplay, fmt } = useUnit()
   const toast = useToast()
+  // Recharts' line-draw is a JS (react-smooth) animation, not CSS — the
+  // `html.reduce-motion` class in globals.css can't reach it, so it has to be
+  // gated explicitly or it keeps playing with the setting on.
+  const { reduceMotion } = useMotionPref()
   const [rows, setRows] = useState<Row[]>([])
   const [draft, setDraft] = useState('')
   const [editingDate, setEditingDate] = useState<string | null>(null)
@@ -297,6 +302,7 @@ export default function BodyWeightCard() {
                 strokeWidth={2}
                 dot={renderDot}
                 activeDot={{ r: 5, fill: 'var(--accent)', stroke: 'var(--surface)', strokeWidth: 2 }}
+                isAnimationActive={!reduceMotion}
               />
             </LineChart>
           </ResponsiveContainer>

@@ -2,9 +2,13 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
 
+type ToastVariant = 'success' | 'error'
+
 interface ToastAPI {
-  /** Flash a brief, passive "saved"-style confirmation at the bottom. */
-  show: (message: string) => void
+  /** Flash a brief, passive bottom-anchored pill. Defaults to a "saved"-style
+   *  success confirmation; pass 'error' for a failure that needs to read as
+   *  visually distinct, not just differently-worded. */
+  show: (message: string, variant?: ToastVariant) => void
 }
 
 const ToastContext = createContext<ToastAPI>({ show: () => {} })
@@ -30,18 +34,22 @@ export function useToast(): ToastAPI {
  */
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [message, setMessage] = useState<string | null>(null)
+  const [variant, setVariant] = useState<ToastVariant>('success')
   const [visible, setVisible] = useState(false)
   const timer = useRef<NodeJS.Timeout | null>(null)
   const keyboardInset = useKeyboardInset()
 
-  const show = useCallback((msg: string) => {
+  const show = useCallback((msg: string, v: ToastVariant = 'success') => {
     setMessage(msg)
+    setVariant(v)
     setVisible(true)
     if (timer.current) clearTimeout(timer.current)
     timer.current = setTimeout(() => setVisible(false), 1900)
   }, [])
 
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current) }, [])
+
+  const isError = variant === 'error'
 
   return (
     <ToastContext.Provider value={{ show }}>
@@ -60,8 +68,8 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               : 'calc(env(safe-area-inset-bottom) + 84px)',
             transform: 'translateX(-50%)',
             backgroundColor: 'var(--surface-elevated)',
-            border: '1px solid var(--accent)',
-            color: 'var(--accent-text)',
+            border: `1px solid ${isError ? 'var(--danger)' : 'var(--accent)'}`,
+            color: isError ? 'var(--danger)' : 'var(--accent-text)',
             padding: '9px 16px',
             borderRadius: 'var(--radius-pill, 9999px)',
             fontFamily: "'DM Sans', sans-serif",
@@ -72,14 +80,25 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             gap: '7px',
             whiteSpace: 'nowrap',
             maxWidth: 'calc(100vw - 32px)',
-            zIndex: 250,
+            // Above every overlay in the app (highest is PlateCalculator at
+            // 600) — this toast needs to read as "always on top", since it
+            // now fires from inside modals too (e.g. WorkoutManager's
+            // exercise toggle, itself at 500).
+            zIndex: 700,
             boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
             animation: 'save-toast-in 160ms ease',
             pointerEvents: 'none',
           }}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-            <polyline points="20 6 9 17 4 12" />
+            {isError ? (
+              <>
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </>
+            ) : (
+              <polyline points="20 6 9 17 4 12" />
+            )}
           </svg>
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{message}</span>
         </div>

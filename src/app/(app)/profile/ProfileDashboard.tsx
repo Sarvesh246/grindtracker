@@ -145,7 +145,9 @@ export default function ProfileDashboard({
         if (wasActive) next.add(dayOfWeek); else next.delete(dayOfWeek)
         return next
       })
-      toast.show("Couldn't save rest day")
+      toast.show("Couldn't save rest day", 'error')
+    } else {
+      toast.show(wasActive ? 'Rest day removed' : 'Rest day saved')
     }
   }
 
@@ -638,7 +640,7 @@ export default function ProfileDashboard({
                 Reduce Motion
               </div>
               <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                Turns off toast, popup, and badge animations
+                Minimizes motion — notifications, charts, and celebrations appear instantly instead of animating in
               </div>
             </div>
             <button

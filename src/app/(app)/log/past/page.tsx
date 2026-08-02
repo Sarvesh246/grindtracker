@@ -139,15 +139,21 @@ function LogPastContent() {
       .eq('day_type', dayType)
       .order('sort_order', { ascending: true })
 
-    const exs = data ?? []
-    setExercises(exs)
-
     const existingLogs = existingSessionId
       ? (await supabase
           .from('session_logs')
           .select('exercise_id, set_number, weight, reps')
           .eq('session_id', existingSessionId)).data ?? []
       : []
+
+    // Disabled exercises (17-exercise-active-flag.sql) don't offer for a fresh
+    // entry, matching ActiveWorkout — but if this session already has logged
+    // sets for one (logged before it was disabled), it must stay in the form:
+    // handleSubmit replaces ALL of the session's logs with what's here, so
+    // dropping it would silently delete that exercise's data on save.
+    const loggedExerciseIds = new Set(existingLogs.map(l => l.exercise_id))
+    const exs = (data ?? []).filter(ex => ex.active || loggedExerciseIds.has(ex.id))
+    setExercises(exs)
 
     // A live-logged session can have bonus sets beyond sets_target (added via
     // + ADD SET in the active workout). Size each exercise's input array to fit

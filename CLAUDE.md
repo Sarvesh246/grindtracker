@@ -59,19 +59,43 @@ replacement for it — `html.reduce-motion` gets the identical zero-duration
 treatment as the media query, for anyone who wants animations off in-app
 without changing their whole system.
 
+`html.reduce-motion` only reaches CSS-driven animation (transitions/keyframes),
+which covers every animation in the app except one: the Recharts `<Line>`
+draw-in on the progress and body-weight charts is a JS (react-smooth)
+animation the CSS class can't touch. Those two call sites (`ProgressChart.tsx`,
+`BodyWeightCard.tsx`) read `useMotionPref().reduceMotion` directly and pass
+`isAnimationActive={!reduceMotion}` to opt out explicitly — any future chart
+needs the same treatment, since neither the media query nor the `.reduce-motion`
+class does it automatically.
+
 ### Responsive navigation
 `TopNav` (desktop) and `BottomNav` (mobile) both render in `(app)/layout.tsx`;
 CSS at the 768px breakpoint shows exactly one — there is no JS width detection.
 Both share `UnitContext`, so the kg/lbs toggle stays in sync across them.
 
 ## Supabase Tables
-- exercises — user_id, name, day_type, sets_target, reps_target, sort_order.
-  Per-user catalog (RLS, owner-only): each user builds & edits their own days &
-  exercises; a new user starts with a blank slate (no seeded days). See migration
-  `07-exercises-per-user.sql`.
+- exercises — user_id, name, day_type, sets_target, reps_target, sort_order,
+  active (default true). Per-user catalog (RLS, owner-only): each user builds &
+  edits their own days & exercises; a new user starts with a blank slate (no
+  seeded days). See migration `07-exercises-per-user.sql`. `active=false`
+  disables the exercise for that day — toggled from WorkoutManager's day
+  screen — without deleting it (keeps history/PR bar). ActiveWorkout's
+  `initSession` and `log/past`'s `loadExercises` both filter to active
+  exercises for a NEW entry, but keep any exercise the resuming/edited
+  session already has logs for even if it's since been disabled since then.
+  This matters most for `log/past`: an edit there deletes and re-inserts
+  every one of the session's logs from what's on screen, so dropping a
+  since-disabled exercise from the form would silently erase its history on
+  save. ActiveWorkout never does a wholesale replace, so the same filter is
+  really just about not hiding a set the user can still finish mid-session.
+  See migration `17-exercise-active-flag.sql`.
 - sessions — user_id, day_type, started_at, completed_at, xp_earned, note
 - session_logs — session_id, exercise_id, set_number, weight, reps, is_pr,
-  is_warmup, note. UNIQUE on (session_id, exercise_id, set_number).
+  is_warmup, note, is_skipped (default false). UNIQUE on (session_id,
+  exercise_id, set_number). `is_skipped` rows are markers (weight/reps always
+  null, enforced by a CHECK) that let a skipped set in ActiveWorkout survive
+  closing/resuming the app — see Skip persistence below and migration
+  `18-skip-persistence.sql`.
 - user_stats — xp_total, level, current_streak, longest_streak,
   last_workout_date, total_workouts
 - user_badges — user_id, badge_id, earned_at
@@ -208,6 +232,19 @@ the same connectivity logic in TS (`Date.getDay()` already matches Postgres's
 `extract(dow)` convention, 0=Sun..6=Sat, so no translation needed) so the
 client can compute gaps and eligible banner state using the viewer's own
 local "today" — never the server's, per Dates & timezones below.
+
+### Skip persistence (migration `18-skip-persistence.sql`)
+Skipping a set/exercise in ActiveWorkout is optimistic in React state
+(`handleSkipSet`/`handleSkipExercise`), but also upserts a `session_logs` row
+with `weight`/`reps` null and `is_skipped=true` — a marker, not a logged set —
+so `initSession`'s resume path (closing the app and reopening it, or just a
+remount) can tell "skipped" apart from "never attempted" and restore it as
+skipped instead of reverting to blank. Undoing a skip
+(`handleUnskipSet`/`handleUnskipExercise`) deletes the marker row. Every stats
+RPC already filters on `weight is not null`, so these rows are already inert
+for XP/streak/PR purposes — a CHECK constraint (`weight is null and reps is
+null` whenever `is_skipped`) enforces that instead of relying on the client
+to always uphold it.
 
 ### Feedback (src/components/FeedbackModal.tsx, (app)/admin/feedback/)
 Users reach the developer through a "Send Feedback" row in Profile → Settings,

@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Exercise, DayCategory, UserRotation } from '@/lib/types'
 import { autoSequence, effectiveSequence } from '@/lib/utils/rotation'
 import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
+import { useToast } from '@/lib/contexts/ToastContext'
 
 interface WorkoutManagerProps {
   onClose: () => void
@@ -26,6 +27,7 @@ type DeleteTarget =
 
 export default function WorkoutManager({ onClose, onChanged, initialNewDay = false }: WorkoutManagerProps) {
   const supabase = useMemo(() => createClient(), [])
+  const toast = useToast()
   // Height hidden behind the iOS keyboard, so the bottom-sheet can ride above it
   // instead of leaving the day-name / exercise-form inputs pinned underneath.
   const keyboardInset = useKeyboardInset()
@@ -258,6 +260,29 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
       await supabase.from('user_flex_days').insert({ user_id: user.id, day_key: dayKey })
       setFlexDays(prev => new Set([...prev, dayKey]))
     }
+    onChanged()
+  }
+
+  const [togglingExerciseId, setTogglingExerciseId] = useState<string | null>(null)
+
+  // Disable/re-enable an exercise for its day (see 17-exercise-active-flag.sql)
+  // without deleting it — keeps its logged history and PR bar intact.
+  // Optimistic with revert-on-failure, matching the rest-day toggle pattern.
+  async function toggleExerciseActive(ex: Exercise) {
+    if (togglingExerciseId !== null) return
+    const nextActive = !ex.active
+    setTogglingExerciseId(ex.id)
+    setExercises(prev => prev.map(e => e.id === ex.id ? { ...e, active: nextActive } : e))
+
+    const { error } = await supabase.from('exercises').update({ active: nextActive }).eq('id', ex.id)
+
+    setTogglingExerciseId(null)
+    if (error) {
+      setExercises(prev => prev.map(e => e.id === ex.id ? { ...e, active: !nextActive } : e))
+      toast.show("Couldn't save exercise", 'error')
+      return
+    }
+    toast.show(nextActive ? 'Exercise enabled' : 'Exercise disabled')
     onChanged()
   }
 
@@ -863,16 +888,55 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
                           display: 'flex', alignItems: 'center',
                           padding: '14px 16px', gap: '12px',
                           borderBottom: '1px solid var(--border)',
+                          opacity: ex.active ? 1 : 0.55,
                         }}
                       >
                         <div style={{ flex: 1 }}>
-                          <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '2px' }}>
-                            {ex.name}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
+                            <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                              {ex.name}
+                            </span>
+                            {!ex.active && (
+                              <span style={{
+                                fontSize: '10px', fontWeight: 700, letterSpacing: '0.5px',
+                                color: 'var(--text-secondary)',
+                                backgroundColor: 'var(--surface-elevated)',
+                                border: '1px solid var(--border)',
+                                padding: '2px 6px', borderRadius: '9999px',
+                                fontFamily: "'DM Sans', sans-serif",
+                              }}>
+                                OFF
+                              </span>
+                            )}
                           </div>
                           <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
                             {ex.sets_target} sets × {ex.reps_target} reps
                           </div>
                         </div>
+                        {/* Active toggle — disables the exercise for this day without
+                            deleting it (keeps history/PR bar), so it stops showing up
+                            in a new live workout or past-log entry until re-enabled. */}
+                        <button
+                          onClick={() => toggleExerciseActive(ex)}
+                          disabled={togglingExerciseId !== null}
+                          aria-label={ex.active ? `Disable ${ex.name} for this day` : `Enable ${ex.name} for this day`}
+                          title={ex.active ? 'Disable for this day' : 'Enable for this day'}
+                          style={{
+                            background: 'none', border: 'none', padding: 0, flexShrink: 0,
+                            cursor: togglingExerciseId !== null ? 'default' : 'pointer',
+                            width: '38px', height: '22px', borderRadius: '9999px',
+                            backgroundColor: ex.active ? 'var(--accent)' : 'var(--border)',
+                            position: 'relative', transition: 'background-color 150ms ease',
+                          }}
+                        >
+                          <span style={{
+                            position: 'absolute', top: '3px',
+                            left: ex.active ? '19px' : '3px',
+                            width: '16px', height: '16px', borderRadius: '50%',
+                            backgroundColor: ex.active ? 'var(--bg)' : 'var(--text-muted)',
+                            transition: 'left 150ms ease',
+                          }} />
+                        </button>
                         <button
                           onClick={() => openExerciseForm(dayKey, ex)}
                           style={{

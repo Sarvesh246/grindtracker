@@ -5,6 +5,7 @@ export interface Exercise {
   sets_target: number
   reps_target: string
   sort_order: number
+  active: boolean
   created_at: string
 }
 

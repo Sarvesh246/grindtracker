@@ -246,8 +246,11 @@ export default function DaySelect() {
           <div className="day-grid">
             {dayKeys.map((key, idx) => {
               const exs = grouped[key]
+              // Preview only active exercises so it matches what the live
+              // workout will actually offer (17-exercise-active-flag.sql).
+              const activeExs = exs.filter(e => e.active)
               const Icon = DAY_ICONS[key] ?? DefaultDayIcon
-              const description = exs.slice(0, 3).map(e => e.name).join(', ') + (exs.length > 3 ? '…' : '')
+              const description = activeExs.slice(0, 3).map(e => e.name).join(', ') + (activeExs.length > 3 ? '…' : '')
               const isUpNext = key === upNext
               return (
                 <button
@@ -307,7 +310,7 @@ export default function DaySelect() {
                         </span>
                       ) : (
                         <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                          {exs.length} exercise{exs.length !== 1 ? 's' : ''}
+                          {activeExs.length} exercise{activeExs.length !== 1 ? 's' : ''}
                         </span>
                       )}
                     </div>

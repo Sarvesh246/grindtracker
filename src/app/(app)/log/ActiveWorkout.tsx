@@ -213,14 +213,13 @@ export default function ActiveWorkout({ day }: { day: string }) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/login'); return }
 
-    const { data: exs } = await supabase
+    const { data: allDayExs } = await supabase
       .from('exercises')
       .select('*')
       .eq('day_type', day)
       .order('sort_order', { ascending: true })
 
-    if (!exs || exs.length === 0) { setLoading(false); return }
-    setExercises(exs)
+    if (!allDayExs || allDayExs.length === 0) { setLoading(false); return }
 
     const { data: allExsData } = await supabase
       .from('exercises')
@@ -228,6 +227,36 @@ export default function ActiveWorkout({ day }: { day: string }) {
       .order('day_type', { ascending: true })
       .order('sort_order', { ascending: true })
     setAllExercises(allExsData ?? [])
+
+    const todayStart = new Date()
+    todayStart.setHours(0, 0, 0, 0)
+
+    const { data: existing } = await supabase
+      .from('sessions')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('day_type', day)
+      .is('completed_at', null)
+      .gte('started_at', todayStart.toISOString())
+      .order('started_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    const existingLogs = existing
+      ? (await supabase.from('session_logs').select('*').eq('session_id', existing.id)).data ?? []
+      : []
+
+    // A disabled exercise (17-exercise-active-flag.sql) doesn't offer for a
+    // fresh workout — but if this resuming session already logged sets against
+    // it (disabled after the fact, e.g. from another tab mid-workout), it has
+    // to stay: nothing here deletes-and-reinserts session_logs wholesale, so
+    // the row is never actually lost, only hidden — dropping it from `exs`
+    // would just make it impossible to see or finish those sets this session.
+    const loggedExerciseIds = new Set(existingLogs.map(l => l.exercise_id))
+    const exs = allDayExs.filter(ex => ex.active || loggedExerciseIds.has(ex.id))
+
+    if (exs.length === 0) { setLoading(false); return }
+    setExercises(exs)
 
     // Fetches every prior non-warm-up set (not just the top weight) because
     // PR detection compares volume (weight x reps), which Postgres can't sort
@@ -262,20 +291,6 @@ export default function ActiveWorkout({ day }: { day: string }) {
     setPreviousBestVolumes(bestVolumes)
     setBaselineBestVolumes(bestVolumes)
 
-    const todayStart = new Date()
-    todayStart.setHours(0, 0, 0, 0)
-
-    const { data: existing } = await supabase
-      .from('sessions')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('day_type', day)
-      .is('completed_at', null)
-      .gte('started_at', todayStart.toISOString())
-      .order('started_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
     let sid: string
     let sessionStart: Date
 
@@ -284,14 +299,9 @@ export default function ActiveWorkout({ day }: { day: string }) {
       sessionStart = new Date(existing.started_at)
       if (existing.note) setWorkoutNote(existing.note)
 
-      const { data: existingLogs } = await supabase
-        .from('session_logs')
-        .select('*')
-        .eq('session_id', existing.id)
-
       // Count extras per exercise from highest set_number seen.
       const extras: Record<string, number> = {}
-      for (const log of existingLogs ?? []) {
+      for (const log of existingLogs) {
         const ex = exs.find(e => e.id === log.exercise_id)
         if (!ex) continue
         if (log.set_number > ex.sets_target) {
@@ -316,18 +326,23 @@ export default function ActiveWorkout({ day }: { day: string }) {
           }
         }
       }
-      for (const log of (existingLogs ?? [])) {
+      for (const log of existingLogs) {
         const key = `${log.exercise_id}-${log.set_number}`
-        restored[key] = {
-          weight: log.weight !== null ? String(log.weight) : '',
-          reps: log.reps !== null ? String(log.reps) : '',
-          checked: true,
-          skipped: false,
-          isPR: log.is_pr,
-          isWarmup: !!log.is_warmup,
-          note: log.note ?? '',
-          logId: log.id,
-        }
+        // A skip marker (weight/reps null, is_skipped true — see
+        // 18-skip-persistence.sql) restores as skipped rather than a logged
+        // set; leaves the prefilled weight placeholder from `exs` above alone.
+        restored[key] = log.is_skipped
+          ? { ...restored[key], checked: false, skipped: true, isPR: false, logId: log.id }
+          : {
+              weight: log.weight !== null ? String(log.weight) : '',
+              reps: log.reps !== null ? String(log.reps) : '',
+              checked: true,
+              skipped: false,
+              isPR: log.is_pr,
+              isWarmup: !!log.is_warmup,
+              note: log.note ?? '',
+              logId: log.id,
+            }
       }
       setLogs(restored)
 
@@ -492,6 +507,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
             is_pr: isPR,
             is_warmup: logEntry.isWarmup,
             note: logEntry.note || null,
+            is_skipped: false,
           },
           { onConflict: 'session_id,exercise_id,set_number' },
         )
@@ -599,6 +615,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         is_pr: isPR,
         is_warmup: logEntry.isWarmup,
         note: logEntry.note || null,
+        is_skipped: false,
       },
       { onConflict: 'session_id,exercise_id,set_number' },
     )
@@ -711,71 +728,107 @@ export default function ActiveWorkout({ day }: { day: string }) {
     showSaveToast('Set removed')
   }
 
-  async function handleSkipSet(exerciseId: string, setNumber: number) {
-    const key = `${exerciseId}-${setNumber}`
-    const entry = logs[key]
-    // If this set was already saved to the DB, delete it so the record doesn't
-    // persist as a completed set while the UI shows it as skipped.
-    if (entry?.checked && sessionId) {
-      await supabase
-        .from('session_logs')
-        .delete()
-        .eq('session_id', sessionId)
-        .eq('exercise_id', exerciseId)
-        .eq('set_number', setNumber)
-      // Recompute live PR bars — the deleted set may have been the best.
-      setLogs(prev => {
-        const next = { ...prev, [key]: { ...prev[key], skipped: true, checked: false, isPR: false, logId: undefined } }
-        setPreviousBests(pb => ({ ...pb, [exerciseId]: bestFromLogs(exerciseId, next) }))
-        setPreviousBestVolumes(pb => ({ ...pb, [exerciseId]: bestVolumeFromLogs(exerciseId, next) }))
-        return next
-      })
-    } else {
-      setLogs(prev => ({
-        ...prev,
-        [key]: { ...prev[key], skipped: true, checked: false },
-      }))
-    }
-    // Exit edit mode if the user is mid-edit when they skip.
-    if (editingKey === key) setEditingKey(null)
+  /**
+   * Persist a skip as a weight=null/reps=null `is_skipped` marker row (see
+   * 18-skip-persistence.sql) instead of leaving it purely in React state —
+   * otherwise closing the app and resuming rebuilds `logs` from
+   * `session_logs` alone and every skip silently reverts to "not done".
+   * Stats RPCs already filter on `weight is not null`, so these rows are
+   * inert for XP/streak/PR purposes.
+   */
+  async function persistSkip(exerciseId: string, setNumbers: number[]) {
+    if (!sessionId || setNumbers.length === 0) return
+    await supabase.from('session_logs').upsert(
+      setNumbers.map(s => ({
+        session_id: sessionId,
+        exercise_id: exerciseId,
+        set_number: s,
+        weight: null,
+        reps: null,
+        is_pr: false,
+        is_warmup: false,
+        is_skipped: true,
+      })),
+      { onConflict: 'session_id,exercise_id,set_number' },
+    )
   }
 
-  function handleUnskipSet(exerciseId: string, setNumber: number) {
+  /** Undo persistSkip — deletes the marker row(s) so resume no longer sees them. */
+  async function persistUnskip(exerciseId: string, setNumbers: number[]) {
+    if (!sessionId || setNumbers.length === 0) return
+    await supabase
+      .from('session_logs')
+      .delete()
+      .eq('session_id', sessionId)
+      .eq('exercise_id', exerciseId)
+      .in('set_number', setNumbers)
+  }
+
+  async function handleSkipSet(exerciseId: string, setNumber: number) {
+    const key = `${exerciseId}-${setNumber}`
+    const wasChecked = logs[key]?.checked
+    // persistSkip upserts the skip marker over whatever was there — including
+    // an already-saved checked row, which it overwrites (weight/reps/is_pr
+    // back to null/false) so it doesn't persist as a completed set.
+    setLogs(prev => {
+      const next = { ...prev, [key]: { ...prev[key], skipped: true, checked: false, isPR: false, logId: undefined } }
+      if (wasChecked) {
+        // Recompute live PR bars — the overwritten set may have been the best.
+        setPreviousBests(pb => ({ ...pb, [exerciseId]: bestFromLogs(exerciseId, next) }))
+        setPreviousBestVolumes(pb => ({ ...pb, [exerciseId]: bestVolumeFromLogs(exerciseId, next) }))
+      }
+      return next
+    })
+    // Exit edit mode if the user is mid-edit when they skip.
+    if (editingKey === key) setEditingKey(null)
+    await persistSkip(exerciseId, [setNumber])
+  }
+
+  async function handleUnskipSet(exerciseId: string, setNumber: number) {
     const key = `${exerciseId}-${setNumber}`
     setLogs(prev => ({
       ...prev,
-      [key]: { ...prev[key], skipped: false },
+      [key]: { ...prev[key], skipped: false, logId: undefined },
     }))
+    await persistUnskip(exerciseId, [setNumber])
   }
 
-  function handleSkipExercise(exerciseId: string) {
+  async function handleSkipExercise(exerciseId: string) {
     const ex = exercises.find(e => e.id === exerciseId)
     if (!ex) return
+    const setsToSkip: number[] = []
+    for (let s = 1; s <= ex.sets_target; s++) {
+      if (!logs[`${exerciseId}-${s}`]?.checked) setsToSkip.push(s)
+    }
     setLogs(prev => {
       const next = { ...prev }
-      for (let s = 1; s <= ex.sets_target; s++) {
+      for (const s of setsToSkip) {
         const key = `${exerciseId}-${s}`
-        if (!next[key]?.checked) {
-          next[key] = { ...next[key], skipped: true, checked: false }
-        }
+        next[key] = { ...next[key], skipped: true, checked: false }
       }
       return next
     })
+    await persistSkip(exerciseId, setsToSkip)
   }
 
-  function handleUnskipExercise(exerciseId: string) {
+  async function handleUnskipExercise(exerciseId: string) {
     const ex = exercises.find(e => e.id === exerciseId)
     if (!ex) return
+    const setsToUnskip: number[] = []
+    for (let s = 1; s <= ex.sets_target; s++) {
+      if (logs[`${exerciseId}-${s}`]?.skipped) setsToUnskip.push(s)
+    }
     setLogs(prev => {
       const next = { ...prev }
-      for (let s = 1; s <= ex.sets_target; s++) {
+      for (const s of setsToUnskip) {
         const key = `${exerciseId}-${s}`
         if (next[key]?.skipped) {
-          next[key] = { ...next[key], skipped: false }
+          next[key] = { ...next[key], skipped: false, logId: undefined }
         }
       }
       return next
     })
+    await persistUnskip(exerciseId, setsToUnskip)
   }
 
   async function handleSwapExercise(newExercise: Exercise) {

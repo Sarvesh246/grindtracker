@@ -163,11 +163,13 @@ export default async function HomePage() {
     }
   }
 
-  // Exercises for the next suggested day (to show preview in CTA)
+  // Exercises for the next suggested day (to show preview in CTA) — active
+  // only, so the preview matches what the live workout will actually offer.
   const { data: nextDayExercises } = await supabase
     .from('exercises')
     .select('name')
     .eq('day_type', nextDay)
+    .eq('active', true)
     .order('sort_order', { ascending: true })
 
   // Weekly/monthly workout counts are bucketed client-side (HomeDashboard) from
