@@ -206,7 +206,23 @@ On the live-finish path only, newly earned badges show as a full-screen
 `CompletionModal` itself no longer has its own "badges earned" section (would
 just repeat the overlay a tap later). The other two callers award badges
 silently in the background with no popup, matching their own "skip the
-celebratory modal" design.
+celebratory modal" design. The overlay only ever shows badges newly inserted
+by the finish that just ran (`award_earned_badges`'s return value, not a
+re-read of everything the user has ever earned); the title/CONTINUE button
+stay fixed while just the badge list scrolls internally
+(`overflow-y: auto` + `flex: 1 1 auto; min-height: 0` on the list, `max-height:
+calc(100dvh - 64px)` on the card) so a large batch never pushes the CTA off
+the bottom of the screen. If the user undoes the finish from `CompletionModal`
+within the 10-minute window, `handleUndoFinish` also calls
+`revoke_recent_badges` (migration `21-badge-session-fixes.sql`) with the exact
+badge ids that finish just awarded — otherwise re-finishing the same workout
+would satisfy the same conditions but skip the insert (already earned), so
+badges the user saw once would silently never reappear. `revoke_recent_badges`
+is scoped server-side to the caller and to badges earned in the last 15
+minutes, so a stale token can't strip long-held badges. Migration `21` also
+fixes `award_earned_badges`'s `p_start_hour` param, which migration `20`
+shipped mismatched against the client call (`p_session_started_at`) — every
+award silently failed until `21` is applied.
 
 **Stats are server-authoritative (migration `11-server-side-xp.sql`).** The rules
 above are now implemented in Postgres, not the browser. `grind_recompute_stats()`
