@@ -817,18 +817,35 @@ export default function ActiveWorkout({ day }: { day: string }) {
   async function handleSkipExercise(exerciseId: string) {
     const ex = exercises.find(e => e.id === exerciseId)
     if (!ex) return
+    // Skip every set that isn't already skipped — including already-checked
+    // ones, so an exercise that was logged by accident (e.g. tapped the wrong
+    // exercise's card) can still be cleared and skipped in one tap, rather
+    // than getting stuck as neither fully skipped nor undoable.
     const setsToSkip: number[] = []
+    let anyWasChecked = false
     for (let s = 1; s <= ex.sets_target; s++) {
-      if (!logs[`${exerciseId}-${s}`]?.checked) setsToSkip.push(s)
+      const entry = logs[`${exerciseId}-${s}`]
+      if (!entry?.skipped) setsToSkip.push(s)
+      if (entry?.checked) anyWasChecked = true
     }
+    if (setsToSkip.length === 0) return
     setLogs(prev => {
       const next = { ...prev }
       for (const s of setsToSkip) {
         const key = `${exerciseId}-${s}`
-        next[key] = { ...next[key], skipped: true, checked: false }
+        next[key] = { ...next[key], skipped: true, checked: false, isPR: false, logId: undefined }
+      }
+      if (anyWasChecked) {
+        // Recompute live PR bars — a set we just cleared may have been the best.
+        setPreviousBests(pb => ({ ...pb, [exerciseId]: bestFromLogs(exerciseId, next) }))
+        setPreviousBestVolumes(pb => ({ ...pb, [exerciseId]: bestVolumeFromLogs(exerciseId, next) }))
       }
       return next
     })
+    // Exit edit mode if the user was mid-edit on one of the sets we just skipped.
+    if (editingKey && setsToSkip.some(s => editingKey === `${exerciseId}-${s}`)) {
+      setEditingKey(null)
+    }
     await persistSkip(exerciseId, setsToSkip)
   }
 
