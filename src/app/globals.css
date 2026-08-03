@@ -404,6 +404,14 @@ select:focus-visible,
   to { opacity: 0; transform: translateY(4px); }
 }
 
+/* Bottom sheets that slide up from the edge of the viewport (body-weight entry
+   editor). CSS-driven so `html.reduce-motion` and the OS media query below
+   both neutralize it without the component tracking any animation state. */
+@keyframes sheet-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
 /* Small inline popovers (rest-timer adjust grid, default-rest row) — quick
    fade + settle so they don't just snap into existence. */
 @keyframes popover-in {

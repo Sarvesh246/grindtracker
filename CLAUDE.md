@@ -100,6 +100,8 @@ Both share `UnitContext`, so the kg/lbs toggle stays in sync across them.
   last_workout_date, total_workouts
 - user_badges — user_id, badge_id, earned_at
 - body_weights — user_id, weight, recorded_at (date). UNIQUE (user_id, recorded_at).
+  One row per calendar day; `BodyWeightCard` upserts on that pair. See Body
+  weight editing below.
 - user_profiles — id (= auth uid), username (unique), display_name, avatar_url
 - friendships — requester_id, addressee_id, status ('pending' | 'accepted')
 - user_day_categories — (user_id, day_key) → category ('push'|'pull'|'legs'|'other'),
@@ -300,6 +302,29 @@ for routing only — it decides whether the Profile link renders and whether
 `/admin/feedback` 404s, and grants nothing on its own. "Anonymous" is a display
 choice: `user_id` is always recorded (abuse control) and the inbox has a
 "reveal sender" affordance.
+
+### Body weight editing (src/app/(app)/profile/BodyWeightCard.tsx)
+The card shows the last 90 days. The text field at the top only ever logs
+TODAY; every past entry is corrected by **tapping its dot on the chart**
+(each dot carries a transparent r=14 hit circle so the target clears 44px,
+and the selected one gets an accent halo), which opens a bottom-sheet
+`Dialog` with the date, a prefilled input, SAVE, and a destructive "Delete
+this entry" that swaps the sheet into a DELETE/KEEP confirm rather than
+stacking a second modal.
+
+The full list is a **collapsed** "History" disclosure below the chart — it
+used to render every reading inline, which after months of daily logging
+buried the rest of the profile. Expanded, it's a scrolling (`max-height:
+240px`) list of full-width buttons opening the same sheet, and it doubles as
+the keyboard/screen-reader equivalent of the `aria-hidden` chart, so keep it
+in the DOM and keep every entry reachable from it.
+
+Deletes are a plain `body_weights` DELETE — the table's single `for all`
+policy (`03-body-weights.sql`) already covers it, no migration needed. The
+sheet's slide-up is the CSS `sheet-up` keyframe in `globals.css`, not
+state-driven, so `html.reduce-motion` neutralizes it for free (unlike the
+Recharts line, which still needs the explicit `isAnimationActive` opt-out
+described under Reduced motion).
 
 ### Dates & timezones (important)
 Streak/calendar logic is timezone-sensitive. Always derive a date key from local

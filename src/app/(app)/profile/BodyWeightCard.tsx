@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   LineChart,
   Line,
@@ -12,10 +12,24 @@ import { createClient } from '@/lib/supabase/client'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { useToast } from '@/lib/contexts/ToastContext'
 import { useMotionPref } from '@/lib/contexts/MotionContext'
+import Dialog from '@/components/ui/Dialog'
 
 interface Row {
   weight: number
   recorded_at: string
+}
+
+interface Point {
+  /** YYYY-MM-DD key, unique per entry (one weight per day). */
+  date: string
+  /** Stored value, always canonical lbs. */
+  canonical: number
+  /** Short axis / list label, e.g. "Jun 30". */
+  displayDate: string
+  /** Long label for the editor sheet, e.g. "Monday, June 30". */
+  longDate: string
+  /** Value in the active display unit — what the chart plots. */
+  weight: number
 }
 
 function todayDateKey(): string {
@@ -33,9 +47,20 @@ export default function BodyWeightCard() {
   const { reduceMotion } = useMotionPref()
   const [rows, setRows] = useState<Row[]>([])
   const [draft, setDraft] = useState('')
-  const [editingDate, setEditingDate] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
+
+  // The entry currently open in the edit sheet — picked by tapping its dot on
+  // the chart or its row in the history list.
+  const [selected, setSelected] = useState<Point | null>(null)
+  const [editDraft, setEditDraft] = useState('')
+  const [busy, setBusy] = useState<'saving' | 'deleting' | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const editInputRef = useRef<HTMLInputElement>(null)
+
+  // History is collapsed by default: after months of daily logging the full
+  // list dwarfs the rest of the card, and the chart already carries the trend.
+  const [historyOpen, setHistoryOpen] = useState(false)
 
   useEffect(() => {
     load()
@@ -62,16 +87,6 @@ export default function BodyWeightCard() {
     setLoading(false)
   }
 
-  function startEdit(date: string, weight: number) {
-    setEditingDate(date)
-    setDraft(fmt(weight))
-  }
-
-  function cancelEdit() {
-    setEditingDate(null)
-    setDraft('')
-  }
-
   async function handleSave() {
     const w = parseFloat(draft)
     if (!Number.isFinite(w) || w <= 0) return
@@ -79,26 +94,84 @@ export default function BodyWeightCard() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setSaving(false); return }
 
-    const wasEditing = editingDate !== null
-    const keptDraft = draft
-    const keptDate = editingDate
     const { error } = await supabase.from('body_weights').upsert(
-      { user_id: user.id, weight: fromDisplay(w), recorded_at: editingDate ?? todayDateKey() },
+      { user_id: user.id, weight: fromDisplay(w), recorded_at: todayDateKey() },
       { onConflict: 'user_id,recorded_at' },
     )
     if (error) {
       setSaving(false)
-      toast.show('Could not save weight. Try again.')
       // Keep the draft so the user doesn't lose a typed value.
-      setDraft(keptDraft)
-      setEditingDate(keptDate)
+      toast.show('Could not save weight. Try again.')
       return
     }
     await load()
     setDraft('')
-    setEditingDate(null)
     setSaving(false)
-    toast.show(wasEditing ? 'Weight updated' : 'Weight logged')
+    toast.show('Weight logged')
+  }
+
+  function openEntry(p: Point) {
+    setSelected(p)
+    setEditDraft(fmt(p.canonical))
+    setConfirmDelete(false)
+  }
+
+  function closeEntry() {
+    if (busy) return
+    setSelected(null)
+    setEditDraft('')
+    setConfirmDelete(false)
+  }
+
+  async function handleUpdate() {
+    if (!selected) return
+    const w = parseFloat(editDraft)
+    if (!Number.isFinite(w) || w <= 0) return
+    setBusy('saving')
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { setBusy(null); return }
+
+    const { error } = await supabase.from('body_weights').upsert(
+      { user_id: user.id, weight: fromDisplay(w), recorded_at: selected.date },
+      { onConflict: 'user_id,recorded_at' },
+    )
+    if (error) {
+      setBusy(null)
+      // Sheet stays open with the typed value intact so it can be retried.
+      toast.show('Could not update weight. Try again.')
+      return
+    }
+    await load()
+    setBusy(null)
+    setSelected(null)
+    setEditDraft('')
+    toast.show('Weight updated')
+  }
+
+  async function handleDelete() {
+    if (!selected) return
+    setBusy('deleting')
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { setBusy(null); return }
+
+    const { error } = await supabase
+      .from('body_weights')
+      .delete()
+      .eq('user_id', user.id)
+      .eq('recorded_at', selected.date)
+
+    if (error) {
+      setBusy(null)
+      setConfirmDelete(false)
+      toast.show('Could not delete entry. Try again.')
+      return
+    }
+    await load()
+    setBusy(null)
+    setSelected(null)
+    setEditDraft('')
+    setConfirmDelete(false)
+    toast.show('Entry deleted')
   }
 
   const latest = rows.length > 0 ? rows[rows.length - 1] : null
@@ -107,24 +180,35 @@ export default function BodyWeightCard() {
     ? toDisplay(latest.weight) - toDisplay(earliest.weight)
     : 0
 
-  const chartPoints = rows.map(r => ({
-    date: r.recorded_at,
-    canonical: r.weight,
-    displayDate: new Date(r.recorded_at + 'T00:00:00').toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-    }),
-    weight: toDisplay(r.weight),
-  }))
+  const chartPoints: Point[] = rows.map(r => {
+    const d = new Date(r.recorded_at + 'T00:00:00')
+    return {
+      date: r.recorded_at,
+      canonical: r.weight,
+      displayDate: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      longDate: d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }),
+      weight: toDisplay(r.weight),
+    }
+  })
 
-  // Clickable / keyboard-focusable chart point.
+  const pointsNewestFirst = [...chartPoints].reverse()
+
+  // Chart point: a transparent 14px-radius circle sits under the visible dot so
+  // the tap target clears the 44px minimum even though the dot itself is 8px.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const renderDot = (props: any) => {
     const { cx, cy, payload } = props
     if (cx == null || cy == null) return <g key={payload?.date} />
-    const active = payload?.date === editingDate
+    const active = payload?.date === selected?.date
+    const point = chartPoints.find(p => p.date === payload?.date)
     return (
-      <g key={payload.date}>
+      <g
+        key={payload.date}
+        style={{ cursor: 'pointer' }}
+        onClick={() => point && openEntry(point)}
+      >
+        <circle cx={cx} cy={cy} r={14} fill="transparent" />
+        {active && <circle cx={cx} cy={cy} r={9} fill="var(--accent)" opacity={0.25} />}
         <circle
           cx={cx}
           cy={cy}
@@ -132,11 +216,7 @@ export default function BodyWeightCard() {
           fill="var(--accent)"
           stroke="var(--surface)"
           strokeWidth={2}
-          style={{ cursor: 'pointer' }}
-          onClick={() => startEdit(payload.date, payload.canonical)}
         />
-        {/* Larger invisible hit target for pointer + keyboard via foreignObject isn't needed —
-            expose an sr-only button list of logs below the chart instead. */}
       </g>
     )
   }
@@ -194,51 +274,17 @@ export default function BodyWeightCard() {
         )}
       </div>
 
-      {editingDate && (
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            fontSize: '11px',
-            color: 'var(--text-secondary)',
-          }}
-        >
-          <span>
-            Editing{' '}
-            <span style={{ color: 'var(--accent-text)' }}>
-              {new Date(editingDate + 'T00:00:00').toLocaleDateString('en-US', {
-                month: 'short',
-                day: 'numeric',
-              })}
-            </span>
-          </span>
-          <button
-            onClick={cancelEdit}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--text-muted)',
-              fontSize: '11px',
-              cursor: 'pointer',
-              padding: 0,
-            }}
-          >
-            Cancel
-          </button>
-        </div>
-      )}
-
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
         <input
           type="number"
           inputMode="decimal"
           value={draft}
           onChange={e => setDraft(e.target.value)}
-          placeholder={editingDate ? 'Edit weight' : 'Log today'}
-          aria-label={editingDate ? 'Edit body weight' : "Today's body weight"}
+          placeholder="Log today"
+          aria-label="Today's body weight"
           style={{
             flex: 1,
+            minWidth: 0,
             backgroundColor: 'var(--surface-elevated)',
             border: '1px solid var(--border)',
             borderRadius: 'var(--radius-sm)',
@@ -266,7 +312,7 @@ export default function BodyWeightCard() {
             cursor: saving || !draft ? 'not-allowed' : 'pointer',
           }}
         >
-          {saving ? '...' : editingDate ? 'UPDATE' : 'LOG'}
+          {saving ? '...' : 'LOG'}
         </button>
       </div>
 
@@ -321,57 +367,272 @@ export default function BodyWeightCard() {
               </LineChart>
             </ResponsiveContainer>
           </div>
-          <table
-            style={{
-              width: '100%',
-              borderCollapse: 'collapse',
-              fontSize: '12px',
-              marginTop: '8px',
-            }}
-          >
-            <caption style={{
-              position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)',
-            }}>
-              Body weight history
-            </caption>
-            <thead>
-              <tr style={{ color: 'var(--text-muted)', textAlign: 'left' }}>
-                <th scope="col" style={{ padding: '4px 0', fontWeight: 500 }}>Date</th>
-                <th scope="col" style={{ padding: '4px 0', fontWeight: 500 }}>Weight ({unitLabel})</th>
-                <th scope="col" style={{ padding: '4px 0', fontWeight: 500 }}>
-                  <span className="sr-only">Edit</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...chartPoints].reverse().slice(0, 8).map(p => (
-                <tr key={p.date} style={{ borderTop: '1px solid var(--border)' }}>
-                  <td style={{ padding: '8px 0', color: 'var(--text-secondary)' }}>{p.displayDate}</td>
-                  <td style={{ padding: '8px 0', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
-                    {fmt(p.canonical)}
-                  </td>
-                  <td style={{ padding: '8px 0', textAlign: 'right' }}>
+
+          {/* The dots are the primary edit affordance, so say so — nothing about a
+              plotted point reads as tappable on its own. */}
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center' }}>
+            Tap a point to edit or delete it
+          </div>
+
+          {/* History: collapsed by default. It doubles as the keyboard- and
+              screen-reader-accessible equivalent of the aria-hidden chart, so
+              every entry stays reachable — just not always on screen. */}
+          <div style={{ borderTop: '1px solid var(--border)', paddingTop: '4px' }}>
+            <button
+              type="button"
+              onClick={() => setHistoryOpen(o => !o)}
+              aria-expanded={historyOpen}
+              aria-controls="bw-history"
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '8px',
+                minHeight: '40px',
+                padding: '0 2px',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                color: 'var(--text-secondary)',
+                fontFamily: 'var(--font-sans)',
+                fontSize: '12px',
+              }}
+            >
+              <span style={{ letterSpacing: '1px', textTransform: 'uppercase' }}>
+                History
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)' }}>
+                <span style={{ fontFamily: 'var(--font-mono)' }}>
+                  {chartPoints.length} {chartPoints.length === 1 ? 'entry' : 'entries'}
+                </span>
+                <svg
+                  width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                  aria-hidden="true"
+                  style={{
+                    transform: historyOpen ? 'rotate(180deg)' : 'none',
+                    transition: 'transform 150ms ease',
+                  }}
+                >
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </span>
+            </button>
+
+            {historyOpen && (
+              <ul
+                id="bw-history"
+                aria-label="Body weight history, newest first"
+                style={{
+                  listStyle: 'none',
+                  margin: 0,
+                  padding: 0,
+                  // Cap the list so a year of daily logs can't stretch the card
+                  // off the screen — it scrolls inside the card instead.
+                  maxHeight: '240px',
+                  overflowY: 'auto',
+                  WebkitOverflowScrolling: 'touch',
+                }}
+              >
+                {pointsNewestFirst.map(p => (
+                  <li key={p.date}>
                     <button
                       type="button"
-                      onClick={() => startEdit(p.date, p.canonical)}
+                      onClick={() => openEntry(p)}
                       style={{
+                        width: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '12px',
+                        minHeight: '40px',
+                        padding: '0 2px',
                         background: 'none',
                         border: 'none',
-                        color: 'var(--accent-text)',
-                        fontSize: '11px',
+                        borderTop: '1px solid var(--border)',
                         cursor: 'pointer',
-                        minHeight: '44px',
-                        minWidth: '44px',
+                        textAlign: 'left',
+                        fontFamily: 'var(--font-sans)',
+                        fontSize: '12px',
+                        color: 'var(--text-secondary)',
                       }}
                     >
-                      Edit
+                      <span>{p.displayDate}</span>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
+                          {fmt(p.canonical)} {unitLabel}
+                        </span>
+                        <span className="sr-only">— edit or delete</span>
+                        <svg
+                          width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                          strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                          aria-hidden="true" style={{ color: 'var(--text-muted)' }}
+                        >
+                          <polyline points="9 18 15 12 9 6" />
+                        </svg>
+                      </span>
                     </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </>
+      )}
+
+      {selected && (
+        <Dialog
+          open
+          onClose={closeEntry}
+          title={`Edit body weight for ${selected.longDate}`}
+          initialFocusRef={editInputRef}
+          panelStyle={{ maxWidth: '480px' }}
+        >
+          <div
+            style={{
+              width: '100%',
+              backgroundColor: 'var(--surface)',
+              border: '1px solid var(--border)',
+              borderBottom: 'none',
+              borderRadius: '20px 20px 0 0',
+              padding: '20px 20px calc(28px + env(safe-area-inset-bottom))',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '14px',
+              // CSS keyframe (not state-driven) so reduce-motion zeroes it for free.
+              animation: 'sheet-up 220ms ease',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '12px' }}>
+              <div>
+                <div style={{
+                  fontFamily: 'var(--font-display)', fontSize: '18px',
+                  color: 'var(--text-primary)', letterSpacing: '1px',
+                }}>
+                  {selected.longDate.toUpperCase()}
+                </div>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  Logged at {fmt(selected.canonical)} {unitLabel}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closeEntry}
+                aria-label="Close"
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  color: 'var(--text-muted)', padding: '4px', margin: '-4px',
+                  display: 'flex', alignItems: 'center',
+                }}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+
+            {confirmDelete ? (
+              <>
+                <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.5, margin: 0 }}>
+                  Delete this entry? Your weight for {selected.displayDate} will be removed from the chart.
+                </p>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={handleDelete}
+                    disabled={busy !== null}
+                    style={{
+                      flex: 1, height: '46px', borderRadius: 'var(--radius-sm)', border: 'none',
+                      backgroundColor: 'var(--danger)', color: '#fff',
+                      fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 700,
+                      letterSpacing: '0.5px',
+                      cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.6 : 1,
+                    }}
+                  >
+                    {busy === 'deleting' ? 'DELETING...' : 'DELETE'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDelete(false)}
+                    disabled={busy !== null}
+                    style={{
+                      flex: 1, height: '46px', borderRadius: 'var(--radius-sm)',
+                      border: '1px solid var(--border)', backgroundColor: 'var(--surface-elevated)',
+                      color: 'var(--text-primary)', fontFamily: 'var(--font-sans)',
+                      fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+                    }}
+                  >
+                    KEEP
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <input
+                    ref={editInputRef}
+                    type="number"
+                    inputMode="decimal"
+                    value={editDraft}
+                    onChange={e => setEditDraft(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleUpdate() }}
+                    aria-label={`Body weight for ${selected.longDate} in ${unitLabel}`}
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      backgroundColor: 'var(--surface-elevated)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 'var(--radius-sm)',
+                      color: 'var(--text-primary)',
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: '16px',
+                      padding: '10px 12px',
+                      height: '46px',
+                    }}
+                  />
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{unitLabel}</span>
+                  <button
+                    type="button"
+                    onClick={handleUpdate}
+                    disabled={busy !== null || !editDraft}
+                    style={{
+                      height: '46px', padding: '0 20px', borderRadius: 'var(--radius-sm)', border: 'none',
+                      backgroundColor: busy || !editDraft ? 'var(--surface-elevated)' : 'var(--accent)',
+                      color: busy || !editDraft ? 'var(--text-muted)' : 'var(--on-accent)',
+                      fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 700,
+                      letterSpacing: '0.5px',
+                      cursor: busy || !editDraft ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    {busy === 'saving' ? '...' : 'SAVE'}
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(true)}
+                  disabled={busy !== null}
+                  style={{
+                    alignSelf: 'center',
+                    display: 'flex', alignItems: 'center', gap: '6px',
+                    minHeight: '44px', padding: '0 12px',
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    color: 'var(--danger)', fontFamily: 'var(--font-sans)', fontSize: '13px',
+                  }}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <polyline points="3 6 5 6 21 6" />
+                    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                    <path d="M10 11v6M14 11v6" />
+                    <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                  </svg>
+                  Delete this entry
+                </button>
+              </>
+            )}
+          </div>
+        </Dialog>
       )}
     </div>
   )
