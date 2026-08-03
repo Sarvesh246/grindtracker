@@ -180,8 +180,18 @@ export default function FeedbackModal({ onClose }: { onClose: () => void }) {
     }
 
     // Upload attachments first: the row stores their paths, so it can only be
-    // written once every object is safely in the bucket.
+    // written once every object is safely in the bucket. On any later failure
+    // we delete already-uploaded objects so they don't orphan forever.
     const paths: string[] = []
+    async function cleanupUploads() {
+      if (paths.length === 0) return
+      try {
+        await supabase.storage.from('feedback-images').remove(paths)
+      } catch {
+        // best-effort; storage policy allows owner-folder delete after migration 20
+      }
+    }
+
     for (const a of attachments) {
       const path = `${user.id}/${crypto.randomUUID()}.${extensionFor(a.file)}`
       const { error: uploadError } = await supabase
@@ -189,6 +199,7 @@ export default function FeedbackModal({ onClose }: { onClose: () => void }) {
         .from('feedback-images')
         .upload(path, a.file, { contentType: a.file.type, upsert: false })
       if (uploadError) {
+        await cleanupUploads()
         setError(`Couldn't upload "${a.file.name}". ${uploadError.message}`)
         setSubmitting(false)
         return
@@ -215,6 +226,7 @@ export default function FeedbackModal({ onClose }: { onClose: () => void }) {
     })
 
     if (insertError) {
+      await cleanupUploads()
       // The trigger fires here if the pre-flight raced or was bypassed.
       setError(friendlyError(insertError.message))
       setSubmitting(false)

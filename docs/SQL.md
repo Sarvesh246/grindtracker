@@ -2,64 +2,68 @@
 
 Schema changes ship as standalone SQL snippets in [docs/sql/](sql/). Apply each by pasting into the Supabase dashboard's SQL editor and running. All scripts are idempotent (`if not exists` / `add column if not exists`).
 
+> **Production-critical:** After pulling code that references new RPCs, always
+> apply the matching SQL file **before** (or immediately with) the app deploy.
+> Migration **20** hardens stats/badges/session writes and **revokes** direct
+> client mutations the old code relied on — the app and SQL must ship together.
+
+Tracked copies also live under `supabase/migrations/` for CLI-based environments
+(`supabase db push` / linked projects). The numbered files in `docs/sql/` remain
+the authoritative, dashboard-pasteable source of truth until the remote project
+is fully linked to migration history.
+
 | File | Phase | What it adds |
 | --- | --- | --- |
-| [02-warmup-and-notes.sql](sql/02-warmup-and-notes.sql) | 2 | `session_logs.is_warmup`, `session_logs.note`, `sessions.note`, partial index for fast PR queries. |
-| [03-body-weights.sql](sql/03-body-weights.sql) | 3 | `body_weights` table with RLS policy + user/date index. |
-| [04-session-delete-rls.sql](sql/04-session-delete-rls.sql) | 4 | RLS `delete` policies on `sessions` and `session_logs` so discard workout works. |
-| [05-user-day-categories.sql](sql/05-user-day-categories.sql) | 5 | `user_day_categories` table with RLS, and replacement `get_leaderboard` RPC with category-aware matching (explicit mapping + literal fallback for standard push/pull/legs names). |
-| [06-user-rotation.sql](sql/06-user-rotation.sql) | 6 | `user_rotation` table with RLS — per-user suggested workout order (an ordered loop of day_keys that may repeat) plus the `current_index` pointer the home page advances. |
-| [07-exercises-per-user.sql](sql/07-exercises-per-user.sql) | 7 | Adds `exercises.user_id` + RLS so the exercise/day catalog is private per user (previously one global catalog shared by all accounts). Backfills existing rows to the original user; new users start with a blank slate. |
-| [08-flex-days.sql](sql/08-flex-days.sql) | 8 | `user_flex_days` table with RLS — days the auto-rotation skips (abs, cardio) so they never advance or appear in the suggestion. |
-| [09-feedback.sql](sql/09-feedback.sql) | 9 | `feedback` table + `is_grind_admin()` predicate, the private `feedback-images` storage bucket with its policies, and the `feedback_rate_limit` BEFORE INSERT trigger (3 per 10 min, 20 per day, per user). Users insert their own feedback; only the admin account can read all of it, mark read/starred, or delete. |
-| [10-leaderboard-authz.sql](sql/10-leaderboard-authz.sql) | 10 | **Security fix.** `get_leaderboard` accepted any `p_user_ids` and ran `security definer`, so any signed-in user could read any other user's stats by uuid. Now intersects the request with the caller's own id + accepted friendships, pins `search_path`, and restricts EXECUTE to `authenticated`. Adds the indexes the RPC and username search need, plus sanity CHECK constraints on `session_logs.weight`/`reps`. |
-| [11-server-side-xp.sql](sql/11-server-side-xp.sql) | 11 | **Security fix.** XP/level/streak were computed in the browser and written straight to `user_stats` — anyone could set their own XP from devtools. Stats are now DERIVED server-side from `sessions` + `session_logs` by `grind_recompute_stats()`, exposed through the `complete_session` / `uncomplete_session` / `delete_session` / `refresh_stats` RPCs. Revokes client UPDATE on `user_stats` and column-restricts UPDATE on `sessions`. Adds `sessions.local_date` (streaks need the user's calendar date, not UTC) and seeds `user_stats` on signup. |
+| [02-warmup-and-notes.sql](sql/02-warmup-and-notes.sql) | 2 | Warm-up/notes columns |
+| [03-body-weights.sql](sql/03-body-weights.sql) | 3 | Body weights table |
+| [04-session-delete-rls.sql](sql/04-session-delete-rls.sql) | 4 | Session delete RLS |
+| [05-user-day-categories.sql](sql/05-user-day-categories.sql) | 5 | Day categories + leaderboard |
+| [06-user-rotation.sql](sql/06-user-rotation.sql) | 6 | Workout rotation |
+| [07-exercises-per-user.sql](sql/07-exercises-per-user.sql) | 7 | Per-user exercise catalog |
+| [08-flex-days.sql](sql/08-flex-days.sql) | 8 | Flex days |
+| [09-feedback.sql](sql/09-feedback.sql) | 9 | Feedback + admin inbox |
+| [10-leaderboard-authz.sql](sql/10-leaderboard-authz.sql) | 10 | Leaderboard authz |
+| [11-server-side-xp.sql](sql/11-server-side-xp.sql) | 11 | Server-derived XP/streak |
+| [12-friendship-authz.sql](sql/12-friendship-authz.sql) | 12 | Friendship authz |
+| [13-recompute-no-temp-table.sql](sql/13-recompute-no-temp-table.sql) | 13 | Recompute temp-table fix |
+| [14-rest-days.sql](sql/14-rest-days.sql) | 14 | Rest-day streak logic |
+| [15-volume-based-prs.sql](sql/15-volume-based-prs.sql) | 15 | Volume-based PRs |
+| [16-badge-metrics.sql](sql/16-badge-metrics.sql) | 16 | Badge metrics RPC |
+| [17-exercise-active-flag.sql](sql/17-exercise-active-flag.sql) | 17 | Exercise active flag |
+| [18-skip-persistence.sql](sql/18-skip-persistence.sql) | 18 | Skip markers |
+| [19-friend-profile.sql](sql/19-friend-profile.sql) | 19 | Friend profile RPC |
+| [20-production-hardening.sql](sql/20-production-hardening.sql) | 20 | **Security / integrity hardening** (see below) |
 
-| [12-friendship-authz.sql](sql/12-friendship-authz.sql) | 12 | **Security fix.** `friendships` had one `ALL` policy testing only "am I involved in this row", so a requester could accept their own request — or insert a pre-accepted friendship naming someone else as requester. Split into per-command policies: INSERT only as yourself and only `pending`, UPDATE only by the addressee and only `pending`→`accepted`, DELETE by either party. Adds status/no-self CHECKs and a unique index per pair. Also narrows `user_profiles` SELECT from `public` (readable by `anon` with just the publishable key) to `authenticated`. |
-| [13-recompute-no-temp-table.sql](sql/13-recompute-no-temp-table.sql) | 13 | **Bug fix.** `grind_recompute_stats()` built its gaps-and-islands runs in a session-local `TEMP TABLE ... ON COMMIT DROP`, which poisons the PL/pgSQL plan cache on Supabase's pooled PostgREST connections: the cached plan binds to the temp table's OID, the table is dropped at commit, and the next request on the same backend fails with `relation "_grind_runs" does not exist`. That deterministically broke **workout completion** ("Could not finish workout. Check your connection and try again." on a good connection — and the client retry can't recover a deterministic server error). Rewrites the function to compute the runs as inline CTEs (no temp table); the derivation is unchanged. Idempotent `create or replace` — just run it on any environment that already applied `11`. |
-| [14-rest-days.sql](sql/14-rest-days.sql) | 14 | **Feature.** Adds `user_rest_days` (recurring weekly rest days) and `user_rest_dates` (one-off confirmed rest dates), both RLS-protected single-owner tables mirroring `user_flex_days`. Rewrites `grind_recompute_stats()` so a gap between workouts no longer breaks the streak as long as every day in the gap is a configured rest day — replacing the old hardcoded "gap > 1 day breaks it" rule with a `grind_dates_connected()` helper, still without a temp table (arrays + a loop instead, per `13`). Non-disruptive: both tables start empty, so nobody's stored streak changes until they configure a rest day. |
-| [15-volume-based-prs.sql](sql/15-volume-based-prs.sql) | 15 | **Behavior change.** PR detection was weight-only, so a heavier single at low reps could register as a PR over a genuinely bigger set at more reps. `grind_recompute_stats()` step 1 now compares WEIGHT x REPS (volume) instead of raw weight. `complete_session()`'s PR list now picks the highest-volume PR set per exercise (not the heaviest) and returns reps alongside weight. Recomputes `is_pr` for every existing set on next run — some old PR flags may flip; see the dry-run note at the bottom of the file. |
-| [16-badge-metrics.sql](sql/16-badge-metrics.sql) | 16 | **Feature.** Adds `grind_badge_metrics()`, a single RPC returning lifetime volume, heaviest/highest-rep set ever logged, distinct exercise count, and whether a recurring rest day / accepted friend / body-weight log exists — the aggregates the expanded (14 → 35) badge set needs. Not security definer: every subquery filters on `auth.uid()` directly, so it can only ever report the caller's own data. |
-| [17-exercise-active-flag.sql](sql/17-exercise-active-flag.sql) | 17 | **Feature.** Adds `exercises.active` (default `true`) — lets a user disable an exercise for a day from Manage Workouts without deleting it, so it stops appearing in new live workouts / past-log entry while keeping its history and PR bar intact. No RLS change; the existing per-user policy already covers it. |
-| [18-skip-persistence.sql](sql/18-skip-persistence.sql) | 18 | **Bug fix.** Skipping a set in an active workout only lived in React state, so closing and resuming the app silently un-skipped it. Adds `session_logs.is_skipped` — the client now upserts a `weight=null` marker row on skip and deletes it on undo, so resume can distinguish "skipped" from "never attempted". A CHECK constraint enforces `is_skipped` rows always carry a null weight/reps, so they stay invisible to every stats RPC (all already filter on `weight is not null`) without any RPC change. |
-| [19-friend-profile.sql](sql/19-friend-profile.sql) | 19 | **Feature.** Adds `get_friend_profile(p_user_id)`, a `security definer` RPC backing the leaderboard's tap-a-row friend profile view — returns profile info + `user_stats` + lifetime aggregates (PRs, sets, distinct active days) + earned badge ids for one user. Gated like `get_leaderboard`: self, or an accepted friend either direction; anyone else raises `NOT_VISIBLE`. `days_active` counts distinct `sessions.local_date`, not the viewer's timezone (there's no sound timezone to view a friend's calendar through). |
+## Deploying 20
 
-Apply in order. **`10` does not actually close the leaderboard hole until `12` is
-applied** — `get_leaderboard` authorizes on `status = 'accepted'`, and until `12`
-any user can mint that acceptance for themselves. **`09` must be applied before the feedback button will work** — until then, submitting fails and `/admin/feedback` shows an empty inbox. Once `02` is in, warm-up sets are excluded from PR detection and previous-best prefill. Once `03` is in, the profile page's body-weight card starts persisting. Until `06` is applied the rotation falls back to automatic (every day once) for everyone. **`07` is required for multi-user privacy** — until it's applied, every account shares (and can edit) one exercise catalog.
+`20-production-hardening.sql` must be applied before the app that consumes it.
+
+1. Run `docs/sql/20-production-hardening.sql` in the Supabase SQL editor.
+2. Sanity checks:
+   - `select * from grind_stats_drift();` — non-admin fails with `ADMIN_REQUIRED`
+   - Completing with zero working sets raises `NO_WORKING_SETS`
+   - Direct insert of a completed session is rejected by the session write guard
+3. Deploy the app.
+4. In Supabase Auth dashboard → enable **Leaked password protection** (project setting; not in SQL).
+
+### What 20 changes
+
+- Admin-only `grind_stats_drift`
+- `complete_session` requires ≥1 non-skipped set with weight+reps
+- Transactional `upsert_past_session` (no client delete-then-insert of logs)
+- Partial unique indexes: one open session per day_type; one completed per local_date+day_type
+- `start_or_resume_session` atomic open-session create
+- `award_earned_badges` server-side; revoke client INSERT/UPDATE/DELETE on `user_badges`
+- 10-minute window for `uncomplete_session` enforced in Postgres
+- `grind_dates_connected` self-only
+- `get_exercise_bests` + `grind_home_history` aggregate helpers
+- Owner delete policy on `feedback-images`
+
+## Online-only PWA note
+
+GRIND is online-only today: the installable shell (manifest) does not include a
+service worker or offline workout queue. Connectivity is required to start,
+log, and finish workouts. A scoped offline queue is a future enhancement, not
+silently supported.
 
 If you have multiple Supabase environments (e.g., preview + prod), run the same scripts on each.
-
-## ⚠️ Deploying 10 and 11
-
-`11` **revokes the client's ability to write `user_stats`**, and the app code in
-this repo already calls the RPCs it introduces. The two must ship together:
-
-1. Run the drift check first — it is read-only and tells you whether recomputing
-   will change anyone's stored totals:
-   ```sql
-   -- paste only the grind_stats_drift() definition from 11, then:
-   select * from grind_stats_drift();
-   ```
-   All-zero deltas mean applying `11` changes enforcement only. Non-zero deltas
-   mean the stored values had drifted and will be corrected to what the logs
-   justify.
-2. Apply `10`, then `11`, then `12`.
-3. Deploy the app.
-
-**`07` may never have been applied.** A `pg_tables` dump on 2026-07-22 showed
-`exercises.rowsecurity = false`, which is impossible if `07` ran to completion —
-it ends with `enable row level security`. Until it is applied, the exercise
-catalog has no row filtering at all: every account shares one catalog and, if
-`anon` holds table grants, an unauthenticated request carrying the publishable
-key can read and delete all of it. Check with:
-
-```sql
-select relrowsecurity from pg_class where relname = 'exercises';
-select column_name from information_schema.columns
- where table_name='exercises' and column_name='user_id';
-```
-
-Deploying the app *before* the migrations breaks workout completion (the RPCs
-won't exist). Applying `11` *before* deploying breaks it too (the old client
-writes `user_stats` directly and will be denied). Keep the gap short.

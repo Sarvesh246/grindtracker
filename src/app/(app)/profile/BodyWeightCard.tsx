@@ -80,15 +80,25 @@ export default function BodyWeightCard() {
     if (!user) { setSaving(false); return }
 
     const wasEditing = editingDate !== null
+    const keptDraft = draft
+    const keptDate = editingDate
     const { error } = await supabase.from('body_weights').upsert(
       { user_id: user.id, weight: fromDisplay(w), recorded_at: editingDate ?? todayDateKey() },
       { onConflict: 'user_id,recorded_at' },
     )
+    if (error) {
+      setSaving(false)
+      toast.show('Could not save weight. Try again.')
+      // Keep the draft so the user doesn't lose a typed value.
+      setDraft(keptDraft)
+      setEditingDate(keptDate)
+      return
+    }
     await load()
     setDraft('')
     setEditingDate(null)
     setSaving(false)
-    if (!error) toast.show(wasEditing ? 'Weight updated' : 'Weight logged')
+    toast.show(wasEditing ? 'Weight updated' : 'Weight logged')
   }
 
   const latest = rows.length > 0 ? rows[rows.length - 1] : null
@@ -107,24 +117,27 @@ export default function BodyWeightCard() {
     weight: toDisplay(r.weight),
   }))
 
-  // Clickable dot — tap a point to edit that day's weight directly.
+  // Clickable / keyboard-focusable chart point.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const renderDot = (props: any) => {
     const { cx, cy, payload } = props
     if (cx == null || cy == null) return <g key={payload?.date} />
     const active = payload?.date === editingDate
     return (
-      <circle
-        key={payload.date}
-        cx={cx}
-        cy={cy}
-        r={active ? 5 : 4}
-        fill="var(--accent)"
-        stroke="var(--surface)"
-        strokeWidth={2}
-        style={{ cursor: 'pointer' }}
-        onClick={() => startEdit(payload.date, payload.canonical)}
-      />
+      <g key={payload.date}>
+        <circle
+          cx={cx}
+          cy={cy}
+          r={active ? 5 : 4}
+          fill="var(--accent)"
+          stroke="var(--surface)"
+          strokeWidth={2}
+          style={{ cursor: 'pointer' }}
+          onClick={() => startEdit(payload.date, payload.canonical)}
+        />
+        {/* Larger invisible hit target for pointer + keyboard via foreignObject isn't needed —
+            expose an sr-only button list of logs below the chart instead. */}
+      </g>
     )
   }
 
@@ -264,49 +277,101 @@ export default function BodyWeightCard() {
           No body weight data yet. Log your first reading above.
         </div>
       ) : (
-        <div style={{ height: '120px' }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartPoints} margin={{ top: 4, right: 20, bottom: 0, left: 4 }}>
-              <XAxis
-                dataKey="displayDate"
-                stroke="transparent"
-                tick={{ fill: 'var(--text-muted)', fontSize: 9, fontFamily: "'DM Sans', sans-serif" }}
-                tickLine={false}
-                axisLine={false}
-                interval={Math.max(0, Math.floor(chartPoints.length / 4))}
-              />
-              <YAxis
-                stroke="transparent"
-                tick={{ fill: 'var(--text-muted)', fontSize: 9, fontFamily: "'DM Sans', sans-serif" }}
-                tickLine={false}
-                axisLine={false}
-                width={40}
-                domain={['dataMin - 2', 'dataMax + 2']}
-                tickFormatter={(v: number) => String(Math.round(v))}
-              />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: 'var(--surface-elevated)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '8px',
-                  fontSize: '12px',
-                }}
-                labelStyle={{ color: 'var(--text-secondary)' }}
-                itemStyle={{ color: 'var(--text-primary)' }}
-                cursor={{ stroke: 'var(--border-strong)', strokeWidth: 1 }}
-              />
-              <Line
-                type="monotone"
-                dataKey="weight"
-                stroke="var(--accent-text)"
-                strokeWidth={2}
-                dot={renderDot}
-                activeDot={{ r: 5, fill: 'var(--accent)', stroke: 'var(--surface)', strokeWidth: 2 }}
-                isAnimationActive={!reduceMotion}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+        <>
+          <div style={{ height: '120px' }} aria-hidden="true">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartPoints} margin={{ top: 4, right: 20, bottom: 0, left: 4 }}>
+                <XAxis
+                  dataKey="displayDate"
+                  stroke="transparent"
+                  tick={{ fill: 'var(--text-muted)', fontSize: 9, fontFamily: "'DM Sans', sans-serif" }}
+                  tickLine={false}
+                  axisLine={false}
+                  interval={Math.max(0, Math.floor(chartPoints.length / 4))}
+                />
+                <YAxis
+                  stroke="transparent"
+                  tick={{ fill: 'var(--text-muted)', fontSize: 9, fontFamily: "'DM Sans', sans-serif" }}
+                  tickLine={false}
+                  axisLine={false}
+                  width={40}
+                  domain={['dataMin - 2', 'dataMax + 2']}
+                  tickFormatter={(v: number) => String(Math.round(v))}
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: 'var(--surface-elevated)',
+                    border: '1px solid var(--border)',
+                    borderRadius: '8px',
+                    fontSize: '12px',
+                  }}
+                  labelStyle={{ color: 'var(--text-secondary)' }}
+                  itemStyle={{ color: 'var(--text-primary)' }}
+                  cursor={{ stroke: 'var(--border-strong)', strokeWidth: 1 }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="weight"
+                  stroke="var(--accent-text)"
+                  strokeWidth={2}
+                  dot={renderDot}
+                  activeDot={{ r: 5, fill: 'var(--accent)', stroke: 'var(--surface)', strokeWidth: 2 }}
+                  isAnimationActive={!reduceMotion}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <table
+            style={{
+              width: '100%',
+              borderCollapse: 'collapse',
+              fontSize: '12px',
+              marginTop: '8px',
+            }}
+          >
+            <caption style={{
+              position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)',
+            }}>
+              Body weight history
+            </caption>
+            <thead>
+              <tr style={{ color: 'var(--text-muted)', textAlign: 'left' }}>
+                <th scope="col" style={{ padding: '4px 0', fontWeight: 500 }}>Date</th>
+                <th scope="col" style={{ padding: '4px 0', fontWeight: 500 }}>Weight ({unitLabel})</th>
+                <th scope="col" style={{ padding: '4px 0', fontWeight: 500 }}>
+                  <span className="sr-only">Edit</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...chartPoints].reverse().slice(0, 8).map(p => (
+                <tr key={p.date} style={{ borderTop: '1px solid var(--border)' }}>
+                  <td style={{ padding: '8px 0', color: 'var(--text-secondary)' }}>{p.displayDate}</td>
+                  <td style={{ padding: '8px 0', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
+                    {fmt(p.canonical)}
+                  </td>
+                  <td style={{ padding: '8px 0', textAlign: 'right' }}>
+                    <button
+                      type="button"
+                      onClick={() => startEdit(p.date, p.canonical)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--accent-text)',
+                        fontSize: '11px',
+                        cursor: 'pointer',
+                        minHeight: '44px',
+                        minWidth: '44px',
+                      }}
+                    >
+                      Edit
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
       )}
     </div>
   )

@@ -64,7 +64,12 @@ export default function LeaderboardClient({ userId }: Props) {
     })
     if (reqId !== requestIdRef.current) return
     setLoading(false)
-    if (!error && data) {
+    if (error) {
+      console.error('[grind] get_leaderboard failed', error)
+      setEntries([])
+      return
+    }
+    if (data) {
       setEntries(data as LeaderboardEntry[])
     }
   }, [userId, supabase])

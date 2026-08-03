@@ -107,7 +107,10 @@ as $$
    order by abs(coalesce(d.xp, 0) - us.xp_total::numeric) desc;
 $$;
 
-revoke all on function grind_stats_drift() from public, anon;
+-- Admin-only. Body gates on is_grind_admin() after migration 20; earlier
+-- deploys that only applied 11 still granted EXECUTE to authenticated, so
+-- always re-apply 20 after this part (see docs/sql/20-production-hardening.sql).
+revoke all on function grind_stats_drift() from public, anon, authenticated;
 grant execute on function grind_stats_drift() to authenticated;
 
 commit;

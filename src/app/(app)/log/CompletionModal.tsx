@@ -1,6 +1,8 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { useUnit } from '@/lib/contexts/UnitContext'
+import { useMotionPref } from '@/lib/contexts/MotionContext'
+import Dialog from '@/components/ui/Dialog'
 
 interface CompletionData {
   xpEarned: number
@@ -37,47 +39,44 @@ export default function CompletionModal({
 }) {
   const [visible, setVisible] = useState(false)
   const [closing, setClosing] = useState(false)
-  const [xpDisplay, setXpDisplay] = useState(0)
+  const [xpDisplay, setXpDisplay] = useState(() =>
+    // Snap immediately when reduce-motion may be active (SSR/cookie preferred).
+    data.xpEarned,
+  )
   const { unitLabel, fmt } = useUnit()
+  const { reduceMotion } = useMotionPref()
 
   useEffect(() => {
     requestAnimationFrame(() => setVisible(true))
   }, [])
 
-  // Play the sheet's own entrance transition in reverse before actually
-  // unmounting, instead of the panel just cutting out the instant the button
-  // is tapped.
   function requestClose(action: () => void) {
     if (closing) return
     setClosing(true)
     setVisible(false)
-    window.setTimeout(action, 380)
+    window.setTimeout(action, reduceMotion ? 0 : 380)
   }
   const shown = visible && !closing
 
-  // Count the XP total up from 0 as the sheet slides in, instead of rendering
-  // the final number immediately — it lands right as the sheet settles.
-  // `xpDisplay` already starts at 0, so a zero-XP completion needs no update.
+  // XP count-up respects Reduce Motion — keep final value, animate only when allowed.
   useEffect(() => {
     const target = data.xpEarned
-    if (target <= 0) return
+    if (target <= 0 || reduceMotion) return
     const durationMs = 700
     const start = performance.now()
     let raf: number
     function tick(now: number) {
       const t = Math.min(1, (now - start) / durationMs)
+      // Start from 0 on the first frame rather than a sync setState in the effect body.
       setXpDisplay(Math.round(target * easeOutCubic(t)))
       if (t < 1) raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [data.xpEarned])
+  }, [data.xpEarned, reduceMotion])
 
-  // Staggered fade+slide per section, timed off the same `visible` flag that
-  // drives the sheet itself — no extra state needed. Indices are fixed by JSX
-  // position (not a running counter) so the stagger stays deterministic
-  // whether or not a conditional section like the level-up banner is present.
   function sectionStyle(index: number): React.CSSProperties {
+    if (reduceMotion) return { opacity: 1, transform: 'none' }
     const delay = index * 55
     return {
       opacity: visible ? 1 : 0,
@@ -94,14 +93,18 @@ export default function CompletionModal({
   ]
 
   return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 300,
-      backgroundColor: 'rgba(0,0,0,0.7)',
-      display: 'flex', alignItems: 'flex-end',
-      opacity: shown ? 1 : 0,
-      transition: 'opacity 250ms ease',
-      pointerEvents: closing ? 'none' : 'auto',
-    }}>
+    <Dialog
+      open
+      title="Workout complete"
+      closeOnBackdrop={false}
+      zIndex={300}
+      style={{
+        opacity: shown ? 1 : 0,
+        transition: reduceMotion ? 'none' : 'opacity 250ms ease',
+        pointerEvents: closing ? 'none' : 'auto',
+      }}
+      panelStyle={{ maxWidth: '100%' }}
+    >
       <div style={{
         width: '100%',
         backgroundColor: 'var(--surface)',
@@ -109,8 +112,12 @@ export default function CompletionModal({
         border: '1px solid var(--border)',
         borderBottom: 'none',
         padding: '32px 24px 48px',
-        transform: shown ? 'translateY(0)' : 'translateY(100%)',
-        transition: closing ? 'transform 320ms cubic-bezier(0.4, 0, 1, 1)' : 'transform 380ms cubic-bezier(0.34, 1.56, 0.64, 1)',
+        transform: shown || reduceMotion ? 'translateY(0)' : 'translateY(100%)',
+        transition: reduceMotion
+          ? 'none'
+          : closing
+            ? 'transform 320ms cubic-bezier(0.4, 0, 1, 1)'
+            : 'transform 380ms cubic-bezier(0.34, 1.56, 0.64, 1)',
         maxHeight: '90dvh',
         overflowY: 'auto',
       }}>
@@ -264,6 +271,6 @@ export default function CompletionModal({
           )}
         </div>
       </div>
-    </div>
+    </Dialog>
   )
 }

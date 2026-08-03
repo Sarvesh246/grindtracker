@@ -231,74 +231,99 @@ export default function ActiveWorkout({ day }: { day: string }) {
     const todayStart = new Date()
     todayStart.setHours(0, 0, 0, 0)
 
-    const { data: existing } = await supabase
-      .from('sessions')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('day_type', day)
-      .is('completed_at', null)
-      .gte('started_at', todayStart.toISOString())
-      .order('started_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
-    const existingLogs = existing
-      ? (await supabase.from('session_logs').select('*').eq('session_id', existing.id)).data ?? []
-      : []
-
-    // A disabled exercise (17-exercise-active-flag.sql) doesn't offer for a
+    // Disabled exercises (17-exercise-active-flag.sql) don't offer for a
     // fresh workout — but if this resuming session already logged sets against
-    // it (disabled after the fact, e.g. from another tab mid-workout), it has
-    // to stay: nothing here deletes-and-reinserts session_logs wholesale, so
-    // the row is never actually lost, only hidden — dropping it from `exs`
-    // would just make it impossible to see or finish those sets this session.
-    const loggedExerciseIds = new Set(existingLogs.map(l => l.exercise_id))
-    const exs = allDayExs.filter(ex => ex.active || loggedExerciseIds.has(ex.id))
+    // it they stay visible. Resume is resolved atomically below, so we may not
+    // know yet which exercises have logs: filter inactive only for a blank slate
+    // after the session payload returns, or keep all active here and re-filter.
+    let exs = allDayExs.filter(ex => ex.active)
 
+    if (exs.length === 0) {
+      // Fallback: if every exercise is inactive, still allow them so a user in
+      // a mid-session with only disabled rows isn't stranded.
+      exs = allDayExs
+    }
     if (exs.length === 0) { setLoading(false); return }
     setExercises(exs)
 
-    // Fetches every prior non-warm-up set (not just the top weight) because
-    // PR detection compares volume (weight x reps), which Postgres can't sort
-    // by without a generated column — the max is reduced client-side below.
-    // `bests` (max weight) stays display/prefill-only; `bestVolumes` (max
-    // weight x reps) is the actual PR bar.
+    // One batch RPC for previous bests — was N sequential queries (one per exercise).
     const bests: PreviousBest = {}
     const bestVolumes: PreviousBest = {}
-    for (const ex of exs) {
-      const { data } = await supabase
-        .from('session_logs')
-        .select('weight, reps, is_warmup, sessions!inner(user_id, completed_at)')
-        .eq('exercise_id', ex.id)
-        .eq('is_warmup', false)
-        .eq('sessions.user_id', user.id)
-        .not('sessions.completed_at', 'is', null)
-        .not('weight', 'is', null)
-      let maxWeight: number | null = null
-      let maxVolume: number | null = null
-      for (const row of data ?? []) {
-        if (row.weight === null) continue
-        if (maxWeight === null || row.weight > maxWeight) maxWeight = row.weight
-        if (row.reps === null) continue
-        const volume = row.weight * row.reps
-        if (maxVolume === null || volume > maxVolume) maxVolume = volume
+    const exerciseIds = exs.map(e => e.id)
+    if (exerciseIds.length > 0) {
+      const { data: bestRows } = await supabase.rpc('get_exercise_bests', {
+        p_exercise_ids: exerciseIds,
+      })
+      for (const row of (bestRows ?? []) as {
+        exercise_id: string
+        max_weight: number | null
+        max_volume: number | null
+      }[]) {
+        bests[row.exercise_id] = row.max_weight
+        bestVolumes[row.exercise_id] = row.max_volume
       }
-      bests[ex.id] = maxWeight
-      bestVolumes[ex.id] = maxVolume
+    }
+    for (const ex of exs) {
+      if (!(ex.id in bests)) bests[ex.id] = null
+      if (!(ex.id in bestVolumes)) bestVolumes[ex.id] = null
     }
     setPreviousBests(bests)
     setBaselineBests(bests)
     setPreviousBestVolumes(bestVolumes)
     setBaselineBestVolumes(bestVolumes)
 
-    let sid: string
-    let sessionStart: Date
+    type ExistingLog = {
+      id: string
+      exercise_id: string
+      set_number: number
+      weight: number | null
+      reps: number | null
+      is_pr: boolean
+      is_warmup?: boolean
+      note?: string | null
+      is_skipped?: boolean
+    }
 
-    if (existing) {
-      sid = existing.id
-      sessionStart = new Date(existing.started_at)
-      if (existing.note) setWorkoutNote(existing.note)
+    // Atomic create-or-resume — prevents two tabs from forking open sessions.
+    const { data: resumeData, error: resumeError } = await supabase.rpc(
+      'start_or_resume_session',
+      { p_day_type: day },
+    )
 
+    if (resumeError || !resumeData) {
+      setLoading(false)
+      setResumeToast('Could not start workout. Check your connection and try again.')
+      setTimeout(() => setResumeToast(null), 4000)
+      return
+    }
+
+    const resumePayload = resumeData as {
+      session: {
+        id: string
+        started_at: string
+        note?: string | null
+      }
+      logs: ExistingLog[]
+      resumed?: boolean
+    }
+
+    const session = resumePayload.session
+    const sid = session.id
+    const sessionStart = new Date(session.started_at)
+    if (session.note) setWorkoutNote(session.note)
+    const existingLogs: ExistingLog[] = Array.isArray(resumePayload.logs)
+      ? resumePayload.logs
+      : []
+
+    // Re-include disabled exercises that already have logs on this session.
+    const loggedExerciseIds = new Set(existingLogs.map(l => l.exercise_id))
+    const fullExs = allDayExs.filter(ex => ex.active || loggedExerciseIds.has(ex.id))
+    if (fullExs.length > 0 && fullExs.length !== exs.length) {
+      exs = fullExs
+      setExercises(exs)
+    }
+
+    if (existingLogs.length > 0 || resumePayload.resumed) {
       // Count extras per exercise from highest set_number seen.
       const extras: Record<string, number> = {}
       for (const log of existingLogs) {
@@ -328,9 +353,6 @@ export default function ActiveWorkout({ day }: { day: string }) {
       }
       for (const log of existingLogs) {
         const key = `${log.exercise_id}-${log.set_number}`
-        // A skip marker (weight/reps null, is_skipped true — see
-        // 18-skip-persistence.sql) restores as skipped rather than a logged
-        // set; leaves the prefilled weight placeholder from `exs` above alone.
         restored[key] = log.is_skipped
           ? { ...restored[key], checked: false, skipped: true, isPR: false, logId: log.id }
           : {
@@ -353,16 +375,6 @@ export default function ActiveWorkout({ day }: { day: string }) {
         setTimeout(() => setResumeToast(null), 4000)
       }
     } else {
-      const { data: newSession } = await supabase
-        .from('sessions')
-        .insert({ user_id: user.id, day_type: day })
-        .select()
-        .maybeSingle()
-
-      if (!newSession) { setLoading(false); return }
-      sid = newSession.id
-      sessionStart = new Date(newSession.started_at)
-
       const prefilled: LogMap = {}
       for (const ex of exs) {
         for (let s = 1; s <= ex.sets_target; s++) {
@@ -562,22 +574,27 @@ export default function ActiveWorkout({ day }: { day: string }) {
   async function handleUndo() {
     if (!undoState || !sessionId) return
     const { key, exerciseId, setNumber } = undoState
+    const previous = logs[key]
     setUndoState(null)
     restTimer.stop()
 
-    await supabase
+    const { error } = await supabase
       .from('session_logs')
       .delete()
       .eq('session_id', sessionId)
       .eq('exercise_id', exerciseId)
       .eq('set_number', setNumber)
 
+    if (error) {
+      setResumeToast('Could not undo set. Check your connection and try again.')
+      setTimeout(() => setResumeToast(null), 4000)
+      return
+    }
+
     setLogs(prev => {
-      const cur = prev[key]
+      const cur = prev[key] ?? previous
       if (!cur) return prev
       const next = { ...prev, [key]: { ...cur, checked: false, isPR: false, logId: undefined } }
-      // The undone set may have been the live PR. Recompute the bests so
-      // future sets in this workout compare against the correct values.
       setPreviousBests(pb => ({ ...pb, [exerciseId]: bestFromLogs(exerciseId, next) }))
       setPreviousBestVolumes(pb => ({ ...pb, [exerciseId]: bestVolumeFromLogs(exerciseId, next) }))
       return next
@@ -605,7 +622,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       prevBestVolume !== null &&
       volume > prevBestVolume
 
-    await supabase.from('session_logs').upsert(
+    const { error } = await supabase.from('session_logs').upsert(
       {
         session_id: sessionId,
         exercise_id: exerciseId,
@@ -620,10 +637,14 @@ export default function ActiveWorkout({ day }: { day: string }) {
       { onConflict: 'session_id,exercise_id,set_number' },
     )
 
+    if (error) {
+      setResumeToast('Could not save set. Check your connection and try again.')
+      setTimeout(() => setResumeToast(null), 4000)
+      return
+    }
+
     setLogs(prev => {
       const next = { ...prev, [key]: { ...prev[key], isPR } }
-      // Editing may have raised or lowered this exercise's best. Recompute
-      // so subsequent PR comparisons in this workout are correct.
       setPreviousBests(pb => ({ ...pb, [exerciseId]: bestFromLogs(exerciseId, next) }))
       setPreviousBestVolumes(pb => ({ ...pb, [exerciseId]: bestVolumeFromLogs(exerciseId, next) }))
       return next
@@ -1035,6 +1056,8 @@ export default function ActiveWorkout({ day }: { day: string }) {
     if (!sessionId || finishing) return
     if (checkedSets() === 0) {
       // Nothing to save — guard against an empty completion.
+      setResumeToast('Log at least one set before finishing.')
+      setTimeout(() => setResumeToast(null), 4000)
       return
     }
     setFinishing(true)
@@ -1080,11 +1103,13 @@ export default function ActiveWorkout({ day }: { day: string }) {
         ).includes('SESSION_NOT_OPEN')
 
         if (!alreadyDone) {
-          // Surface the real server error before the generic toast swallows it —
-          // a persistent, connection-looking failure is almost always a
-          // deterministic RPC error (not the network), and without this it's
-          // undebuggable from a phone.
           console.error('[grind] complete_session failed', finishError, finishData)
+          const msg = String((finishError as { message?: string } | null)?.message ?? '')
+          if (msg.includes('NO_WORKING_SETS')) {
+            setResumeToast('Log at least one set with weight and reps before finishing.')
+            setTimeout(() => setResumeToast(null), 5000)
+            return
+          }
           throw finishError ?? new Error('Finish failed')
         }
 

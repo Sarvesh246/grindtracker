@@ -43,12 +43,9 @@ export async function generateViewport(): Promise<Viewport> {
   return {
     width: 'device-width',
     initialScale: 1,
-    // Lock zoom. Once iOS zooms the page (pinch, double-tap, or auto-zoom on
-    // focusing an input with font-size < 16px), position:fixed elements pin to
-    // the layout viewport and drift on every scroll — detaching the bottom
-    // bars on the active workout page. App-style PWA, so no zoom is expected.
-    maximumScale: 1,
-    userScalable: false,
+    // Allow pinch zoom for low-vision users (WCAG). Form controls stay ≥16px
+    // so iOS will not auto-zoom on focus; bottom bars stay layout-safe without
+    // locking scale.
     viewportFit: 'cover',
     themeColor: theme === 'light' ? '#ecebe7' : '#0f0f0f',
   }

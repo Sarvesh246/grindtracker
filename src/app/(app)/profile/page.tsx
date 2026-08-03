@@ -10,65 +10,42 @@ export default async function ProfilePage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  // User stats
-  const { data: stats } = await supabase
-    .from('user_stats')
-    .select('*')
-    .eq('user_id', user.id)
-    .maybeSingle()
-
-  // Earned badges
-  const { data: earnedBadges } = await supabase
-    .from('user_badges')
-    .select('badge_id, earned_at')
-    .eq('user_id', user.id)
+  const [
+    { data: stats },
+    { data: earnedBadges },
+    { count: totalPRs },
+    { count: totalSets },
+    { data: history },
+    { data: profile },
+    { data: restDayRows },
+  ] = await Promise.all([
+    supabase.from('user_stats').select('*').eq('user_id', user.id).maybeSingle(),
+    supabase.from('user_badges').select('badge_id, earned_at').eq('user_id', user.id),
+    supabase
+      .from('session_logs')
+      .select('sessions!inner(user_id)', { count: 'exact', head: true })
+      .eq('is_pr', true)
+      .eq('sessions.user_id', user.id),
+    supabase
+      .from('session_logs')
+      .select('sessions!inner(user_id, completed_at)', { count: 'exact', head: true })
+      .eq('sessions.user_id', user.id)
+      .not('sessions.completed_at', 'is', null)
+      .eq('is_skipped', false)
+      .not('weight', 'is', null),
+    supabase.rpc('grind_home_history', { p_lookback_days: 7 }),
+    supabase.from('user_profiles').select('username, created_at').eq('id', user.id).maybeSingle(),
+    supabase.from('user_rest_days').select('day_of_week').eq('user_id', user.id),
+  ])
 
   const earnedSet = new Set((earnedBadges ?? []).map(b => b.badge_id))
+  const historyPayload = (history ?? {}) as { days_active?: number }
+  // days_active is already DISTINCT local_date from the server — profile only
+  // needs the count (was unbounded completed_at history before).
+  const daysActive = historyPayload.days_active ?? 0
 
-  // Total PR count
-  const { count: totalPRs } = await supabase
-    .from('session_logs')
-    .select('sessions!inner(user_id)', { count: 'exact', head: true })
-    .eq('is_pr', true)
-    .eq('sessions.user_id', user.id)
-
-  // Total sets completed
-  const { count: totalSets } = await supabase
-    .from('session_logs')
-    .select('sessions!inner(user_id, completed_at)', { count: 'exact', head: true })
-    .eq('sessions.user_id', user.id)
-    .not('sessions.completed_at', 'is', null)
-
-  // Active-day timestamps. Distinct local days are derived client-side so the
-  // count matches the user's timezone (consistent with the calendar/streak),
-  // rather than the server's UTC day which can split or merge days at midnight.
-  const { data: activeDays } = await supabase
-    .from('sessions')
-    .select('completed_at')
-    .eq('user_id', user.id)
-    .not('completed_at', 'is', null)
-
-  const activeDayTimestamps = (activeDays ?? [])
-    .map(s => s.completed_at)
-    .filter((t): t is string => t !== null)
-
-  // Google avatar + display name from user metadata
   const avatarUrl = user.user_metadata?.avatar_url ?? null
   const displayName = user.user_metadata?.full_name ?? user.email ?? 'Athlete'
-
-  // Public profile (username, join date for the "GRINDing since" footer)
-  const { data: profile } = await supabase
-    .from('user_profiles')
-    .select('username, created_at')
-    .eq('id', user.id)
-    .maybeSingle()
-
-  // Recurring rest days (see docs/sql/14-rest-days.sql). Plain config data —
-  // no timezone dependency, safe to fetch server-side unlike "today" itself.
-  const { data: restDayRows } = await supabase
-    .from('user_rest_days')
-    .select('day_of_week')
-    .eq('user_id', user.id)
 
   return (
     <ProfileDashboard
@@ -87,10 +64,9 @@ export default async function ProfilePage() {
       earnedBadgeIds={Array.from(earnedSet)}
       totalPRs={totalPRs ?? 0}
       totalSets={totalSets ?? 0}
-      activeDayTimestamps={activeDayTimestamps}
+      activeDayTimestamps={[]}
+      daysActive={daysActive}
       allBadges={ALL_BADGES}
-      // Controls only whether the inbox link is rendered — /admin/feedback
-      // guards itself and RLS is the real gate. See lib/utils/admin.ts.
       isAdmin={isAdminEmail(user.email)}
     />
   )

@@ -15,6 +15,8 @@ export interface Session {
   day_type: string
   started_at: string
   completed_at: string | null
+  /** Authoritative streak/calendar day (YYYY-MM-DD), set server-side on complete. */
+  local_date?: string | null
   xp_earned: number
   note: string | null
   created_at: string

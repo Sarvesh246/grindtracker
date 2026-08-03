@@ -105,16 +105,13 @@ function LogPastContent() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user || gen !== checkGenRef.current) { setCheckingDate(false); return }
 
-    const dayStart = new Date(date + 'T00:00:00').toISOString()
-    const dayEnd = new Date(date + 'T23:59:59').toISOString()
-
+    // Match on sessions.local_date (streak key), never UTC completed_at windows.
     const { data: existing } = await supabase
       .from('sessions')
       .select('id, day_type, xp_earned')
       .eq('user_id', user.id)
+      .eq('local_date', date)
       .not('completed_at', 'is', null)
-      .gte('completed_at', dayStart)
-      .lte('completed_at', dayEnd)
       .order('completed_at', { ascending: false })
       .limit(1)
       .maybeSingle()
@@ -205,7 +202,7 @@ function LogPastContent() {
     })
   }
 
-  async function handleSubmit(force = false) {
+  async function handleSubmit(editExisting = false) {
     if (!selectedDayType) return
     setError(null)
     setSubmitting(true)
@@ -214,169 +211,133 @@ function LogPastContent() {
     if (!user) { setError('Not logged in.'); setSubmitting(false); return }
 
     const isEditing = existingSessionRef.current?.day_type === selectedDayType
+      || editExisting
 
-    const dayStart = new Date(selectedDate + 'T00:00:00').toISOString()
-    const dayEnd = new Date(selectedDate + 'T23:59:59').toISOString()
-
-    if (!isEditing && !force) {
+    // Warn when another day-type already exists for this local_date and user is
+    // logging a different day without editing that row. Uniqueness is per
+    // (user, local_date, day_type) — same day-type always replaces via RPC.
+    if (!isEditing) {
       const { data: existing } = await supabase
         .from('sessions')
-        .select('id')
+        .select('id, day_type')
         .eq('user_id', user.id)
+        .eq('local_date', selectedDate)
         .eq('day_type', selectedDayType)
         .not('completed_at', 'is', null)
-        .gte('completed_at', dayStart)
-        .lte('completed_at', dayEnd)
         .limit(1)
 
       if (existing && existing.length > 0) {
+        // Route to edit instead of duplicating (unique index forbids second row).
+        existingSessionRef.current = {
+          id: existing[0].id,
+          day_type: existing[0].day_type,
+          xp_earned: 0,
+        }
+        setExistingSession(existingSessionRef.current)
         setDuplicateWarning(true)
         setSubmitting(false)
         return
       }
     }
 
-    // Seeded by the `seed_user_stats` trigger; the client can't insert it (see
-    // docs/sql/11-server-side-xp.sql). Only read here to give the badge check a
-    // baseline — `refresh_stats` below is what actually settles the numbers.
-    const { data: statsData } = await supabase
-      .from('user_stats')
-      .select('*')
-      .eq('user_id', user.id)
-      .maybeSingle()
-
-    // Get prior sessions for PR detection (before this day only)
-    const { data: priorSessions } = await supabase
-      .from('sessions')
-      .select('id')
-      .eq('user_id', user.id)
-      .not('completed_at', 'is', null)
-      .lt('completed_at', dayStart)
-
-    const priorIds = (priorSessions ?? []).map(s => s.id)
-    // PR detection is volume-based (weight x reps) — mirrors
-    // grind_recompute_stats() in docs/sql/15-volume-based-prs.sql.
-    const prevBestVolumes: Record<string, number | null> = {}
-    if (priorIds.length > 0) {
-      const { data: priorLogs } = await supabase
-        .from('session_logs')
-        .select('exercise_id, weight, reps')
-        .in('session_id', priorIds)
-        .not('weight', 'is', null)
-        .not('reps', 'is', null)
-
-      for (const log of priorLogs ?? []) {
-        if (log.weight === null || log.reps === null) continue
-        const volume = log.weight * log.reps
-        const prev = prevBestVolumes[log.exercise_id] ?? null
-        if (prev === null || volume > prev) {
-          prevBestVolumes[log.exercise_id] = volume
-        }
-      }
-    }
-
-    let sessionId: string
-
-    if (isEditing) {
-      sessionId = existingSessionRef.current!.id
-      await supabase.from('session_logs').delete().eq('session_id', sessionId)
-    } else {
-      const started = new Date(selectedDate + 'T12:00:00').toISOString()
-      const completed = new Date(selectedDate + 'T13:00:00').toISOString()
-      const { data: newSession, error: sessionErr } = await supabase
-        .from('sessions')
-        // `local_date` is what the server's streak derivation keys off — without
-        // it a backdated workout would be bucketed by its UTC completed_at and
-        // could land on the wrong calendar day (docs/sql/11-server-side-xp.sql).
-        .insert({
-          user_id: user.id,
-          day_type: selectedDayType,
-          started_at: started,
-          completed_at: completed,
-          local_date: selectedDate,
-          xp_earned: 0,
-        })
-        .select()
-        .single()
-
-      if (sessionErr || !newSession) {
-        setError('Failed to create session.')
-        setSubmitting(false)
-        return
-      }
-      sessionId = newSession.id
-    }
-
-    const logsToInsert: {
-      session_id: string
+    const logsPayload: {
       exercise_id: string
       set_number: number
-      weight: number | null
-      reps: number | null
-      is_pr: boolean
+      weight: number
+      reps: number
     }[] = []
-
-    let prCount = 0
 
     for (const ex of exercises) {
       if (skippedExercises.has(ex.id)) continue
       const sets = setInputs[ex.id] ?? []
       for (let i = 0; i < sets.length; i++) {
         const s = sets[i]
-        // Inputs are typed in the display unit; convert back to canonical lbs before
-        // saving. prevBestVolumes are stored canonical, so the PR check stays lbs-vs-lbs.
-        const weight = s.weight !== '' ? fromDisplay(parseFloat(s.weight)) : null
-        const reps = s.reps !== '' ? parseInt(s.reps) : null
-        const volume = weight !== null && reps !== null ? weight * reps : null
-        const prevBestVolume = prevBestVolumes[ex.id] ?? null
-        const isPR = volume !== null && prevBestVolume !== null && volume > prevBestVolume
-        if (isPR) {
-          prCount++
-          // Raise the bar so later sets of the same exercise in this same
-          // submission compare against the new best, not the pre-workout one —
-          // otherwise three ascending sets all above the old best would each
-          // score as a separate PR instead of only the first that clears it.
-          prevBestVolumes[ex.id] = volume
-        }
-        logsToInsert.push({ session_id: sessionId, exercise_id: ex.id, set_number: i + 1, weight, reps, is_pr: isPR })
+        if (s.weight === '' || s.reps === '') continue
+        const weight = fromDisplay(parseFloat(s.weight))
+        const reps = parseInt(s.reps)
+        if (!Number.isFinite(weight) || !Number.isFinite(reps)) continue
+        logsPayload.push({
+          exercise_id: ex.id,
+          set_number: i + 1,
+          weight,
+          reps,
+        })
       }
     }
 
-    await supabase
-      .from('session_logs')
-      .upsert(logsToInsert, { onConflict: 'session_id,exercise_id,set_number' })
-
-    // Settle stats server-side. XP, level, streaks and PR flags are all derived
-    // from the logs we just wrote (docs/sql/11-server-side-xp.sql), so the same
-    // call handles both the "new backdated workout" and "edited an existing one"
-    // cases. Editing used to skip this entirely, which left XP stale whenever an
-    // edit changed which sets counted as PRs.
-    const { data: refreshed, error: refreshError } = await supabase.rpc('refresh_stats', {
-      p_local_date: localDateKey(new Date()),
-    })
-
-    if (refreshError) {
-      setError('Saved the workout, but could not update your stats. Reload to retry.')
+    if (logsPayload.length === 0) {
+      setError('Log at least one set with weight and reps before saving.')
       setSubmitting(false)
       return
     }
 
-    // The per-session XP the server settled on, for the confirmation screen.
-    const { data: settled } = await supabase
-      .from('sessions')
-      .select('xp_earned')
-      .eq('id', sessionId)
+    // One transactional RPC: create-or-replace logs + recompute stats.
+    // (docs/sql/20-production-hardening.sql). Never delete-then-insert client-side.
+    const sessionIdForEdit =
+      existingSessionRef.current?.day_type === selectedDayType
+        ? existingSessionRef.current.id
+        : null
+
+    const { data: result, error: upsertError } = await supabase.rpc(
+      'upsert_past_session',
+      {
+        p_day_type: selectedDayType,
+        p_local_date: selectedDate,
+        p_logs: logsPayload,
+        p_session_id: sessionIdForEdit,
+        p_note: null,
+      },
+    )
+
+    if (upsertError || !result) {
+      const msg = String(upsertError?.message ?? '')
+      if (msg.includes('NO_WORKING_SETS')) {
+        setError('Log at least one set with weight and reps before saving.')
+      } else {
+        setError('Could not save the workout. Check your connection and try again.')
+      }
+      setSubmitting(false)
+      return
+    }
+
+    const payload = result as {
+      xp_earned?: number
+      pr_count?: number
+      xp_total?: number
+      level?: number
+      current_streak?: number
+      longest_streak?: number
+      last_workout_date?: string | null
+      total_workouts?: number
+    }
+
+    const { data: statsData } = await supabase
+      .from('user_stats')
+      .select('*')
+      .eq('user_id', user.id)
       .maybeSingle()
-    const xpEarned = settled?.xp_earned ?? 0
 
     await checkAndAwardBadges(
       supabase,
       user.id,
-      { ...statsData, ...(refreshed as Partial<UserStats>) } as UserStats,
+      {
+        ...statsData,
+        xp_total: payload.xp_total ?? statsData?.xp_total ?? 0,
+        level: payload.level ?? statsData?.level ?? 1,
+        current_streak: payload.current_streak ?? statsData?.current_streak ?? 0,
+        longest_streak: payload.longest_streak ?? statsData?.longest_streak ?? 0,
+        last_workout_date: payload.last_workout_date ?? statsData?.last_workout_date ?? null,
+        total_workouts: payload.total_workouts ?? statsData?.total_workouts ?? 0,
+      } as UserStats,
     )
 
     haptic('medium')
-    setDone({ xpEarned, prCount, isEdit: isEditing, isDelete: false })
+    setDone({
+      xpEarned: payload.xp_earned ?? 0,
+      prCount: payload.pr_count ?? 0,
+      isEdit: !!sessionIdForEdit || editExisting,
+      isDelete: false,
+    })
     setSubmitting(false)
   }
 
@@ -670,7 +631,7 @@ function LogPastContent() {
             gap: '12px',
           }}>
             <span style={{ fontSize: '13px', color: '#f87171', lineHeight: 1.4 }}>
-              A {selectedDayType} workout already exists for this date.
+              A {selectedDayType} workout already exists for this date. Saving will replace it.
             </span>
             <button
               onClick={() => { setDuplicateWarning(false); handleSubmit(true) }}
@@ -687,7 +648,7 @@ function LogPastContent() {
                 flexShrink: 0,
               }}
             >
-              LOG ANYWAY
+              REPLACE
             </button>
           </div>
         )}

@@ -378,14 +378,23 @@ export default function HomeDashboard({
     }
   }
 
-  // Bucketed from the viewer's local time — see getWeekStart/getMonthStart above.
+  // Bucketed from the viewer's local calendar — completedAt is local_date keys
+  // (YYYY-MM-DD) from grind_home_history, not UTC timestamps.
   const weeklyWorkouts = useMemo(() => {
-    const start = getWeekStart().getTime()
-    return completedAt.filter(iso => new Date(iso).getTime() >= start).length
+    const start = getWeekStart()
+    const startKey = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`
+    return completedAt.filter(d => {
+      const key = d.includes('T') ? localDateKey(new Date(d)) : d
+      return key >= startKey
+    }).length
   }, [completedAt])
   const monthlyWorkouts = useMemo(() => {
-    const start = getMonthStart().getTime()
-    return completedAt.filter(iso => new Date(iso).getTime() >= start).length
+    const start = getMonthStart()
+    const startKey = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`
+    return completedAt.filter(d => {
+      const key = d.includes('T') ? localDateKey(new Date(d)) : d
+      return key >= startKey
+    }).length
   }, [completedAt])
 
   const exercisePreview = nextDayExercises.length <= 2
@@ -1103,10 +1112,18 @@ export default function HomeDashboard({
               </span>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                  {formatShortDate(lastSession.completed_at!)}
+                  {formatShortDate(
+                    (lastSession as { local_date?: string | null }).local_date
+                      ?? lastSession.completed_at!,
+                  )}
                 </span>
                 <button
-                  onClick={() => router.push(`/log/past?date=${localDateKey(new Date(lastSession.completed_at!))}`)}
+                  onClick={() => {
+                    const date =
+                      (lastSession as { local_date?: string | null }).local_date
+                      ?? localDateKey(new Date(lastSession.completed_at!))
+                    router.push(`/log/past?date=${date}`)
+                  }}
                   title="Edit or delete this workout"
                   style={{
                     display: 'flex',
@@ -1116,6 +1133,7 @@ export default function HomeDashboard({
                     border: '1px solid var(--border)',
                     borderRadius: '8px',
                     padding: '4px 9px',
+                    minHeight: '44px',
                     color: 'var(--text-secondary)',
                     fontSize: '11px',
                     fontFamily: "'Bebas Neue', sans-serif",

@@ -7,10 +7,11 @@ import { useTheme } from '@/lib/contexts/ThemeContext'
  * the global prefers-reduced-motion rule zeroes the transition automatically).
  * Sized to sit beside the kg/lb pill in both the TopNav and Profile settings.
  */
-export default function ThemeToggle({ size = 30 }: { size?: number }) {
+export default function ThemeToggle({ size = 44 }: { size?: number }) {
   const { theme, toggleTheme } = useTheme()
   const isLight = theme === 'light'
-  const icon = Math.round(size * 0.56)
+  const visual = Math.min(size, 30)
+  const icon = Math.round(visual * 0.56)
 
   return (
     <button
@@ -33,7 +34,17 @@ export default function ThemeToggle({ size = 30 }: { size?: number }) {
         color: 'var(--text-primary)',
       }}
     >
-      {/* Sun + moon are stacked; the active one is shown, the other rotates out. */}
+      {/* Inner visual disc can stay smaller than the 44px hit box. */}
+      <span
+        aria-hidden
+        style={{
+          position: 'absolute',
+          width: `${visual}px`,
+          height: `${visual}px`,
+          borderRadius: '9999px',
+          backgroundColor: 'transparent',
+        }}
+      />
       <span
         style={{
           position: 'absolute',

@@ -1,7 +1,7 @@
 {
   "name": "GRIND",
   "short_name": "GRIND",
-  "description": "Track your gym progress",
+  "description": "Track your gym progress (online required)",
   "start_url": "/home",
   "display": "standalone",
   "background_color": "#0f0f0f",

@@ -63,7 +63,10 @@ interface Props {
   earnedBadgeIds: string[]
   totalPRs: number
   totalSets: number
-  activeDayTimestamps: string[]
+  /** @deprecated prefer daysActive — kept for partial callers */
+  activeDayTimestamps?: string[]
+  /** Distinct local calendar days with a completed workout (server-derived). */
+  daysActive?: number
   allBadges: BadgeDefinition[]
   isAdmin: boolean
   recurringRestDays: number[]
@@ -80,7 +83,8 @@ export default function ProfileDashboard({
   earnedBadgeIds,
   totalPRs,
   totalSets,
-  activeDayTimestamps,
+  activeDayTimestamps = [],
+  daysActive,
   allBadges,
   isAdmin,
   recurringRestDays,
@@ -268,12 +272,11 @@ export default function ProfileDashboard({
   const xpPercent = (xpInLevel / levelSize) * 100
   const earnedSet = new Set(earnedBadgeIds)
   const earnedCount = earnedBadgeIds.length
-  // Distinct active days counted in the user's local timezone so it matches the
-  // calendar and streak (the server renders in UTC, which would mis-bucket days).
-  const distinctDays = useMemo(
-    () => new Set(activeDayTimestamps.map(t => localDateKey(new Date(t)))).size,
-    [activeDayTimestamps],
-  )
+  // Distinct active days from server (local_date count) or legacy timestamp list.
+  const distinctDays = useMemo(() => {
+    if (typeof daysActive === 'number') return daysActive
+    return new Set(activeDayTimestamps.map(t => localDateKey(new Date(t)))).size
+  }, [daysActive, activeDayTimestamps])
   const joinedLabel = joinedAt
     ? new Date(joinedAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
     : null

@@ -1,5 +1,6 @@
 'use client'
 import { useEffect } from 'react'
+import { reportError } from '@/lib/utils/reportError'
 
 export default function Error({
   error,
@@ -9,7 +10,10 @@ export default function Error({
   reset: () => void
 }) {
   useEffect(() => {
-    console.error(error)
+    reportError(error, {
+      operation: 'app-error-boundary',
+      digest: error.digest,
+    })
   }, [error])
 
   return (
@@ -39,6 +43,11 @@ export default function Error({
       </div>
       <div style={{ fontSize: '14px', color: 'var(--text-muted)', marginBottom: '32px', lineHeight: 1.5 }}>
         An unexpected error occurred.<br />Try again or refresh the page.
+        {error.digest && (
+          <div style={{ marginTop: '8px', fontSize: '11px', color: 'var(--text-muted)' }}>
+            Ref: {error.digest}
+          </div>
+        )}
       </div>
       <button
         onClick={reset}

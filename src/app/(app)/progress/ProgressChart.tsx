@@ -104,49 +104,87 @@ export default function ProgressChart({ data }: { data: ChartPoint[] }) {
   const yAxisWidth = Math.max(36, maxTickLen * 9 + 8)
 
   return (
-    <ResponsiveContainer width="100%" height={216}>
-      <LineChart
-        data={data}
-        margin={{ top: 8, right: 32, bottom: 4, left: 4 }}
+    <div>
+      <div aria-hidden="true">
+        <ResponsiveContainer width="100%" height={216}>
+          <LineChart
+            data={data}
+            margin={{ top: 8, right: 32, bottom: 4, left: 4 }}
+          >
+            <CartesianGrid
+              strokeDasharray="3 3"
+              stroke="var(--border)"
+              vertical={false}
+            />
+            <XAxis
+              dataKey="displayDate"
+              stroke="transparent"
+              tick={{ fill: 'var(--text-muted)', fontSize: 10, fontFamily: "'DM Sans', sans-serif" }}
+              tickLine={false}
+              axisLine={false}
+              interval={tickInterval}
+              height={36}
+              tickMargin={12}
+            />
+            <YAxis
+              stroke="transparent"
+              tick={{ fill: 'var(--text-muted)', fontSize: 10, fontFamily: "'DM Sans', sans-serif" }}
+              tickLine={false}
+              axisLine={false}
+              domain={[yMin, yMax]}
+              tickFormatter={(v) => v === 0 ? 'BW' : String(v)}
+              width={yAxisWidth}
+            />
+            <Tooltip
+              content={<CustomTooltip />}
+              cursor={{ stroke: 'var(--border-strong)', strokeWidth: 1 }}
+            />
+            <Line
+              type="monotone"
+              dataKey="value"
+              stroke="var(--accent-text)"
+              strokeWidth={2}
+              dot={<CustomDot />}
+              activeDot={{ r: 6, fill: 'var(--accent)', stroke: 'var(--surface)', strokeWidth: 2 }}
+              isAnimationActive={!reduceMotion}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      <table
+        style={{
+          width: '100%',
+          borderCollapse: 'collapse',
+          fontSize: '12px',
+          marginTop: '12px',
+        }}
       >
-        <CartesianGrid
-          strokeDasharray="3 3"
-          stroke="var(--border)"
-          vertical={false}
-        />
-        <XAxis
-          dataKey="displayDate"
-          stroke="transparent"
-          tick={{ fill: 'var(--text-muted)', fontSize: 10, fontFamily: "'DM Sans', sans-serif" }}
-          tickLine={false}
-          axisLine={false}
-          interval={tickInterval}
-          height={36}
-          tickMargin={12}
-        />
-        <YAxis
-          stroke="transparent"
-          tick={{ fill: 'var(--text-muted)', fontSize: 10, fontFamily: "'DM Sans', sans-serif" }}
-          tickLine={false}
-          axisLine={false}
-          domain={[yMin, yMax]}
-          tickFormatter={(v) => v === 0 ? 'BW' : String(v)}
-          width={yAxisWidth}
-        />
-        <Tooltip
-          content={<CustomTooltip />}
-          cursor={{ stroke: 'var(--border-strong)', strokeWidth: 1 }}
-        />
-        <Line
-          type="monotone"
-          dataKey="value"
-          stroke="var(--accent-text)"
-          strokeWidth={2}
-          dot={<CustomDot />}
-          activeDot={{ r: 6, fill: 'var(--accent)', stroke: 'var(--surface)', strokeWidth: 2 }}
-          isAnimationActive={!reduceMotion}
-        />
-      </LineChart>
-    </ResponsiveContainer>
+        <caption style={{
+          position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)',
+        }}>
+          Progress data points
+        </caption>
+        <thead>
+          <tr style={{ color: 'var(--text-muted)', textAlign: 'left' }}>
+            <th scope="col" style={{ padding: '4px 0', fontWeight: 500 }}>Date</th>
+            <th scope="col" style={{ padding: '4px 0', fontWeight: 500 }}>Value</th>
+            <th scope="col" style={{ padding: '4px 0', fontWeight: 500 }}>PR</th>
+          </tr>
+        </thead>
+        <tbody>
+          {[...data].reverse().slice(0, 12).map((p, i) => (
+            <tr key={`${p.date}-${i}`} style={{ borderTop: '1px solid var(--border)' }}>
+              <td style={{ padding: '8px 0', color: 'var(--text-secondary)' }}>{p.displayDate}</td>
+              <td style={{ padding: '8px 0', color: 'var(--text-primary)', fontFamily: "'JetBrains Mono', monospace" }}>
+                {p.label}
+              </td>
+              <td style={{ padding: '8px 0', color: p.isPR ? 'var(--accent-text)' : 'var(--text-muted)' }}>
+                {p.isPR ? 'Yes' : '—'}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }

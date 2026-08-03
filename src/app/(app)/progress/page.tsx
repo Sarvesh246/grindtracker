@@ -37,7 +37,17 @@ interface RawLog {
   reps: number | null
   is_pr: boolean
   is_warmup: boolean
-  sessions: { id: string; completed_at: string; user_id: string } | { id: string; completed_at: string; user_id: string }[] | null
+  sessions: {
+    id: string
+    completed_at: string
+    local_date: string | null
+    user_id: string
+  } | {
+    id: string
+    completed_at: string
+    local_date: string | null
+    user_id: string
+  }[] | null
 }
 
 const DAY_ORDER: Record<string, number> = { push: 0, pull: 1, legs: 2 }
@@ -118,6 +128,7 @@ export default function ProgressPage() {
         sessions!inner(
           id,
           completed_at,
+          local_date,
           user_id
         )
       `)
@@ -132,7 +143,7 @@ export default function ProgressPage() {
       // few years the chart payload grows without limit for the heaviest — i.e.
       // most engaged — users. MAX_CHART_LOGS covers several years of history at
       // full resolution and bounds the worst case.
-      .order('completed_at', { ascending: false, foreignTable: 'sessions' })
+      .order('local_date', { ascending: false, foreignTable: 'sessions' })
       .limit(MAX_CHART_LOGS)
 
     // Restore ascending (oldest → newest) order the chart expects; the query
@@ -159,8 +170,10 @@ export default function ProgressPage() {
       const sRaw = log.sessions
       const s = Array.isArray(sRaw) ? sRaw[0] : sRaw
       if (!s) continue
+      // Prefer local_date (streak/calendar day) over UTC completed_at.
+      const dateKey = s.local_date ?? s.completed_at
       if (!map[s.id]) {
-        map[s.id] = { id: s.id, completedAt: s.completed_at, sets: [], hasPR: false }
+        map[s.id] = { id: s.id, completedAt: dateKey, sets: [], hasPR: false }
       }
       if (log.weight !== null && log.reps !== null) {
         // Convert stored canonical lbs into the active display unit here so every
@@ -172,7 +185,15 @@ export default function ProgressPage() {
     }
 
     const sessions = Object.values(map).sort(
-      (a, b) => new Date(a.completedAt).getTime() - new Date(b.completedAt).getTime(),
+      (a, b) => {
+        const aT = /^\d{4}-\d{2}-\d{2}$/.test(a.completedAt)
+          ? new Date(a.completedAt + 'T12:00:00').getTime()
+          : new Date(a.completedAt).getTime()
+        const bT = /^\d{4}-\d{2}-\d{2}$/.test(b.completedAt)
+          ? new Date(b.completedAt + 'T12:00:00').getTime()
+          : new Date(b.completedAt).getTime()
+        return aT - bT
+      },
     )
 
     const points: ChartPoint[] = []
@@ -202,9 +223,12 @@ export default function ProgressPage() {
           break
         }
       }
+      const display = /^\d{4}-\d{2}-\d{2}$/.test(s.completedAt)
+        ? new Date(s.completedAt + 'T12:00:00')
+        : new Date(s.completedAt)
       points.push({
         date: s.completedAt,
-        displayDate: new Date(s.completedAt).toLocaleDateString('en-US', {
+        displayDate: display.toLocaleDateString('en-US', {
           month: 'short',
           day: 'numeric',
         }),

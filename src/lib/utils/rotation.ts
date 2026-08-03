@@ -16,11 +16,15 @@ export interface OverdueDay {
   daysSince: number | null
 }
 
-/** Whole calendar days between a past ISO timestamp and `now`, derived from local
- *  date keys so the count never drifts with the viewer's timezone — compute this
- *  client-side (see localDateKey + the Dates & timezones note in CLAUDE.md). */
+/** Whole calendar days between a past ISO timestamp (or YYYY-MM-DD local_date)
+ *  and `now`, derived from local date keys so the count never drifts with the
+ *  viewer's timezone — compute this client-side (see localDateKey + the Dates
+ *  & timezones note in CLAUDE.md). */
 export function calendarDaysSince(iso: string, now: Date = new Date()): number {
-  const from = new Date(localDateKey(new Date(iso)) + 'T12:00:00')
+  const fromKey = /^\d{4}-\d{2}-\d{2}$/.test(iso)
+    ? iso
+    : localDateKey(new Date(iso))
+  const from = new Date(fromKey + 'T12:00:00')
   const to = new Date(localDateKey(now) + 'T12:00:00')
   return Math.max(0, Math.round((to.getTime() - from.getTime()) / 86_400_000))
 }
@@ -52,8 +56,9 @@ function queueDistance(seq: string[], currentIndex: number, day: string): number
  * filler days (e.g. abs) are excluded, since skipping one instance isn't a real
  * skip and their freshness would otherwise falsely flag the days around them.
  *
- * Pure. `lastTrainedByDay` maps day_key → last completed ISO timestamp (null/absent
- * = never trained, treated as oldest). Returns most-overdue-first.
+ * Pure. `lastTrainedByDay` maps day_key → last completed local_date (YYYY-MM-DD)
+ * or ISO timestamp (null/absent = never trained, treated as oldest).
+ * Returns most-overdue-first.
  */
 export function overdueDays(
   seq: string[],
@@ -73,7 +78,10 @@ export function overdueDays(
   const days = [...new Set(seq)].filter(d => counts[d] === 1)
   const recency = (d: string): number => {
     const iso = lastTrainedByDay[d] ?? null
-    return iso === null ? -Infinity : new Date(iso).getTime()
+    if (iso === null) return -Infinity
+    return /^\d{4}-\d{2}-\d{2}$/.test(iso)
+      ? new Date(iso + 'T12:00:00').getTime()
+      : new Date(iso).getTime()
   }
   const dist = (d: string) => queueDistance(seq, currentIndex, d)
 
