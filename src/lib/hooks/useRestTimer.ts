@@ -158,15 +158,25 @@ export function useRestTimer() {
   }
 
   function pause() {
-    setState(s => (s.exerciseId && !s.paused ? { ...s, paused: true } : s))
+    // Freeze the exact remaining time rather than whatever the last 250ms tick
+    // left behind — otherwise each pause/resume cycle silently gifts up to a
+    // quarter second of rest.
+    setState(s =>
+      s.exerciseId && !s.paused
+        ? { ...s, paused: true, remainingMs: Math.max(0, s.durationMs - (Date.now() - s.startedAt)) }
+        : s,
+    )
   }
 
   function resume() {
-    // Rebase the clock onto the frozen remaining time so the countdown picks up
-    // exactly where it left off.
+    // Rebase the clock so `durationMs - elapsed` lands back on the frozen
+    // remaining time. Only startedAt moves: durationMs stays the FULL rest
+    // period, because the progress bar draws remainingMs/durationMs — shrinking
+    // the duration to what's left (as this used to) snaps the bar back to 100%
+    // on every resume.
     setState(s =>
       s.exerciseId && s.paused
-        ? { ...s, paused: false, startedAt: Date.now(), durationMs: s.remainingMs }
+        ? { ...s, paused: false, startedAt: Date.now() - (s.durationMs - s.remainingMs) }
         : s,
     )
   }

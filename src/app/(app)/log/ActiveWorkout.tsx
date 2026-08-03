@@ -2854,6 +2854,7 @@ function SetRow({
             value={logEntry.reps}
             onChange={e => handleRepsChange(e.target.value)}
             onFocus={e => { e.target.select(); ensureVisible(e.currentTarget) }}
+            onBlur={() => setNeedsReps(false)}
             onKeyDown={handleRepsKeyDown}
             disabled={inputsDisabled}
             placeholder="0"
@@ -3012,6 +3013,12 @@ function SetRow({
       {/* Always mounted so the field slides rather than snapping (.drawer in
           globals.css); `inert` keeps the hidden input out of the tab order. */}
       <div className="drawer" data-open={noteVisible}>
+        {/* The drawer's direct child must be padding-free: `grid-template-rows:
+            0fr` only zeroes its CONTENT height, so padding on it survives the
+            collapse and (since overflow clips at the padding box) leaves a
+            sliver of the input showing under every set. Padding goes one level
+            in — same shape as FriendsAccordion/ProfileDashboard. */}
+        <div>
         {/* 2px of top padding so the drawer's overflow clip doesn't cut the
             input's keyboard focus ring (outline-offset: 2px). */}
         <div inert={!noteVisible} style={{ padding: '2px 16px 8px' }}>
@@ -3039,6 +3046,7 @@ function SetRow({
               outline: 'none',
             }}
           />
+        </div>
         </div>
       </div>
     </div>

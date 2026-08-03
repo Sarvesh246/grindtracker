@@ -90,6 +90,11 @@ Three rules that are easy to get wrong:
 - **Fill mode is `backwards`, never `both`.** An element holding a finished
   transform becomes a containing block for fixed/absolute descendants, which
   silently breaks the fixed workout bars and nav.
+- **A `.drawer`'s direct child must have no padding.** `grid-template-rows: 0fr`
+  zeroes only its *content* height, and `overflow: hidden` clips at the padding
+  box — so padding on the grid item leaves a sliver of the collapsed panel
+  showing (this shipped once as a row of pill-shaped bars under every set in
+  ActiveWorkout). Pad an inner wrapper instead.
 - **A `.drawer`'s inner wrapper clips.** Give the content ~2px of top padding
   so keyboard focus rings (`outline-offset: 2px`) aren't cut, and mark it
   `inert` while closed so collapsed controls leave the tab order. Don't nest a
