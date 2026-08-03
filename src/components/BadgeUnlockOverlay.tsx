@@ -61,6 +61,11 @@ export default function BadgeUnlockOverlay({
         transition: 'transform 380ms cubic-bezier(0.34, 1.56, 0.64, 1)',
         maxWidth: '360px',
         width: '100%',
+        // Bounded to the viewport (minus the outer 32px padding) so a large
+        // batch of badges scrolls internally instead of pushing the CONTINUE
+        // button off-screen — only the badge list scrolls; the title and
+        // button stay put, so the CTA is always reachable.
+        maxHeight: 'calc(100dvh - 64px)',
       }}>
         <div style={{
           fontFamily: "'Bebas Neue', sans-serif",
@@ -70,11 +75,25 @@ export default function BadgeUnlockOverlay({
           marginBottom: '20px',
           opacity: shown ? 1 : 0,
           transition: 'opacity 300ms ease 120ms',
+          flexShrink: 0,
         }}>
           {multiple ? 'NEW BADGES UNLOCKED' : 'NEW BADGE UNLOCKED'}
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', width: '100%', marginBottom: '28px' }}>
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '20px',
+          width: '100%',
+          marginBottom: '28px',
+          overflowY: 'auto',
+          overscrollBehavior: 'contain',
+          WebkitOverflowScrolling: 'touch',
+          flex: '1 1 auto',
+          minHeight: 0,
+          // Room for the focus ring / scrollbar without clipping either.
+          padding: '2px 2px',
+        }}>
           {badges.map((badge, i) => {
             const delay = 160 + i * 130
             return (
@@ -152,6 +171,7 @@ export default function BadgeUnlockOverlay({
             letterSpacing: '1px',
             cursor: 'pointer',
             opacity: shown ? 1 : 0,
+            flexShrink: 0,
             transition: `opacity 300ms ease ${160 + badges.length * 130}ms`,
           }}
         >

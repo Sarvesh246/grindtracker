@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Exercise } from '@/lib/types'
-import { checkAndAwardBadges, ALL_BADGES, type BadgeDefinition } from '@/lib/utils/badges'
+import { checkAndAwardBadges, revokeRecentBadges, ALL_BADGES, type BadgeDefinition } from '@/lib/utils/badges'
 import BadgeUnlockOverlay from '@/components/BadgeUnlockOverlay'
 import { localDateKey } from '@/lib/utils/formatting'
 import { haptic } from '@/lib/utils/haptics'
@@ -69,6 +69,13 @@ export interface FinishUndoToken {
    * how a replayed or tampered undo token could mint XP out of nothing.
    */
   prevRotationIndex: number
+  /**
+   * Badge ids newly awarded by this finish, so undo can revoke exactly those
+   * (see `revokeRecentBadges`) — otherwise re-finishing the same workout
+   * would satisfy the same conditions but never re-show badges already
+   * sitting in `user_badges` from the finish that got undone.
+   */
+  newBadgeIds: string[]
   expiresAt: number
 }
 
@@ -1065,6 +1072,16 @@ export default function ActiveWorkout({ day }: { day: string }) {
       .update({ current_index: token.prevRotationIndex })
       .eq('user_id', user.id)
 
+    // Un-award whatever this finish granted — a bonus cleanup, same as the
+    // award itself, so it never blocks the undo the user is waiting on.
+    if (token.newBadgeIds?.length) {
+      try {
+        await revokeRecentBadges(supabase, token.newBadgeIds)
+      } catch {
+        // Non-critical — worst case the badge just won't re-earn next finish.
+      }
+    }
+
     localStorage.removeItem('grind_finish_undo')
     setCompletionData(null)
   }
@@ -1205,20 +1222,6 @@ export default function ActiveWorkout({ day }: { day: string }) {
         // Rotation is a non-critical convenience; swallow and move on.
       }
 
-      // Store a 10-minute undo token so the user can resume if they finished
-      // by accident.
-      if (typeof window !== 'undefined') {
-        const token: FinishUndoToken = {
-          sessionId,
-          day,
-          userId: user.id,
-          xpEarned,
-          prevRotationIndex,
-          expiresAt: Date.now() + 10 * 60 * 1000,
-        }
-        localStorage.setItem('grind_finish_undo', JSON.stringify(token))
-      }
-
       // Badge awards are a bonus — never fail an already-saved finish over them.
       let newBadges: string[] = []
       try {
@@ -1237,6 +1240,22 @@ export default function ActiveWorkout({ day }: { day: string }) {
           .map(id => ALL_BADGES.find(b => b.id === id))
           .filter((b): b is BadgeDefinition => !!b)
         if (resolved.length > 0) setBadgeUnlock(resolved)
+      }
+
+      // Store a 10-minute undo token so the user can resume if they finished
+      // by accident. Written after the badge check so it can carry the ids
+      // that check just awarded.
+      if (typeof window !== 'undefined') {
+        const token: FinishUndoToken = {
+          sessionId,
+          day,
+          userId: user.id,
+          xpEarned,
+          prevRotationIndex,
+          newBadgeIds: newBadges,
+          expiresAt: Date.now() + 10 * 60 * 1000,
+        }
+        localStorage.setItem('grind_finish_undo', JSON.stringify(token))
       }
 
       setCompletionData({
