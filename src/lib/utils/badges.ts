@@ -95,3 +95,21 @@ export async function checkAndAwardBadges(
   }
   return []
 }
+
+/**
+ * Un-award a batch of badges that `checkAndAwardBadges` just granted, after
+ * the finish that earned them was undone (docs/sql/21-badge-session-fixes.sql).
+ * Without this, re-finishing the same workout would satisfy the same
+ * conditions but skip the insert (already earned) — so the badges the user
+ * saw once would silently never reappear. Scoped server-side to the caller
+ * and to badges earned in the last 15 minutes, so it can only unwind a
+ * finish that just happened. Best-effort: never fail the undo over it.
+ */
+export async function revokeRecentBadges(
+  supabase: SupabaseClient,
+  badgeIds: string[],
+): Promise<void> {
+  if (badgeIds.length === 0) return
+  const { error } = await supabase.rpc('revoke_recent_badges', { p_badge_ids: badgeIds })
+  if (error) console.error('[grind] revoke_recent_badges failed', error)
+}
