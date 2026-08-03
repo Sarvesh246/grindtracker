@@ -33,6 +33,7 @@ is fully linked to migration history.
 | [18-skip-persistence.sql](sql/18-skip-persistence.sql) | 18 | Skip markers |
 | [19-friend-profile.sql](sql/19-friend-profile.sql) | 19 | Friend profile RPC |
 | [20-production-hardening.sql](sql/20-production-hardening.sql) | 20 | **Security / integrity hardening** (see below) |
+| [21-badge-session-fixes.sql](sql/21-badge-session-fixes.sql) | 21 | Fix `award_earned_badges` param mismatch; add `revoke_recent_badges` for finish-undo |
 
 ## Deploying 20
 
