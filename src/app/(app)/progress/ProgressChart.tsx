@@ -104,7 +104,10 @@ export default function ProgressChart({ data }: { data: ChartPoint[] }) {
   const yAxisWidth = Math.max(36, maxTickLen * 9 + 8)
 
   return (
-    <div>
+    // width/minWidth pin this to the parent's full width: the card that renders
+    // the chart is a flex container, and without them this wrapper shrink-wraps
+    // to the table's content width, squeezing the chart into a narrow column.
+    <div style={{ width: '100%', minWidth: 0 }}>
       <div aria-hidden="true">
         <ResponsiveContainer width="100%" height={216}>
           <LineChart
@@ -154,6 +157,7 @@ export default function ProgressChart({ data }: { data: ChartPoint[] }) {
       <table
         style={{
           width: '100%',
+          tableLayout: 'fixed',
           borderCollapse: 'collapse',
           fontSize: '12px',
           marginTop: '12px',
@@ -164,21 +168,42 @@ export default function ProgressChart({ data }: { data: ChartPoint[] }) {
         }}>
           Progress data points
         </caption>
+        {/* Fixed layout + explicit widths: the value column carries the longest
+            text ("3,040 lbs · vol"), so content-sized columns crowd the date
+            against it and starve the PR column. */}
+        <colgroup>
+          <col style={{ width: '28%' }} />
+          <col style={{ width: 'auto' }} />
+          <col style={{ width: '18%' }} />
+        </colgroup>
         <thead>
           <tr style={{ color: 'var(--text-muted)', textAlign: 'left' }}>
-            <th scope="col" style={{ padding: '4px 0', fontWeight: 500 }}>Date</th>
-            <th scope="col" style={{ padding: '4px 0', fontWeight: 500 }}>Value</th>
-            <th scope="col" style={{ padding: '4px 0', fontWeight: 500 }}>PR</th>
+            <th scope="col" style={{ padding: '4px 8px 4px 0', fontWeight: 500 }}>Date</th>
+            <th scope="col" style={{ padding: '4px 8px 4px 0', fontWeight: 500 }}>Value</th>
+            <th scope="col" style={{ padding: '4px 0', fontWeight: 500, textAlign: 'right' }}>PR</th>
           </tr>
         </thead>
         <tbody>
           {[...data].reverse().slice(0, 12).map((p, i) => (
             <tr key={`${p.date}-${i}`} style={{ borderTop: '1px solid var(--border)' }}>
-              <td style={{ padding: '8px 0', color: 'var(--text-secondary)' }}>{p.displayDate}</td>
-              <td style={{ padding: '8px 0', color: 'var(--text-primary)', fontFamily: "'JetBrains Mono', monospace" }}>
+              <td style={{ padding: '8px 8px 8px 0', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                {p.displayDate}
+              </td>
+              <td style={{
+                padding: '8px 8px 8px 0',
+                color: 'var(--text-primary)',
+                fontFamily: "'JetBrains Mono', monospace",
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}>
                 {p.label}
               </td>
-              <td style={{ padding: '8px 0', color: p.isPR ? 'var(--accent-text)' : 'var(--text-muted)' }}>
+              <td style={{
+                padding: '8px 0',
+                color: p.isPR ? 'var(--accent-text)' : 'var(--text-muted)',
+                textAlign: 'right',
+              }}>
                 {p.isPR ? 'Yes' : '—'}
               </td>
             </tr>

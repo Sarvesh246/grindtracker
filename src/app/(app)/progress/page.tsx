@@ -548,12 +548,16 @@ export default function ProgressPage() {
           borderRadius: '12px',
           padding: '16px 12px 12px',
           minHeight: '220px',
+          // Column flex (not row) so children stretch to the card's full width —
+          // the chart + data table wrapper would otherwise shrink-wrap to its
+          // content as a row flex item and render narrow. justifyContent still
+          // vertically centers the loading / empty states.
           display: 'flex',
-          alignItems: 'center',
+          flexDirection: 'column',
           justifyContent: 'center',
         }}>
           {loadingChart ? (
-            <div style={{ color: 'var(--text-muted)', fontSize: '14px' }}>Loading...</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: '14px', textAlign: 'center' }}>Loading...</div>
           ) : chartData.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '32px 16px' }}>
               <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px' }}>
