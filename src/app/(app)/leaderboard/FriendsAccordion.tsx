@@ -284,9 +284,9 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
           globals.css); `inert` keeps the collapsed controls untabbable. */}
       <div className="drawer" data-open={open}>
         <div>
-        {/* 2px top padding keeps the drawer's clip off the first control's
-            focus ring (outline-offset: 2px). */}
-        <div id="friends-panel" inert={!open} style={{ padding: '2px 16px 16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        {/* 4px top padding keeps the drawer's clip off the first control's
+            focus ring: outline-offset 2px + outline width 2px = 4px needed. */}
+        <div id="friends-panel" inert={!open} style={{ padding: '4px 16px 16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {actionError && (
             <div role="alert" style={{
               fontSize: '13px',

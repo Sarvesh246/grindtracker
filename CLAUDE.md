@@ -95,11 +95,15 @@ Three rules that are easy to get wrong:
   box — so padding on the grid item leaves a sliver of the collapsed panel
   showing (this shipped once as a row of pill-shaped bars under every set in
   ActiveWorkout). Pad an inner wrapper instead.
-- **A `.drawer`'s inner wrapper clips.** Give the content ~2px of top padding
-  so keyboard focus rings (`outline-offset: 2px`) aren't cut, and mark it
-  `inert` while closed so collapsed controls leave the tab order. Don't nest a
-  `.stagger` inside a `.drawer` — the height slide is already the reveal, and
-  layering a per-item fade on top just makes it feel slow.
+- **A `.drawer`'s inner wrapper clips.** Give the content 4px of top padding —
+  not 2px — so keyboard focus rings aren't cut: the ring sits `outline-offset:
+  2px` beyond the element plus its own 2px width, so it needs a full 4px of
+  clearance from the clip edge, not just the offset (this shipped once as the
+  top of a focused set-note input reading as cropped, permanently, not just
+  mid-animation). Mark the content `inert` while closed so collapsed controls
+  leave the tab order. Don't nest a `.stagger` inside a `.drawer` — the height
+  slide is already the reveal, and layering a per-item fade on top just makes
+  it feel slow.
 
 ### Responsive navigation
 `TopNav` (desktop) and `BottomNav` (mobile) both render in `(app)/layout.tsx`;
