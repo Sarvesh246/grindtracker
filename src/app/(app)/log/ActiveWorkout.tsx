@@ -3019,9 +3019,11 @@ function SetRow({
             sliver of the input showing under every set. Padding goes one level
             in — same shape as FriendsAccordion/ProfileDashboard. */}
         <div>
-        {/* 2px of top padding so the drawer's overflow clip doesn't cut the
-            input's keyboard focus ring (outline-offset: 2px). */}
-        <div inert={!noteVisible} style={{ padding: '2px 16px 8px' }}>
+        {/* 4px of top padding so the drawer's overflow clip doesn't cut the
+            input's keyboard focus ring: outline-offset 2px + outline width 2px
+            = 4px of clearance needed, not 2px — with only 2px the ring's top
+            edge (and the input's own top border under it) got sliced off. */}
+        <div inert={!noteVisible} style={{ padding: '4px 16px 8px' }}>
           <input
             type="text"
             value={logEntry.note}
