@@ -36,13 +36,14 @@ function variantStyle(variant: NonNullable<IconButtonProps['variant']>): CSSProp
 }
 
 const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(
-  { size = 'md', variant = 'ghost', children, style, disabled, ...rest },
+  { size = 'md', variant = 'ghost', children, style, className, disabled, ...rest },
   ref,
 ) {
   return (
     <button
       ref={ref}
       disabled={disabled}
+      className={className ? `press ${className}` : 'press'}
       style={{
         width: `${PX[size]}px`,
         height: `${PX[size]}px`,
@@ -52,7 +53,6 @@ const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconB
         alignItems: 'center',
         justifyContent: 'center',
         flexShrink: 0,
-        transition: 'background-color 150ms ease, opacity 150ms ease',
         opacity: disabled ? 0.4 : 1,
         ...variantStyle(variant),
         ...style,

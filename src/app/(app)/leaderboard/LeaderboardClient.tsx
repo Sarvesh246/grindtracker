@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef, type CSSProperties } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { LeaderboardEntry } from '@/lib/types'
@@ -190,6 +190,7 @@ export default function LeaderboardClient({ userId }: Props) {
           return (
             <button
               key={c.key}
+              className="press"
               onClick={() => setCategory(c.key)}
               style={{
                 padding: '7px 16px',
@@ -203,7 +204,6 @@ export default function LeaderboardClient({ userId }: Props) {
                 letterSpacing: '0.5px',
                 cursor: 'pointer',
                 whiteSpace: 'nowrap',
-                transition: 'all 150ms ease',
               }}
             >{c.label}</button>
           )
@@ -258,7 +258,10 @@ export default function LeaderboardClient({ userId }: Props) {
 
       {/* Leaderboard rows */}
       {!loading && entries.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        // Keyed on the category so the ranking re-deals itself when you switch
+        // tabs — the whole order changes, so a hard cut loses the connection
+        // between the tab you tapped and the list that answered.
+        <div key={category} className="stagger" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {entries.map((entry, idx) => {
             const rank = idx + 1
             const isMe = entry.user_id === userId
@@ -267,10 +270,12 @@ export default function LeaderboardClient({ userId }: Props) {
             return (
               <button
                 key={entry.user_id}
+                className="press-card"
                 // Own row opens the real (editable) profile; a friend's opens
                 // the read-only view — see (app)/leaderboard/[username].
                 onClick={() => router.push(isMe ? '/profile' : `/leaderboard/${entry.username}`)}
                 style={{
+                  '--i': Math.min(idx, 10),
                   display: 'flex',
                   alignItems: 'center',
                   gap: '12px',
@@ -284,7 +289,7 @@ export default function LeaderboardClient({ userId }: Props) {
                   cursor: 'pointer',
                   font: 'inherit',
                   color: 'inherit',
-                }}
+                } as CSSProperties}
               >
                 {/* Rank */}
                 <div style={{

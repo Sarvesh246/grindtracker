@@ -151,6 +151,7 @@ export default function WorkoutCalendar() {
         marginBottom: '14px',
       }}>
         <button
+          className="press"
           onClick={handlePrev}
           aria-label="Previous month"
           style={{
@@ -175,6 +176,7 @@ export default function WorkoutCalendar() {
         </span>
 
         <button
+          className="press"
           onClick={handleNext}
           disabled={isOnCurrentMonth}
           aria-label="Next month"
@@ -208,9 +210,11 @@ export default function WorkoutCalendar() {
         ))}
       </div>
 
-      {/* Day grid */}
+      {/* Day grid. Keyed on the month so paging re-runs the entrance — the
+          whole grid changes underneath and a hard cut hides which way you moved. */}
       <div
-        className="cal-grid"
+        key={`${year}-${month}`}
+        className="cal-grid swap-in"
         role="grid"
         aria-label={`${MONTH_NAMES[month]} ${year} workout calendar`}
         style={{ opacity: loading ? 0.5 : 1, transition: 'opacity 150ms ease' }}

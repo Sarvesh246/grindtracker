@@ -420,6 +420,106 @@ select:focus-visible,
 }
 
 /* ---------------------------------------------------------------------------
+   Shared motion primitives.
+
+   Everything here is CSS-driven on purpose: the reduced-motion block below
+   (OS media query + `html.reduce-motion`) zeroes every duration and delay in
+   one place, so no component has to track animation state or read
+   MotionContext to honor the setting. The single exception in the app stays
+   the Recharts line draw-in, which is a JS animation CSS can't reach.
+
+   Fill mode is `backwards`, never `both`: an element left holding a finished
+   transform becomes a containing block for its fixed/absolute descendants,
+   which silently breaks things like the workout's fixed bars. `backwards`
+   still covers the pre-delay frame but leaves nothing behind.
+   --------------------------------------------------------------------------- */
+
+/* Press feedback. Owns transform plus the color transitions nearly every
+   control wants; the control keeps setting its own colors inline. */
+.press {
+  transition:
+    transform 120ms ease,
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease;
+}
+.press:active { transform: scale(0.96); }
+
+/* Same, scaled for big tap targets (day cards, leaderboard rows) where a 4%
+   dip reads as a glitch rather than a press. */
+.press-card {
+  transition:
+    transform 120ms ease,
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease;
+}
+.press-card:active { transform: scale(0.985); }
+
+/* Collapsible drawer (badges, body-weight history, friends, set notes).
+   `grid-template-rows: 0fr -> 1fr` animates to the content's natural height
+   without hardcoding a max-height — a 35-tile badge grid and a 90-row weight
+   list are nowhere near the same size. The inner wrapper does the clipping.
+
+   Named `drawer`, NOT `collapse`: Tailwind ships a `.collapse` utility
+   (`visibility: collapse`) that wins the cascade and makes the whole panel
+   invisible even when it has height. Check any new utility name here against
+   Tailwind's before using it. */
+.drawer {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 260ms ease;
+}
+.drawer[data-open='true'] { grid-template-rows: 1fr; }
+.drawer > * {
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* Keyed content swap — a panel whose contents change wholesale (chart series,
+   calendar month, leaderboard category). Remount it with a changing React key
+   so the animation actually replays. */
+@keyframes swap-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.swap-in { animation: swap-in 220ms ease backwards; }
+
+/* Staggered list entrance. Children carry `--i`; clamp it in the component so
+   a long list doesn't finish in a visible crawl. */
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.stagger > * {
+  animation: rise-in 220ms ease backwards;
+  animation-delay: calc(var(--i, 0) * 30ms);
+}
+
+/* Staggered entrance for a fixed handful of children where threading an index
+   through the JSX buys nothing. Caps out at the 6th child so a long column
+   doesn't trail.
+
+   Fade only, no rise: this one is aimed at the dashboard columns, which set
+   `overflow: hidden` to keep wide children from widening the layout — a child
+   translated down would be clipped against the column's bottom edge on the
+   way in. */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.stagger-auto > * { animation: fade-in 240ms ease backwards; }
+.stagger-auto > *:nth-child(2) { animation-delay: 40ms; }
+.stagger-auto > *:nth-child(3) { animation-delay: 80ms; }
+.stagger-auto > *:nth-child(4) { animation-delay: 120ms; }
+.stagger-auto > *:nth-child(5) { animation-delay: 160ms; }
+.stagger-auto > *:nth-child(n + 6) { animation-delay: 200ms; }
+
+/* Route-level entrance. Opacity only — a transform here would make every page
+   a containing block for the fixed nav and workout bars. */
+.page { animation: fade-in 200ms ease; }
+
+/* ---------------------------------------------------------------------------
    Reduced motion — respect user preference. Zero out transitions and
    keyframe animations rather than disabling functionality. Two independent
    triggers land on the same rule: the OS-level media query, and the app's own

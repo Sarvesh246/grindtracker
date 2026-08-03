@@ -234,7 +234,10 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
     }}>
       {/* Accordion header */}
       <button
+        className="press"
         onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+        aria-controls="friends-panel"
         style={{
           width: '100%',
           display: 'flex',
@@ -277,8 +280,13 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
         </svg>
       </button>
 
-      {open && (
-        <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      {/* Always mounted so the panel animates open/closed (.drawer in
+          globals.css); `inert` keeps the collapsed controls untabbable. */}
+      <div className="drawer" data-open={open}>
+        <div>
+        {/* 2px top padding keeps the drawer's clip off the first control's
+            focus ring (outline-offset: 2px). */}
+        <div id="friends-panel" inert={!open} style={{ padding: '2px 16px 16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {actionError && (
             <div role="alert" style={{
               fontSize: '13px',
@@ -525,7 +533,8 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
             </div>
           )}
         </div>
-      )}
+        </div>
+      </div>
     </div>
   )
 }

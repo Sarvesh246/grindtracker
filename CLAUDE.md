@@ -68,6 +68,34 @@ animation the CSS class can't touch. Those two call sites (`ProgressChart.tsx`,
 needs the same treatment, since neither the media query nor the `.reduce-motion`
 class does it automatically.
 
+### Motion system (globals.css)
+Five shared primitives cover nearly every transition in the app. **Reach for
+these before writing a bespoke animation** — being CSS-driven is what lets
+Reduced motion above zero them out in one place, with no component tracking
+animation state:
+
+| Class | What it does | Used by |
+| --- | --- | --- |
+| `.press` / `.press-card` | tap dip (scale .96 / .985) + the usual colour transitions | pills, tabs, nav items, `ui/Button`, `ui/IconButton`, day & leaderboard cards |
+| `.drawer` + `data-open` | height collapse via `grid-template-rows: 0fr→1fr` | badges, body-weight history, friends accordion, per-set notes |
+| `.swap-in` | fade + 6px rise for a panel whose contents changed | progress chart, calendar month grid |
+| `.stagger` (children set `--i`) | indexed list entrance | progress stats/recent sessions, leaderboard rows, day grid |
+| `.stagger-auto` | same, nth-child delays, fade only | home dashboard columns |
+
+Three rules that are easy to get wrong:
+- **Check new utility names against Tailwind's.** This landed broken once: the
+  drawer was originally `.collapse`, which is a Tailwind utility
+  (`visibility: collapse`) — the panel animated to full height with its
+  contents invisible.
+- **Fill mode is `backwards`, never `both`.** An element holding a finished
+  transform becomes a containing block for fixed/absolute descendants, which
+  silently breaks the fixed workout bars and nav.
+- **A `.drawer`'s inner wrapper clips.** Give the content ~2px of top padding
+  so keyboard focus rings (`outline-offset: 2px`) aren't cut, and mark it
+  `inert` while closed so collapsed controls leave the tab order. Don't nest a
+  `.stagger` inside a `.drawer` — the height slide is already the reveal, and
+  layering a per-item fade on top just makes it feel slow.
+
 ### Responsive navigation
 `TopNav` (desktop) and `BottomNav` (mobile) both render in `(app)/layout.tsx`;
 CSS at the 768px breakpoint shows exactly one — there is no JS width detection.

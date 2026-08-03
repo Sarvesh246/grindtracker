@@ -2893,6 +2893,7 @@ function SetRow({
             of the planned workout. Sets that are part of the day keep Skip/Undo. */}
         {isBonus ? (
           <button
+            className="press"
             onClick={onDelete}
             title="Delete this set"
             aria-label={`Delete set ${setNumber}`}
@@ -2921,6 +2922,7 @@ function SetRow({
           /* Skip / unskip set button. Also enabled in edit mode so the user can
              skip a previously logged set (handleSkipSet will delete the DB row). */
           <button
+            className="press"
             data-onboard={onboardFirst ? 'aw-skip' : undefined}
             onClick={logEntry.skipped ? onUnskip : (logEntry.checked && !editing ? undefined : onSkip)}
             disabled={logEntry.checked && !editing}
@@ -3007,8 +3009,12 @@ function SetRow({
         )}
       </div>
 
-      {noteVisible && (
-        <div style={{ padding: '0 16px 8px' }}>
+      {/* Always mounted so the field slides rather than snapping (.drawer in
+          globals.css); `inert` keeps the hidden input out of the tab order. */}
+      <div className="drawer" data-open={noteVisible}>
+        {/* 2px of top padding so the drawer's overflow clip doesn't cut the
+            input's keyboard focus ring (outline-offset: 2px). */}
+        <div inert={!noteVisible} style={{ padding: '2px 16px 8px' }}>
           <input
             type="text"
             value={logEntry.note}
@@ -3034,7 +3040,7 @@ function SetRow({
             }}
           />
         </div>
-      )}
+      </div>
     </div>
   )
 }

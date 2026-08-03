@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, type CSSProperties } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { getLevel, getXpInCurrentLevel, getXpRequiredForLevel, getXpToNextLevel } from '@/lib/utils/gamification'
@@ -932,7 +932,14 @@ export default function ProfileDashboard({
       <div style={{ marginBottom: '32px' }}>
         <button
           data-onboard="profile-badges"
-          onClick={() => setBadgesOpen(v => !v)}
+          aria-expanded={badgesOpen}
+          aria-controls="profile-badge-grid"
+          onClick={() => {
+            // Drop any open tooltip on the way out — it's absolutely
+            // positioned and would otherwise ride the drawer closed.
+            if (badgesOpen) setTooltipBadgeId(null)
+            setBadgesOpen(v => !v)
+          }}
           style={{
             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
             width: '100%',
@@ -941,7 +948,7 @@ export default function ProfileDashboard({
             borderRadius: badgesOpen ? '12px 12px 0 0' : '12px',
             padding: '14px 16px',
             cursor: 'pointer',
-            transition: 'border-color 150ms ease',
+            transition: 'border-color 150ms ease, border-radius 260ms ease',
           }}
           onMouseEnter={e => (e.currentTarget.style.borderColor = 'rgba(200,241,53,0.5)')}
           onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}
@@ -963,19 +970,30 @@ export default function ProfileDashboard({
           </div>
         </button>
 
-        {badgesOpen && <div className="badge-grid" style={{
-          backgroundColor: 'var(--surface)',
-          border: '1px solid var(--border)',
-          borderTop: 'none',
-          borderRadius: '0 0 12px 12px',
-          padding: '10px',
-        }}>
+        {/* Always mounted so the drawer can animate to its natural height (see
+            .drawer in globals.css). The inner wrapper clips during the slide;
+            it opens up again only while a badge tooltip needs to escape the
+            bottom edge, which can't happen until the drawer is already open. */}
+        <div className="drawer" data-open={badgesOpen}>
+        <div style={{ overflow: tooltipBadgeId ? 'visible' : undefined }}>
+        <div
+          id="profile-badge-grid"
+          className="badge-grid"
+          inert={!badgesOpen}
+          style={{
+            backgroundColor: 'var(--surface)',
+            border: '1px solid var(--border)',
+            borderTop: 'none',
+            borderRadius: '0 0 12px 12px',
+            padding: '10px',
+          }}>
           {allBadges.map((badge) => {
             const earned = earnedSet.has(badge.id)
             const showTooltip = tooltipBadgeId === badge.id
             return (
               <div
                 key={badge.id}
+                className="press"
                 style={{
                   backgroundColor: 'var(--surface)',
                   border: `1px solid ${earned ? 'rgba(200, 241, 53, 0.4)' : 'var(--border)'}`,
@@ -990,7 +1008,7 @@ export default function ProfileDashboard({
                   overflow: 'visible',
                   cursor: 'pointer',
                   zIndex: showTooltip ? 2 : 'auto',
-                }}
+                } as CSSProperties}
                 onMouseEnter={() => setTooltipBadgeId(badge.id)}
                 onMouseLeave={() => setTooltipBadgeId(null)}
                 onTouchEnd={(e) => { e.preventDefault(); setTooltipBadgeId(v => v === badge.id ? null : badge.id) }}
@@ -1070,7 +1088,9 @@ export default function ProfileDashboard({
               </div>
             )
           })}
-        </div>}
+        </div>
+        </div>
+        </div>
       </div>
 
       {/* Sign out */}

@@ -538,7 +538,7 @@ export default function HomeDashboard({
       )}
 
       <div className="home-grid">
-      <div className="home-col hg-left" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <div className="home-col hg-left stagger-auto" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
       {/* Greeting — the visual starting point of the dashboard. */}
       <div>
@@ -1221,7 +1221,7 @@ export default function HomeDashboard({
         )}
       </div>{/* end last-workout band */}
 
-      <div className="home-col hg-right" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      <div className="home-col hg-right stagger-auto" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
       {/* Stats Row — three equal-width, equal-height cards. */}
       <div data-onboard="home-stats" style={{ display: 'flex', gap: '20px', alignItems: 'stretch' }}>

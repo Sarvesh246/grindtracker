@@ -1,5 +1,5 @@
 'use client'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Exercise, UserRotation } from '@/lib/types'
@@ -243,7 +243,7 @@ export default function DaySelect() {
             </button>
           </div>
         ) : (
-          <div className="day-grid">
+          <div className="day-grid stagger">
             {dayKeys.map((key, idx) => {
               const exs = grouped[key]
               // Preview only active exercises so it matches what the live
@@ -255,21 +255,22 @@ export default function DaySelect() {
               return (
                 <button
                   key={key}
+                  className="press-card"
                   data-onboard={idx === 0 ? 'dayselect-days' : undefined}
                   onClick={() => {
                     haptic('heavy')
                     router.push(`/log?day=${key}`)
                   }}
                   style={{
+                    '--i': idx,
                     backgroundColor: 'var(--surface)',
                     border: isUpNext ? '1px solid var(--accent)' : '1px solid var(--border)',
                     borderRadius: '12px',
                     padding: '20px',
                     textAlign: 'left',
                     cursor: 'pointer',
-                    transition: 'border-color 150ms ease',
                     width: '100%',
-                  }}
+                  } as CSSProperties}
                   onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
                   onMouseLeave={e => (e.currentTarget.style.borderColor = isUpNext ? 'var(--accent)' : 'var(--border)')}
                   onTouchStart={e => (e.currentTarget.style.borderColor = 'var(--accent)')}

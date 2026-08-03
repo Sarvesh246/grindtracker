@@ -1,5 +1,5 @@
 'use client'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Exercise } from '@/lib/types'
@@ -402,6 +402,7 @@ export default function ProgressPage() {
           return (
             <button
               key={dt}
+              className="press"
               onClick={() => {
                 setSelectedDay(dt)
                 const first = exercises.find(e => e.day_type === dt)
@@ -441,6 +442,7 @@ export default function ProgressPage() {
           return (
             <button
               key={ex.id}
+              className="press"
               onClick={() => setSelectedId(ex.id)}
               aria-pressed={active}
               style={{
@@ -482,6 +484,7 @@ export default function ProgressPage() {
             return (
               <button
                 key={m.id}
+                className="press"
                 role="tab"
                 aria-selected={active}
                 onClick={() => setMetric(m.id)}
@@ -496,7 +499,6 @@ export default function ProgressPage() {
                   fontFamily: 'var(--font-sans)',
                   fontWeight: active ? 700 : 500,
                   cursor: 'pointer',
-                  transition: 'background-color 150ms ease, color 150ms ease',
                 }}
               >
                 {m.label}
@@ -508,22 +510,29 @@ export default function ProgressPage() {
 
       </div>{/* end selector cluster */}
 
-      {/* Stats bar */}
-      <div style={{ display: 'flex', gap: '6px', padding: '0 16px', marginBottom: '16px' }}>
+      {/* Stats bar. Keyed on the selection so the tiles re-run their entrance
+          when you switch exercise or metric — the numbers all change at once,
+          and swapping them in place reads as a glitch. */}
+      <div
+        key={`${selectedId}-${metric}`}
+        className="stagger"
+        style={{ display: 'flex', gap: '6px', padding: '0 16px', marginBottom: '16px' }}
+      >
         {[
           { label: 'BEST', value: stats.bestWeight !== null ? (stats.bestWeight === 0 ? 'BW' : `${stats.bestWeight} ${unitLabel}`) : '—', accent: true },
           { label: 'SESSIONS', value: String(stats.sessionCount), accent: false },
           { label: 'LAST', value: stats.lastWeight !== null ? (stats.lastWeight === 0 ? 'BW' : `${stats.lastWeight} ${unitLabel}`) : '—', accent: false },
           { label: 'PRs', value: String(stats.prCount), accent: false },
-        ].map(stat => (
+        ].map((stat, i) => (
           <div key={stat.label} style={{
+            '--i': i,
             flex: 1,
             backgroundColor: 'var(--surface)',
             border: '1px solid var(--border)',
             borderRadius: '10px',
             padding: '10px 6px',
             textAlign: 'center',
-          }}>
+          } as CSSProperties}>
             <div style={{
               fontFamily: "'Bebas Neue', sans-serif",
               fontSize: '22px',
@@ -577,7 +586,11 @@ export default function ProgressPage() {
               </div>
             </div>
           ) : (
-            <ProgressChart data={chartData} />
+            // Keyed so switching exercise or metric replays the entrance
+            // instead of hard-cutting one series into the next.
+            <div key={`${selectedId}-${metric}`} className="swap-in" style={{ width: '100%' }}>
+              <ProgressChart data={chartData} />
+            </div>
           )}
         </div>
       </div>
@@ -593,23 +606,28 @@ export default function ProgressPage() {
             RECENT SESSIONS
           </div>
 
-          <div style={{
-            backgroundColor: 'var(--surface)',
-            border: '1px solid var(--border)',
-            borderRadius: '12px',
-            overflow: 'hidden',
-          }}>
+          <div
+            key={`${selectedId}-${metric}`}
+            className="stagger"
+            style={{
+              backgroundColor: 'var(--surface)',
+              border: '1px solid var(--border)',
+              borderRadius: '12px',
+              overflow: 'hidden',
+            }}
+          >
             {recentSessions.map((session, i) => (
               <div
                 key={i}
                 style={{
+                  '--i': i,
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
                   padding: '11px 16px',
                   backgroundColor: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)',
                   borderBottom: i < recentSessions.length - 1 ? '1px solid var(--border)' : 'none',
-                }}
+                } as CSSProperties}
               >
                 <span style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>
                   {session.date}

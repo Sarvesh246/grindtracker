@@ -64,13 +64,16 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { variant = 'primary', size = 'md', fullWidth = false, disabled = false, style, children, ...rest },
+  { variant = 'primary', size = 'md', fullWidth = false, disabled = false, style, className, children, ...rest },
   ref,
 ) {
   return (
     <button
       ref={ref}
       disabled={disabled}
+      // `press` adds the shared tap-dip; a caller's own className still wins
+      // for anything it sets, it just can't drop the press feedback.
+      className={className ? `press ${className}` : 'press'}
       style={{
         height: HEIGHT[size],
         padding: `0 ${size === 'lg' ? '20px' : size === 'md' ? '16px' : '12px'}`,
@@ -79,7 +82,6 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
         fontFamily: 'var(--font-sans)',
         letterSpacing: '0.5px',
         cursor: disabled ? 'not-allowed' : 'pointer',
-        transition: 'opacity 150ms ease, background-color 150ms ease',
         width: fullWidth ? '100%' : undefined,
         display: 'inline-flex',
         alignItems: 'center',

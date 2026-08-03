@@ -380,6 +380,7 @@ export default function BodyWeightCard() {
           <div style={{ borderTop: '1px solid var(--border)', paddingTop: '4px' }}>
             <button
               type="button"
+              className="press"
               onClick={() => setHistoryOpen(o => !o)}
               aria-expanded={historyOpen}
               aria-controls="bw-history"
@@ -420,10 +421,14 @@ export default function BodyWeightCard() {
               </span>
             </button>
 
-            {historyOpen && (
+            {/* Always mounted so the drawer animates to its natural height —
+                see .drawer in globals.css — and `inert` keeps the collapsed
+                rows out of the tab order and the accessibility tree. */}
+            <div className="drawer" data-open={historyOpen}>
               <ul
                 id="bw-history"
                 aria-label="Body weight history, newest first"
+                inert={!historyOpen}
                 style={{
                   listStyle: 'none',
                   margin: 0,
@@ -439,6 +444,7 @@ export default function BodyWeightCard() {
                   <li key={p.date}>
                     <button
                       type="button"
+                      className="press"
                       onClick={() => openEntry(p)}
                       style={{
                         width: '100%',
@@ -476,7 +482,7 @@ export default function BodyWeightCard() {
                   </li>
                 ))}
               </ul>
-            )}
+            </div>
           </div>
         </>
       )}
