@@ -2854,6 +2854,7 @@ function SetRow({
             value={logEntry.reps}
             onChange={e => handleRepsChange(e.target.value)}
             onFocus={e => { e.target.select(); ensureVisible(e.currentTarget) }}
+            onBlur={() => setNeedsReps(false)}
             onKeyDown={handleRepsKeyDown}
             disabled={inputsDisabled}
             placeholder="0"
