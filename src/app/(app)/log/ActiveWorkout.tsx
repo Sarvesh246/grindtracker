@@ -790,9 +790,15 @@ export default function ActiveWorkout({ day }: { day: string }) {
     const wasChecked = logs[key]?.checked
     // persistSkip upserts the skip marker over whatever was there — including
     // an already-saved checked row, which it overwrites (weight/reps/is_pr
-    // back to null/false) so it doesn't persist as a completed set.
+    // back to null/false) so it doesn't persist as a completed set. Clear the
+    // local weight/reps/note too — otherwise a skipped-but-previously-logged
+    // set keeps showing its old (often accidental) numbers in the disabled,
+    // greyed-out inputs, which reads as "skip didn't actually clear anything."
     setLogs(prev => {
-      const next = { ...prev, [key]: { ...prev[key], skipped: true, checked: false, isPR: false, logId: undefined } }
+      const next = {
+        ...prev,
+        [key]: { ...prev[key], skipped: true, checked: false, isPR: false, logId: undefined, weight: '', reps: '', note: '' },
+      }
       if (wasChecked) {
         // Recompute live PR bars — the overwritten set may have been the best.
         setPreviousBests(pb => ({ ...pb, [exerciseId]: bestFromLogs(exerciseId, next) }))
@@ -833,7 +839,10 @@ export default function ActiveWorkout({ day }: { day: string }) {
       const next = { ...prev }
       for (const s of setsToSkip) {
         const key = `${exerciseId}-${s}`
-        next[key] = { ...next[key], skipped: true, checked: false, isPR: false, logId: undefined }
+        // Clear weight/reps/note along with the skip flag — otherwise an
+        // exercise logged by accident still shows its old numbers, just
+        // greyed out, which doesn't read as "cleared."
+        next[key] = { ...next[key], skipped: true, checked: false, isPR: false, logId: undefined, weight: '', reps: '', note: '' }
       }
       if (anyWasChecked) {
         // Recompute live PR bars — a set we just cleared may have been the best.
