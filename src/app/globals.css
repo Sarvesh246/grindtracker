@@ -471,6 +471,9 @@ select:focus-visible,
   transition: grid-template-rows 260ms ease;
 }
 .drawer[data-open='true'] { grid-template-rows: 1fr; }
+/* The direct child must carry NO padding: 0fr zeroes its content height only,
+   so padding survives the collapse and — because overflow clips at the padding
+   box — leaves a visible sliver of the panel behind. Pad an inner wrapper. */
 .drawer > * {
   overflow: hidden;
   min-height: 0;
