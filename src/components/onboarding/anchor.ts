@@ -24,6 +24,15 @@ export interface Placed {
   /** Pointer offset from the popup's top-left, kept 12px inside each edge. */
   arrowLeft: number
   arrowTop: number
+  /**
+   * Whether the anchor itself currently overlaps the safe viewport area. When
+   * it doesn't (scrolled off the top/bottom inside a scrolling container),
+   * `top`/`left` are still computed but the caller should hide the popup
+   * instead of showing it — otherwise the clamp below pins it to the nearest
+   * edge, so it visually detaches from its target and hovers there for the
+   * rest of the scroll instead of following the target off-screen and back.
+   */
+  anchorVisible: boolean
 }
 
 /**
@@ -104,7 +113,11 @@ export function placePopover(
   const arrowLeft = Math.min(Math.max(anchorCx - left, 14), Math.max(14, popW - 14))
   const arrowTop = Math.min(Math.max(anchorCy - top, 14), Math.max(14, popH - 14))
 
-  return { top, left, side, arrowLeft, arrowTop }
+  const anchorVisible =
+    anchor.top < safeBottom && anchor.top + anchor.height > safeTop &&
+    anchor.left < safeRight && anchor.left + anchor.width > safeLeft
+
+  return { top, left, side, arrowLeft, arrowTop, anchorVisible }
 }
 
 /**

@@ -40,7 +40,13 @@ export default function Tooltip({ getEl, body, title, onDismiss, closing, prefer
   }, [body, title, anchor?.width, anchor?.height])
 
   const placed = anchor && size ? placePopover(anchor, size.w, size.h, { preferred, offset: 10 }) : null
-  const ready = !!placed
+  // Once the anchor scrolls out of the safe viewport area, `placePopover`
+  // clamps the popup to the nearest edge instead of following it off-screen —
+  // without this check the tooltip would visually detach and sit pinned to
+  // that edge (e.g. a lingering "up arrow" pointer at the top) for the rest
+  // of the scroll. Hiding it here instead means it reappears attached to the
+  // real anchor position the moment the user scrolls back to it.
+  const ready = !!placed && placed.anchorVisible
 
   // Pointer sits on the edge facing the anchor.
   const side = placed?.side ?? 'bottom'
