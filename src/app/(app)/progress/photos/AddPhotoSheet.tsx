@@ -180,16 +180,22 @@ export default function AddPhotoSheet({
         </button>
       </div>
 
-      {/* Date */}
+      {/* Date. Native `<input type="date">` can render its internal
+          segments/calendar-icon a few px past a CSS width in some browsers
+          (the bug that was causing page-wide horizontal scroll) — clipping it
+          with an overflow:hidden wrapper guarantees it ends exactly flush
+          with the note/buttons below instead of bleeding past them. */}
       <FieldLabel>DATE</FieldLabel>
-      <Input
-        type="date"
-        value={date}
-        max={today}
-        onChange={e => e.target.value && setDate(e.target.value)}
-        style={{ width: '100%', marginBottom: existingCount > 0 ? '6px' : '16px' }}
-        disabled={submitting}
-      />
+      <div style={{ width: '100%', overflow: 'hidden', borderRadius: 'var(--radius-sm)', marginBottom: existingCount > 0 ? '6px' : '16px' }}>
+        <Input
+          type="date"
+          value={date}
+          max={today}
+          onChange={e => e.target.value && setDate(e.target.value)}
+          style={{ width: '100%', display: 'block' }}
+          disabled={submitting}
+        />
+      </div>
       {existingCount > 0 && (
         <div style={{ fontSize: '12px', color: 'var(--accent-text)', marginBottom: '16px' }}>
           Adding to {existingCount} existing photo{existingCount === 1 ? '' : 's'} from this day.
