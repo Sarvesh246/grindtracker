@@ -1,89 +1,33 @@
 'use client'
-import { createContext, useCallback, useContext, useMemo, useSyncExternalStore } from 'react'
+import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
 
 /**
- * First-time-user onboarding store. Same pattern as the other client prefs
- * (`grind_theme_pref`, `grind_unit_pref`, `grind_overdue_dismissed`): a
- * localStorage key scoped per user, read via `useSyncExternalStore` so hydration
- * stays clean (server snapshot is always the EMPTY default; the client reads the
- * real value after mount) and a custom event reflects a write in one component
- * (or tab) into every subscriber.
+ * First-time-user onboarding store. Server-authoritative (migration
+ * `22-onboarding-state.sql`, columns on `user_profiles`) rather than
+ * localStorage — it used to be a per-browser localStorage key, but that ties
+ * "have I seen this" to one device's storage: private browsing, a cleared-
+ * site-data event, or the installed PWA (a separate storage partition from
+ * the website on some platforms) all read back empty, resurfacing the whole
+ * walkthrough on what looks to the user like just signing back in. Every
+ * other piece of account state in this app is server-authoritative; this
+ * matches that.
  *
  *   toursSeen    — ids of scripted walkthroughs the user finished or skipped.
  *   tooltipsSeen — ids of one-off contextual hints (e.g. ActiveWorkout) shown once.
  *   skipAll      — the user chose "Skip all tours" on the very first coach mark.
  *                  Suppresses every future *scripted tour* but NOT the ActiveWorkout
  *                  contextual tooltips — those are functional hints, opt-in per id.
+ *
+ * The layout Server Component reads the row once per navigation and seeds
+ * this as `initialState`; writes update local state immediately (so the UI
+ * never waits on a round trip) and fire the Supabase update in the
+ * background.
  */
 export interface OnboardingState {
   toursSeen: string[]
   tooltipsSeen: string[]
   skipAll: boolean
-}
-
-const EMPTY: OnboardingState = { toursSeen: [], tooltipsSeen: [], skipAll: false }
-
-const EVENT = 'grind:onboarding-changed'
-const keyFor = (userId: string) => `grind_onboarding_${userId}`
-
-// Referentially-stable snapshot cache, keyed by storage key. `useSyncExternalStore`
-// requires getSnapshot to return the SAME reference until the value truly changes,
-// or it loops forever — so we parse localStorage once and hand back the cached
-// object until a write (this tab) or a `storage` event (another tab) invalidates it.
-const snapshots = new Map<string, OnboardingState>()
-
-function read(key: string): OnboardingState {
-  const cached = snapshots.get(key)
-  if (cached) return cached
-  let val: OnboardingState = EMPTY
-  try {
-    const raw = localStorage.getItem(key)
-    if (raw) {
-      const parsed = JSON.parse(raw) as Partial<OnboardingState>
-      val = {
-        toursSeen: Array.isArray(parsed.toursSeen) ? parsed.toursSeen : [],
-        tooltipsSeen: Array.isArray(parsed.tooltipsSeen) ? parsed.tooltipsSeen : [],
-        skipAll: !!parsed.skipAll,
-      }
-    }
-  } catch {
-    val = EMPTY
-  }
-  snapshots.set(key, val)
-  return val
-}
-
-function write(key: string, next: OnboardingState) {
-  snapshots.set(key, next)
-  try {
-    localStorage.setItem(key, JSON.stringify(next))
-  } catch {
-    // ignore — private mode / sandboxed context
-  }
-  // Native 'storage' doesn't fire in the tab that wrote it, so nudge our own
-  // subscribers with a custom event (mirrors HomeDashboard's overdue-dismiss).
-  try {
-    window.dispatchEvent(new Event(EVENT))
-  } catch {
-    // ignore — non-browser context
-  }
-}
-
-function subscribe(key: string, cb: () => void): () => void {
-  const onEvent = () => cb()
-  const onStorage = (e: StorageEvent) => {
-    // Another tab wrote our key — drop the stale snapshot so read() re-parses.
-    if (e.key === key) {
-      snapshots.delete(key)
-      cb()
-    }
-  }
-  window.addEventListener(EVENT, onEvent)
-  window.addEventListener('storage', onStorage)
-  return () => {
-    window.removeEventListener(EVENT, onEvent)
-    window.removeEventListener('storage', onStorage)
-  }
 }
 
 interface OnboardingContextValue {
@@ -95,8 +39,9 @@ interface OnboardingContextValue {
   markTooltipSeen: (id: string) => void
   /** Suppress every future scripted tour (offered once, on the first coach mark). */
   skipAllTours: () => void
-  /** Replay affordance: forget a tour (and clear the global opt-out) so it fires again. */
-  resetTour: (id: string) => void
+  /** Replay affordance (Profile → Settings): forget every tour/tooltip and the
+   *  skip-all opt-out, so the full walkthrough runs again from Home. */
+  resetAllTours: () => void
 }
 
 const noop = () => {}
@@ -106,58 +51,84 @@ const OnboardingContext = createContext<OnboardingContextValue>({
   hasSeenTooltip: () => false,
   markTooltipSeen: noop,
   skipAllTours: noop,
-  resetTour: noop,
+  resetAllTours: noop,
 })
 
 export function OnboardingProvider({
   userId,
+  initialState,
   children,
 }: {
   userId: string
+  initialState: OnboardingState
   children: React.ReactNode
 }) {
-  const key = useMemo(() => keyFor(userId), [userId])
+  const supabase = useMemo(() => createClient(), [])
+  const [state, setState] = useState(initialState)
+  // Coalesce rapid-fire marks (e.g. skimming through several tooltips) into
+  // whatever the state looks like when the network actually gets a turn,
+  // rather than firing one UPDATE per mark.
+  const pendingRef = useRef<OnboardingState | null>(null)
+  const flushingRef = useRef(false)
 
-  const state = useSyncExternalStore(
-    useCallback(cb => subscribe(key, cb), [key]),
-    () => read(key),
-    () => EMPTY,
+  const persist = useCallback(async () => {
+    if (userId === 'anon' || flushingRef.current) return
+    flushingRef.current = true
+    while (pendingRef.current) {
+      const next = pendingRef.current
+      pendingRef.current = null
+      const { error } = await supabase
+        .from('user_profiles')
+        .update({
+          onboarding_tours_seen: next.toursSeen,
+          onboarding_tooltips_seen: next.tooltipsSeen,
+          onboarding_skip_all: next.skipAll,
+        })
+        .eq('id', userId)
+      if (error) {
+        // Non-fatal: the tour already advanced locally for this session; the
+        // next successful write (or the next full page load re-reading the
+        // still-unset server row) will catch it up.
+        console.error('Failed to persist onboarding state', error)
+        break
+      }
+    }
+    flushingRef.current = false
+  }, [userId, supabase])
+
+  const update = useCallback(
+    (next: OnboardingState) => {
+      setState(next)
+      pendingRef.current = next
+      void persist()
+    },
+    [persist],
   )
 
-  const hasSeenTour = useCallback(
-    (id: string) => state.skipAll || state.toursSeen.includes(id),
-    [state],
-  )
+  const hasSeenTour = useCallback((id: string) => state.skipAll || state.toursSeen.includes(id), [state])
   const hasSeenTooltip = useCallback((id: string) => state.tooltipsSeen.includes(id), [state])
 
   const markTourSeen = useCallback(
     (id: string) => {
-      const cur = read(key)
-      if (cur.toursSeen.includes(id)) return
-      write(key, { ...cur, toursSeen: [...cur.toursSeen, id] })
+      if (state.toursSeen.includes(id)) return
+      update({ ...state, toursSeen: [...state.toursSeen, id] })
     },
-    [key],
+    [state, update],
   )
   const markTooltipSeen = useCallback(
     (id: string) => {
-      const cur = read(key)
-      if (cur.tooltipsSeen.includes(id)) return
-      write(key, { ...cur, tooltipsSeen: [...cur.tooltipsSeen, id] })
+      if (state.tooltipsSeen.includes(id)) return
+      update({ ...state, tooltipsSeen: [...state.tooltipsSeen, id] })
     },
-    [key],
+    [state, update],
   )
   const skipAllTours = useCallback(() => {
-    const cur = read(key)
-    if (cur.skipAll) return
-    write(key, { ...cur, skipAll: true })
-  }, [key])
-  const resetTour = useCallback(
-    (id: string) => {
-      const cur = read(key)
-      write(key, { ...cur, skipAll: false, toursSeen: cur.toursSeen.filter(t => t !== id) })
-    },
-    [key],
-  )
+    if (state.skipAll) return
+    update({ ...state, skipAll: true })
+  }, [state, update])
+  const resetAllTours = useCallback(() => {
+    update({ toursSeen: [], tooltipsSeen: [], skipAll: false })
+  }, [update])
 
   const value = useMemo(
     () => ({
@@ -166,9 +137,9 @@ export function OnboardingProvider({
       hasSeenTooltip,
       markTooltipSeen,
       skipAllTours,
-      resetTour,
+      resetAllTours,
     }),
-    [hasSeenTour, markTourSeen, hasSeenTooltip, markTooltipSeen, skipAllTours, resetTour],
+    [hasSeenTour, markTourSeen, hasSeenTooltip, markTooltipSeen, skipAllTours, resetAllTours],
   )
 
   return <OnboardingContext.Provider value={value}>{children}</OnboardingContext.Provider>

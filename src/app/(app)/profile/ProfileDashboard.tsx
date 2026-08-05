@@ -16,6 +16,7 @@ import { useMotionPref } from '@/lib/contexts/MotionContext'
 import FeedbackModal from '@/components/FeedbackModal'
 import Link from 'next/link'
 import { useTour, type TourStep } from '@/components/onboarding/Tour'
+import { useOnboarding } from '@/lib/contexts/OnboardingContext'
 
 function FlameIcon({ size = 24, color = 'var(--accent-text)' }: { size?: number; color?: string }) {
   return (
@@ -297,6 +298,13 @@ export default function ProfileDashboard({
   const profileTour = useTour('profile', profileSteps, {
     active: !editingUsername && !feedbackOpen,
   })
+
+  const { resetAllTours } = useOnboarding()
+  function handleReplayTutorial() {
+    resetAllTours()
+    toast.show("Tutorial reset — it'll show again as you use the app")
+    router.push('/home')
+  }
 
   return (
     <div className="page page--profile" style={{
@@ -881,6 +889,43 @@ export default function ProfileDashboard({
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                 strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+              </svg>
+            </span>
+          </button>
+
+          <div style={{ height: '1px', backgroundColor: 'var(--border)' }} />
+
+          {/* Replay tutorial — resets every tour/tooltip (and the "skip all"
+              opt-out) server-side, so the full walkthrough runs again from Home. */}
+          <button
+            onClick={handleReplayTutorial}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              gap: '12px', width: '100%',
+              background: 'transparent', border: 'none', padding: 0,
+              cursor: 'pointer', textAlign: 'left',
+            }}
+          >
+            <div>
+              <div style={{ fontSize: '14px', color: 'var(--text-primary)', fontWeight: 600, marginBottom: '2px' }}>
+                Replay Tutorial
+              </div>
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                Show the app walkthrough again from Home
+              </div>
+            </div>
+            <span style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: '32px', height: '32px', flexShrink: 0,
+              borderRadius: '9999px',
+              backgroundColor: 'var(--surface-elevated)',
+              border: '1px solid var(--border)',
+              color: 'var(--accent-text)',
+            }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 12a9 9 0 1 0 2.6-6.36" />
+                <path d="M3 4v5h5" />
               </svg>
             </span>
           </button>

@@ -34,6 +34,7 @@ is fully linked to migration history.
 | [19-friend-profile.sql](sql/19-friend-profile.sql) | 19 | Friend profile RPC |
 | [20-production-hardening.sql](sql/20-production-hardening.sql) | 20 | **Security / integrity hardening** (see below) |
 | [21-progress-photos.sql](sql/21-progress-photos.sql) | 21 | Progress photos (private, self-only) |
+| [22-onboarding-state.sql](sql/22-onboarding-state.sql) | 22 | Server-side onboarding "seen" state |
 
 ## Deploying 20
 
