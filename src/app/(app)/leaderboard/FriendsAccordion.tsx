@@ -12,10 +12,14 @@ const PROFILE_COLUMNS = 'id, username, display_name, avatar_url, created_at'
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 // How long a friend row must be held before it's removed. Long enough that a
-// stray tap can't trigger it, short enough that a deliberate hold doesn't
-// feel sluggish — the filling bar is the feedback that tells the user how
-// close they are.
-const HOLD_TO_REMOVE_MS = 900
+// stray tap — or an iOS text-selection long-press — can't trigger it by
+// accident; the filling bar is the feedback that tells the user how close
+// they are to a deliberate hold actually completing.
+const HOLD_TO_REMOVE_MS = 1800
+
+// A hold that drifts more than this many px is a scroll/selection gesture,
+// not a stationary hold — cancel rather than let it keep counting down.
+const HOLD_CANCEL_DRIFT_PX = 10
 
 interface FriendRow {
   friendship_id: string
@@ -55,6 +59,12 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
   // silently-inserted second row.
   const [actionError, setActionError] = useState<string | null>(null)
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const holdStartPos = useRef<{ x: number; y: number } | null>(null)
+  // Stored so cancelHold always removes the exact listener instance startHold
+  // added — a plain function declared in the component body gets a new
+  // identity every render, so referencing it by name in removeEventListener
+  // from a later render would silently fail to unregister the old one.
+  const selectionListenerRef = useRef<(() => void) | null>(null)
 
   const loadFriendsData = useCallback(async () => {
     const { data } = await supabase
@@ -223,18 +233,60 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
 
   // Holding a row fills its bar over HOLD_TO_REMOVE_MS (CSS transition keyed
   // off `holdingId`); if the timer completes uninterrupted, the friend is
-  // removed. Releasing early just clears the timer — cancelHold's own state
-  // update snaps the bar back down via a much shorter transition instead of
-  // reversing the full hold duration.
-  function startHold(id: string) {
+  // removed. Releasing early, drifting the pointer, or the row's text
+  // getting selected (an iOS PWA long-press quirk — see the selectionchange
+  // listener below) all cancel it. cancelHold's own state update snaps the
+  // bar back down via a much shorter transition instead of reversing the
+  // full hold duration.
+  function startHold(id: string, x: number, y: number) {
     setHoldingId(id)
-    holdTimerRef.current = setTimeout(() => removeFriend(id), HOLD_TO_REMOVE_MS)
+    holdStartPos.current = { x, y }
+    window.getSelection()?.removeAllRanges()
+
+    // iOS Safari (including installed PWAs) can start a text-selection
+    // long-press on the row's own name/username text even with
+    // user-select/-webkit-touch-callout set to none — that selection doesn't
+    // stop our JS timer on its own, so watch for it explicitly and bail.
+    const onSelectionChange = () => {
+      const sel = window.getSelection()
+      if (sel && sel.toString().length > 0) cancelHold()
+    }
+    selectionListenerRef.current = onSelectionChange
+    document.addEventListener('selectionchange', onSelectionChange)
+
+    holdTimerRef.current = setTimeout(() => {
+      if (selectionListenerRef.current) {
+        document.removeEventListener('selectionchange', selectionListenerRef.current)
+        selectionListenerRef.current = null
+      }
+      removeFriend(id)
+    }, HOLD_TO_REMOVE_MS)
   }
 
   function cancelHold() {
-    if (holdTimerRef.current) clearTimeout(holdTimerRef.current)
+    if (holdTimerRef.current) {
+      clearTimeout(holdTimerRef.current)
+      holdTimerRef.current = null
+    }
+    if (selectionListenerRef.current) {
+      document.removeEventListener('selectionchange', selectionListenerRef.current)
+      selectionListenerRef.current = null
+    }
+    holdStartPos.current = null
+    window.getSelection()?.removeAllRanges()
     setHoldingId(null)
   }
+
+  function handleHoldPointerMove(x: number, y: number) {
+    if (!holdStartPos.current) return
+    const dx = x - holdStartPos.current.x
+    const dy = y - holdStartPos.current.y
+    if (Math.hypot(dx, dy) > HOLD_CANCEL_DRIFT_PX) cancelHold()
+  }
+
+  // Belt-and-suspenders: don't leave a timer/listener running if the
+  // accordion (or the whole page) unmounts mid-hold.
+  useEffect(() => () => cancelHold(), [])
 
   const pendingCount = pending.length
 
@@ -490,10 +542,12 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
                   return (
                     <div
                       key={f.friendship_id}
-                      onPointerDown={() => startHold(f.friendship_id)}
+                      onPointerDown={e => startHold(f.friendship_id, e.clientX, e.clientY)}
+                      onPointerMove={e => handleHoldPointerMove(e.clientX, e.clientY)}
                       onPointerUp={cancelHold}
                       onPointerLeave={cancelHold}
                       onPointerCancel={cancelHold}
+                      onContextMenu={e => e.preventDefault()}
                       style={{
                         position: 'relative',
                         overflow: 'hidden',
@@ -505,6 +559,10 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
                         border: `1px solid ${holding ? 'var(--danger)' : 'var(--border)'}`,
                         borderRadius: '8px',
                         userSelect: 'none',
+                        WebkitUserSelect: 'none',
+                        // iOS Safari/PWA won't suppress the long-press
+                        // selection callout from user-select alone.
+                        WebkitTouchCallout: 'none',
                         WebkitTapHighlightColor: 'transparent',
                         touchAction: 'none',
                         transition: 'border-color 150ms ease',
