@@ -3,10 +3,11 @@ import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'r
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Exercise } from '@/lib/types'
-import { formatHeaderDate } from '@/lib/utils/formatting'
+import { formatHeaderDate, formatShortDate } from '@/lib/utils/formatting'
 import ProgressChart from './ProgressChart'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { useTour, type TourStep } from '@/components/onboarding/Tour'
+import Card from '@/components/ui/Card'
 
 export type Metric = 'weight' | 'volume' | 'e1rm' | 'best'
 
@@ -87,6 +88,51 @@ export default function ProgressPage() {
   const [recentSessions, setRecentSessions] = useState<RecentSession[]>([])
   const [loadingExercises, setLoadingExercises] = useState(true)
   const [loadingChart, setLoadingChart] = useState(false)
+
+  const [photoCount, setPhotoCount] = useState<number | null>(null)
+  const [latestPhotoDate, setLatestPhotoDate] = useState<string | null>(null)
+  const [latestPhotoThumb, setLatestPhotoThumb] = useState<string | null>(null)
+
+  // Deferred, off the (user_id, taken_date desc) index — zero-photo users
+  // (the common case early on) pay just the one cheap count query below and
+  // never touch storage.
+  useEffect(() => {
+    async function loadPhotoSummary() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { count } = await supabase
+        .from('progress_photo_groups')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+      setPhotoCount(count ?? 0)
+      if (!count) return
+
+      const { data: latest } = await supabase
+        .from('progress_photo_groups')
+        .select('id, taken_date')
+        .eq('user_id', user.id)
+        .order('taken_date', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (!latest) return
+      setLatestPhotoDate(latest.taken_date)
+
+      const { data: photo } = await supabase
+        .from('progress_photos')
+        .select('storage_path')
+        .eq('group_id', latest.id)
+        .order('sort_order', { ascending: true })
+        .limit(1)
+        .maybeSingle()
+      if (!photo) return
+
+      const { data: signed } = await supabase.storage
+        .from('progress-photos')
+        .createSignedUrl(photo.storage_path, 3600)
+      if (signed?.signedUrl) setLatestPhotoThumb(signed.signedUrl)
+    }
+    loadPhotoSummary()
+  }, [supabase])
 
   useEffect(() => {
     async function loadExercises() {
@@ -328,6 +374,15 @@ export default function ProgressPage() {
           </span>
         </div>
 
+        <div style={{ padding: '0 16px 8px' }}>
+          <PhotoEntryCard
+            count={photoCount}
+            latestDate={latestPhotoDate}
+            thumb={latestPhotoThumb}
+            onClick={() => router.push('/progress/photos')}
+          />
+        </div>
+
         <div style={{
           display: 'flex', flexDirection: 'column', alignItems: 'center',
           textAlign: 'center', gap: '16px', padding: '48px 24px 40px',
@@ -389,6 +444,15 @@ export default function ProgressPage() {
         <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
           {formatHeaderDate()}
         </span>
+      </div>
+
+      <div style={{ padding: '0 16px 16px' }}>
+        <PhotoEntryCard
+          count={photoCount}
+          latestDate={latestPhotoDate}
+          thumb={latestPhotoThumb}
+          onClick={() => router.push('/progress/photos')}
+        />
       </div>
 
       {/* Selector cluster — day picker, exercise picker, and metric toggle. Wrapped
@@ -664,5 +728,67 @@ export default function ProgressPage() {
         </div>
       )}
     </div>
+  )
+}
+
+/**
+ * Entry point into /progress/photos — one full-width row, not a whole
+ * section, so the primary lift-chart flow above stays uncluttered. Renders
+ * icon+label immediately; the thumbnail/count fill in once the (cheap,
+ * deferred) summary query resolves.
+ */
+function PhotoEntryCard({
+  count,
+  latestDate,
+  thumb,
+  onClick,
+}: {
+  count: number | null
+  latestDate: string | null
+  thumb: string | null
+  onClick: () => void
+}) {
+  const subtitle = count === null
+    ? ''
+    : count === 0
+      ? 'Add your first photo'
+      : `Last logged ${latestDate ? formatShortDate(latestDate) : ''} · ${count} photo${count === 1 ? '' : 's'}`
+
+  return (
+    <Card
+      as="section"
+      padding="sm"
+      onClick={onClick}
+      style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}
+    >
+      <span style={{
+        width: '42px', height: '42px', borderRadius: '9999px', flexShrink: 0,
+        backgroundColor: 'var(--accent-wash)', color: 'var(--accent-text)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="5" width="18" height="15" rx="2" /><circle cx="8.5" cy="10.5" r="1.5" /><polyline points="21 15 16 10 5 21" />
+        </svg>
+      </span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '15px', letterSpacing: '0.5px', color: 'var(--text-primary)' }}>
+          PROGRESS PHOTOS
+        </div>
+        <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '1px' }}>
+          {subtitle}
+        </div>
+      </div>
+      {thumb && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={thumb}
+          alt=""
+          style={{ width: '38px', height: '38px', borderRadius: 'var(--radius-sm)', objectFit: 'cover', flexShrink: 0 }}
+        />
+      )}
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+        <polyline points="9 18 15 12 9 6" />
+      </svg>
+    </Card>
   )
 }

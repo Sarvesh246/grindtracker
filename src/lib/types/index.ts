@@ -134,6 +134,27 @@ export interface UserRotation {
   updated_at: string
 }
 
+/** One calendar date's progress-photo entry (docs/sql/21-progress-photos.sql). */
+export interface ProgressPhotoGroup {
+  id: string
+  user_id: string
+  taken_date: string
+  /** Snapshot label at save time, e.g. 'push'/'pull'/'legs'/custom, or null = None/N/A. */
+  day_type: string | null
+  note: string | null
+  created_at: string
+}
+
+/** An individual photo within a ProgressPhotoGroup. */
+export interface ProgressPhoto {
+  id: string
+  group_id: string
+  /** Object path in the private `progress-photos` bucket, not a URL. */
+  storage_path: string
+  sort_order: number
+  created_at: string
+}
+
 /** Shape returned by the `complete_session` RPC (docs/sql/11-server-side-xp.sql). */
 export interface CompleteSessionResult {
   xp_earned: number
