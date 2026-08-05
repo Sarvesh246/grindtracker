@@ -24,22 +24,31 @@ interface Attachment {
  * FeedbackModal's convention.
  */
 export default function AddPhotoSheet({
+  dayTypeOptions,
+  initialDayType,
   onClose,
   onSaved,
 }: {
+  /** The user's configured workout days, prefetched by the feed page so
+   * these buttons render instantly instead of popping in a beat after the
+   * sheet itself. */
+  dayTypeOptions: string[]
+  /** Today's already-suggested tag (also prefetched), used as the initial
+   * selection so the correct button is highlighted on first paint rather
+   * than flashing "None" until the per-date lookup below resolves. */
+  initialDayType: string | null
   onClose: () => void
   onSaved: () => void
 }) {
-  const { getGroupForDate, getUserDayTypes, getSuggestedDayTypes, upsertGroup, addPhotos } = useProgressPhotos()
+  const { getGroupForDate, getSuggestedDayTypes, upsertGroup, addPhotos } = useProgressPhotos()
   const keyboardInset = useKeyboardInset()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const today = useMemo(() => localDateKey(), [])
   const [date, setDate] = useState(today)
-  const [dayType, setDayType] = useState<string | null>(null)
+  const [dayType, setDayType] = useState<string | null>(initialDayType)
   const [note, setNote] = useState('')
   const [attachments, setAttachments] = useState<Attachment[]>([])
-  const [dayTypeOptions, setDayTypeOptions] = useState<string[]>([])
   const [existingCount, setExistingCount] = useState(0)
   const [loadingDate, setLoadingDate] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -50,14 +59,6 @@ export default function AddPhotoSheet({
   useEffect(() => { attachmentsRef.current = attachments }, [attachments])
   useEffect(() => () => {
     attachmentsRef.current.forEach(a => URL.revokeObjectURL(a.preview))
-  }, [])
-
-  // The tag button set is the user's configured workout days (same order as
-  // every other day picker in the app) — fixed, independent of which date is
-  // selected. Fetched once, not per-date.
-  useEffect(() => {
-    getUserDayTypes().then(setDayTypeOptions)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Every date change re-checks for an existing entry so re-opening "today"

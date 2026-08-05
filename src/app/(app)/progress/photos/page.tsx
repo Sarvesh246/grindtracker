@@ -11,6 +11,7 @@ import PhotoGroupGrid from './PhotoGroupGrid'
 import PhotoLightbox, { type LightboxItem } from './PhotoLightbox'
 import AddPhotoSheet from './AddPhotoSheet'
 import ComparePhotosView from './ComparePhotosView'
+import { localDateKey } from '@/lib/utils/formatting'
 
 const PAGE_SIZE = 20
 const MAX_THUMBS_PER_GROUP = 4
@@ -35,6 +36,8 @@ export default function ProgressPhotosPage() {
     resignPath,
     deletePhoto,
     deleteGroup,
+    getUserDayTypes,
+    getSuggestedDayTypes,
   } = useProgressPhotos()
 
   const [groups, setGroups] = useState<ProgressPhotoGroupWithPhotos[]>([])
@@ -54,8 +57,17 @@ export default function ProgressPhotosPage() {
   const [deleteTarget, setDeleteTarget] = useState<ProgressPhotoGroupWithPhotos | null>(null)
   const [deletingGroup, setDeletingGroup] = useState(false)
 
+  // Prefetched as soon as the feed loads (not when the sheet opens) so the
+  // Add sheet's workout-tag buttons and default selection render instantly
+  // instead of popping in a beat after the sheet itself.
+  const [dayTypeOptions, setDayTypeOptions] = useState<string[]>([])
+  const [todaySuggestedDayType, setTodaySuggestedDayType] = useState<string | null>(null)
+
   useEffect(() => {
     loadInitial()
+    const todayKey = localDateKey()
+    getUserDayTypes().then(setDayTypeOptions)
+    getSuggestedDayTypes(todayKey).then(sugg => setTodaySuggestedDayType(sugg[0] ?? null))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -254,6 +266,8 @@ export default function ProgressPhotosPage() {
 
       {addOpen && (
         <AddPhotoSheet
+          dayTypeOptions={dayTypeOptions}
+          initialDayType={todaySuggestedDayType}
           onClose={() => setAddOpen(false)}
           onSaved={() => { setAddOpen(false); loadInitial() }}
         />
