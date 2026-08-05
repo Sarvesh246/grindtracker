@@ -28,15 +28,49 @@ export function useKeyboardInset(): number {
       // `offsetTop` handles the case where iOS pans the page up to reveal a
       // focused field: that panned distance isn't keyboard, so subtract it out.
       const hidden = window.innerHeight - vv.height - vv.offsetTop
-      setInset(hidden > 60 ? Math.round(hidden) : 0)
+      const next = hidden > 60 ? Math.round(hidden) : 0
+      setInset(prev => (prev === next ? prev : next))
     }
 
     update()
     vv.addEventListener('resize', update)
     vv.addEventListener('scroll', update)
+
+    // iOS fires `resize` when the keyboard shows/hides outright, but not when
+    // only its QuickType/predictive-text toolbar changes height as the user
+    // keeps typing — the lift then stays sized for the keyboard's initial
+    // height and the last inch of a sheet ends up hidden behind the taller
+    // bar until the keyboard is dismissed and reopened to force a fresh
+    // measurement. While a text field is actively focused/being typed into,
+    // poll as a fallback; it stops itself shortly after typing goes quiet so
+    // it isn't running for the whole session.
+    let pollTimer: ReturnType<typeof setInterval> | null = null
+    let stopTimer: ReturnType<typeof setTimeout> | null = null
+
+    const startPolling = () => {
+      if (!pollTimer) pollTimer = setInterval(update, 120)
+      if (stopTimer) clearTimeout(stopTimer)
+      stopTimer = setTimeout(() => {
+        if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+      }, 1500)
+    }
+
+    const isTextField = (el: EventTarget | null) =>
+      el instanceof HTMLElement && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)
+
+    const onFocusIn = (e: FocusEvent) => { if (isTextField(e.target)) startPolling() }
+    const onInput = (e: Event) => { if (isTextField(e.target)) startPolling() }
+
+    document.addEventListener('focusin', onFocusIn)
+    document.addEventListener('input', onInput)
+
     return () => {
       vv.removeEventListener('resize', update)
       vv.removeEventListener('scroll', update)
+      document.removeEventListener('focusin', onFocusIn)
+      document.removeEventListener('input', onInput)
+      if (pollTimer) clearInterval(pollTimer)
+      if (stopTimer) clearTimeout(stopTimer)
     }
   }, [])
 
