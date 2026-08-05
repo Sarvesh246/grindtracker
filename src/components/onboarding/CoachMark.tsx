@@ -93,12 +93,25 @@ export default function CoachMark({
   const vh = typeof window !== 'undefined' ? window.innerHeight : 0
   const anchorCenterY = anchor ? anchor.top + anchor.height / 2 : 0
 
-  // Bottom sheet on mobile when the target is in the lower half (a floating bubble
-  // there would sit over the nav or clip). Floating bubble otherwise; centered
-  // fallback if the target can't be found.
+  // Bottom sheet on mobile when the target is in the lower half (a floating
+  // bubble there would sit over the nav or clip) — UNLESS the sheet's own
+  // footprint would land on the very target it's explaining. That happens
+  // whenever `ensureVisible`'s scroll-to-center can't actually reach center
+  // because the target sits near the end of a page too short to scroll any
+  // further: it stays low, "lower half" stays true, and the flat sheet still
+  // gets picked even though it now covers the target. A plain bubble placed
+  // above the target (which by construction never overlaps it — placePopover
+  // always offsets outside the anchor rect) covers that case; the sheet is
+  // only worth using when it actually clears the anchor.
+  const SHEET_CLEARANCE = 88 // matches the sheet's CSS bottom offset below
+  const SHEET_HEIGHT_ESTIMATE = 210 // typical card height; over-estimating
+    // errs toward the safe bubble fallback, never toward a false "it fits"
+  const sheetWouldCoverAnchor =
+    !!anchor && anchor.top + anchor.height > vh - SHEET_CLEARANCE - SHEET_HEIGHT_ESTIMATE
+
   const mode: 'sheet' | 'bubble' | 'center' = !anchor
     ? 'center'
-    : isMobile && anchorCenterY > vh / 2
+    : isMobile && anchorCenterY > vh / 2 && !sheetWouldCoverAnchor
       ? 'sheet'
       : 'bubble'
 

@@ -1303,7 +1303,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const hintNote = useFeatureTooltip('aw-note', {
     when: workoutReady, suppressed: hintsBlocked, getEl: () => onboardTarget('aw-note'),
     body: 'Tap the chevron to add a note to this specific set.',
-    preferred: ['bottom', 'right'],
+    preferred: ['bottom', 'right', 'top'],
   })
   const hintSkip = useFeatureTooltip('aw-skip', {
     when: workoutReady, suppressed: hintsBlocked, getEl: () => onboardTarget('aw-skip'),
@@ -1318,7 +1318,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const hintSwap = useFeatureTooltip('aw-swap', {
     when: workoutReady, suppressed: hintsBlocked, getEl: () => onboardTarget('aw-swap'),
     body: 'Swap this exercise for another from your catalog, or create a new one.',
-    preferred: ['bottom', 'left'],
+    preferred: ['bottom', 'left', 'top'],
   })
   const hintPR = useFeatureTooltip('aw-pr', {
     when: hasAnyPR, suppressed: hintsBlocked, getEl: () => onboardTarget('aw-pr'),
