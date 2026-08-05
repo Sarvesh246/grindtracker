@@ -30,18 +30,16 @@ export default function AddPhotoSheet({
   onClose: () => void
   onSaved: () => void
 }) {
-  const { getGroupForDate, getSuggestedDayTypes, upsertGroup, addPhotos } = useProgressPhotos()
+  const { getGroupForDate, getUserDayTypes, getSuggestedDayTypes, upsertGroup, addPhotos } = useProgressPhotos()
   const keyboardInset = useKeyboardInset()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const today = useMemo(() => localDateKey(), [])
   const [date, setDate] = useState(today)
   const [dayType, setDayType] = useState<string | null>(null)
-  const [useCustom, setUseCustom] = useState(false)
-  const [customDayType, setCustomDayType] = useState('')
   const [note, setNote] = useState('')
   const [attachments, setAttachments] = useState<Attachment[]>([])
-  const [suggestions, setSuggestions] = useState<string[]>([])
+  const [dayTypeOptions, setDayTypeOptions] = useState<string[]>([])
   const [existingCount, setExistingCount] = useState(0)
   const [loadingDate, setLoadingDate] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -54,27 +52,29 @@ export default function AddPhotoSheet({
     attachmentsRef.current.forEach(a => URL.revokeObjectURL(a.preview))
   }, [])
 
+  // The tag button set is the user's configured workout days (same order as
+  // every other day picker in the app) — fixed, independent of which date is
+  // selected. Fetched once, not per-date.
+  useEffect(() => {
+    getUserDayTypes().then(setDayTypeOptions)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // Every date change re-checks for an existing entry so re-opening "today"
   // prefills its caption/tag instead of the upsert silently blanking them,
-  // and pulls that date's completed workout(s) to suggest a tag.
+  // and pulls that date's completed workout to default the tag selection.
   useEffect(() => {
     let cancelled = false
     async function loadForDate() {
       setLoadingDate(true)
       const [existing, sugg] = await Promise.all([getGroupForDate(date), getSuggestedDayTypes(date)])
       if (cancelled) return
-      setSuggestions(sugg)
       if (existing) {
-        const isSuggested = existing.group.day_type ? sugg.includes(existing.group.day_type) : true
         setDayType(existing.group.day_type)
-        setUseCustom(!!existing.group.day_type && !isSuggested)
-        setCustomDayType(!isSuggested ? existing.group.day_type ?? '' : '')
         setNote(existing.group.note ?? '')
         setExistingCount(existing.photos.length)
       } else {
         setDayType(sugg[0] ?? null)
-        setUseCustom(false)
-        setCustomDayType('')
         setNote('')
         setExistingCount(0)
       }
@@ -119,8 +119,6 @@ export default function AddPhotoSheet({
     })
   }
 
-  const effectiveDayType = useCustom ? (customDayType.trim() || null) : dayType
-
   async function handleSubmit() {
     if (attachments.length === 0) {
       setError('Add at least one photo.')
@@ -131,7 +129,7 @@ export default function AddPhotoSheet({
     try {
       const group = await upsertGroup({
         taken_date: date,
-        day_type: effectiveDayType,
+        day_type: dayType,
         note: note.trim() || null,
       })
       setProgress({ done: 0, total: attachments.length })
@@ -198,30 +196,19 @@ export default function AddPhotoSheet({
         </div>
       )}
 
-      {/* Workout tag */}
+      {/* Workout tag — the user's configured workout days, in their usual
+          order, with None always last. */}
       <FieldLabel>WORKOUT</FieldLabel>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: useCustom ? '10px' : '16px' }}>
-        <TagPill active={!useCustom && dayType === null} onClick={() => { setUseCustom(false); setDayType(null) }} disabled={submitting || loadingDate}>
-          None / N/A
-        </TagPill>
-        {suggestions.map(s => (
-          <TagPill key={s} active={!useCustom && dayType === s} onClick={() => { setUseCustom(false); setDayType(s) }} disabled={submitting || loadingDate}>
-            {formatDayType(s)}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' }}>
+        {dayTypeOptions.map(dt => (
+          <TagPill key={dt} active={dayType === dt} onClick={() => setDayType(dt)} disabled={submitting || loadingDate}>
+            {formatDayType(dt)}
           </TagPill>
         ))}
-        <TagPill active={useCustom} onClick={() => setUseCustom(true)} disabled={submitting || loadingDate}>
-          Other…
+        <TagPill active={dayType === null} onClick={() => setDayType(null)} disabled={submitting || loadingDate}>
+          None
         </TagPill>
       </div>
-      {useCustom && (
-        <Input
-          value={customDayType}
-          onChange={e => setCustomDayType(e.target.value.slice(0, 40))}
-          placeholder="Custom workout name"
-          disabled={submitting}
-          style={{ width: '100%', marginBottom: '16px' }}
-        />
-      )}
 
       {/* Note */}
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '8px' }}>
@@ -316,7 +303,16 @@ export default function AddPhotoSheet({
         <Button variant="secondary" onClick={onClose} disabled={submitting} style={{ flex: '0 0 auto', padding: '0 18px' }}>
           Cancel
         </Button>
-        <Button variant="primary" onClick={handleSubmit} disabled={submitting || attachments.length === 0} fullWidth>
+        {/* flex + minWidth:0 (not `fullWidth`, which sets a literal width:100%
+            that fights the Cancel button's own min-content width and pushes
+            this row a few px past the panel — the classic flex-item
+            min-width:auto overflow trap) so this shrinks to share the row. */}
+        <Button
+          variant="primary"
+          onClick={handleSubmit}
+          disabled={submitting || attachments.length === 0}
+          style={{ flex: 1, minWidth: 0 }}
+        >
           {submitting ? 'SAVING…' : 'SAVE'}
         </Button>
       </div>

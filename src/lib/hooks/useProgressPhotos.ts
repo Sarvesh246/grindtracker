@@ -9,6 +9,9 @@ const MAX_BYTES = 8 * 1024 * 1024 // mirrors the bucket's file_size_limit
 const SIGNED_URL_TTL = 60 * 60 * 2 // 2hr — longer than the admin inbox's 1hr,
 // since this is a PWA a user may leave backgrounded while browsing photos.
 
+// Mirrors the DAY_ORDER map in progress/page.tsx.
+const DAY_ORDER: Record<string, number> = { push: 0, pull: 1, legs: 2 }
+
 export interface ProgressPhotoGroupWithPhotos extends ProgressPhotoGroup {
   photos: ProgressPhoto[]
 }
@@ -149,6 +152,21 @@ export function useProgressPhotos() {
     return { group: group as ProgressPhotoGroup, photos: (photos ?? []) as ProgressPhoto[] }
   }
 
+  // Mirrors progress/page.tsx's dayTypes ordering exactly (push/pull/legs
+  // first, any custom days after in first-seen order) so the tag buttons
+  // here match the day pills the user already sees everywhere else.
+  async function getUserDayTypes(): Promise<string[]> {
+    const user = await requireUser()
+    const { data, error } = await supabase
+      .from('exercises')
+      .select('day_type')
+      .eq('user_id', user.id)
+      .order('day_type', { ascending: true })
+    if (error) throw error
+    const distinct = Array.from(new Set(((data ?? []) as { day_type: string }[]).map(r => r.day_type)))
+    return distinct.sort((a, b) => (DAY_ORDER[a] ?? 9) - (DAY_ORDER[b] ?? 9))
+  }
+
   async function getSuggestedDayTypes(takenDate: string): Promise<string[]> {
     const user = await requireUser()
     const { data, error } = await supabase
@@ -275,6 +293,7 @@ export function useProgressPhotos() {
     signPaths,
     resignPath,
     getGroupForDate,
+    getUserDayTypes,
     getSuggestedDayTypes,
     upsertGroup,
     addPhotos,
