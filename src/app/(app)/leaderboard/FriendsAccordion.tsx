@@ -11,6 +11,12 @@ const PROFILE_COLUMNS = 'id, username, display_name, avatar_url, created_at'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+// How long a friend row must be held before it's removed. Long enough that a
+// stray tap can't trigger it, short enough that a deliberate hold doesn't
+// feel sluggish — the filling bar is the feedback that tells the user how
+// close they are.
+const HOLD_TO_REMOVE_MS = 900
+
 interface FriendRow {
   friendship_id: string
   profile: UserProfile
@@ -42,12 +48,13 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
   const [friends, setFriends] = useState<FriendRow[]>([])
   const [pending, setPending] = useState<PendingRow[]>([])
   const [sent, setSent] = useState<SentRow[]>([])
-  const [revealRemove, setRevealRemove] = useState<string | null>(null)
+  // Which friend row is currently mid-hold — drives the filling removal bar.
+  const [holdingId, setHoldingId] = useState<string | null>(null)
   // Surfaced when a friendship mutation is rejected — most often the unique-pair
   // index, now that duplicate requests are a constraint violation rather than a
   // silently-inserted second row.
   const [actionError, setActionError] = useState<string | null>(null)
-  const longPressRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const loadFriendsData = useCallback(async () => {
     const { data } = await supabase
@@ -210,16 +217,23 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
 
   async function removeFriend(friendshipId: string) {
     await supabase.from('friendships').delete().eq('id', friendshipId)
-    setRevealRemove(null)
+    setHoldingId(null)
     loadFriendsData()
   }
 
-  function startLongPress(id: string) {
-    longPressRef.current = setTimeout(() => setRevealRemove(id), 500)
+  // Holding a row fills its bar over HOLD_TO_REMOVE_MS (CSS transition keyed
+  // off `holdingId`); if the timer completes uninterrupted, the friend is
+  // removed. Releasing early just clears the timer — cancelHold's own state
+  // update snaps the bar back down via a much shorter transition instead of
+  // reversing the full hold duration.
+  function startHold(id: string) {
+    setHoldingId(id)
+    holdTimerRef.current = setTimeout(() => removeFriend(id), HOLD_TO_REMOVE_MS)
   }
 
-  function cancelLongPress() {
-    if (longPressRef.current) clearTimeout(longPressRef.current)
+  function cancelHold() {
+    if (holdTimerRef.current) clearTimeout(holdTimerRef.current)
+    setHoldingId(null)
   }
 
   const pendingCount = pending.length
@@ -471,52 +485,67 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
                 {friends.length} {friends.length === 1 ? 'FRIEND' : 'FRIENDS'}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                {friends.map(f => (
-                  <div
-                    key={f.friendship_id}
-                    onPointerDown={() => startLongPress(f.friendship_id)}
-                    onPointerUp={cancelLongPress}
-                    onPointerLeave={cancelLongPress}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '8px 12px',
-                      backgroundColor: 'var(--bg)',
-                      border: '1px solid var(--border)',
-                      borderRadius: '8px',
-                      userSelect: 'none',
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '14px', color: 'var(--text-primary)', fontWeight: 600 }}>
-                        {f.profile.display_name}
+                {friends.map(f => {
+                  const holding = holdingId === f.friendship_id
+                  return (
+                    <div
+                      key={f.friendship_id}
+                      onPointerDown={() => startHold(f.friendship_id)}
+                      onPointerUp={cancelHold}
+                      onPointerLeave={cancelHold}
+                      onPointerCancel={cancelHold}
+                      style={{
+                        position: 'relative',
+                        overflow: 'hidden',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '8px 12px',
+                        backgroundColor: 'var(--bg)',
+                        border: `1px solid ${holding ? 'var(--danger)' : 'var(--border)'}`,
+                        borderRadius: '8px',
+                        userSelect: 'none',
+                        WebkitTapHighlightColor: 'transparent',
+                        touchAction: 'none',
+                        transition: 'border-color 150ms ease',
+                      }}
+                    >
+                      {/* Fill indicator — grows over the full hold duration
+                          (linear, so it reads as a countdown) but snaps back
+                          quickly on release rather than un-filling at the
+                          same slow rate. */}
+                      <div
+                        aria-hidden="true"
+                        style={{
+                          position: 'absolute',
+                          inset: 0,
+                          width: holding ? '100%' : '0%',
+                          backgroundColor: 'rgba(239,68,68,0.16)',
+                          transition: holding
+                            ? `width ${HOLD_TO_REMOVE_MS}ms linear`
+                            : 'width 150ms ease',
+                        }}
+                      />
+                      <div style={{ position: 'relative' }}>
+                        <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '14px', color: 'var(--text-primary)', fontWeight: 600 }}>
+                          {f.profile.display_name}
+                        </div>
+                        <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '12px', color: 'var(--text-muted)' }}>
+                          @{f.profile.username}
+                        </div>
                       </div>
-                      <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '12px', color: 'var(--text-muted)' }}>
-                        @{f.profile.username}
+                      <div style={{
+                        position: 'relative',
+                        fontFamily: "'DM Sans', sans-serif",
+                        fontSize: '12px',
+                        color: holding ? 'var(--danger)' : 'var(--text-muted)',
+                        fontWeight: holding ? 700 : 400,
+                      }}>
+                        {holding ? 'Keep holding…' : 'Hold to remove'}
                       </div>
                     </div>
-                    {revealRemove === f.friendship_id ? (
-                      <button
-                        onClick={() => removeFriend(f.friendship_id)}
-                        style={{
-                          padding: '6px 12px',
-                          backgroundColor: 'rgba(239,68,68,0.1)',
-                          color: 'var(--danger)',
-                          border: '1px solid var(--danger)',
-                          borderRadius: '9999px',
-                          fontFamily: "'DM Sans', sans-serif",
-                          fontSize: '12px',
-                          cursor: 'pointer',
-                        }}
-                      >Remove</button>
-                    ) : (
-                      <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '12px', color: 'var(--text-muted)' }}>
-                        Hold to remove
-                      </div>
-                    )}
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           )}
