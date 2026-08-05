@@ -15,9 +15,11 @@ import { createClient } from '@/lib/supabase/client'
  *
  *   toursSeen    — ids of scripted walkthroughs the user finished or skipped.
  *   tooltipsSeen — ids of one-off contextual hints (e.g. ActiveWorkout) shown once.
- *   skipAll      — the user chose "Skip all tours" on the very first coach mark.
- *                  Suppresses every future *scripted tour* but NOT the ActiveWorkout
- *                  contextual tooltips — those are functional hints, opt-in per id.
+ *   skipAll      — the user hit "Skip tour" on any scripted walkthrough. Bailing
+ *                  out of one is treated as bailing out of all of them, so this
+ *                  suppresses every future *scripted tour* — but NOT the
+ *                  ActiveWorkout contextual tooltips, which are functional
+ *                  hints, opt-in per id, and unaffected by this flag.
  *
  * The layout Server Component reads the row once per navigation and seeds
  * this as `initialState`; writes update local state immediately (so the UI

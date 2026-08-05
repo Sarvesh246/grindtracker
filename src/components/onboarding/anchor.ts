@@ -27,10 +27,26 @@ export interface Placed {
 }
 
 /**
+ * Real height of the mobile bottom nav, read from the DOM rather than assumed
+ * — 0 when it isn't rendered (desktop, where TopNav is used instead) or is
+ * hidden (ActiveWorkout hides it so it doesn't stack with the Finish bar).
+ * Popup placement uses this so it always clears the REAL bar regardless of
+ * device safe-area inset, rather than a guessed pixel constant that can fall
+ * short on notched devices and let a popup's bottom edge land under it.
+ */
+export function bottomNavHeight(): number {
+  if (typeof document === 'undefined') return 0
+  const el = document.querySelector<HTMLElement>('.bottom-nav')
+  return el ? el.getBoundingClientRect().height : 0
+}
+
+/**
  * Pick the first side (in preference order) where a `popW × popH` popup fits the
  * viewport with an `offset` gap from the anchor and a `margin` from the edges;
  * otherwise fall back to the preferred side and clamp on-screen. The arrow always
- * points back at the anchor's center.
+ * points back at the anchor's center. The bottom edge additionally always clears
+ * the mobile bottom nav (see `bottomNavHeight`) — a plain viewport-height check
+ * would happily place a popup's bottom edge underneath it.
  */
 export function placePopover(
   anchor: Rect,
@@ -43,7 +59,7 @@ export function placePopover(
   const vw = window.innerWidth
   const vh = window.innerHeight
   const safeTop = margin
-  const safeBottom = vh - margin
+  const safeBottom = vh - margin - bottomNavHeight()
   const safeLeft = margin
   const safeRight = vw - margin
 

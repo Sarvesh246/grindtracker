@@ -440,11 +440,9 @@ export default function HomeDashboard({
         { target: 'home-calendar', title: 'Workout history', body: "See every day you've trained, and revisit or edit past sessions." },
       ]
   // Don't fire over the resume/exit flow; wait for mount so the active-session
-  // state is real. This is the first coach mark a user ever sees, so it also
-  // offers "Skip all tours".
+  // state is real.
   const homeTour = useTour('home', homeSteps, {
     active: mounted && noActiveForUi && !exitConfirm,
-    firstEver: true,
   })
 
   return (

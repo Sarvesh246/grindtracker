@@ -20,8 +20,6 @@ export interface UseTourOptions {
   active: boolean
   /** Settle delay after `active` first becomes true, so nothing shifts under a finger. */
   settleMs?: number
-  /** First-ever coach mark (Home, first session): also offer "Skip all tours". */
-  firstEver?: boolean
 }
 
 /**
@@ -29,13 +27,16 @@ export interface UseTourOptions {
  * persists completion/skip via OnboardingContext (so nothing shows twice), and
  * respects the `active` gate. Returns the node to render (or null).
  *
- * - Next / × advance; the last step's Done finishes and marks the tour seen.
- * - "Skip tour" ends the tour now (still marks it seen).
- * - "Skip all tours" (first mark only) opts out of every future scripted tour.
+ * - Next / Done / × advance; the last step's Done finishes and marks this tour seen.
+ * - "Skip tour" ends onboarding entirely — every future scripted tour on every
+ *   page, not just this one. It used to mark only the current tour seen, so
+ *   skipping Home still meant getting stopped by Log's, Profile's, etc. as you
+ *   explored — from the user's seat that reads as "skip didn't actually skip
+ *   anything", so bailing out of any one walkthrough now opts out of all of them.
  */
 export function useTour(tourId: string, steps: TourStep[], opts: UseTourOptions): React.ReactNode {
   const { hasSeenTour, markTourSeen, skipAllTours } = useOnboarding()
-  const { active, settleMs = 500, firstEver = false } = opts
+  const { active, settleMs = 500 } = opts
 
   const seen = hasSeenTour(tourId)
   const [started, setStarted] = useState(false)
@@ -66,8 +67,7 @@ export function useTour(tourId: string, steps: TourStep[], opts: UseTourOptions)
 
   const back = useCallback(() => setIndex(i => Math.max(0, i - 1)), [])
 
-  const skipTour = useCallback(() => finish(), [finish])
-  const skipAll = useCallback(() => {
+  const skipTour = useCallback(() => {
     setStarted(false)
     skipAllTours()
   }, [skipAllTours])
@@ -90,7 +90,6 @@ export function useTour(tourId: string, steps: TourStep[], opts: UseTourOptions)
       onAdvance={advance}
       onBack={index > 0 ? back : undefined}
       onSkipTour={skipTour}
-      onSkipAll={firstEver && index === 0 ? skipAll : undefined}
     />
   )
 }

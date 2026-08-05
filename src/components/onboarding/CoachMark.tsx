@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { ensureVisible, placePopover, useAnchorRect, type Side } from './anchor'
+import { bottomNavHeight, ensureVisible, placePopover, useAnchorRect, type Side } from './anchor'
 
 /**
  * One onboarding popup anchored to a target element, with a spotlight cutout that
@@ -9,9 +9,9 @@ import { ensureVisible, placePopover, useAnchorRect, type Side } from './anchor'
  * sheet above the nav when the target is in the lower half (a clipped floating
  * bubble is never acceptable). Rendered by `Tour`, one step at a time.
  *
- * Every mark carries a persistent "Skip tour" link and a small "×"; the × advances
- * (marks this step seen) without ending the tour. The very first coach mark a user
- * ever sees also gets "Skip all tours" via `onSkipAll`.
+ * Every mark carries a small "×" (advances past just this step, marking it
+ * seen, without ending the tour) and a persistent "Skip tour" link that ends
+ * onboarding entirely — this tour and every other scripted page tour.
  */
 export interface CoachMarkProps {
   getEl: () => HTMLElement | null
@@ -24,10 +24,8 @@ export interface CoachMarkProps {
   onAdvance: () => void
   /** Back — omitted on the first step. */
   onBack?: () => void
-  /** End the whole tour now (still marks it seen so it won't reappear). */
+  /** Opt out of onboarding entirely: this tour and every future scripted tour. */
   onSkipTour: () => void
-  /** Only supplied on the first-ever coach mark: opt out of every future tour. */
-  onSkipAll?: () => void
 }
 
 const SPOT_PAD = 6
@@ -43,7 +41,6 @@ export default function CoachMark({
   onAdvance,
   onBack,
   onSkipTour,
-  onSkipAll,
 }: CoachMarkProps) {
   const anchor = useAnchorRect(getEl, true)
   const cardRef = useRef<HTMLDivElement>(null)
@@ -103,7 +100,9 @@ export default function CoachMark({
   // above the target (which by construction never overlaps it — placePopover
   // always offsets outside the anchor rect) covers that case; the sheet is
   // only worth using when it actually clears the anchor.
-  const SHEET_CLEARANCE = 88 // matches the sheet's CSS bottom offset below
+  // Measured, not guessed: a hardcoded clearance constant fell short of the
+  // real nav on notched devices and let the sheet's bottom edge land under it.
+  const SHEET_CLEARANCE = bottomNavHeight() + 12
   const SHEET_HEIGHT_ESTIMATE = 210 // typical card height; over-estimating
     // errs toward the safe bubble fallback, never toward a false "it fits"
   const sheetWouldCoverAnchor =
@@ -132,9 +131,10 @@ export default function CoachMark({
           position: 'fixed',
           left: '12px',
           right: '12px',
-          // Clear the mobile bottom nav — mirrors the proven offset the passive
-          // toast uses (env safe-area + ~84px nav) with a little extra room.
-          bottom: 'calc(env(safe-area-inset-bottom) + 88px)',
+          // Clear the REAL mobile bottom nav (measured, includes its own
+          // safe-area padding already) rather than a guessed constant that
+          // could fall short on notched devices and land under the bar.
+          bottom: `${SHEET_CLEARANCE}px`,
           animation: 'onboard-sheet-in 190ms ease',
         }
       : mode === 'center'
@@ -342,15 +342,10 @@ export default function CoachMark({
           </button>
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginTop: '12px' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', gap: '12px', marginTop: '12px' }}>
           <button type="button" onClick={onSkipTour} style={linkStyle}>
-            Skip tour
+            Skip tutorial
           </button>
-          {onSkipAll && (
-            <button type="button" onClick={onSkipAll} style={linkStyle}>
-              Skip all tours
-            </button>
-          )}
         </div>
       </div>
     </>
