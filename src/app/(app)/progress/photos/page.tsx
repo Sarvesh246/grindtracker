@@ -126,7 +126,9 @@ export default function ProgressPhotosPage() {
       if (entries.length === 0) return
       setLightbox({
         items: entries.map(e => ({ id: e.id, storage_path: e.storage_path, taken_date: e.taken_date, day_type: e.day_type })),
-        index: entries.length - 1,
+        // entries is sorted oldest -> newest; start the timeline at the
+        // beginning of the user's history, not the most recent photo.
+        index: 0,
         showTimeline: true,
       })
     } catch {
