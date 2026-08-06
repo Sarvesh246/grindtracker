@@ -11,7 +11,7 @@ import { useUnit } from '@/lib/contexts/UnitContext'
 import { deleteIncompleteSessions } from '@/lib/utils/sessions'
 import { advanceIndex, effectiveSequence } from '@/lib/utils/rotation'
 import type { UserRotation, UserStats, CompleteSessionResult } from '@/lib/types'
-import { useRestTimer } from '@/lib/hooks/useRestTimer'
+import { useRestTimer, getKeepTimerRunningOnExit } from '@/lib/hooks/useRestTimer'
 import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
 import { useExitingValue } from '@/lib/hooks/useExitingValue'
 import RestTimerBar from '@/components/RestTimerBar'
@@ -178,11 +178,16 @@ export default function ActiveWorkout({ day }: { day: string }) {
   useEffect(() => { logsRef.current = logs }, [logs])
 
   useEffect(() => {
+    // Stop ticking once the workout is finished — otherwise the header's
+    // elapsed-time readout keeps visibly changing underneath the completion
+    // modal for as long as ActiveWorkout stays mounted (through the modal's
+    // exit animation and the /home navigation), which reads as a stuck timer.
+    if (completionData) return
     timerRef.current = setInterval(() => {
       setElapsed(Math.floor((Date.now() - startedAt.getTime()) / 1000))
     }, 1000)
     return () => { if (timerRef.current) clearInterval(timerRef.current) }
-  }, [startedAt])
+  }, [startedAt, completionData])
 
   // Auto-clear undo state when the 5s window expires.
   useEffect(() => {
@@ -1139,11 +1144,33 @@ export default function ActiveWorkout({ day }: { day: string }) {
           throw finishError ?? new Error('Finish failed')
         }
 
-        const [{ data: sessionRow }, { data: statsRow }] = await Promise.all([
+        const [{ data: sessionRow }, { data: statsRow }, { data: prLogRows }] = await Promise.all([
           supabase.from('sessions').select('xp_earned').eq('id', sessionId).maybeSingle(),
           supabase.from('user_stats').select('*').eq('user_id', user.id).maybeSingle(),
+          // The real first call already wrote is_pr on session_logs — the lost
+          // response only cost us the RPC's return payload, not the underlying
+          // data. Re-derive pr_count/pr_exercises the same way complete_session
+          // does server-side instead of reporting zero PRs for a workout that
+          // actually had them.
+          supabase.from('session_logs')
+            .select('exercise_id, weight, reps, exercises(name)')
+            .eq('session_id', sessionId)
+            .eq('is_pr', true),
         ])
         if (!sessionRow || !statsRow) throw finishError ?? new Error('Finish failed')
+
+        const bestPrByExercise = new Map<string, { name: string; weight: number; reps: number; volume: number }>()
+        for (const row of prLogRows ?? []) {
+          const weight = row.weight ?? 0
+          const reps = row.reps ?? 0
+          const volume = weight * reps
+          const exerciseRel = row.exercises as unknown as { name: string }[] | { name: string } | null
+          const name = (Array.isArray(exerciseRel) ? exerciseRel[0]?.name : exerciseRel?.name) ?? 'Unknown'
+          const existing = bestPrByExercise.get(row.exercise_id)
+          if (!existing || volume > existing.volume) {
+            bestPrByExercise.set(row.exercise_id, { name, weight, reps, volume })
+          }
+        }
 
         result = {
           xp_earned: sessionRow.xp_earned,
@@ -1158,8 +1185,8 @@ export default function ActiveWorkout({ day }: { day: string }) {
           longest_streak: statsRow.longest_streak,
           last_workout_date: statsRow.last_workout_date,
           total_workouts: statsRow.total_workouts,
-          pr_count: 0,
-          pr_exercises: [],
+          pr_count: (prLogRows ?? []).length,
+          pr_exercises: Array.from(bestPrByExercise.values()).map(({ name, weight, reps }) => ({ name, weight, reps })),
         }
       } else {
         result = finishData as CompleteSessionResult
@@ -1467,6 +1494,13 @@ export default function ActiveWorkout({ day }: { day: string }) {
               </button>
               <button
                 onClick={() => {
+                  // Freeze the rest timer where it is (unless the user opted into
+                  // letting it keep running) so it resumes from the same spot
+                  // instead of continuing to burn down in the background — see
+                  // Settings → Rest Timer on Exit.
+                  if (restTimer.active && !restTimer.paused && !getKeepTimerRunningOnExit()) {
+                    restTimer.pause()
+                  }
                   setShowExitConfirm(false)
                   router.replace('/log')
                 }}

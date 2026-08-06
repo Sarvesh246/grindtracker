@@ -32,6 +32,21 @@ export function setExerciseRest(exerciseId: string, seconds: number) {
   localStorage.setItem(STORAGE_PREFIX + exerciseId, String(seconds))
 }
 
+const KEEP_RUNNING_ON_EXIT_KEY = 'grind.rest.keep_running_on_exit'
+
+/** Whether Save & Exit should let a running rest timer keep counting down.
+ *  Off by default: the timer instead freezes wherever it was and resumes
+ *  from there when the workout is resumed. Configurable in Settings. */
+export function getKeepTimerRunningOnExit(): boolean {
+  if (typeof window === 'undefined') return false
+  return localStorage.getItem(KEEP_RUNNING_ON_EXIT_KEY) === 'true'
+}
+
+export function setKeepTimerRunningOnExit(value: boolean) {
+  if (typeof window === 'undefined') return
+  localStorage.setItem(KEEP_RUNNING_ON_EXIT_KEY, String(value))
+}
+
 interface TimerState {
   exerciseId: string | null
   startedAt: number // epoch ms
@@ -43,15 +58,27 @@ interface TimerState {
 const ZERO: TimerState = { exerciseId: null, startedAt: 0, durationMs: 0, remainingMs: 0, paused: false }
 const ACTIVE_TIMER_KEY = 'grind.rest.active_timer'
 
-/** Restore a persisted timer from localStorage on page remount (e.g. after navigating away and back).
- *  Uses startedAt + durationMs to recompute remaining so the countdown is live-accurate even
- *  if the user spent time away. Returns ZERO if there's nothing saved or the timer has expired. */
+/** Restore a persisted timer from localStorage on page remount (e.g. after navigating away and back,
+ *  or Save & Exit followed by Resume). A paused timer restores frozen at its saved remaining time;
+ *  a running one recomputes remaining from startedAt + durationMs so the countdown is live-accurate
+ *  even if the user spent time away. Returns ZERO if there's nothing saved or the timer has expired. */
 function readPersistedTimer(): TimerState {
   if (typeof window === 'undefined') return ZERO
   try {
     const raw = localStorage.getItem(ACTIVE_TIMER_KEY)
     if (!raw) return ZERO
-    const saved = JSON.parse(raw) as { exerciseId: string; startedAt: number; durationMs: number }
+    const saved = JSON.parse(raw) as {
+      exerciseId: string
+      startedAt: number
+      durationMs: number
+      paused?: boolean
+      remainingMs?: number
+    }
+    if (saved.paused) {
+      const remainingMs = Math.max(0, saved.remainingMs ?? 0)
+      if (remainingMs <= 0) { localStorage.removeItem(ACTIVE_TIMER_KEY); return ZERO }
+      return { exerciseId: saved.exerciseId, startedAt: saved.startedAt, durationMs: saved.durationMs, remainingMs, paused: true }
+    }
     const elapsed = Date.now() - saved.startedAt
     const remainingMs = Math.max(0, saved.durationMs - elapsed)
     if (remainingMs <= 0) { localStorage.removeItem(ACTIVE_TIMER_KEY); return ZERO }
@@ -70,17 +97,23 @@ export function useRestTimer() {
   const zeroFired = useRef(false)
   const rafRef = useRef<number | null>(null)
 
-  // Sync timer parameters to localStorage so a page remount can restore the countdown.
-  // We watch exerciseId/startedAt/durationMs/paused — NOT remainingMs, to avoid
-  // writing on every 250ms tick. The restore function recomputes remaining from
-  // startedAt + durationMs, so the value is always live-accurate on restore.
+  // Sync timer parameters to localStorage so a page remount can restore the countdown
+  // (running or paused). We watch exerciseId/startedAt/durationMs/paused — NOT
+  // remainingMs, to avoid writing on every 250ms tick while running: the restore
+  // function recomputes remaining from startedAt + durationMs in that case, so the
+  // value is always live-accurate on restore. While paused, remainingMs IS the
+  // source of truth (frozen), but it only changes in the same setState call that
+  // flips `paused` to true (see pause() below), so this effect still captures the
+  // correct frozen value without needing remainingMs in the dependency list.
   useEffect(() => {
     if (typeof window === 'undefined') return
-    if (state.exerciseId && !state.paused && state.remainingMs > 0) {
+    if (state.exerciseId && (state.paused || state.remainingMs > 0)) {
       localStorage.setItem(ACTIVE_TIMER_KEY, JSON.stringify({
         exerciseId: state.exerciseId,
         startedAt: state.startedAt,
         durationMs: state.durationMs,
+        paused: state.paused,
+        remainingMs: state.remainingMs,
       }))
     } else {
       localStorage.removeItem(ACTIVE_TIMER_KEY)

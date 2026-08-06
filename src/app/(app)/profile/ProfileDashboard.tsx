@@ -9,7 +9,7 @@ import BadgeIcon from '@/components/BadgeIcon'
 import BodyWeightCard from './BodyWeightCard'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { useToast } from '@/lib/contexts/ToastContext'
-import { getDefaultRest, setDefaultRest } from '@/lib/hooks/useRestTimer'
+import { getDefaultRest, setDefaultRest, getKeepTimerRunningOnExit, setKeepTimerRunningOnExit } from '@/lib/hooks/useRestTimer'
 import { useTheme } from '@/lib/contexts/ThemeContext'
 import ThemeToggle from '@/components/ThemeToggle'
 import { useMotionPref } from '@/lib/contexts/MotionContext'
@@ -102,15 +102,25 @@ export default function ProfileDashboard({
   // Default rest time (min:sec), persisted to localStorage via the rest-timer hook.
   const [restMin, setRestMin] = useState(2)
   const [restSec, setRestSec] = useState(0)
+  // Whether Save & Exit lets a running rest timer keep counting down instead
+  // of freezing it in place. Off by default — see useRestTimer.ts.
+  const [keepTimerRunningOnExit, setKeepTimerRunningOnExitState] = useState(false)
 
-  // Hydrate the default rest time from localStorage (client-only external
-  // store) after mount.
+  // Hydrate localStorage-backed rest-timer prefs (client-only external store)
+  // after mount.
   useEffect(() => {
     const total = getDefaultRest()
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setRestMin(Math.floor(total / 60))
     setRestSec(total % 60)
+    setKeepTimerRunningOnExitState(getKeepTimerRunningOnExit())
   }, [])
+
+  function toggleKeepTimerRunningOnExit() {
+    const next = !keepTimerRunningOnExit
+    setKeepTimerRunningOnExitState(next)
+    setKeepTimerRunningOnExit(next)
+  }
 
   function commitRest(min: number, sec: number) {
     const m = Math.max(0, Math.floor(min) || 0)
@@ -806,6 +816,51 @@ export default function ProfileDashboard({
                 }}
               />
             </div>
+          </div>
+
+          <div style={{ height: '1px', backgroundColor: 'var(--border)' }} />
+
+          {/* Rest timer on exit */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ fontSize: '14px', color: 'var(--text-primary)', fontWeight: 600, marginBottom: '2px' }}>
+                Rest Timer on Exit
+              </div>
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                {keepTimerRunningOnExit
+                  ? 'Keeps counting down after Save & Exit'
+                  : 'Pauses on Save & Exit and resumes where it left off'}
+              </div>
+            </div>
+            <button
+              onClick={toggleKeepTimerRunningOnExit}
+              role="switch"
+              aria-checked={keepTimerRunningOnExit}
+              aria-label="Keep rest timer running on exit"
+              style={{
+                width: '44px',
+                height: '26px',
+                flexShrink: 0,
+                borderRadius: '9999px',
+                border: 'none',
+                position: 'relative',
+                cursor: 'pointer',
+                backgroundColor: keepTimerRunningOnExit ? 'var(--accent)' : 'var(--surface-elevated)',
+                boxShadow: keepTimerRunningOnExit ? 'none' : 'inset 0 0 0 1px var(--border)',
+                transition: 'background-color 150ms ease',
+              }}
+            >
+              <span style={{
+                position: 'absolute',
+                top: '3px',
+                left: keepTimerRunningOnExit ? '21px' : '3px',
+                width: '20px',
+                height: '20px',
+                borderRadius: '9999px',
+                backgroundColor: keepTimerRunningOnExit ? 'var(--on-accent)' : 'var(--text-muted)',
+                transition: 'left 150ms ease',
+              }} />
+            </button>
           </div>
 
           <div style={{ height: '1px', backgroundColor: 'var(--border)' }} />
