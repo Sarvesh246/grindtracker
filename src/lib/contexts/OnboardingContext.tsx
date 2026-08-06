@@ -1,5 +1,5 @@
 'use client'
-import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
 /**
@@ -25,11 +25,60 @@ import { createClient } from '@/lib/supabase/client'
  * this as `initialState`; writes update local state immediately (so the UI
  * never waits on a round trip) and fire the Supabase update in the
  * background.
+ *
+ * Mirrors ThemeContext's cookie+localStorage belt-and-suspenders: the server
+ * row is the source of truth, but a `grind_onboarding_{userId}` localStorage
+ * mirror is written on every update too. Without it, a single failed/slow
+ * Supabase write (RLS hiccup, a migration not yet applied, a flaky network
+ * request racing a tab close) silently reverts "seen" back to "unseen" on
+ * the very next full page load — the tour then resurfaces every single
+ * time, which reads to the user as it never having been dismissed at all.
+ * The localStorage mirror is read on mount and unioned into state (never
+ * lets a tour un-see itself), so a lost server write degrades to "this one
+ * device remembers" instead of "nothing remembers."
  */
 export interface OnboardingState {
   toursSeen: string[]
   tooltipsSeen: string[]
   skipAll: boolean
+}
+
+function storageKey(userId: string) {
+  return `grind_onboarding_${userId}`
+}
+
+function readLocalState(userId: string): OnboardingState | null {
+  if (userId === 'anon') return null
+  try {
+    const raw = window.localStorage.getItem(storageKey(userId))
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    return {
+      toursSeen: Array.isArray(parsed.toursSeen) ? parsed.toursSeen : [],
+      tooltipsSeen: Array.isArray(parsed.tooltipsSeen) ? parsed.tooltipsSeen : [],
+      skipAll: parsed.skipAll === true,
+    }
+  } catch {
+    return null
+  }
+}
+
+function writeLocalState(userId: string, state: OnboardingState) {
+  if (userId === 'anon') return
+  try {
+    window.localStorage.setItem(storageKey(userId), JSON.stringify(state))
+  } catch {
+    // ignore — private mode / sandboxed context
+  }
+}
+
+/** Union two states, never letting either side un-see something the other saw. */
+function mergeOnboardingState(a: OnboardingState, b: OnboardingState): OnboardingState {
+  return {
+    toursSeen: Array.from(new Set([...a.toursSeen, ...b.toursSeen])),
+    tooltipsSeen: Array.from(new Set([...a.tooltipsSeen, ...b.tooltipsSeen])),
+    skipAll: a.skipAll || b.skipAll,
+  }
 }
 
 interface OnboardingContextValue {
@@ -101,11 +150,38 @@ export function OnboardingProvider({
   const update = useCallback(
     (next: OnboardingState) => {
       setState(next)
+      writeLocalState(userId, next)
       pendingRef.current = next
       void persist()
     },
-    [persist],
+    [userId, persist],
   )
+
+  // Post-mount reconciliation: adopt anything the localStorage mirror saw
+  // that the server row didn't (a previously failed/slow Supabase write —
+  // see the module docstring). Runs after the server-seeded first render so
+  // there's no hydration mismatch, and re-fires the background persist so a
+  // now-healthy connection can catch the server row up.
+  useEffect(() => {
+    const local = readLocalState(userId)
+    if (!local) return
+    const merged = mergeOnboardingState(initialState, local)
+    const changed =
+      merged.skipAll !== initialState.skipAll ||
+      merged.toursSeen.length !== initialState.toursSeen.length ||
+      merged.tooltipsSeen.length !== initialState.tooltipsSeen.length
+    if (changed) {
+      // Intentional post-mount sync from a browser-only store (localStorage
+      // is unavailable during SSR), mirroring ThemeContext's cookie/
+      // localStorage reconciliation effect.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      update(merged)
+    }
+    // Runs once on mount per user — `update`'s identity is stable enough
+    // (only depends on userId/persist) that omitting it here just avoids a
+    // spurious re-run when persist's supabase-client identity churns.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId])
 
   const hasSeenTour = useCallback((id: string) => state.skipAll || state.toursSeen.includes(id), [state])
   const hasSeenTooltip = useCallback((id: string) => state.tooltipsSeen.includes(id), [state])
