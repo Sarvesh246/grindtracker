@@ -28,9 +28,10 @@ const SETTLE_MS = 260
 
 /**
  * Hand-rolled full-screen swipe viewer (no gesture library in this app).
- * Renders only [prev, current, next] at a time — bounded DOM/signed-URL cost
- * regardless of history length, which is what makes `showTimeline` mode safe
- * to point at the user's entire photo history.
+ * Renders only [prev, current, next] at a time and signs at most 5 URLs
+ * (current +/- 2) — bounded DOM/signed-URL cost regardless of history length,
+ * which is what makes `showTimeline` mode safe to point at the user's entire
+ * photo history.
  *
  * Mount this conditionally (`{open && <PhotoLightbox .../>}`), not with an
  * `open` prop — like FeedbackModal, every mount should start fresh.
@@ -54,7 +55,6 @@ export default function PhotoLightbox({
 
   const [items, setItems] = useState(initialItems)
   const [index, setIndex] = useState(initialIndex)
-  const [width, setWidth] = useState(0)
   const [visible, setVisible] = useState(false)
   const [closing, setClosing] = useState(false)
   const [chrome, setChrome] = useState(true)
@@ -66,23 +66,27 @@ export default function PhotoLightbox({
 
   const dragRef = useRef<{ startX: number; startY: number; moved: number; axis: 'x' | 'y' | null } | null>(null)
 
-  // Fresh-mount entrance; measure viewport width for the px-based track math.
+  // Fresh-mount entrance. The track below positions slides with percentage
+  // transforms (100% per slide) instead of a JS-measured pixel width, so there's
+  // no "correct width hasn't been measured yet" frame to race — the very first
+  // paint is already correctly positioned, and orientation/viewport-chrome
+  // changes (mobile Safari's collapsing address bar, etc.) can't leave it stale.
   useEffect(() => {
     requestAnimationFrame(() => setVisible(true))
-    function measure() { setWidth(containerRef.current?.offsetWidth ?? 0) }
-    measure()
-    window.addEventListener('resize', measure)
     const prevBody = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-    return () => {
-      window.removeEventListener('resize', measure)
-      document.body.style.overflow = prevBody
-    }
+    return () => { document.body.style.overflow = prevBody }
   }, [])
 
   const current = items[index] as LightboxItem | undefined
   const prev = index > 0 ? items[index - 1] : undefined
   const next = index < items.length - 1 ? items[index + 1] : undefined
+  // One extra neighbor on each side, for prefetching only (never rendered) —
+  // by the time a swipe lands on `next`, `next`'s own neighbor is already
+  // signed, so a second fast swipe in the same direction doesn't hit a
+  // still-loading placeholder.
+  const prev2 = index > 1 ? items[index - 2] : undefined
+  const next2 = index < items.length - 2 ? items[index + 2] : undefined
 
   const dates = useMemo(() => {
     const out: string[] = []
@@ -92,10 +96,10 @@ export default function PhotoLightbox({
     return out
   }, [items])
 
-  // Windowed signing: only the current photo +/- one neighbor ever get signed,
-  // so a "view all history" session never signs more than 3 URLs at once.
+  // Windowed signing: only the current photo +/- two neighbors ever get signed,
+  // so a "view all history" session never signs more than 5 URLs at once.
   useEffect(() => {
-    const windowItems = [prev, current, next].filter((it): it is LightboxItem => !!it)
+    const windowItems = [prev2, prev, current, next, next2].filter((it): it is LightboxItem => !!it)
     const missing = windowItems.map(it => it.storage_path).filter(p => !signedUrls[p])
     if (missing.length === 0) return
     let cancelled = false
@@ -110,7 +114,7 @@ export default function PhotoLightbox({
     if (closing) return
     setClosing(true)
     setVisible(false)
-    window.setTimeout(onClose, 220)
+    window.setTimeout(onClose, reduceMotion ? 0 : 220)
   }
 
   function goTo(target: number) {
@@ -127,8 +131,9 @@ export default function PhotoLightbox({
       settleBack()
       return
     }
+    const w = containerRef.current?.offsetWidth ?? 0
     setPhase('settling')
-    setDragX(direction > 0 ? -width : width)
+    setDragX(direction > 0 ? -w : w)
     window.setTimeout(() => {
       setIndex(target)
       setDragX(0)
@@ -187,7 +192,8 @@ export default function PhotoLightbox({
     if (!drag) return
 
     if (drag.axis === 'x') {
-      const threshold = Math.max(SWIPE_MIN_PX, width * SWIPE_FRACTION)
+      const w = containerRef.current?.offsetWidth ?? 0
+      const threshold = Math.max(SWIPE_MIN_PX, w * SWIPE_FRACTION)
       if (dragX <= -threshold) { commitSwipe(1); return }
       if (dragX >= threshold) { commitSwipe(-1); return }
       settleBack()
@@ -235,7 +241,8 @@ export default function PhotoLightbox({
   const transitionStyle = phase === 'settling' && !reduceMotion
     ? `transform ${SETTLE_MS}ms cubic-bezier(0.22,1,0.36,1)`
     : 'none'
-  const baseOffset = prev ? -width : 0
+  const baseOffsetPercent = prev ? -100 : 0
+  const shown = visible && !closing
 
   return createPortal(
     <div
@@ -247,8 +254,9 @@ export default function PhotoLightbox({
         inset: 0,
         zIndex: 400,
         backgroundColor: 'rgba(0,0,0,0.97)',
-        opacity: visible && !closing ? 1 : 0,
-        transition: 'opacity 220ms ease',
+        opacity: shown ? 1 : 0,
+        transform: shown ? 'scale(1)' : 'scale(0.96)',
+        transition: 'opacity 200ms ease, transform 200ms ease',
         display: 'flex',
         flexDirection: 'column',
       }}
@@ -259,8 +267,8 @@ export default function PhotoLightbox({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            padding: 'max(14px, env(safe-area-inset-top)) 14px 10px',
-            background: 'linear-gradient(to bottom, rgba(0,0,0,0.6), transparent)',
+            padding: 'max(14px, env(safe-area-inset-top)) 14px 18px',
+            background: 'linear-gradient(to bottom, rgba(0,0,0,0.75), rgba(0,0,0,0.35) 70%, transparent)',
             position: 'absolute',
             top: 0, left: 0, right: 0,
             zIndex: 2,
@@ -271,11 +279,11 @@ export default function PhotoLightbox({
               <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
             </svg>
           </button>
-          <div style={{ textAlign: 'center', color: '#f0f0f0' }}>
-            <div style={{ fontFamily: 'var(--font-display)', fontSize: '16px', letterSpacing: '0.5px' }}>
+          <div style={{ textAlign: 'center', color: '#f5f5f5', textShadow: '0 1px 4px rgba(0,0,0,0.9)' }}>
+            <div style={{ fontFamily: 'var(--font-display)', fontSize: '20px', letterSpacing: '0.5px' }}>
               {formatShortDate(current.taken_date)}
             </div>
-            <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)' }}>
+            <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.85)', fontWeight: 500 }}>
               {current.day_type ? formatDayType(current.day_type) : 'N/A'}
             </div>
           </div>
@@ -305,13 +313,13 @@ export default function PhotoLightbox({
           style={{
             display: 'flex',
             height: '100%',
-            transform: `translateX(${baseOffset + dragX}px)`,
+            transform: `translateX(calc(${baseOffsetPercent}% + ${dragX}px))`,
             transition: transitionStyle,
           }}
         >
-          {prev && <LightboxSlide item={prev} url={signedUrls[prev.storage_path]} width={width} />}
-          <LightboxSlide item={current} url={signedUrls[current.storage_path]} width={width} />
-          {next && <LightboxSlide item={next} url={signedUrls[next.storage_path]} width={width} />}
+          {prev && <LightboxSlide item={prev} url={signedUrls[prev.storage_path]} />}
+          <LightboxSlide item={current} url={signedUrls[current.storage_path]} />
+          {next && <LightboxSlide item={next} url={signedUrls[next.storage_path]} />}
         </div>
       </div>
 
@@ -355,9 +363,9 @@ const ICON_BTN: CSSProperties = {
   display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
 }
 
-function LightboxSlide({ item, url, width }: { item: LightboxItem; url?: string; width: number }) {
+function LightboxSlide({ item, url }: { item: LightboxItem; url?: string }) {
   return (
-    <div style={{ flex: `0 0 ${width}px`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div style={{ flex: '0 0 100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       {url ? (
         // Signed Supabase URL — not a configured next/image remote host, and
         // this app skips next/image elsewhere for the same reason.

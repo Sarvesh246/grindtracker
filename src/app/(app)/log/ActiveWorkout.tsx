@@ -11,7 +11,7 @@ import { useUnit } from '@/lib/contexts/UnitContext'
 import { deleteIncompleteSessions } from '@/lib/utils/sessions'
 import { advanceIndex, effectiveSequence } from '@/lib/utils/rotation'
 import type { UserRotation, UserStats, CompleteSessionResult } from '@/lib/types'
-import { useRestTimer } from '@/lib/hooks/useRestTimer'
+import { useRestTimer, getPauseRestOnExit } from '@/lib/hooks/useRestTimer'
 import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
 import { useExitingValue } from '@/lib/hooks/useExitingValue'
 import RestTimerBar from '@/components/RestTimerBar'
@@ -178,11 +178,15 @@ export default function ActiveWorkout({ day }: { day: string }) {
   useEffect(() => { logsRef.current = logs }, [logs])
 
   useEffect(() => {
+    // Freeze the displayed elapsed time once the workout is finished — otherwise
+    // it keeps visibly ticking up behind the completion modal (through its close
+    // animation and the navigation back to /home) even though the workout is done.
+    if (completionData) return
     timerRef.current = setInterval(() => {
       setElapsed(Math.floor((Date.now() - startedAt.getTime()) / 1000))
     }, 1000)
     return () => { if (timerRef.current) clearInterval(timerRef.current) }
-  }, [startedAt])
+  }, [startedAt, completionData])
 
   // Auto-clear undo state when the 5s window expires.
   useEffect(() => {
@@ -1139,11 +1143,36 @@ export default function ActiveWorkout({ day }: { day: string }) {
           throw finishError ?? new Error('Finish failed')
         }
 
-        const [{ data: sessionRow }, { data: statsRow }] = await Promise.all([
+        const [{ data: sessionRow }, { data: statsRow }, { data: prRows }] = await Promise.all([
           supabase.from('sessions').select('xp_earned').eq('id', sessionId).maybeSingle(),
           supabase.from('user_stats').select('*').eq('user_id', user.id).maybeSingle(),
+          // The RPC already flagged is_pr on session_logs server-side before its
+          // response was lost — re-read it directly instead of reporting 0 PRs
+          // for a completion that genuinely earned some.
+          supabase
+            .from('session_logs')
+            .select('exercise_id, weight, reps, exercises(name)')
+            .eq('session_id', sessionId)
+            .eq('is_pr', true),
         ])
         if (!sessionRow || !statsRow) throw finishError ?? new Error('Finish failed')
+
+        type PrLogRow = {
+          exercise_id: string
+          weight: number | null
+          reps: number | null
+          exercises: { name: string } | { name: string }[] | null
+        }
+        const bestByExercise = new Map<string, { name: string; weight: number; reps: number }>()
+        for (const row of (prRows ?? []) as PrLogRow[]) {
+          if (row.weight === null || row.reps === null) continue
+          const name = Array.isArray(row.exercises) ? row.exercises[0]?.name : row.exercises?.name
+          if (!name) continue
+          const existing = bestByExercise.get(row.exercise_id)
+          if (!existing || row.weight * row.reps > existing.weight * existing.reps) {
+            bestByExercise.set(row.exercise_id, { name, weight: row.weight, reps: row.reps })
+          }
+        }
 
         result = {
           xp_earned: sessionRow.xp_earned,
@@ -1158,8 +1187,8 @@ export default function ActiveWorkout({ day }: { day: string }) {
           longest_streak: statsRow.longest_streak,
           last_workout_date: statsRow.last_workout_date,
           total_workouts: statsRow.total_workouts,
-          pr_count: 0,
-          pr_exercises: [],
+          pr_count: (prRows ?? []).length,
+          pr_exercises: Array.from(bestByExercise.values()),
         }
       } else {
         result = finishData as CompleteSessionResult
@@ -1468,6 +1497,11 @@ export default function ActiveWorkout({ day }: { day: string }) {
               <button
                 onClick={() => {
                   setShowExitConfirm(false)
+                  // Default: freeze the rest timer right where it is so it doesn't
+                  // keep counting down while the workout is closed, and resumes from
+                  // the same remaining time when the user comes back. Configurable
+                  // in Settings (Profile) — "keep going" leaves it running instead.
+                  if (getPauseRestOnExit()) restTimer.pause()
                   router.replace('/log')
                 }}
                 style={{
