@@ -32,6 +32,22 @@ export function setExerciseRest(exerciseId: string, seconds: number) {
   localStorage.setItem(STORAGE_PREFIX + exerciseId, String(seconds))
 }
 
+const PAUSE_ON_EXIT_KEY = 'grind.rest.pause_on_exit'
+
+/**
+ * Whether "Save & Exit" freezes the active rest timer where it was (default)
+ * or lets it keep counting down in the background. Configurable in Settings.
+ */
+export function getPauseRestOnExit(): boolean {
+  if (typeof window === 'undefined') return true
+  return localStorage.getItem(PAUSE_ON_EXIT_KEY) !== 'false'
+}
+
+export function setPauseRestOnExit(value: boolean) {
+  if (typeof window === 'undefined') return
+  localStorage.setItem(PAUSE_ON_EXIT_KEY, String(value))
+}
+
 interface TimerState {
   exerciseId: string | null
   startedAt: number // epoch ms
@@ -44,14 +60,27 @@ const ZERO: TimerState = { exerciseId: null, startedAt: 0, durationMs: 0, remain
 const ACTIVE_TIMER_KEY = 'grind.rest.active_timer'
 
 /** Restore a persisted timer from localStorage on page remount (e.g. after navigating away and back).
- *  Uses startedAt + durationMs to recompute remaining so the countdown is live-accurate even
- *  if the user spent time away. Returns ZERO if there's nothing saved or the timer has expired. */
+ *  A RUNNING timer uses startedAt + durationMs to recompute remaining so the countdown is
+ *  live-accurate even if the user spent time away. A PAUSED timer (e.g. frozen by "Save & Exit")
+ *  restores its frozen remainingMs verbatim instead — it shouldn't have kept counting down while
+ *  paused. Returns ZERO if there's nothing saved or the timer has expired. */
 function readPersistedTimer(): TimerState {
   if (typeof window === 'undefined') return ZERO
   try {
     const raw = localStorage.getItem(ACTIVE_TIMER_KEY)
     if (!raw) return ZERO
-    const saved = JSON.parse(raw) as { exerciseId: string; startedAt: number; durationMs: number }
+    const saved = JSON.parse(raw) as {
+      exerciseId: string
+      startedAt: number
+      durationMs: number
+      paused?: boolean
+      remainingMs?: number
+    }
+    if (saved.paused) {
+      const remainingMs = Math.max(0, saved.remainingMs ?? 0)
+      if (remainingMs <= 0) { localStorage.removeItem(ACTIVE_TIMER_KEY); return ZERO }
+      return { exerciseId: saved.exerciseId, startedAt: saved.startedAt, durationMs: saved.durationMs, remainingMs, paused: true }
+    }
     const elapsed = Date.now() - saved.startedAt
     const remainingMs = Math.max(0, saved.durationMs - elapsed)
     if (remainingMs <= 0) { localStorage.removeItem(ACTIVE_TIMER_KEY); return ZERO }
@@ -70,23 +99,43 @@ export function useRestTimer() {
   const zeroFired = useRef(false)
   const rafRef = useRef<number | null>(null)
 
-  // Sync timer parameters to localStorage so a page remount can restore the countdown.
-  // We watch exerciseId/startedAt/durationMs/paused — NOT remainingMs, to avoid
-  // writing on every 250ms tick. The restore function recomputes remaining from
-  // startedAt + durationMs, so the value is always live-accurate on restore.
+  // Sync a RUNNING timer's parameters to localStorage so a page remount can restore
+  // the countdown. We watch exerciseId/startedAt/durationMs/paused — NOT remainingMs,
+  // to avoid writing on every 250ms tick. The restore function recomputes remaining
+  // from startedAt + durationMs, so the value is always live-accurate on restore.
   useEffect(() => {
     if (typeof window === 'undefined') return
-    if (state.exerciseId && !state.paused && state.remainingMs > 0) {
+    if (state.paused) return // handled by the paused-specific effect below
+    if (state.exerciseId && state.remainingMs > 0) {
       localStorage.setItem(ACTIVE_TIMER_KEY, JSON.stringify({
         exerciseId: state.exerciseId,
         startedAt: state.startedAt,
         durationMs: state.durationMs,
+        paused: false,
       }))
     } else {
       localStorage.removeItem(ACTIVE_TIMER_KEY)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.exerciseId, state.startedAt, state.durationMs, state.paused])
+
+  // Sync a PAUSED timer separately, including its frozen remainingMs — this is
+  // what lets "Save & Exit" freeze the rest timer where it was and have it
+  // resume from there rather than losing it entirely on remount. remainingMs is
+  // frozen while paused (the tick effect below doesn't run in that state), so
+  // this doesn't reintroduce a write-every-tick problem.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (!state.exerciseId || !state.paused) return
+    if (state.remainingMs <= 0) { localStorage.removeItem(ACTIVE_TIMER_KEY); return }
+    localStorage.setItem(ACTIVE_TIMER_KEY, JSON.stringify({
+      exerciseId: state.exerciseId,
+      startedAt: state.startedAt,
+      durationMs: state.durationMs,
+      paused: true,
+      remainingMs: state.remainingMs,
+    }))
+  }, [state.exerciseId, state.paused, state.remainingMs, state.startedAt, state.durationMs])
 
   useEffect(() => {
     if (!state.exerciseId || state.paused) return

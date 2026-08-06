@@ -12,6 +12,7 @@ import PhotoLightbox, { type LightboxItem } from './PhotoLightbox'
 import AddPhotoSheet from './AddPhotoSheet'
 import ComparePhotosView from './ComparePhotosView'
 import { localDateKey } from '@/lib/utils/formatting'
+import { useToast } from '@/lib/contexts/ToastContext'
 
 const PAGE_SIZE = 20
 const MAX_THUMBS_PER_GROUP = 4
@@ -29,6 +30,7 @@ function groupToLightboxItems(group: ProgressPhotoGroupWithPhotos): LightboxItem
 
 export default function ProgressPhotosPage() {
   const router = useRouter()
+  const toast = useToast()
   const {
     fetchGroupsPage,
     fetchTimelinePhotos,
@@ -127,6 +129,11 @@ export default function ProgressPhotosPage() {
         index: entries.length - 1,
         showTimeline: true,
       })
+    } catch {
+      // Surface the failure instead of silently doing nothing — a thrown
+      // fetch here previously left the button just sitting there with no
+      // feedback once loadingMore reset.
+      toast.show("Couldn't load your photo timeline. Try again.", 'error')
     } finally {
       setTimelineLoading(false)
     }

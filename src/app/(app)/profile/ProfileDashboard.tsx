@@ -9,7 +9,7 @@ import BadgeIcon from '@/components/BadgeIcon'
 import BodyWeightCard from './BodyWeightCard'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { useToast } from '@/lib/contexts/ToastContext'
-import { getDefaultRest, setDefaultRest } from '@/lib/hooks/useRestTimer'
+import { getDefaultRest, setDefaultRest, getPauseRestOnExit, setPauseRestOnExit } from '@/lib/hooks/useRestTimer'
 import { useTheme } from '@/lib/contexts/ThemeContext'
 import ThemeToggle from '@/components/ThemeToggle'
 import { useMotionPref } from '@/lib/contexts/MotionContext'
@@ -102,14 +102,18 @@ export default function ProfileDashboard({
   // Default rest time (min:sec), persisted to localStorage via the rest-timer hook.
   const [restMin, setRestMin] = useState(2)
   const [restSec, setRestSec] = useState(0)
+  // Whether "Save & Exit" freezes the active rest timer (default) or leaves it
+  // running in the background, persisted to localStorage via the rest-timer hook.
+  const [pauseRestOnExit, setPauseRestOnExitState] = useState(true)
 
-  // Hydrate the default rest time from localStorage (client-only external
-  // store) after mount.
+  // Hydrate the default rest time and pause-on-exit preference from
+  // localStorage (client-only external store) after mount.
   useEffect(() => {
     const total = getDefaultRest()
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setRestMin(Math.floor(total / 60))
     setRestSec(total % 60)
+    setPauseRestOnExitState(getPauseRestOnExit())
   }, [])
 
   function commitRest(min: number, sec: number) {
@@ -118,6 +122,12 @@ export default function ProfileDashboard({
     setRestMin(m)
     setRestSec(s)
     setDefaultRest(Math.max(5, m * 60 + s)) // floor at 5s so the timer is never trivial
+  }
+
+  function togglePauseRestOnExit() {
+    const next = !pauseRestOnExit
+    setPauseRestOnExitState(next)
+    setPauseRestOnExit(next)
   }
 
   // Recurring rest days (see docs/sql/14-rest-days.sql). Optimistic toggle
@@ -806,6 +816,53 @@ export default function ProfileDashboard({
                 }}
               />
             </div>
+          </div>
+
+          <div style={{ height: '1px', backgroundColor: 'var(--border)' }} />
+
+          {/* Rest timer on Save & Exit — default freezes it in place so it doesn't
+              keep counting down while the workout is closed; toggling this off
+              leaves it running in the background instead. */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ fontSize: '14px', color: 'var(--text-primary)', fontWeight: 600, marginBottom: '2px' }}>
+                Pause Rest Timer on Exit
+              </div>
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                {pauseRestOnExit
+                  ? 'Save & Exit freezes the timer, resumes where you left off'
+                  : 'Save & Exit lets the timer keep counting down'}
+              </div>
+            </div>
+            <button
+              onClick={togglePauseRestOnExit}
+              role="switch"
+              aria-checked={pauseRestOnExit}
+              aria-label="Pause rest timer on exit"
+              style={{
+                width: '44px',
+                height: '26px',
+                flexShrink: 0,
+                borderRadius: '9999px',
+                border: 'none',
+                position: 'relative',
+                cursor: 'pointer',
+                backgroundColor: pauseRestOnExit ? 'var(--accent)' : 'var(--surface-elevated)',
+                boxShadow: pauseRestOnExit ? 'none' : 'inset 0 0 0 1px var(--border)',
+                transition: 'background-color 150ms ease',
+              }}
+            >
+              <span style={{
+                position: 'absolute',
+                top: '3px',
+                left: pauseRestOnExit ? '21px' : '3px',
+                width: '20px',
+                height: '20px',
+                borderRadius: '9999px',
+                backgroundColor: pauseRestOnExit ? 'var(--on-accent)' : 'var(--text-muted)',
+                transition: 'left 150ms ease',
+              }} />
+            </button>
           </div>
 
           <div style={{ height: '1px', backgroundColor: 'var(--border)' }} />
