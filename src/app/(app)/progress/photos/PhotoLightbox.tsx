@@ -267,8 +267,8 @@ export default function PhotoLightbox({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            padding: 'max(14px, env(safe-area-inset-top)) 14px 10px',
-            background: 'linear-gradient(to bottom, rgba(0,0,0,0.6), transparent)',
+            padding: 'max(14px, env(safe-area-inset-top)) 14px 18px',
+            background: 'linear-gradient(to bottom, rgba(0,0,0,0.75), rgba(0,0,0,0.35) 70%, transparent)',
             position: 'absolute',
             top: 0, left: 0, right: 0,
             zIndex: 2,
@@ -279,11 +279,11 @@ export default function PhotoLightbox({
               <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
             </svg>
           </button>
-          <div style={{ textAlign: 'center', color: '#f0f0f0' }}>
-            <div style={{ fontFamily: 'var(--font-display)', fontSize: '16px', letterSpacing: '0.5px' }}>
+          <div style={{ textAlign: 'center', color: '#f5f5f5', textShadow: '0 1px 4px rgba(0,0,0,0.9)' }}>
+            <div style={{ fontFamily: 'var(--font-display)', fontSize: '20px', letterSpacing: '0.5px' }}>
               {formatShortDate(current.taken_date)}
             </div>
-            <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)' }}>
+            <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.85)', fontWeight: 500 }}>
               {current.day_type ? formatDayType(current.day_type) : 'N/A'}
             </div>
           </div>
