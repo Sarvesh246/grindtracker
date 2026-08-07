@@ -36,6 +36,7 @@ is fully linked to migration history.
 | [21-progress-photos.sql](sql/21-progress-photos.sql) | 21 | Progress photos (private, self-only) |
 | [22-onboarding-state.sql](sql/22-onboarding-state.sql) | 22 | Server-side onboarding "seen" state |
 | [23-tooltip-skip.sql](sql/23-tooltip-skip.sql) | 23 | "Skip tips" opt-out for contextual tooltips |
+| [24-exercise-last-weight.sql](sql/24-exercise-last-weight.sql) | 24 | Last-used (not all-time-best) weight per exercise |
 
 ## Deploying 20
 

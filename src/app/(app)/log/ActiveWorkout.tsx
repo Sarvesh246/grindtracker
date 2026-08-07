@@ -112,15 +112,17 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [exercises, setExercises] = useState<Exercise[]>([])
   const [logs, setLogs] = useState<LogMap>({})
-  // `previousBests` is the best WEIGHT on record per exercise — display/prefill
-  // only now (the "prev: X lbs" hint and the weight input's starting value).
+  // `previousBests` is the WEIGHT from the most recent completed session per
+  // exercise (get_exercise_last_weights) — display/prefill only, the "prev: X
+  // lbs" hint and the weight input's starting value. Deliberately last-session,
+  // not all-time-best, so "prev" means what it says even after a deload.
   // `previousBestVolumes` is the live "bar to beat" for PR detection: best
-  // weight x reps on record, which is what actually decides is_pr (mirrors the
-  // server's grind_recompute_stats — see docs/sql/15-volume-based-prs.sql).
-  // Both start as the prior-session best (from DB) and advance within this
-  // workout as sets are logged. `baselineBests`/`baselineBestVolumes` keep the
-  // original DB values so we can recompute the live bests when sets are
-  // edited or undone.
+  // weight x reps EVER on record (get_exercise_bests), which is what actually
+  // decides is_pr (mirrors the server's grind_recompute_stats — see
+  // docs/sql/15-volume-based-prs.sql). Both start from the DB and advance
+  // within this workout as sets are logged. `baselineBests`/`baselineBestVolumes`
+  // keep the original DB values so we can recompute the live bests when sets
+  // are edited or undone.
   const [previousBests, setPreviousBests] = useState<PreviousBest>({})
   const [baselineBests, setBaselineBests] = useState<PreviousBest>({})
   const [previousBestVolumes, setPreviousBestVolumes] = useState<PreviousBest>({})
@@ -250,20 +252,31 @@ export default function ActiveWorkout({ day }: { day: string }) {
     if (exs.length === 0) { setLoading(false); return }
     setExercises(exs)
 
-    // One batch RPC for previous bests — was N sequential queries (one per exercise).
+    // Two batch RPCs — was N sequential queries (one per exercise). `bests` (the
+    // "prev: X lbs" hint + weight-input prefill) comes from the most recent
+    // completed session's weight for the exercise, NOT the all-time max — a
+    // deload or lighter session should show as "prev", not the old PR weight.
+    // `bestVolumes` stays all-time-best: it backs the live PR bar-to-beat, which
+    // is genuinely volume-vs-ever (mirrors grind_recompute_stats server-side).
     const bests: PreviousBest = {}
     const bestVolumes: PreviousBest = {}
     const exerciseIds = exs.map(e => e.id)
     if (exerciseIds.length > 0) {
-      const { data: bestRows } = await supabase.rpc('get_exercise_bests', {
-        p_exercise_ids: exerciseIds,
-      })
+      const [{ data: lastWeightRows }, { data: bestRows }] = await Promise.all([
+        supabase.rpc('get_exercise_last_weights', { p_exercise_ids: exerciseIds }),
+        supabase.rpc('get_exercise_bests', { p_exercise_ids: exerciseIds }),
+      ])
+      for (const row of (lastWeightRows ?? []) as {
+        exercise_id: string
+        last_weight: number | null
+      }[]) {
+        bests[row.exercise_id] = row.last_weight
+      }
       for (const row of (bestRows ?? []) as {
         exercise_id: string
         max_weight: number | null
         max_volume: number | null
       }[]) {
-        bests[row.exercise_id] = row.max_weight
         bestVolumes[row.exercise_id] = row.max_volume
       }
     }
@@ -903,24 +916,16 @@ export default function ActiveWorkout({ day }: { day: string }) {
     if (previousBests[newExercise.id] === undefined) {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
-        const { data } = await supabase
-          .from('session_logs')
-          .select('weight, reps, sessions!inner(user_id, completed_at)')
-          .eq('exercise_id', newExercise.id)
-          .eq('sessions.user_id', user.id)
-          .not('sessions.completed_at', 'is', null)
-          .not('weight', 'is', null)
-        let maxWeight: number | null = null
-        let maxVolume: number | null = null
-        for (const row of data ?? []) {
-          if (row.weight === null) continue
-          if (maxWeight === null || row.weight > maxWeight) maxWeight = row.weight
-          if (row.reps === null) continue
-          const vol = row.weight * row.reps
-          if (maxVolume === null || vol > maxVolume) maxVolume = vol
-        }
-        prevBest = maxWeight
-        prevBestVolume = maxVolume
+        // Same split as initSession: "prev" is the last session's weight, the
+        // PR bar-to-beat stays all-time-best volume.
+        const [{ data: lastWeightRows }, { data: bestRows }] = await Promise.all([
+          supabase.rpc('get_exercise_last_weights', { p_exercise_ids: [newExercise.id] }),
+          supabase.rpc('get_exercise_bests', { p_exercise_ids: [newExercise.id] }),
+        ])
+        const lastWeightRow = (lastWeightRows ?? [])[0] as { last_weight: number | null } | undefined
+        const bestRow = (bestRows ?? [])[0] as { max_volume: number | null } | undefined
+        prevBest = lastWeightRow?.last_weight ?? null
+        prevBestVolume = bestRow?.max_volume ?? null
         setPreviousBests(prev => ({ ...prev, [newExercise.id]: prevBest }))
         setPreviousBestVolumes(prev => ({ ...prev, [newExercise.id]: prevBestVolume }))
       }
