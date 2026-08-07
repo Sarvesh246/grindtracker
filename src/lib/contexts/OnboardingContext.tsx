@@ -13,13 +13,17 @@ import { createClient } from '@/lib/supabase/client'
  * other piece of account state in this app is server-authoritative; this
  * matches that.
  *
- *   toursSeen    — ids of scripted walkthroughs the user finished or skipped.
- *   tooltipsSeen — ids of one-off contextual hints (e.g. ActiveWorkout) shown once.
- *   skipAll      — the user hit "Skip tour" on any scripted walkthrough. Bailing
- *                  out of one is treated as bailing out of all of them, so this
- *                  suppresses every future *scripted tour* — but NOT the
- *                  ActiveWorkout contextual tooltips, which are functional
- *                  hints, opt-in per id, and unaffected by this flag.
+ *   toursSeen       — ids of scripted walkthroughs the user finished or skipped.
+ *   tooltipsSeen    — ids of one-off contextual hints (e.g. ActiveWorkout) shown once.
+ *   skipAll         — the user hit "Skip tour" on any scripted walkthrough. Bailing
+ *                     out of one is treated as bailing out of all of them, so this
+ *                     suppresses every future *scripted tour* — but NOT the
+ *                     ActiveWorkout contextual tooltips, which are functional
+ *                     hints, opt-in per id, and unaffected by this flag.
+ *   tooltipsSkipped — the user hit "Skip tips" on any contextual hint. Mirrors
+ *                     skipAll's "bail out of one, bail out of all" logic but for
+ *                     the contextual-hint family instead of the scripted tours —
+ *                     the two opt-outs are deliberately independent.
  *
  * The layout Server Component reads the row once per navigation and seeds
  * this as `initialState`; writes update local state immediately (so the UI
@@ -41,6 +45,7 @@ export interface OnboardingState {
   toursSeen: string[]
   tooltipsSeen: string[]
   skipAll: boolean
+  tooltipsSkipped: boolean
 }
 
 function storageKey(userId: string) {
@@ -57,6 +62,7 @@ function readLocalState(userId: string): OnboardingState | null {
       toursSeen: Array.isArray(parsed.toursSeen) ? parsed.toursSeen : [],
       tooltipsSeen: Array.isArray(parsed.tooltipsSeen) ? parsed.tooltipsSeen : [],
       skipAll: parsed.skipAll === true,
+      tooltipsSkipped: parsed.tooltipsSkipped === true,
     }
   } catch {
     return null
@@ -78,6 +84,7 @@ function mergeOnboardingState(a: OnboardingState, b: OnboardingState): Onboardin
     toursSeen: Array.from(new Set([...a.toursSeen, ...b.toursSeen])),
     tooltipsSeen: Array.from(new Set([...a.tooltipsSeen, ...b.tooltipsSeen])),
     skipAll: a.skipAll || b.skipAll,
+    tooltipsSkipped: a.tooltipsSkipped || b.tooltipsSkipped,
   }
 }
 
@@ -90,8 +97,10 @@ interface OnboardingContextValue {
   markTooltipSeen: (id: string) => void
   /** Suppress every future scripted tour (offered once, on the first coach mark). */
   skipAllTours: () => void
-  /** Replay affordance (Profile → Settings): forget every tour/tooltip and the
-   *  skip-all opt-out, so the full walkthrough runs again from Home. */
+  /** Suppress every future contextual hint (offered on each one via "Skip tips"). */
+  skipAllTooltips: () => void
+  /** Replay affordance (Profile → Settings): forget every tour/tooltip and both
+   *  skip opt-outs, so the full walkthrough runs again from Home. */
   resetAllTours: () => void
 }
 
@@ -102,6 +111,7 @@ const OnboardingContext = createContext<OnboardingContextValue>({
   hasSeenTooltip: () => false,
   markTooltipSeen: noop,
   skipAllTours: noop,
+  skipAllTooltips: noop,
   resetAllTours: noop,
 })
 
@@ -134,6 +144,7 @@ export function OnboardingProvider({
           onboarding_tours_seen: next.toursSeen,
           onboarding_tooltips_seen: next.tooltipsSeen,
           onboarding_skip_all: next.skipAll,
+          onboarding_tooltips_skipped: next.tooltipsSkipped,
         })
         .eq('id', userId)
       if (error) {
@@ -184,7 +195,10 @@ export function OnboardingProvider({
   }, [userId])
 
   const hasSeenTour = useCallback((id: string) => state.skipAll || state.toursSeen.includes(id), [state])
-  const hasSeenTooltip = useCallback((id: string) => state.tooltipsSeen.includes(id), [state])
+  const hasSeenTooltip = useCallback(
+    (id: string) => state.tooltipsSkipped || state.tooltipsSeen.includes(id),
+    [state],
+  )
 
   const markTourSeen = useCallback(
     (id: string) => {
@@ -204,8 +218,12 @@ export function OnboardingProvider({
     if (state.skipAll) return
     update({ ...state, skipAll: true })
   }, [state, update])
+  const skipAllTooltips = useCallback(() => {
+    if (state.tooltipsSkipped) return
+    update({ ...state, tooltipsSkipped: true })
+  }, [state, update])
   const resetAllTours = useCallback(() => {
-    update({ toursSeen: [], tooltipsSeen: [], skipAll: false })
+    update({ toursSeen: [], tooltipsSeen: [], skipAll: false, tooltipsSkipped: false })
   }, [update])
 
   const value = useMemo(
@@ -215,9 +233,10 @@ export function OnboardingProvider({
       hasSeenTooltip,
       markTooltipSeen,
       skipAllTours,
+      skipAllTooltips,
       resetAllTours,
     }),
-    [hasSeenTour, markTourSeen, hasSeenTooltip, markTooltipSeen, skipAllTours, resetAllTours],
+    [hasSeenTour, markTourSeen, hasSeenTooltip, markTooltipSeen, skipAllTours, skipAllTooltips, resetAllTours],
   )
 
   return <OnboardingContext.Provider value={value}>{children}</OnboardingContext.Provider>

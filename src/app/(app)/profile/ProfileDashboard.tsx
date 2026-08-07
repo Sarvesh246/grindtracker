@@ -952,8 +952,9 @@ export default function ProfileDashboard({
 
           <div style={{ height: '1px', backgroundColor: 'var(--border)' }} />
 
-          {/* Replay tutorial — resets every tour/tooltip (and the "skip all"
-              opt-out) server-side, so the full walkthrough runs again from Home. */}
+          {/* Replay tutorial — resets every tour/tooltip (and both the tours'
+              "skip all" and the tooltips' "skip tips" opt-outs) server-side,
+              so the full walkthrough runs again from Home. */}
           <button
             onClick={handleReplayTutorial}
             style={{

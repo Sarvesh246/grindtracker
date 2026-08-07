@@ -19,11 +19,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const onboardingUserId = user?.id ?? 'anon'
-  let onboardingInitial: OnboardingState = { toursSeen: [], tooltipsSeen: [], skipAll: false }
+  let onboardingInitial: OnboardingState = { toursSeen: [], tooltipsSeen: [], skipAll: false, tooltipsSkipped: false }
   if (user) {
     const { data: onboardingRow } = await supabase
       .from('user_profiles')
-      .select('onboarding_tours_seen, onboarding_tooltips_seen, onboarding_skip_all')
+      .select('onboarding_tours_seen, onboarding_tooltips_seen, onboarding_skip_all, onboarding_tooltips_skipped')
       .eq('id', user.id)
       .maybeSingle()
     if (onboardingRow) {
@@ -31,6 +31,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         toursSeen: onboardingRow.onboarding_tours_seen ?? [],
         tooltipsSeen: onboardingRow.onboarding_tooltips_seen ?? [],
         skipAll: onboardingRow.onboarding_skip_all ?? false,
+        tooltipsSkipped: onboardingRow.onboarding_tooltips_skipped ?? false,
       }
     }
   }
