@@ -10,18 +10,23 @@ import { ensureVisible, type Side } from './anchor'
  * marks it seen the moment it appears (so it fires at most once, ever, even if the
  * user reloads without dismissing), and never returns after that.
  *
- * No steps, no "skip tour" chrome — just a one-liner and a small ×. `suppressed`
- * defers it while it must not show (a modal is open, or a rest countdown is
- * running); an optional `autoHideMs` covers transient hints (e.g. the 5s undo).
+ * No step chrome — just a one-liner, a small × (dismiss this one), and a
+ * "Skip tips" link (dismiss this one AND opt out of every future feature
+ * tooltip, via `skipAllTooltips`). `suppressed` defers it while it must not
+ * show (a modal is open, or a rest countdown is running); an optional
+ * `autoHideMs` covers transient hints (e.g. the 5s undo).
  *
  * A process-wide coordinator shows only ONE feature tooltip at a time: on a busy
  * screen many hints can become eligible at once (the first workout has a check,
  * plate, warm-up, note, skip… all on screen), and stacking them would be naggy
  * and overlap. They queue instead — the next eligible one appears once the
- * current is dismissed.
+ * current is dismissed. With ~10 of these across the first several workouts,
+ * a new one drips in each session even though no single tooltip repeats —
+ * "Skip tips" is the escape hatch for a user who's seen enough of the pattern.
  *
  * Unlike scripted tours, these are NOT affected by "Skip all tours" — they're
- * functional hints, opt-in per id.
+ * functional hints, opt-in per id, with their own independent "Skip tips"
+ * opt-out (`tooltipsSkipped`, separate from the tours' `skipAll`).
  */
 export interface FeatureTooltipOptions {
   /** Arm the hint (control is visible / relevant). */
@@ -55,7 +60,7 @@ function release(id: string) {
 }
 
 export function useFeatureTooltip(id: string, opts: FeatureTooltipOptions): React.ReactNode {
-  const { hasSeenTooltip, markTooltipSeen } = useOnboarding()
+  const { hasSeenTooltip, markTooltipSeen, skipAllTooltips } = useOnboarding()
   const { when, getEl, body, title, suppressed = false, delayMs = 450, autoHideMs, preferred, maxWidth } = opts
 
   const seen = hasSeenTooltip(id)
@@ -155,6 +160,22 @@ export function useFeatureTooltip(id: string, opts: FeatureTooltipOptions): Reac
     return () => document.removeEventListener('pointerdown', handler, true)
   }, [visible, requestHide])
 
+  const handleSkip = useCallback(() => {
+    requestHide()
+    skipAllTooltips()
+  }, [requestHide, skipAllTooltips])
+
   if (!visible) return null
-  return <Tooltip getEl={getEl} body={body} title={title} onDismiss={requestHide} closing={closing} preferred={preferred} maxWidth={maxWidth} />
+  return (
+    <Tooltip
+      getEl={getEl}
+      body={body}
+      title={title}
+      onDismiss={requestHide}
+      onSkip={handleSkip}
+      closing={closing}
+      preferred={preferred}
+      maxWidth={maxWidth}
+    />
+  )
 }

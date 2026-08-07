@@ -19,6 +19,9 @@ export interface TooltipProps {
   title?: string
   /** When set, renders a small × that dismisses just this tooltip. */
   onDismiss?: () => void
+  /** When set, renders a persistent "Skip tips" link (mirrors CoachMark's
+   *  "Skip tutorial") that opts out of this whole tooltip family at once. */
+  onSkip?: () => void
   /** Plays the fade/slide-out variant of the entrance and stops taking clicks. */
   closing?: boolean
   /** Preferred sides in order. Defaults to below → above → right → left. */
@@ -28,7 +31,19 @@ export interface TooltipProps {
 
 const POINTER = 7
 
-export default function Tooltip({ getEl, body, title, onDismiss, closing, preferred, maxWidth = 250 }: TooltipProps) {
+const linkStyle: React.CSSProperties = {
+  background: 'none',
+  border: 'none',
+  padding: 0,
+  color: 'var(--text-muted)',
+  textDecoration: 'underline',
+  textUnderlineOffset: '3px',
+  fontFamily: "'DM Sans', sans-serif",
+  fontSize: '11px',
+  cursor: 'pointer',
+}
+
+export default function Tooltip({ getEl, body, title, onDismiss, onSkip, closing, preferred, maxWidth = 250 }: TooltipProps) {
   const anchor = useAnchorRect(getEl, true)
   const cardRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState<{ w: number; h: number } | null>(null)
@@ -86,6 +101,13 @@ export default function Tooltip({ getEl, body, title, onDismiss, closing, prefer
       <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '13px', lineHeight: 1.45, color: 'var(--text-secondary)' }}>
         {body}
       </div>
+      {onSkip && (
+        <div style={{ marginTop: '8px' }}>
+          <button type="button" onClick={onSkip} style={linkStyle}>
+            Skip tips
+          </button>
+        </div>
+      )}
       {onDismiss && (
         <button
           type="button"
