@@ -15,12 +15,12 @@ interface Props {
 }
 
 const ADJUST_OPTIONS: { label: string; sec: number }[] = [
-  { label: '−1:00', sec: -60 },
-  { label: '−30s', sec: -30 },
-  { label: '−15s', sec: -15 },
   { label: '+15s', sec: 15 },
   { label: '+30s', sec: 30 },
   { label: '+1:00', sec: 60 },
+  { label: '−1:00', sec: -60 },
+  { label: '−30s', sec: -30 },
+  { label: '−15s', sec: -15 },
 ]
 
 function fmt(ms: number): string {
@@ -194,7 +194,7 @@ export default function RestTimerBar({
             ±
           </button>
           {addOpen && (
-            // 3x2 grid (subtract row, then add row) instead of one 6-wide row —
+            // 3x2 grid (add row, then subtract row) instead of one 6-wide row —
             // six inline pill buttons don't fit a narrow phone (≤375px) without
             // either overflowing the viewport or getting clipped by the popover's
             // own edge. A fixed-width grid stays compact and never overflows

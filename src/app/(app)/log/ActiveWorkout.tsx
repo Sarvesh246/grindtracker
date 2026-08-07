@@ -1351,7 +1351,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
   })
   const hintPR = useFeatureTooltip('aw-pr', {
     when: hasAnyPR, suppressed: hintsBlocked, getEl: () => onboardTarget('aw-pr'),
-    body: 'New personal record! GRIND compares against your best-ever weight for this exercise.',
+    body: 'New personal record! GRIND compares against your best-ever weight x reps (volume) for this exercise.',
     preferred: ['top', 'bottom'],
   })
   // The rest-timer hint is the one exception that may show during a countdown.
