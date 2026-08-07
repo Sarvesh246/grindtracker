@@ -3,6 +3,11 @@
 ## Status: COMPLETE ✅
 All core phases (1–7) built and deployed. Single-user PWA, in daily use.
 
+## Git Workflow
+Single-user repo, no review process. Commit and push directly to `main` —
+do not create feature branches or pull requests unless the user explicitly
+asks for one.
+
 ## Stack
 Next.js 16 App Router, React 19, TypeScript, Tailwind CSS v4,
 Supabase (@supabase/ssr), Recharts, deployed on Vercel.
