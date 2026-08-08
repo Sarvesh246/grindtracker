@@ -20,7 +20,7 @@ export default async function HomePage() {
     { data: dayTypeRows },
     { data: rotationRow },
     { data: flexRows },
-    { data: history },
+    { data: history, error: historyError },
     { count: totalPRs },
     { data: restDayRows },
     { data: restDateRows },
@@ -127,6 +127,13 @@ export default async function HomePage() {
   const seq = effectiveSequence(rotation, dayKeys, flexDays)
   const nextDay = nextDayFromRotation(seq, rotation?.current_index ?? -1) ?? dayKeys.sort()[0] ?? 'push'
 
+  // grind_home_history backs "This Week"/"This Month" counts, the overdue-day
+  // nudge, and last-trained-per-day — a silently blank result here is
+  // indistinguishable from a genuinely brand-new account, so log the failure
+  // rather than let it pass as if there were nothing to show.
+  if (historyError) {
+    console.error('[grind] grind_home_history failed', historyError)
+  }
   const historyPayload = (history ?? {}) as {
     last_trained_by_day?: Record<string, string | null>
     recent_local_dates?: string[]

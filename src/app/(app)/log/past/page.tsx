@@ -106,7 +106,7 @@ function LogPastContent() {
     if (!user || gen !== checkGenRef.current) { setCheckingDate(false); return }
 
     // Match on sessions.local_date (streak key), never UTC completed_at windows.
-    const { data: existing } = await supabase
+    const { data: existing, error: existingError } = await supabase
       .from('sessions')
       .select('id, day_type, xp_earned')
       .eq('user_id', user.id)
@@ -117,6 +117,15 @@ function LogPastContent() {
       .maybeSingle()
 
     if (gen !== checkGenRef.current) return
+
+    if (existingError) {
+      // A failed lookup must never silently present an already-logged date as
+      // blank/new — saving would then fight the DB's one-completed-session-
+      // per-day unique index with a confusing error, or in the worst case
+      // duplicate the session rather than editing it.
+      console.error('[grind] failed to check for an existing session', existingError)
+      setError('Could not check this date. Check your connection and try again.')
+    }
 
     if (existing) {
       existingSessionRef.current = existing
@@ -130,18 +139,38 @@ function LogPastContent() {
 
   async function loadExercises(dayType: string, existingSessionId?: string) {
     setLoadingExercises(true)
-    const { data } = await supabase
+    const { data, error: exercisesError } = await supabase
       .from('exercises')
       .select('*')
       .eq('day_type', dayType)
       .order('sort_order', { ascending: true })
 
-    const existingLogs = existingSessionId
-      ? (await supabase
-          .from('session_logs')
-          .select('exercise_id, set_number, weight, reps')
-          .eq('session_id', existingSessionId)).data ?? []
-      : []
+    let existingLogsError = null
+    let existingLogs: { exercise_id: string; set_number: number; weight: number | null; reps: number | null }[] = []
+    if (existingSessionId) {
+      const res = await supabase
+        .from('session_logs')
+        .select('exercise_id, set_number, weight, reps')
+        .eq('session_id', existingSessionId)
+      existingLogsError = res.error
+      existingLogs = res.data ?? []
+    }
+
+    // Editing an existing session: handleSubmit replaces ALL of its logs with
+    // exactly what ends up in the form below. If either fetch failed, silently
+    // falling back to an empty list here would render this session as if it had
+    // no exercises/sets logged — saving from that state would permanently wipe
+    // the real data instead of editing it. Bail out with an error instead of
+    // ever letting that half-loaded state become submittable.
+    if (existingSessionId && (exercisesError || existingLogsError)) {
+      console.error('[grind] failed to load exercises for an existing session edit', exercisesError, existingLogsError)
+      setError('Could not load this workout. Check your connection and try again.')
+      setLoadingExercises(false)
+      return
+    }
+    if (exercisesError) {
+      console.error('[grind] failed to load exercises', exercisesError)
+    }
 
     // Disabled exercises (17-exercise-active-flag.sql) don't offer for a fresh
     // entry, matching ActiveWorkout — but if this session already has logged

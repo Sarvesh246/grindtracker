@@ -149,17 +149,27 @@ export default function AddPhotoSheet({
       onClose={submitting ? undefined : onClose}
       labelledBy="add-photo-sheet-title"
       zIndex={330}
+      style={{
+        // Lift the whole panel above the keyboard — padding the panel's OWN
+        // bottom (below) only adds trailing space inside it, it doesn't move
+        // the panel itself, so without this the keyboard can still cover the
+        // Save button with nothing but a scroll (and no visual cue) to find it.
+        paddingBottom: keyboardInset > 0 ? keyboardInset : 0,
+        transition: 'padding-bottom 180ms ease',
+      }}
       panelStyle={{
         backgroundColor: 'var(--surface)',
         border: '1px solid var(--border)',
         borderTopLeftRadius: 'var(--radius-lg)',
         borderTopRightRadius: 'var(--radius-lg)',
-        maxHeight: '90dvh',
+        // Shrink the cap by the keyboard inset too — dvh doesn't reliably
+        // account for an open on-screen keyboard, so an uncapped 90dvh panel
+        // can still be taller than what's actually left above the keyboard.
+        maxHeight: keyboardInset > 0 ? `calc(90dvh - ${keyboardInset}px)` : '90dvh',
         overflowY: 'auto',
         padding: '20px',
         boxSizing: 'border-box',
-        paddingBottom: keyboardInset > 0 ? keyboardInset + 20 : 'max(20px, env(safe-area-inset-bottom))',
-        transition: 'padding-bottom 180ms ease',
+        paddingBottom: 'max(20px, env(safe-area-inset-bottom))',
       }}
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '18px' }}>

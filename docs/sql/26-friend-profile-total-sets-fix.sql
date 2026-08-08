@@ -1,0 +1,96 @@
+-- Phase 26: fix get_friend_profile's total_sets to match the owner's own count.
+-- Idempotent: safe to re-run.
+--
+-- WHY THIS EXISTS
+-- ----------------
+-- get_friend_profile's total_sets subquery (19-friend-profile.sql) counted
+-- every session_logs row for a completed session, with no filter on
+-- is_skipped or weight. Skip markers are real session_logs rows (weight/reps
+-- null, is_skipped=true, see Skip persistence in CLAUDE.md / 18-skip-
+-- persistence.sql) — they were being counted as completed sets.
+--
+-- The owner's own /profile page (profile/page.tsx) computes the same stat as
+-- `.eq('is_skipped', false).not('weight', 'is', null)`. The two views of the
+-- same underlying data disagreed: a user with skipped sets in their history
+-- saw a lower "sets completed" number on their own profile than a friend saw
+-- viewing the same account via /leaderboard/[username]. This just brings the
+-- RPC's subquery in line with that same filter — nothing else in the function
+-- changes.
+
+create or replace function get_friend_profile(p_user_id uuid)
+returns json
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_caller  uuid := auth.uid();
+  v_visible boolean;
+  v_result  json;
+begin
+  if v_caller is null then
+    raise exception 'AUTH_REQUIRED' using errcode = '28000';
+  end if;
+
+  select (p_user_id = v_caller) or exists (
+    select 1 from friendships f
+     where f.status = 'accepted'
+       and ((f.requester_id = v_caller and f.addressee_id = p_user_id)
+         or (f.addressee_id = v_caller and f.requester_id = p_user_id))
+  ) into v_visible;
+
+  if not v_visible then
+    raise exception 'NOT_VISIBLE: not yourself or an accepted friend' using errcode = '42501';
+  end if;
+
+  select json_build_object(
+    'user_id',        up.id,
+    'username',       up.username,
+    'display_name',   up.display_name,
+    'avatar_url',     up.avatar_url,
+    'joined_at',      up.created_at,
+    'xp_total',       coalesce(us.xp_total, 0),
+    'level',          coalesce(us.level, 1),
+    'current_streak', coalesce(us.current_streak, 0),
+    'longest_streak', coalesce(us.longest_streak, 0),
+    'total_workouts', coalesce(us.total_workouts, 0),
+    'total_prs', (
+      select count(*) from session_logs sl
+        join sessions s on s.id = sl.session_id
+       where s.user_id = p_user_id and s.completed_at is not null and sl.is_pr = true
+    ),
+    'total_sets', (
+      select count(*) from session_logs sl
+        join sessions s on s.id = sl.session_id
+       where s.user_id = p_user_id and s.completed_at is not null
+         and coalesce(sl.is_skipped, false) = false
+         and sl.weight is not null
+    ),
+    -- Distinct LOCAL days (sessions.local_date, 11-server-side-xp.sql), not
+    -- completed_at — there's no "viewer's timezone" reasoning to fall back on
+    -- for someone else's calendar, so this uses the same day the friend's own
+    -- streak was computed against.
+    'days_active', (
+      select count(distinct s.local_date) from sessions s
+       where s.user_id = p_user_id and s.completed_at is not null
+    ),
+    'badge_ids', coalesce(
+      (select json_agg(ub.badge_id) from user_badges ub where ub.user_id = p_user_id),
+      '[]'::json
+    )
+  )
+  into v_result
+  from user_profiles up
+  left join user_stats us on us.user_id = up.id
+  where up.id = p_user_id;
+
+  if v_result is null then
+    raise exception 'NOT_FOUND' using errcode = 'P0002';
+  end if;
+
+  return v_result;
+end;
+$$;
+
+revoke all on function get_friend_profile(uuid) from public, anon;
+grant execute on function get_friend_profile(uuid) to authenticated;

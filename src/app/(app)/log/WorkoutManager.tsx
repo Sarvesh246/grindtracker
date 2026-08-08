@@ -122,7 +122,16 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
           ? supabase.from('user_rotation').select('*').eq('user_id', user.id).maybeSingle()
           : Promise.resolve({ data: null }),
       ])
-      setExercises(exRes.data ?? [])
+      if (exRes.error) {
+        // A failed fetch must never look like "you have no exercises" — that's
+        // what silently falling back to an empty array would show (and, worse,
+        // could route into the blank-slate setup-choice screen). Keep whatever
+        // was already loaded and say so instead.
+        console.error('[grind] failed to load exercises', exRes.error)
+        toast.show("Couldn't load your workouts. Check your connection and try again.", 'error')
+      } else {
+        setExercises(exRes.data ?? [])
+      }
       const map: Record<string, DayCategory> = {}
       for (const r of (catRes.data ?? [])) map[r.day_key] = r.category as DayCategory
       setDayCategories(map)
@@ -134,6 +143,12 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
     } finally {
       setLoading(false)
     }
+    // toast is intentionally omitted: useToast() returns a new `{ show }`
+    // object on every ToastProvider render (any toast firing anywhere in the
+    // app), so depending on it would recreate `load` — and retrigger the
+    // mount effect below — on unrelated toast activity. `show` itself never
+    // changes behavior across renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supabase])
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -166,6 +181,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
   }
 
   async function saveExercise() {
+    if (saving) return
     const currentScreen = screen
     if (currentScreen.id !== 'exercise-form') return
     const trimmedName = formName.trim()

@@ -297,8 +297,16 @@ export default function ProgressPage() {
         const best = s.sets.length > 0
           ? s.sets.reduce((b, x) => (x.weight > b.weight ? x : b), s.sets[0])
           : null
+        // Same date-only guard as the chart points above: `completedAt` is
+        // usually a bare YYYY-MM-DD `local_date`, which `new Date()` parses as
+        // UTC midnight — rendering it back in the viewer's local timezone then
+        // shows the previous calendar day for anyone west of UTC. Parsing at
+        // local noon keeps it on the intended day regardless of timezone.
+        const recentDate = /^\d{4}-\d{2}-\d{2}$/.test(s.completedAt)
+          ? new Date(s.completedAt + 'T12:00:00')
+          : new Date(s.completedAt)
         return {
-          date: new Date(s.completedAt).toLocaleDateString('en-US', {
+          date: recentDate.toLocaleDateString('en-US', {
             month: 'short',
             day: 'numeric',
             year: 'numeric',

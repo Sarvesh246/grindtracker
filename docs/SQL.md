@@ -38,6 +38,7 @@ is fully linked to migration history.
 | [23-tooltip-skip.sql](sql/23-tooltip-skip.sql) | 23 | "Skip tips" opt-out for contextual tooltips |
 | [24-exercise-last-weight.sql](sql/24-exercise-last-weight.sql) | 24 | Last-used (not all-time-best) weight per exercise |
 | [25-exercise-weight-target.sql](sql/25-exercise-weight-target.sql) | 25 | Per-exercise default weight to prefill fresh sets |
+| [26-friend-profile-total-sets-fix.sql](sql/26-friend-profile-total-sets-fix.sql) | 26 | Fix `get_friend_profile` total_sets to exclude skipped sets |
 
 ## Deploying 20
 

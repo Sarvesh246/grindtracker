@@ -73,6 +73,10 @@ export default function DaySelect() {
   const [rotation, setRotation] = useState<UserRotation | null>(null)
   const [flexDays, setFlexDays] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
+  // Set only when the exercises fetch itself fails — an existing user must
+  // never see the blank-slate "SET UP YOUR FIRST DAY" hero over a transient
+  // network/RLS blip; that reads as their days having vanished.
+  const [loadError, setLoadError] = useState(false)
   const [showManager, setShowManager] = useState(false)
   // When true, the manager opens straight into the "new day" form — used by the
   // blank-slate hero and the `?new=1` deep link from Home, so "create a day" is
@@ -106,6 +110,7 @@ export default function DaySelect() {
 
   const load = useCallback(async () => {
     setLoading(true)
+    setLoadError(false)
     const { data: { user } } = await supabase.auth.getUser()
     const [exRes, rotRes, flexRes] = await Promise.all([
       supabase.from('exercises').select('*')
@@ -118,6 +123,12 @@ export default function DaySelect() {
         ? supabase.from('user_flex_days').select('day_key').eq('user_id', user.id)
         : Promise.resolve({ data: [] as { day_key: string }[] }),
     ])
+    if (exRes.error) {
+      console.error('[grind] failed to load exercises', exRes.error)
+      setLoadError(true)
+      setLoading(false)
+      return
+    }
     setExercises(exRes.data ?? [])
     setRotation((rotRes.data as UserRotation | null) ?? null)
     setFlexDays(new Set((flexRes.data ?? []).map(r => r.day_key)))
@@ -200,6 +211,27 @@ export default function DaySelect() {
 
         {loading ? (
           <div style={{ color: 'var(--text-muted)', fontSize: '14px' }}>Loading...</div>
+        ) : loadError ? (
+          <div style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'center',
+            textAlign: 'center', gap: '12px', padding: '56px 24px 40px',
+          }}>
+            <p style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>
+              Couldn&apos;t load your workout days. Check your connection and try again.
+            </p>
+            <button
+              onClick={() => load()}
+              style={{
+                height: '44px', padding: '0 24px',
+                backgroundColor: 'var(--surface-elevated)', color: 'var(--text-primary)',
+                border: '1px solid var(--border)', borderRadius: '10px',
+                fontFamily: "'DM Sans', sans-serif", fontSize: '14px', fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Try again
+            </button>
+          </div>
         ) : dayKeys.length === 0 ? (
           /* Blank-slate hero — the direct continuation of Home's "SET UP YOUR
              FIRST DAY". Same visual language (accent icon badge, Bebas title,
