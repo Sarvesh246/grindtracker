@@ -113,9 +113,13 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const [exercises, setExercises] = useState<Exercise[]>([])
   const [logs, setLogs] = useState<LogMap>({})
   // `previousBests` is the WEIGHT from the most recent completed session per
-  // exercise (get_exercise_last_weights) — display/prefill only, the "prev: X
-  // lbs" hint and the weight input's starting value. Deliberately last-session,
-  // not all-time-best, so "prev" means what it says even after a deload.
+  // exercise (get_exercise_last_weights) — display only, drives the "prev: X
+  // lbs" hint. Deliberately last-session, not all-time-best, so "prev" means
+  // what it says even after a deload. A fresh set's actual starting value
+  // prefers the exercise's own weight_target (docs/sql/25) when set, falling
+  // back to this last-session value otherwise — see the `fillWeights` /
+  // `fillWeight` computations at each prefill site (initSession, handleAddSet,
+  // handleSwapExercise), which read from `previousBests` but don't feed it.
   // `previousBestVolumes` is the live "bar to beat" for PR detection: best
   // weight x reps EVER on record (get_exercise_bests), which is what actually
   // decides is_pr (mirrors the server's grind_recompute_stats — see
@@ -253,9 +257,9 @@ export default function ActiveWorkout({ day }: { day: string }) {
     setExercises(exs)
 
     // Two batch RPCs — was N sequential queries (one per exercise). `bests` (the
-    // "prev: X lbs" hint + weight-input prefill) comes from the most recent
-    // completed session's weight for the exercise, NOT the all-time max — a
-    // deload or lighter session should show as "prev", not the old PR weight.
+    // "prev: X lbs" hint, display-only) comes from the most recent completed
+    // session's weight for the exercise, NOT the all-time max — a deload or
+    // lighter session should show as "prev", not the old PR weight.
     // `bestVolumes` stays all-time-best: it backs the live PR bar-to-beat, which
     // is genuinely volume-vs-ever (mirrors grind_recompute_stats server-side).
     const bests: PreviousBest = {}
@@ -294,6 +298,17 @@ export default function ActiveWorkout({ day }: { day: string }) {
     setBaselineBests(bests)
     setPreviousBestVolumes(bestVolumes)
     setBaselineBestVolumes(bestVolumes)
+
+    // What a fresh, never-logged set actually prefills with — separate from
+    // `bests` above (which stays last-session-only, driving the "prev:" hint).
+    // Prefer the exercise's own weight_target (set once when adding/editing it,
+    // docs/sql/25); fall back to last session's weight when no target is set.
+    // `?? ` is correct here (not `||`) so a target of exactly 0 (bodyweight) is
+    // honored rather than falling through.
+    const fillWeights: PreviousBest = {}
+    for (const ex of exs) {
+      fillWeights[ex.id] = ex.weight_target ?? bests[ex.id]
+    }
 
     type ExistingLog = {
       id: string
@@ -364,7 +379,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         for (let s = 1; s <= total; s++) {
           const key = `${ex.id}-${s}`
           restored[key] = {
-            weight: bests[ex.id] !== null ? String(bests[ex.id]) : '',
+            weight: fillWeights[ex.id] !== null ? String(fillWeights[ex.id]) : '',
             reps: '',
             checked: false,
             skipped: false,
@@ -403,7 +418,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         for (let s = 1; s <= ex.sets_target; s++) {
           const key = `${ex.id}-${s}`
           prefilled[key] = {
-            weight: bests[ex.id] !== null ? String(bests[ex.id]) : '',
+            weight: fillWeights[ex.id] !== null ? String(fillWeights[ex.id]) : '',
             reps: '',
             checked: false,
             skipped: false,
@@ -701,11 +716,14 @@ export default function ActiveWorkout({ day }: { day: string }) {
     if (!ex) return
     const currentExtras = extraSets[exerciseId] ?? 0
     const newSetNum = ex.sets_target + currentExtras + 1
+    // Same precedence as the initial prefill: the exercise's own weight_target
+    // (docs/sql/25) when set, else last session's weight.
+    const fillWeight = ex.weight_target ?? previousBests[exerciseId] ?? null
     setExtraSets(prev => ({ ...prev, [exerciseId]: currentExtras + 1 }))
     setLogs(prev => ({
       ...prev,
       [`${exerciseId}-${newSetNum}`]: {
-        weight: previousBests[exerciseId] !== null ? String(previousBests[exerciseId]) : '',
+        weight: fillWeight !== null ? String(fillWeight) : '',
         reps: '',
         checked: false,
         skipped: false,
@@ -957,6 +975,11 @@ export default function ActiveWorkout({ day }: { day: string }) {
       return next
     })
 
+    // Same precedence as the initial prefill: the exercise's own weight_target
+    // (docs/sql/25) when set, else last session's weight (prevBest, which also
+    // still drives the "prev:" hint via previousBests above — unchanged).
+    const fillWeight = newExercise.weight_target ?? prevBest
+
     setLogs(prev => {
       const next = { ...prev }
       if (oldExercise) {
@@ -971,7 +994,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       }
       for (let s = 1; s <= newExercise.sets_target; s++) {
         next[`${newExercise.id}-${s}`] = {
-          weight: prevBest !== null ? String(prevBest) : '',
+          weight: fillWeight !== null ? String(fillWeight) : '',
           reps: '',
           checked: false,
           skipped: false,

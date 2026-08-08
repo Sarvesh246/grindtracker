@@ -1,0 +1,21 @@
+-- Phase 25: per-exercise default/target weight, set when adding or editing an
+-- exercise. Idempotent: safe to re-run.
+--
+-- WHY THIS EXISTS
+-- ----------------
+-- A fresh set's weight was only ever prefilled from get_exercise_last_weights
+-- (docs/sql/24) — what was actually lifted last session. That's null for a
+-- brand-new exercise (or one just added to a day), so the first live workout
+-- always starts with a blank weight field. weight_target lets the user set
+-- their intended working weight once, at exercise-creation time, and have
+-- every fresh set prefill from THAT instead — independent of session history.
+-- The "prev: X lbs" hint (and get_exercise_last_weights generally) is
+-- untouched: it still reflects what was actually lifted last time. Only the
+-- weight-input prefill changes source, preferring weight_target when set and
+-- falling back to last session's weight when it isn't (see ActiveWorkout.tsx).
+--
+-- Canonical lbs, like every other stored weight (session_logs.weight,
+-- body_weights.weight) — convert at the display/input boundary via
+-- UnitContext, never store a display-unit value here.
+
+alter table exercises add column if not exists weight_target numeric;
