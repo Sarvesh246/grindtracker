@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { LeaderboardEntry } from '@/lib/types'
 import { useUnit } from '@/lib/contexts/UnitContext'
 
@@ -23,12 +23,20 @@ function initials(name: string) {
 export default function ShareCard({ entry, rank, category, onClose }: ShareCardProps) {
   const { unitLabel, fmt } = useUnit()
   const [canShare, setCanShare] = useState(false)
+  const backdropRef = useRef<HTMLDivElement>(null)
   // Feature-detect the Web Share API after mount. This must run client-side
   // only (navigator is undefined during SSR), so it's a legitimate one-shot
   // sync effect rather than a render-time / lazy-init value.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setCanShare(typeof navigator !== 'undefined' && 'share' in navigator)
+  }, [])
+  // Unlike every other overlay in the app, this one isn't built on the shared
+  // Dialog primitive (no focus trap), so at minimum give it modal semantics
+  // and a keyboard way to dismiss it — a keyboard user opening the share card
+  // otherwise has no way to close it without a pointer.
+  useEffect(() => {
+    backdropRef.current?.focus()
   }, [])
   const categoryLabel = {
     push: 'PUSH DAY',
@@ -55,7 +63,13 @@ export default function ShareCard({ entry, rank, category, onClose }: ShareCardP
 
   return (
     <div
+      ref={backdropRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Share your rank"
+      tabIndex={-1}
       onClick={onClose}
+      onKeyDown={e => { if (e.key === 'Escape') onClose() }}
       style={{
         position: 'fixed',
         inset: 0,
@@ -66,6 +80,7 @@ export default function ShareCard({ entry, rank, category, onClose }: ShareCardP
         justifyContent: 'center',
         zIndex: 200,
         padding: '24px',
+        outline: 'none',
       }}
     >
       {/* Card — stop propagation so clicking it doesn't close. `share-card-dark`

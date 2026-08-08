@@ -278,7 +278,12 @@ export default function FeedbackModal({ onClose }: { onClose: () => void }) {
           // viewport on mobile Safari, where the address bar/home-indicator
           // area otherwise let the sheet's bottom edge render a few px past
           // the visible fold. Matches .wm-sheet's max-height: 88dvh.
-          maxHeight: '90dvh',
+          // Also shrunk by the keyboard inset: the outer backdrop's bottom
+          // padding (above) re-centers this box in the space above the
+          // keyboard, but centering alone doesn't stop a box taller than that
+          // space from overflowing past the top of the screen — the cap has
+          // to shrink to match, same as every bottom-sheet in the app.
+          maxHeight: keyboardInset > 0 ? `calc(90dvh - ${keyboardInset}px)` : '90dvh',
           overflowY: 'auto',
           backgroundColor: 'var(--surface)',
           border: '1px solid var(--border)',

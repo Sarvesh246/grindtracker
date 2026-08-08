@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import BadgeIcon from './BadgeIcon'
+import { useMotionPref } from '@/lib/contexts/MotionContext'
 import type { BadgeDefinition } from '@/lib/utils/badges'
 
 /**
@@ -19,6 +20,7 @@ export default function BadgeUnlockOverlay({
 }) {
   const [visible, setVisible] = useState(false)
   const [closing, setClosing] = useState(false)
+  const { reduceMotion } = useMotionPref()
 
   useEffect(() => {
     requestAnimationFrame(() => setVisible(true))
@@ -28,7 +30,11 @@ export default function BadgeUnlockOverlay({
     if (closing) return
     setClosing(true)
     setVisible(false)
-    window.setTimeout(onContinue, 320)
+    // Reduce Motion snaps the CSS transition to ~0ms (globals.css), so the JS
+    // timeout that actually calls onContinue must match — otherwise CONTINUE
+    // looks like it already closed (opacity flipped instantly) but does
+    // nothing for another 320ms. Mirrors CompletionModal's requestClose.
+    window.setTimeout(onContinue, reduceMotion ? 0 : 320)
   }
 
   const shown = visible && !closing

@@ -203,8 +203,13 @@ export default function HomeDashboard({
     // The client can no longer write user_stats directly. `refresh_stats`
     // re-derives everything server-side; passing our local date is what lets
     // Postgres decide the streak has lapsed in the *user's* timezone rather
-    // than UTC (see CLAUDE.md → Dates & timezones).
-    supabase.rpc('refresh_stats', { p_local_date: todayKey })
+    // than UTC (see CLAUDE.md → Dates & timezones). Fire-and-forget by design
+    // (this effect can't await), but a failure here means the optimistic
+    // local override (0) and the server's still-stale streak silently
+    // disagree until the next full reload — at least log it.
+    supabase.rpc('refresh_stats', { p_local_date: todayKey }).then(({ error }) => {
+      if (error) console.error('[grind] refresh_stats failed (stale streak correction)', error)
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stats?.current_streak, stats?.last_workout_date, gapUncoveredDates, gapEligibleForPrompt, restBannerDismissedSig])
   const currentStreak = streakOverride ?? stats?.current_streak ?? 0
@@ -233,7 +238,9 @@ export default function HomeDashboard({
     restDismissStore.dismiss(restBannerSig)
     correctedStaleStreak.current = true
     setStreakOverride(0)
-    supabase.rpc('refresh_stats', { p_local_date: todayKey })
+    supabase.rpc('refresh_stats', { p_local_date: todayKey }).then(({ error }) => {
+      if (error) console.error('[grind] refresh_stats failed (decline rest banner)', error)
+    })
   }
 
   // ── Active-session controls (resume / save / discard) ──────────────────────
