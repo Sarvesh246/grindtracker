@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Session, UserStats, UserRotation, CompleteSessionResult } from '@/lib/types'
 import { getLevel, getXpInCurrentLevel, getXpRequiredForLevel, getXpToNextLevel } from '@/lib/utils/gamification'
 import { formatHeaderDate, formatShortDate, localDateKey } from '@/lib/utils/formatting'
-import { advanceIndex, effectiveSequence, overdueDays } from '@/lib/utils/rotation'
+import { advanceIndex, effectiveSequence, nextDay as nextDayFromRotation, overdueDays } from '@/lib/utils/rotation'
 import { deleteIncompleteSessions } from '@/lib/utils/sessions'
 import { checkAndAwardBadges } from '@/lib/utils/badges'
 import { uncoveredDatesBetween } from '@/lib/utils/restDays'
@@ -267,6 +267,7 @@ export default function HomeDashboard({
   const [exiting, setExiting] = useState(false)
   const [exitConfirm, setExitConfirm] = useState(false)
   const [actionToast, setActionToast] = useState<string | null>(null)
+  const [skippingDay, setSkippingDay] = useState(false)
 
   function flashToast(msg: string) {
     setActionToast(msg)
@@ -375,6 +376,51 @@ export default function HomeDashboard({
       flashToast('Could not discard. Try again.')
     } finally {
       setExiting(false)
+    }
+  }
+
+  // Skip the suggested day without logging anything — advances the rotation
+  // pointer exactly one slot, the same "current_index" move a completed
+  // workout makes (handleSaveActive above), just without a session behind it.
+  // Re-reads days/rotation/flex fresh rather than trusting the `nextDay` prop,
+  // matching the save flow's own defense against a stale server-rendered prop.
+  async function handleSkipDay() {
+    if (!hasDays || skippingDay) return
+    setSkippingDay(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { router.push('/login'); return }
+      const [{ data: dayTypeRows }, { data: rotationRow }, { data: flexRows }] = await Promise.all([
+        supabase.from('exercises').select('day_type'),
+        supabase.from('user_rotation').select('*').eq('user_id', user.id).maybeSingle(),
+        supabase.from('user_flex_days').select('day_key').eq('user_id', user.id),
+      ])
+      const dayKeys = Array.from(new Set((dayTypeRows ?? []).map(r => r.day_type)))
+      const rot = rotationRow as UserRotation | null
+      const flex = new Set((flexRows ?? []).map((r: { day_key: string }) => r.day_key))
+      const seq = effectiveSequence(rot, dayKeys, flex)
+      if (seq.length === 0) return
+      const currentIndex = rot?.current_index ?? -1
+      const skipped = nextDayFromRotation(seq, currentIndex)
+      if (!skipped) return
+      const newIndex = advanceIndex(seq, currentIndex, skipped)
+      const { error } = await supabase.from('user_rotation').upsert(
+        {
+          user_id: user.id,
+          mode: rot?.mode ?? 'auto',
+          sequence: rot?.sequence ?? [],
+          current_index: newIndex,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id' },
+      )
+      if (error) throw error
+      flashToast(`Skipped ${dayLabel(skipped)}`)
+      router.refresh()
+    } catch {
+      flashToast('Could not skip. Check your connection and try again.')
+    } finally {
+      setSkippingDay(false)
     }
   }
 
@@ -945,6 +991,7 @@ export default function HomeDashboard({
           a workout is in progress (the resume block owns the slot). This keeps one
           clear next step instead of competing "start" affordances. */}
       {noActiveForUi && totalWorkouts > 0 && (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
       <button
         data-onboard="home-cta"
         onClick={() => router.push(hasDays ? `/log?day=${nextDay}` : '/log')}
@@ -992,6 +1039,39 @@ export default function HomeDashboard({
         </span>
         <span style={{ flexShrink: 0 }}><ChevronRight color="var(--on-accent)" /></span>
       </button>
+
+      {/* Skip — advances the rotation pointer past today's suggested day
+          without logging anything (e.g. already did legs off-app, or just
+          taking a planned day off). Only meaningful with more than one day
+          in the loop; a single-day rotation would just suggest itself again. */}
+      {hasDays && rotationSeq.length > 1 && (
+        <button
+          className="press"
+          onClick={handleSkipDay}
+          disabled={skippingDay}
+          style={{
+            width: '100%',
+            height: '40px',
+            background: 'none',
+            border: 'none',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+            cursor: skippingDay ? 'default' : 'pointer',
+            color: 'var(--text-muted)',
+            fontFamily: "'DM Sans', sans-serif",
+            fontSize: '13px',
+            fontWeight: 600,
+            opacity: skippingDay ? 0.6 : 1,
+          }}
+          onMouseEnter={e => { if (!skippingDay) e.currentTarget.style.color = 'var(--text-secondary)' }}
+          onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polygon points="5 4 15 12 5 20 5 4" /><line x1="19" y1="5" x2="19" y2="19" />
+          </svg>
+          {skippingDay ? 'Skipping…' : `Skip ${dayLabel(nextDay)}`}
+        </button>
+      )}
+      </div>
       )}
 
       {/* Overdue nudge — a slim, dismissible line that surfaces a day the rotation
