@@ -41,6 +41,20 @@ interface UndoState {
 
 type LogMap = Record<string, SetState>
 
+/**
+ * The reps to carry forward into a blank set: the nearest EARLIER set number
+ * for this exercise that has reps filled in, not necessarily set N-1 — a set
+ * in between may itself be blank (e.g. filled in out of order: set 1, then
+ * set 3, skipping over set 2).
+ */
+function findCarryReps(logs: LogMap, exerciseId: string, setNumber: number): string {
+  for (let s = setNumber - 1; s >= 1; s--) {
+    const r = logs[`${exerciseId}-${s}`]?.reps
+    if (r && r !== '') return r
+  }
+  return ''
+}
+
 interface PreviousBest {
   [exerciseId: string]: number | null
 }
@@ -526,12 +540,11 @@ export default function ActiveWorkout({ day }: { day: string }) {
 
     const weight = logEntry.weight !== '' ? parseFloat(logEntry.weight) : null
 
-    // If reps not entered, carry forward the previous set's reps
+    // If reps not entered, carry forward the nearest earlier set's reps for
+    // this exercise — not necessarily set N-1, since that one might itself be
+    // blank (e.g. set 2 skipped over while filling in set 1, then set 3).
     let repsStr = logEntry.reps
-    if (repsStr === '' && setNumber > 1) {
-      const prevReps = logs[`${exerciseId}-${setNumber - 1}`]?.reps
-      if (prevReps && prevReps !== '') repsStr = prevReps
-    }
+    if (repsStr === '') repsStr = findCarryReps(logs, exerciseId, setNumber)
     // No reps and nothing to copy from — require the user to fill it in
     if (repsStr === '') return
     const reps = parseInt(repsStr)
@@ -2242,7 +2255,7 @@ function ExerciseCard({
           }
           const isBonus = setNum > exercise.sets_target
           const editing = editingKey === key
-          const prevReps = setNum > 1 ? (logs[`${exercise.id}-${setNum - 1}`]?.reps ?? '') : ''
+          const prevReps = findCarryReps(logs, exercise.id, setNum)
           return (
             <SetRow
               key={key}
