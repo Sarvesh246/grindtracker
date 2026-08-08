@@ -262,10 +262,15 @@ export default function ActiveWorkout({ day }: { day: string }) {
     const bestVolumes: PreviousBest = {}
     const exerciseIds = exs.map(e => e.id)
     if (exerciseIds.length > 0) {
-      const [{ data: lastWeightRows }, { data: bestRows }] = await Promise.all([
+      const [{ data: lastWeightRows, error: lastWeightError }, { data: bestRows }] = await Promise.all([
         supabase.rpc('get_exercise_last_weights', { p_exercise_ids: exerciseIds }),
         supabase.rpc('get_exercise_bests', { p_exercise_ids: exerciseIds }),
       ])
+      if (lastWeightError) {
+        // get_exercise_last_weights (docs/sql/24) missing or erroring — fall
+        // back to all-time-best weight rather than leaving prefill blank.
+        console.error('get_exercise_last_weights failed, falling back to all-time best:', lastWeightError)
+      }
       for (const row of (lastWeightRows ?? []) as {
         exercise_id: string
         last_weight: number | null
@@ -277,6 +282,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         max_weight: number | null
         max_volume: number | null
       }[]) {
+        if (lastWeightError) bests[row.exercise_id] = row.max_weight
         bestVolumes[row.exercise_id] = row.max_volume
       }
     }
@@ -917,14 +923,18 @@ export default function ActiveWorkout({ day }: { day: string }) {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
         // Same split as initSession: "prev" is the last session's weight, the
-        // PR bar-to-beat stays all-time-best volume.
-        const [{ data: lastWeightRows }, { data: bestRows }] = await Promise.all([
+        // PR bar-to-beat stays all-time-best volume. Falls back to all-time-best
+        // weight if get_exercise_last_weights (docs/sql/24) errors, same as above.
+        const [{ data: lastWeightRows, error: lastWeightError }, { data: bestRows }] = await Promise.all([
           supabase.rpc('get_exercise_last_weights', { p_exercise_ids: [newExercise.id] }),
           supabase.rpc('get_exercise_bests', { p_exercise_ids: [newExercise.id] }),
         ])
+        if (lastWeightError) {
+          console.error('get_exercise_last_weights failed, falling back to all-time best:', lastWeightError)
+        }
         const lastWeightRow = (lastWeightRows ?? [])[0] as { last_weight: number | null } | undefined
-        const bestRow = (bestRows ?? [])[0] as { max_volume: number | null } | undefined
-        prevBest = lastWeightRow?.last_weight ?? null
+        const bestRow = (bestRows ?? [])[0] as { max_weight: number | null; max_volume: number | null } | undefined
+        prevBest = lastWeightError ? (bestRow?.max_weight ?? null) : (lastWeightRow?.last_weight ?? null)
         prevBestVolume = bestRow?.max_volume ?? null
         setPreviousBests(prev => ({ ...prev, [newExercise.id]: prevBest }))
         setPreviousBestVolumes(prev => ({ ...prev, [newExercise.id]: prevBestVolume }))
