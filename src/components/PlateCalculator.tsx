@@ -85,6 +85,14 @@ export default function PlateCalculator({ initialTarget, onClose, onApply }: Pro
         style={{
           width: '100%',
           maxWidth: '480px',
+          // Cap against the keyboard-adjusted viewport and scroll internally —
+          // without this, paddingBottom (below) can push a sheet taller than the
+          // remaining space above the keyboard clean off the top of the screen,
+          // leaving only the full-height dark backdrop visible. Matches the same
+          // `calc(92dvh - lift)` pattern used by every other keyboard-lifted
+          // sheet in the app (WorkoutManager, the exercise-swap sheet, etc.).
+          maxHeight: keyboardInset > 0 ? `calc(92dvh - ${keyboardInset}px)` : '92dvh',
+          overflowY: 'auto',
           backgroundColor: 'var(--surface)',
           borderRadius: 'var(--radius-lg) var(--radius-lg) 0 0',
           border: '1px solid var(--border)',
@@ -141,7 +149,12 @@ export default function PlateCalculator({ initialTarget, onClose, onApply }: Pro
               inputMode="decimal"
               value={target}
               onChange={e => setTarget(e.target.value)}
-              autoFocus
+              // Only steal focus (and pop the keyboard) when there's nothing to
+              // show yet. When a weight prefills the target, autofocusing here
+              // opens the keyboard the instant the sheet mounts, before the user
+              // has seen it at all — on a short screen that can push the sheet
+              // above the keyboard-adjusted viewport before it's ever visible.
+              autoFocus={target === ''}
               style={{
                 backgroundColor: 'var(--surface-elevated)',
                 border: '1px solid var(--border)',
