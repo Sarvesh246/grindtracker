@@ -5,6 +5,7 @@ import { Exercise, DayCategory, UserRotation } from '@/lib/types'
 import { autoSequence, effectiveSequence, orderedDayKeys } from '@/lib/utils/rotation'
 import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
 import { useToast } from '@/lib/contexts/ToastContext'
+import { useUnit } from '@/lib/contexts/UnitContext'
 
 interface WorkoutManagerProps {
   onClose: () => void
@@ -71,6 +72,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
   // Height hidden behind the iOS keyboard, so the bottom-sheet can ride above it
   // instead of leaving the day-name / exercise-form inputs pinned underneath.
   const keyboardInset = useKeyboardInset()
+  const { unitLabel, fmt, fromDisplay } = useUnit()
   const [exercises, setExercises] = useState<Exercise[]>([])
   const [dayCategories, setDayCategories] = useState<Record<string, DayCategory>>({})
   const [flexDays, setFlexDays] = useState<Set<string>>(new Set())
@@ -96,6 +98,9 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
   const [formName, setFormName] = useState('')
   const [formSets, setFormSets] = useState('3')
   const [formReps, setFormReps] = useState('8')
+  // Optional — the weight to prefill a fresh set with (docs/sql/25). Empty
+  // string means "no target set", not zero.
+  const [formWeight, setFormWeight] = useState('')
   const [formError, setFormError] = useState('')
 
   const load = useCallback(async () => {
@@ -155,6 +160,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
     setFormName(exercise?.name ?? '')
     setFormSets(String(exercise?.sets_target ?? 3))
     setFormReps(String(exercise?.reps_target ?? '8'))
+    setFormWeight(exercise?.weight_target != null ? fmt(exercise.weight_target) : '')
     setFormError('')
     setScreen({ id: 'exercise-form', dayKey, exercise })
   }
@@ -167,6 +173,12 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
     const sets = parseInt(formSets)
     if (!sets || sets < 1 || sets > 20) { setFormError('Sets must be between 1 and 20.'); return }
     if (!formReps.trim()) { setFormError('Reps is required.'); return }
+    let weightTarget: number | null = null
+    if (formWeight.trim()) {
+      const parsed = parseFloat(formWeight)
+      if (!Number.isFinite(parsed) || parsed < 0) { setFormError('Default weight must be a positive number.'); return }
+      weightTarget = fromDisplay(parsed)
+    }
 
     const { dayKey, exercise } = currentScreen
 
@@ -193,6 +205,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
             name: trimmedName,
             sets_target: sets,
             reps_target: formReps.trim(),
+            weight_target: weightTarget,
           }).eq('id', exercise.id)
         : await supabase.from('exercises').insert({
             user_id: user.id,
@@ -200,6 +213,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
             day_type: dayKey,
             sets_target: sets,
             reps_target: formReps.trim(),
+            weight_target: weightTarget,
             sort_order: (grouped[dayKey] ?? []).reduce((m, e) => Math.max(m, e.sort_order), 0) + 1,
           })
 
@@ -1161,6 +1175,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
                           </div>
                           <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
                             {ex.sets_target} sets × {ex.reps_target} reps
+                            {ex.weight_target != null && ` @ ${fmt(ex.weight_target)} ${unitLabel}`}
                           </div>
                         </div>
                         {/* Active toggle — disables the exercise for this day without
@@ -1373,6 +1388,31 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
                         outline: 'none', boxSizing: 'border-box',
                       }}
                     />
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', fontFamily: "'DM Sans', sans-serif", marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Default Weight ({unitLabel}) — optional
+                  </label>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    value={formWeight}
+                    onChange={e => setFormWeight(e.target.value)}
+                    onFocus={e => e.target.select()}
+                    placeholder="Prefills a fresh set, e.g. 135"
+                    style={{
+                      width: '100%', height: '48px',
+                      backgroundColor: 'var(--surface-elevated)',
+                      border: '1px solid var(--border-strong)', borderRadius: '8px',
+                      color: 'var(--text-primary)', fontFamily: "'JetBrains Mono', monospace",
+                      fontSize: '18px', padding: '0 14px',
+                      outline: 'none', boxSizing: 'border-box',
+                    }}
+                  />
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif", marginTop: '6px', lineHeight: 1.4 }}>
+                    A fresh set starts with this weight instead of blank. Leave empty to fall back to what you lifted last session.
                   </div>
                 </div>
 

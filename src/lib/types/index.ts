@@ -4,6 +4,11 @@ export interface Exercise {
   day_type: string
   sets_target: number
   reps_target: string
+  /** Canonical lbs. The weight to prefill a fresh set with when a live workout
+   *  starts — set by the user when adding/editing the exercise, independent of
+   *  what was actually lifted last session (see docs/sql/25). Null = fall back
+   *  to last session's weight (get_exercise_last_weights), same as before. */
+  weight_target: number | null
   sort_order: number
   active: boolean
   created_at: string

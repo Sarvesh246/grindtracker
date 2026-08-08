@@ -37,6 +37,7 @@ is fully linked to migration history.
 | [22-onboarding-state.sql](sql/22-onboarding-state.sql) | 22 | Server-side onboarding "seen" state |
 | [23-tooltip-skip.sql](sql/23-tooltip-skip.sql) | 23 | "Skip tips" opt-out for contextual tooltips |
 | [24-exercise-last-weight.sql](sql/24-exercise-last-weight.sql) | 24 | Last-used (not all-time-best) weight per exercise |
+| [25-exercise-weight-target.sql](sql/25-exercise-weight-target.sql) | 25 | Per-exercise default weight to prefill fresh sets |
 
 ## Deploying 20
 
