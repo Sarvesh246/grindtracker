@@ -121,6 +121,24 @@ export function effectiveSequence(
   return autoSequence(dayKeys, flexDays)
 }
 
+/** Display order for a day list (DaySelect's grid, WorkoutManager's days screen):
+ *  days that appear in `seq` come first, in their first-occurrence order (so a
+ *  manually customized "workout order" is reflected everywhere a day list
+ *  renders, not just the rotation editor); any day not in `seq` — e.g. a flex
+ *  day, excluded from the auto sequence — is appended after, alphabetically. */
+export function orderedDayKeys(dayKeys: string[], seq: string[]): string[] {
+  const seen = new Set<string>()
+  const ordered: string[] = []
+  for (const key of seq) {
+    if (!seen.has(key) && dayKeys.includes(key)) {
+      seen.add(key)
+      ordered.push(key)
+    }
+  }
+  const remaining = dayKeys.filter(k => !seen.has(k)).sort()
+  return [...ordered, ...remaining]
+}
+
 /** The next day to suggest, stepping forward from `currentIndex` (wrapping).
  *  Pass `currentIndex = -1` (or any value) to get the first slot when there is no
  *  history yet. Returns null when there are no days. */

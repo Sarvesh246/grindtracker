@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Exercise, UserRotation } from '@/lib/types'
 import { haptic } from '@/lib/utils/haptics'
-import { effectiveSequence, nextDay as nextDayFromRotation } from '@/lib/utils/rotation'
+import { effectiveSequence, nextDay as nextDayFromRotation, orderedDayKeys } from '@/lib/utils/rotation'
 import WorkoutManager from './WorkoutManager'
 import { useTour, type TourStep } from '@/components/onboarding/Tour'
 
@@ -132,10 +132,14 @@ export default function DaySelect() {
     if (!grouped[ex.day_type]) grouped[ex.day_type] = []
     grouped[ex.day_type].push(ex)
   }
-  const dayKeys = Object.keys(grouped).sort()
+  // Displayed in the user's chosen "workout order" (WorkoutManager → Edit
+  // workout order), not alphabetically — a manual sequence is otherwise
+  // invisible everywhere except the rotation editor itself.
+  const effectiveSeq = effectiveSequence(rotation, Object.keys(grouped), flexDays)
+  const dayKeys = orderedDayKeys(Object.keys(grouped), effectiveSeq)
 
   // Non-binding hint: the day the rotation suggests next (flex days excluded).
-  const upNext = nextDayFromRotation(effectiveSequence(rotation, dayKeys, flexDays), rotation?.current_index ?? -1)
+  const upNext = nextDayFromRotation(effectiveSeq, rotation?.current_index ?? -1)
 
   // Walkthrough only applies once the user actually has days (the MANAGE button
   // and "log a past workout" link that steps 2/3 point at don't exist on the

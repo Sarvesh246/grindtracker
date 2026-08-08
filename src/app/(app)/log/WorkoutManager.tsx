@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Exercise, DayCategory, UserRotation } from '@/lib/types'
-import { autoSequence, effectiveSequence } from '@/lib/utils/rotation'
+import { autoSequence, effectiveSequence, orderedDayKeys } from '@/lib/utils/rotation'
 import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
 import { useToast } from '@/lib/contexts/ToastContext'
 
@@ -17,6 +17,7 @@ type Screen =
   | { id: 'days' }
   | { id: 'day'; dayKey: string }
   | { id: 'exercise-form'; dayKey: string; exercise?: Exercise }
+  | { id: 'setup-choice' }
   | { id: 'new-day' }
   | { id: 'category-picker'; dayKey: string }
   | { id: 'rotation' }
@@ -24,6 +25,45 @@ type Screen =
 type DeleteTarget =
   | { type: 'day'; key: string; label: string }
   | { type: 'exercise'; id: string; name: string; dayKey: string }
+
+/** The blank-slate "Use Push / Pull / Legs" option — a fully worked 3-day split
+ *  a new user can start training immediately, editable afterward like any other
+ *  day. `active: false` marks an optional variant pre-disabled (kept for history
+ *  if the user ever turns it on), matching the per-day active flag elsewhere. */
+const PPL_TEMPLATE: Record<string, { category: DayCategory; exercises: { name: string; sets: number; reps: string; active?: boolean }[] }> = {
+  push: {
+    category: 'push',
+    exercises: [
+      { name: 'Barbell Bench Press', sets: 4, reps: '6-8' },
+      { name: 'Incline Dumbbell Press', sets: 3, reps: '8-10' },
+      { name: 'Overhead Press', sets: 3, reps: '8-10' },
+      { name: 'Cable Lateral Raises', sets: 3, reps: '12-15' },
+      { name: 'Tricep Rope Pushdown', sets: 3, reps: '12' },
+    ],
+  },
+  pull: {
+    category: 'pull',
+    exercises: [
+      { name: 'Chest-Supported Dumbbell Row', sets: 4, reps: '8-10' },
+      { name: 'Pull-Ups', sets: 4, reps: '6-10', active: false },
+      { name: 'Barbell or Cable Row', sets: 3, reps: '8-10' },
+      { name: 'Lat Pulldown', sets: 3, reps: '10-12' },
+      { name: 'Face Pulls', sets: 3, reps: '15' },
+      { name: 'Dumbbell Curl', sets: 3, reps: '10-12' },
+    ],
+  },
+  legs: {
+    category: 'legs',
+    exercises: [
+      { name: 'Barbell Squat', sets: 4, reps: '6-8' },
+      { name: 'Dumbbell RDL', sets: 3, reps: '8-10' },
+      { name: 'Leg Press', sets: 3, reps: '10-12' },
+      { name: 'Walking Lunges', sets: 3, reps: '10 each' },
+      { name: 'Leg Curl', sets: 3, reps: '12' },
+      { name: 'Calf Raises', sets: 4, reps: '15-20' },
+    ],
+  },
+}
 
 export default function WorkoutManager({ onClose, onChanged, initialNewDay = false }: WorkoutManagerProps) {
   const supabase = useMemo(() => createClient(), [])
@@ -39,12 +79,16 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
   const [savingRotation, setSavingRotation] = useState(false)
   const [addingSlot, setAddingSlot] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [screen, setScreen] = useState<Screen>(initialNewDay ? { id: 'new-day' } : { id: 'days' })
+  const [screen, setScreen] = useState<Screen>(initialNewDay ? { id: 'setup-choice' } : { id: 'days' })
   const [saving, setSaving] = useState(false)
   const [savingCategory, setSavingCategory] = useState(false)
   const [categoryError, setCategoryError] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
   const [deleteError, setDeleteError] = useState('')
+  const [userId, setUserId] = useState<string | null>(null)
+  const [applyingTemplate, setApplyingTemplate] = useState(false)
+  const [templateError, setTemplateError] = useState('')
+  const [movingExerciseId, setMovingExerciseId] = useState<string | null>(null)
 
   // new-day form
   const [newDayInput, setNewDayInput] = useState('')
@@ -58,6 +102,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
     setLoading(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
+      setUserId(user?.id ?? null)
       const [exRes, catRes, flexRes, rotRes] = await Promise.all([
         supabase.from('exercises').select('*')
           .order('day_type', { ascending: true })
@@ -94,7 +139,17 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
     if (!grouped[ex.day_type]) grouped[ex.day_type] = []
     grouped[ex.day_type].push(ex)
   }
-  const dayKeys = Object.keys(grouped).sort()
+  // Keep each day's exercises in sort_order, not fetch-array order — moveExercise
+  // below swaps sort_order values in place, and this re-sort is what makes that
+  // swap show up immediately instead of only after the next reload.
+  for (const key of Object.keys(grouped)) {
+    grouped[key].sort((a, b) => a.sort_order - b.sort_order)
+  }
+  // Displayed in the user's chosen "workout order" (see the rotation section
+  // below), not alphabetically — otherwise a manual order is invisible outside
+  // the rotation editor itself, including here and on the log day-select grid.
+  const effectiveSeq = effectiveSequence(rotation, Object.keys(grouped), flexDays)
+  const dayKeys = orderedDayKeys(Object.keys(grouped), effectiveSeq)
 
   function openExerciseForm(dayKey: string, exercise?: Exercise) {
     setFormName(exercise?.name ?? '')
@@ -217,6 +272,59 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
     openExerciseForm(key)
   }
 
+  // Blank-slate shortcut: bulk-create the Push/Pull/Legs split (PPL_TEMPLATE)
+  // instead of building days one exercise at a time. Also sets each day's
+  // leaderboard category and a manual push→pull→legs rotation — the auto
+  // rotation would otherwise sort those three keys alphabetically (legs,
+  // pull, push), which isn't the order anyone trains a PPL split in.
+  async function applyTemplate() {
+    if (applyingTemplate) return
+    setApplyingTemplate(true)
+    setTemplateError('')
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { setTemplateError('You are signed out. Sign in and try again.'); return }
+
+      const exerciseRows = Object.entries(PPL_TEMPLATE).flatMap(([dayKey, day]) =>
+        day.exercises.map((ex, i) => ({
+          user_id: user.id,
+          name: ex.name,
+          day_type: dayKey,
+          sets_target: ex.sets,
+          reps_target: ex.reps,
+          sort_order: i + 1,
+          active: ex.active ?? true,
+        }))
+      )
+      const categoryRows = Object.entries(PPL_TEMPLATE).map(([dayKey, day]) => ({
+        user_id: user.id, day_key: dayKey, category: day.category,
+      }))
+
+      const [{ error: exError }, { error: catError }, { error: rotError }] = await Promise.all([
+        supabase.from('exercises').insert(exerciseRows),
+        supabase.from('user_day_categories').upsert(categoryRows, { onConflict: 'user_id,day_key' }),
+        supabase.from('user_rotation').upsert(
+          { user_id: user.id, mode: 'manual', sequence: ['push', 'pull', 'legs'], current_index: 0, updated_at: new Date().toISOString() },
+          { onConflict: 'user_id' },
+        ),
+      ])
+
+      if (exError || catError || rotError) {
+        setTemplateError('Could not set up your template. Check your connection and try again.')
+        return
+      }
+
+      await load()
+      onChanged()
+      toast.show('Push / Pull / Legs added')
+      onClose()
+    } catch {
+      setTemplateError('Could not set up your template. Check your connection and try again.')
+    } finally {
+      setApplyingTemplate(false)
+    }
+  }
+
   async function saveCategory(dayKey: string, category: DayCategory) {
     if (savingCategory) return // guard against rapid double-taps firing concurrent upserts
     setSavingCategory(true)
@@ -286,46 +394,88 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
     onChanged()
   }
 
+  // Reorder an exercise within its day by swapping sort_order with its
+  // neighbor. Optimistic — the swap shows immediately (grouped[] above
+  // re-sorts by sort_order every render, so mutating the field alone is
+  // enough) — with revert-on-failure and a save-confirmation toast, matching
+  // the rotation reorder pattern above.
+  async function moveExercise(dayKey: string, index: number, dir: -1 | 1) {
+    if (movingExerciseId !== null) return
+    const list = grouped[dayKey] ?? []
+    const target = index + dir
+    if (target < 0 || target >= list.length) return
+    const a = list[index]
+    const b = list[target]
+    const aOrder = a.sort_order
+    const bOrder = b.sort_order
+
+    setMovingExerciseId(a.id)
+    setExercises(prev => prev.map(e => {
+      if (e.id === a.id) return { ...e, sort_order: bOrder }
+      if (e.id === b.id) return { ...e, sort_order: aOrder }
+      return e
+    }))
+
+    const [{ error: err1 }, { error: err2 }] = await Promise.all([
+      supabase.from('exercises').update({ sort_order: bOrder }).eq('id', a.id),
+      supabase.from('exercises').update({ sort_order: aOrder }).eq('id', b.id),
+    ])
+
+    setMovingExerciseId(null)
+    if (err1 || err2) {
+      setExercises(prev => prev.map(e => {
+        if (e.id === a.id) return { ...e, sort_order: aOrder }
+        if (e.id === b.id) return { ...e, sort_order: bOrder }
+        return e
+      }))
+      toast.show("Couldn't reorder", 'error')
+      return
+    }
+    toast.show('Order saved')
+    onChanged()
+  }
+
   // ── Rotation (workout order) ───────────────────────────────────────────────
   // Persist the rotation row and keep local state in sync. Sequence + mode are
   // the source of truth in manual mode; current_index is left untouched here
   // (the read path wraps it with modulo, so a stale value is harmless).
+  //
+  // Optimistic: local state (and therefore the day order everywhere it's
+  // derived — this screen's day list, DaySelect's grid) updates immediately so
+  // a reorder feels instant, with the network write following in the
+  // background. A success toast is the only "saved" signal in this flow —
+  // there's no dedicated save button — so it has to fire here, and a failure
+  // reverts the optimistic change rather than leaving the UI showing an order
+  // that didn't actually persist.
   async function persistRotation(mode: 'auto' | 'manual', sequence: string[]) {
-    setSavingRotation(true)
+    if (!userId) { setRotationError('You must be signed in.'); return }
     setRotationError('')
+    const previous = rotation
+    const updatedAt = new Date().toISOString()
+    setRotation({ user_id: userId, mode, sequence, current_index: previous?.current_index ?? 0, updated_at: updatedAt })
+    setSavingRotation(true)
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { setRotationError('You must be signed in.'); return }
       const { error } = await supabase.from('user_rotation').upsert(
-        {
-          user_id: user.id,
-          mode,
-          sequence,
-          current_index: rotation?.current_index ?? 0,
-          updated_at: new Date().toISOString(),
-        },
+        { user_id: userId, mode, sequence, current_index: previous?.current_index ?? 0, updated_at: updatedAt },
         { onConflict: 'user_id' },
       )
       if (error) {
+        setRotation(previous)
         setRotationError('Could not save. Check your connection and try again.')
+        toast.show("Couldn't save order", 'error')
         return
       }
-      setRotation(prev => ({
-        user_id: user.id,
-        mode,
-        sequence,
-        current_index: prev?.current_index ?? 0,
-        updated_at: new Date().toISOString(),
-      }))
+      toast.show('Order saved')
     } catch {
+      setRotation(previous)
       setRotationError('Could not save. Check your connection and try again.')
+      toast.show("Couldn't save order", 'error')
     } finally {
       setSavingRotation(false)
     }
   }
 
-  // The order currently in effect, used to seed the manual editor and render auto chips.
-  const effectiveSeq = effectiveSequence(rotation, dayKeys, flexDays)
+  // effectiveSeq (above) is also what seeds the manual editor and auto chips.
   const isManual = rotation?.mode === 'manual'
   const manualSeq = isManual ? effectiveSeq : []
 
@@ -353,8 +503,13 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
   }
 
   function goBack() {
-    if (screen.id === 'days' || screen.id === 'new-day') {
+    if (screen.id === 'days' || screen.id === 'setup-choice') {
       onClose()
+    } else if (screen.id === 'new-day') {
+      // Reachable from the days list ("ADD NEW DAY") or from setup-choice
+      // ("Build my own") — the latter only when there are no days yet, since
+      // setup-choice itself only shows on the blank slate.
+      setScreen(dayKeys.length === 0 ? { id: 'setup-choice' } : { id: 'days' })
     } else if (screen.id === 'category-picker') {
       // The picker is now reached from the day screen (or the days-list nudge),
       // never as a forced step before the first exercise — so return to the day
@@ -374,6 +529,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
 
   const title =
     screen.id === 'days' ? 'MANAGE WORKOUTS' :
+    screen.id === 'setup-choice' ? 'GET STARTED' :
     screen.id === 'new-day' ? 'NEW DAY' :
     screen.id === 'category-picker' ? 'SELECT CATEGORY' :
     screen.id === 'rotation' ? 'WORKOUT ORDER' :
@@ -781,6 +937,64 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
               </div>
             )}
 
+            {/* ── Setup Choice (blank slate) ── */}
+            {screen.id === 'setup-choice' && (
+              <div style={{ padding: '20px 16px' }}>
+                <div style={{ fontSize: '13px', color: 'var(--text-secondary)', fontFamily: "'DM Sans', sans-serif", marginBottom: '18px', lineHeight: 1.5 }}>
+                  Start with a ready-made split, or build your own days and exercises from scratch.
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <button
+                    className="press"
+                    onClick={applyTemplate}
+                    disabled={applyingTemplate}
+                    style={{
+                      width: '100%', textAlign: 'left',
+                      backgroundColor: 'var(--accent-wash)',
+                      border: '1px solid var(--accent)', borderRadius: '10px',
+                      padding: '16px',
+                      cursor: applyingTemplate ? 'default' : 'pointer',
+                      opacity: applyingTemplate ? 0.7 : 1,
+                      display: 'flex', flexDirection: 'column', gap: '4px',
+                    }}
+                  >
+                    <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '20px', color: 'var(--accent-text)', letterSpacing: '1px' }}>
+                      {applyingTemplate ? 'SETTING UP...' : 'USE PUSH / PULL / LEGS'}
+                    </span>
+                    <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '12px', color: 'var(--text-secondary)' }}>
+                      A proven 3-day split, pre-loaded with exercises, sets &amp; reps. Edit anything after.
+                    </span>
+                  </button>
+                  <button
+                    className="press"
+                    onClick={() => setScreen({ id: 'new-day' })}
+                    disabled={applyingTemplate}
+                    style={{
+                      width: '100%', textAlign: 'left',
+                      backgroundColor: 'var(--surface-elevated)',
+                      border: '1px solid var(--border)', borderRadius: '10px',
+                      padding: '16px',
+                      cursor: applyingTemplate ? 'default' : 'pointer',
+                      opacity: applyingTemplate ? 0.7 : 1,
+                      display: 'flex', flexDirection: 'column', gap: '4px',
+                    }}
+                  >
+                    <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '20px', color: 'var(--text-primary)', letterSpacing: '1px' }}>
+                      BUILD MY OWN
+                    </span>
+                    <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '12px', color: 'var(--text-muted)' }}>
+                      Create your own days and add exercises one at a time.
+                    </span>
+                  </button>
+                </div>
+                {templateError && (
+                  <div style={{ marginTop: '14px', fontSize: '13px', color: 'var(--danger)', fontFamily: "'DM Sans', sans-serif" }}>
+                    {templateError}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* ── New Day ── */}
             {screen.id === 'new-day' && (
               <div style={{ padding: '20px 16px' }}>
@@ -881,17 +1095,53 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
                       No exercises yet. Add one below.
                     </div>
                   ) : (
-                    exs.map(ex => (
+                    exs.map((ex, idx) => (
                       <div
                         key={ex.id}
                         style={{
                           display: 'flex', alignItems: 'center',
-                          padding: '14px 16px', gap: '12px',
+                          padding: '14px 16px', gap: '10px',
                           borderBottom: '1px solid var(--border)',
                           opacity: ex.active ? 1 : 0.55,
+                          transition: 'opacity 150ms ease',
                         }}
                       >
-                        <div style={{ flex: 1 }}>
+                        {/* Reorder within the day — swaps sort_order with the
+                            neighbor above/below. Same chevron language as the
+                            workout-order editor below. */}
+                        <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+                          <button
+                            className="press"
+                            onClick={() => moveExercise(dayKey, idx, -1)}
+                            disabled={movingExerciseId !== null || idx === 0}
+                            aria-label={`Move ${ex.name} up`}
+                            style={{
+                              background: 'none', border: 'none', padding: '4px',
+                              cursor: (movingExerciseId !== null || idx === 0) ? 'default' : 'pointer',
+                              opacity: idx === 0 ? 0.25 : 0.7, display: 'flex',
+                            }}
+                          >
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-secondary)' }}>
+                              <polyline points="18 15 12 9 6 15" />
+                            </svg>
+                          </button>
+                          <button
+                            className="press"
+                            onClick={() => moveExercise(dayKey, idx, 1)}
+                            disabled={movingExerciseId !== null || idx === exs.length - 1}
+                            aria-label={`Move ${ex.name} down`}
+                            style={{
+                              background: 'none', border: 'none', padding: '4px',
+                              cursor: (movingExerciseId !== null || idx === exs.length - 1) ? 'default' : 'pointer',
+                              opacity: idx === exs.length - 1 ? 0.25 : 0.7, display: 'flex',
+                            }}
+                          >
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-secondary)' }}>
+                              <polyline points="6 9 12 15 18 9" />
+                            </svg>
+                          </button>
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
                             <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)' }}>
                               {ex.name}

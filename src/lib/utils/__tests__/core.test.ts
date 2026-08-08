@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { getLevel, getXpInCurrentLevel, getXpRequiredForLevel } from '../gamification'
-import { calendarDaysSince, nextDay, advanceIndex, autoSequence } from '../rotation'
+import { calendarDaysSince, nextDay, advanceIndex, autoSequence, orderedDayKeys } from '../rotation'
 import { localDateKey } from '../formatting'
 import { datesConnected, uncoveredDatesBetween } from '../restDays'
 
@@ -48,6 +48,27 @@ describe('rotation', () => {
     const seq = ['push', 'pull', 'legs']
     assert.equal(advanceIndex(seq, -1, 'push'), 0)
     assert.equal(advanceIndex(seq, 0, 'legs'), 2)
+  })
+
+  it('orderedDayKeys follows a manual sequence, not alphabetical', () => {
+    assert.deepEqual(
+      orderedDayKeys(['legs', 'pull', 'push'], ['push', 'pull', 'legs']),
+      ['push', 'pull', 'legs'],
+    )
+  })
+
+  it('orderedDayKeys dedupes a repeating sequence to first occurrence', () => {
+    assert.deepEqual(
+      orderedDayKeys(['abs', 'legs', 'pull', 'push'], ['push', 'abs', 'pull', 'abs', 'legs']),
+      ['push', 'abs', 'pull', 'legs'],
+    )
+  })
+
+  it('orderedDayKeys appends days missing from the sequence, alphabetically', () => {
+    assert.deepEqual(
+      orderedDayKeys(['legs', 'pull', 'push', 'cardio', 'abs'], ['push', 'pull', 'legs']),
+      ['push', 'pull', 'legs', 'abs', 'cardio'],
+    )
   })
 })
 
