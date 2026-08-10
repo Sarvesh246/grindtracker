@@ -819,11 +819,12 @@ export default function ActiveWorkout({ day }: { day: string }) {
 
     const prevBestVolume = previousBestVolumes[exerciseId]
     const volume = weight !== null ? weight * reps : null
+    // Match server grind_recompute_stats: first-ever volume for an exercise is
+    // a PR (prior best treated as -1), not only improvements over a known best.
     const isPR =
       !logEntry.isWarmup &&
       volume !== null &&
-      prevBestVolume !== null &&
-      volume > prevBestVolume
+      (prevBestVolume === null || volume > prevBestVolume)
 
     const { data: saved, error: saveError } = await runWithRetry(() =>
       supabase
@@ -997,11 +998,11 @@ export default function ActiveWorkout({ day }: { day: string }) {
     const otherLogs = Object.fromEntries(Object.entries(logs).filter(([k]) => k !== key))
     const prevBestVolume = bestVolumeFromLogs(exerciseId, otherLogs)
     const volume = weight !== null && reps !== null ? weight * reps : null
+    // Match server: null prior best ⇒ first lift is a PR.
     const isPR =
       !logEntry.isWarmup &&
       volume !== null &&
-      prevBestVolume !== null &&
-      volume > prevBestVolume
+      (prevBestVolume === null || volume > prevBestVolume)
 
     const { error } = await runWithRetry(() =>
       supabase.from('session_logs').upsert(
@@ -1740,16 +1741,20 @@ export default function ActiveWorkout({ day }: { day: string }) {
           reps: number | null
           exercises: { name: string } | { name: string }[] | null
         }
-        const bestByExercise = new Map<string, { name: string; weight: number; reps: number }>()
+        // List EVERY PR set (not one-per-exercise) so the modal matches pr_count.
+        const recoveredPrs: { name: string; weight: number; reps: number }[] = []
         for (const row of (prRows ?? []) as PrLogRow[]) {
           if (row.weight === null || row.reps === null) continue
-          const name = Array.isArray(row.exercises) ? row.exercises[0]?.name : row.exercises?.name
-          if (!name) continue
-          const existing = bestByExercise.get(row.exercise_id)
-          if (!existing || row.weight * row.reps > existing.weight * existing.reps) {
-            bestByExercise.set(row.exercise_id, { name, weight: row.weight, reps: row.reps })
-          }
+          const name = Array.isArray(row.exercises)
+            ? row.exercises[0]?.name
+            : row.exercises?.name
+          recoveredPrs.push({
+            name: name || exercises.find(e => e.id === row.exercise_id)?.name || 'Exercise',
+            weight: row.weight,
+            reps: row.reps,
+          })
         }
+        recoveredPrs.sort((a, b) => b.weight * b.reps - a.weight * a.reps)
 
         result = {
           xp_earned: sessionRow.xp_earned,
@@ -1764,8 +1769,8 @@ export default function ActiveWorkout({ day }: { day: string }) {
           longest_streak: statsRow.longest_streak,
           last_workout_date: statsRow.last_workout_date,
           total_workouts: statsRow.total_workouts,
-          pr_count: (prRows ?? []).length,
-          pr_exercises: Array.from(bestByExercise.values()),
+          pr_count: recoveredPrs.length,
+          pr_exercises: recoveredPrs,
         }
       } else {
         result = finishData as CompleteSessionResult
@@ -1773,7 +1778,24 @@ export default function ActiveWorkout({ day }: { day: string }) {
 
       const xpEarned = result.xp_earned
       const prCount = result.pr_count
-      const prExercises = result.pr_exercises ?? []
+      // Prefer the RPC list, but if it under-reports vs live isPR badges (older
+      // SQL deduped to one row per exercise), fall back to what the user saw.
+      const serverPrExercises = result.pr_exercises ?? []
+      const clientPrExercises = Object.entries(logs)
+        .filter(([, l]) => l.isPR && l.checked && !l.skipped)
+        .map(([key, l]) => {
+          const exerciseId = key.slice(0, key.lastIndexOf('-'))
+          return {
+            name: exercises.find(e => e.id === exerciseId)?.name || 'Exercise',
+            weight: parseFloat(l.weight) || 0,
+            reps: parseInt(l.reps, 10) || 0,
+          }
+        })
+        .sort((a, b) => b.weight * b.reps - a.weight * a.reps)
+      const prExercises =
+        serverPrExercises.length >= clientPrExercises.length
+          ? serverPrExercises
+          : clientPrExercises
       const newLevel = result.level
       const leveledUp = result.leveled_up
 
@@ -3361,8 +3383,13 @@ function SetRow({
   const { fromDisplay, fmt } = useUnit()
   const [justChecked, setJustChecked] = useState(false)
   const [needsReps, setNeedsReps] = useState(false)
-  // Track local editing intent - set immediately on click, before parent state updates
-  const [editingIntent, setEditingIntent] = useState(false)
+  // Local unlock flips synchronously on the gesture that enters edit mode, so
+  // inputs accept keystrokes before the parent's editingKey re-render lands.
+  const [unlocked, setUnlocked] = useState(false)
+  // Debounce the save action after entering edit mode — prevents the same
+  // tap that opened edit (or a ghost click from the check→save restyle) from
+  // immediately re-saving without the user changing anything.
+  const [saveArmed, setSaveArmed] = useState(false)
   // null = auto: a row with a saved note starts open (notes can arrive after
   // mount when an in-progress session loads), an empty one starts closed.
   // The chevron under the set label sets it explicitly.
@@ -3376,15 +3403,57 @@ function SetRow({
   const weightRef = useRef<HTMLInputElement>(null)
   const repsRef = useRef<HTMLInputElement>(null)
 
-  // Sync editingIntent: clear when editing prop becomes true, or when set is checked/skipped
+  // Keep local unlock/save-arm in sync with the parent editing flag.
   useEffect(() => {
-    if (editing || logEntry.checked || logEntry.skipped) {
-      setEditingIntent(false)
+    if (editing) {
+      setUnlocked(true)
+      setSaveArmed(false)
+      const t = window.setTimeout(() => setSaveArmed(true), 350)
+      return () => window.clearTimeout(t)
     }
-  }, [editing, logEntry.checked, logEntry.skipped])
+    setUnlocked(false)
+    setSaveArmed(false)
+  }, [editing])
 
-  // Editable when: not yet checked, OR in edit mode, OR have local edit intent
-  const inputsDisabled = ((logEntry.checked && !editing && !editingIntent) || logEntry.skipped)
+  // Clear unlock if the set gets skipped while we were mid-edit gesture.
+  useEffect(() => {
+    if (logEntry.skipped) {
+      setUnlocked(false)
+      setSaveArmed(false)
+    }
+  }, [logEntry.skipped])
+
+  const inEdit = editing || unlocked
+  const inputsLocked = logEntry.skipped || (logEntry.checked && !inEdit)
+
+  function beginEdit(focus?: 'weight' | 'reps') {
+    if (logEntry.skipped) return
+    if (!logEntry.checked) return
+    if (!inEdit) {
+      setUnlocked(true)
+      onStartEdit()
+    }
+    if (focus === 'weight') {
+      window.setTimeout(() => weightRef.current?.focus(), 0)
+    } else if (focus === 'reps') {
+      window.setTimeout(() => repsRef.current?.focus(), 0)
+    }
+  }
+
+  function handlePrimaryAction() {
+    if (logEntry.skipped) return
+    if (logEntry.checked && inEdit) {
+      // Ignore ghost/accidental taps right after entering edit mode.
+      if (!saveArmed) return
+      onSaveEdit()
+      return
+    }
+    if (logEntry.checked) {
+      beginEdit()
+      return
+    }
+    handleCheck()
+  }
 
   function handleCheck() {
     if (logEntry.checked) return
@@ -3457,17 +3526,20 @@ function SetRow({
   function handleRepsKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'Enter') {
       e.preventDefault()
-      if (editing) onSaveEdit()
-      else handleCheck()
+      if (inEdit) {
+        if (saveArmed) onSaveEdit()
+      } else {
+        handleCheck()
+      }
     }
   }
 
   return (
     <div
       style={{
-        opacity: logEntry.skipped ? 0.55 : logEntry.checked && !editing ? 0.75 : 1,
+        opacity: logEntry.skipped ? 0.55 : logEntry.checked && !inEdit ? 0.75 : 1,
         transition: 'opacity 150ms ease',
-        backgroundColor: editing ? 'rgba(200,241,53,0.05)' : 'transparent',
+        backgroundColor: inEdit ? 'rgba(200,241,53,0.05)' : 'transparent',
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px' }}>
@@ -3517,7 +3589,7 @@ function SetRow({
           <button
             data-onboard={onboardFirst ? 'aw-warmup' : undefined}
             onClick={onToggleWarmup}
-            disabled={logEntry.checked && !editing}
+            disabled={logEntry.checked && !inEdit}
             aria-pressed={logEntry.isWarmup}
             aria-label={logEntry.isWarmup ? `Unmark set ${setNumber} as warm-up` : `Mark set ${setNumber} as warm-up`}
             title={logEntry.isWarmup ? 'Warm-up set (excluded from PRs)' : 'Mark as warm-up'}
@@ -3526,7 +3598,7 @@ function SetRow({
               // the inner span below — so the button doesn't grow on screen.
               width: '44px', height: '44px',
               backgroundColor: 'transparent', border: 'none',
-              cursor: (logEntry.checked && !editing) ? 'default' : 'pointer',
+              cursor: (logEntry.checked && !inEdit) ? 'default' : 'pointer',
               flexShrink: 0,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}
@@ -3562,13 +3634,14 @@ function SetRow({
            so they never butt up against each other; their column labels live in the
            header above the sets. The group is flex:1 so the action buttons sit at the
            far right. */}
-        {/* Weight + reps inputs. When a checked set is clicked, enter edit mode. */}
-        <div 
-          style={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: '10px', 
-            flex: 1, 
+        {/* Weight + reps inputs. pointerDown unlocks a checked set before focus,
+            so typing works immediately for both check-to-edit and tap-to-edit. */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            flex: 1,
             minWidth: 0,
           }}
         >
@@ -3578,19 +3651,18 @@ function SetRow({
             inputMode="decimal"
             value={displayWeight}
             onChange={e => {
-              // Only allow changes when not locked
-              if (!inputsDisabled) handleWeightChange(e.target.value)
+              if (inputsLocked) return
+              handleWeightChange(e.target.value)
             }}
-            onClick={() => {
-              // Enter edit mode on click if set is checked
-              if (logEntry.checked && !editing && !logEntry.skipped) {
-                setEditingIntent(true) // Set immediately so inputsDisabled becomes false
-                onStartEdit()
-                // Focus after a tick to ensure intent state has updated
-                setTimeout(() => weightRef.current?.focus(), 0)
+            onPointerDown={() => {
+              if (logEntry.checked && !logEntry.skipped && !inEdit) {
+                beginEdit('weight')
               }
             }}
             onFocus={e => {
+              if (logEntry.checked && !logEntry.skipped && !inEdit) {
+                beginEdit()
+              }
               // When BW is shown, clear the buffer so the user types a fresh value
               // rather than appending to the 'BW' text.
               if (displayWeight === 'BW') setRawWeight('')
@@ -3599,19 +3671,20 @@ function SetRow({
             }}
             onBlur={() => setRawWeight(null)}
             onKeyDown={handleWeightKeyDown}
+            readOnly={inputsLocked}
             placeholder="BW"
             aria-label={`Weight for set ${setNumber}`}
             style={{
               width: '56px', flexShrink: 0, height: '40px',
               backgroundColor: 'var(--surface-elevated)',
-              border: `1px solid ${inputsDisabled ? 'var(--border)' : 'var(--border-strong)'}`,
+              border: `1px solid ${inputsLocked ? 'var(--border)' : 'var(--border-strong)'}`,
               borderRadius: '8px',
               color: 'var(--text-primary)',
               fontFamily: "'JetBrains Mono', monospace",
               fontSize: '16px',
               textAlign: 'center',
               outline: 'none',
-              cursor: inputsDisabled ? (logEntry.skipped ? 'not-allowed' : 'pointer') : 'text',
+              cursor: logEntry.skipped ? 'not-allowed' : inputsLocked ? 'pointer' : 'text',
               opacity: logEntry.skipped ? 0.5 : 1,
               pointerEvents: logEntry.skipped ? 'none' : 'auto',
             }}
@@ -3622,24 +3695,24 @@ function SetRow({
             inputMode="numeric"
             value={logEntry.reps}
             onChange={e => {
-              // Only allow changes when not locked
-              if (!inputsDisabled) handleRepsChange(e.target.value)
+              if (inputsLocked) return
+              handleRepsChange(e.target.value)
             }}
-            onClick={() => {
-              // Enter edit mode on click if set is checked
-              if (logEntry.checked && !editing && !logEntry.skipped) {
-                setEditingIntent(true) // Set immediately so inputsDisabled becomes false
-                onStartEdit()
-                // Focus after a tick to ensure intent state has updated
-                setTimeout(() => repsRef.current?.focus(), 0)
+            onPointerDown={() => {
+              if (logEntry.checked && !logEntry.skipped && !inEdit) {
+                beginEdit('reps')
               }
             }}
-            onFocus={e => { 
+            onFocus={e => {
+              if (logEntry.checked && !logEntry.skipped && !inEdit) {
+                beginEdit()
+              }
               e.target.select()
               ensureVisible(e.currentTarget)
             }}
             onBlur={() => setNeedsReps(false)}
             onKeyDown={handleRepsKeyDown}
+            readOnly={inputsLocked}
             placeholder="0"
             aria-label={`Reps for set ${setNumber}`}
             aria-invalid={needsReps}
@@ -3647,7 +3720,7 @@ function SetRow({
             style={{
               width: '56px', flexShrink: 0, height: '40px',
               backgroundColor: 'var(--surface-elevated)',
-              border: `1px solid ${needsReps ? 'var(--danger)' : inputsDisabled ? 'var(--border)' : 'var(--border-strong)'}`,
+              border: `1px solid ${needsReps ? 'var(--danger)' : inputsLocked ? 'var(--border)' : 'var(--border-strong)'}`,
               borderRadius: '8px',
               color: 'var(--text-primary)',
               fontFamily: "'JetBrains Mono', monospace",
@@ -3655,7 +3728,7 @@ function SetRow({
               textAlign: 'center',
               outline: 'none',
               transition: 'border-color 150ms ease',
-              cursor: inputsDisabled ? (logEntry.skipped ? 'not-allowed' : 'pointer') : 'text',
+              cursor: logEntry.skipped ? 'not-allowed' : inputsLocked ? 'pointer' : 'text',
               opacity: logEntry.skipped ? 0.5 : 1,
               pointerEvents: logEntry.skipped ? 'none' : 'auto',
             }}
@@ -3713,7 +3786,7 @@ function SetRow({
             data-onboard={onboardFirst ? 'aw-skip' : undefined}
             data-haptic="light"
             onClick={logEntry.skipped ? onUnskip : onSkip}
-            disabled={!logEntry.skipped && logEntry.checked && !editing}
+            disabled={!logEntry.skipped && logEntry.checked && !inEdit}
             title={
               logEntry.pendingSync
                 ? 'Saved on this device — syncing when back online'
@@ -3730,11 +3803,11 @@ function SetRow({
               borderRadius: '9999px',
               border: `2px solid ${logEntry.skipped ? 'rgba(239,68,68,0.5)' : 'var(--border)'}`,
               backgroundColor: logEntry.skipped ? 'rgba(239,68,68,0.1)' : 'transparent',
-              cursor: (!logEntry.skipped && logEntry.checked && !editing) ? 'default' : 'pointer',
+              cursor: (!logEntry.skipped && logEntry.checked && !inEdit) ? 'default' : 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               flexShrink: 0,
               transition: 'border-color 150ms ease, background-color 150ms ease',
-              opacity: (!logEntry.skipped && logEntry.checked && !editing) ? 0.3 : 1,
+              opacity: (!logEntry.skipped && logEntry.checked && !inEdit) ? 0.3 : 1,
             }}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
@@ -3757,78 +3830,73 @@ function SetRow({
           </button>
         )}
 
-        {/* Check / Save button */}
-        {editing ? (
-          <button
-            onClick={onSaveEdit}
-            aria-label={`Save set ${setNumber}`}
-            title="Save changes"
+        {/* Single check / edit / save button — never remounts. Remounting a
+            check→save swap used to ghost-click Save on the same tap that opened
+            edit mode (especially on iOS). saveArmed gates Save for 350ms. */}
+        <button
+          data-onboard={onboardFirst && !inEdit ? 'aw-check' : undefined}
+          data-haptic={inEdit ? undefined : 'light'}
+          onClick={handlePrimaryAction}
+          disabled={logEntry.skipped || (inEdit && !saveArmed && logEntry.checked)}
+          aria-label={
+            logEntry.checked
+              ? inEdit
+                ? `Save set ${setNumber}`
+                : `Edit set ${setNumber}${logEntry.pendingSync ? ' (not yet synced)' : ''}`
+              : `Mark set ${setNumber} complete`
+          }
+          title={
+            inEdit
+              ? 'Save changes'
+              : logEntry.pendingSync
+                ? 'Saved on this device — syncing when back online'
+                : undefined
+          }
+          aria-pressed={logEntry.checked && !inEdit}
+          style={{
+            position: 'relative',
+            width: '44px', height: '44px', minWidth: '44px',
+            borderRadius: '9999px',
+            border: `2px solid ${
+              inEdit ? 'var(--accent)' : logEntry.checked ? 'var(--accent)' : 'var(--border-strong)'
+            }`,
+            backgroundColor: inEdit
+              ? 'var(--accent)'
+              : logEntry.checked
+                ? 'rgba(200, 241, 53, 0.12)'
+                : 'transparent',
+            cursor: logEntry.skipped || (inEdit && !saveArmed) ? 'default' : 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            transform: justChecked ? 'scale(1.2)' : 'scale(1)',
+            transition: 'transform 200ms ease, border-color 150ms ease, background-color 150ms ease',
+            flexShrink: 0,
+            opacity: inEdit && !saveArmed ? 0.7 : 1,
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
             style={{
-              // Match the check button's 44×44 circular footprint so swapping
-              // check ⇄ save never changes the row layout (and never squeezes
-              // the weight input). The filled accent fill reads as "confirm".
-              width: '44px', height: '44px', minWidth: '44px',
-              borderRadius: '9999px',
-              border: '2px solid var(--accent)',
-              backgroundColor: 'var(--accent)',
-              cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              flexShrink: 0,
-              transition: 'border-color 150ms ease, background-color 150ms ease',
-            }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-              style={{ color: 'var(--on-accent)' }}>
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
-          </button>
-        ) : (
-          <button
-            data-onboard={onboardFirst ? 'aw-check' : undefined}
-            data-haptic="light"
-            onClick={logEntry.checked ? onStartEdit : handleCheck}
-            disabled={logEntry.skipped}
-            aria-label={
-              logEntry.checked
-                ? `Edit set ${setNumber}${logEntry.pendingSync ? ' (not yet synced)' : ''}`
-                : `Mark set ${setNumber} complete`
-            }
-            title={logEntry.pendingSync ? 'Saved on this device — syncing when back online' : undefined}
-            aria-pressed={logEntry.checked}
-            style={{
-              position: 'relative',
-              width: '44px', height: '44px', minWidth: '44px',
-              borderRadius: '9999px',
-              border: `2px solid ${logEntry.checked ? 'var(--accent)' : 'var(--border-strong)'}`,
-              backgroundColor: logEntry.checked ? 'rgba(200, 241, 53, 0.12)' : 'transparent',
-              cursor: logEntry.skipped ? 'default' : 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              transform: justChecked ? 'scale(1.2)' : 'scale(1)',
-              transition: 'transform 200ms ease, border-color 150ms ease, background-color 150ms ease',
-              flexShrink: 0,
-            }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-             style={{ color: logEntry.checked ? 'var(--accent-text)' : 'var(--text-muted)' }}>
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
-            {logEntry.checked && logEntry.pendingSync && (
-              <span
-                aria-hidden="true"
-                style={{
-                  position: 'absolute', top: '-2px', right: '-2px',
-                  width: '10px', height: '10px', borderRadius: '9999px',
-                  backgroundColor: 'var(--text-muted)',
-                  border: '2px solid var(--bg)',
-                }}
-              />
-            )}
-          </button>
-        )}
+              color: inEdit
+                ? 'var(--on-accent)'
+                : logEntry.checked
+                  ? 'var(--accent-text)'
+                  : 'var(--text-muted)',
+            }}>
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+          {logEntry.checked && logEntry.pendingSync && !inEdit && (
+            <span
+              aria-hidden="true"
+              style={{
+                position: 'absolute', top: '-2px', right: '-2px',
+                width: '10px', height: '10px', borderRadius: '9999px',
+                backgroundColor: 'var(--text-muted)',
+                border: '2px solid var(--bg)',
+              }}
+            />
+          )}
+        </button>
       </div>
 
       {/* Always mounted so the field slides rather than snapping (.drawer in

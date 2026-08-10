@@ -41,6 +41,7 @@ is fully linked to migration history.
 | [26-friend-profile-total-sets-fix.sql](sql/26-friend-profile-total-sets-fix.sql) | 26 | Fix `get_friend_profile` total_sets to exclude skipped sets |
 | [27-web-push.sql](sql/27-web-push.sql) | 27 | Web Push subscriptions, prefs, scheduled notifications + cron RPCs |
 | [28-web-push-hardening.sql](sql/28-web-push-hardening.sql) | 28 | Claim CTE join, `sent_at` client lock, `upsert_push_subscription` |
+| [29-complete-session-all-prs.sql](sql/29-complete-session-all-prs.sql) | 29 | Completion modal lists every PR set (not one-per-exercise) |
 
 See also [PUSH.md](PUSH.md) for VAPID keys, Vercel env, and cron setup.
 
