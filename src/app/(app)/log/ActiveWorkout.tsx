@@ -338,62 +338,6 @@ export default function ActiveWorkout({ day }: { day: string }) {
     setPushCoachOpen(true)
   }, [restTimer.active])
 
-  // Track set counts in a ref so visibility listener always reads fresh values.
-  const setCountsRef = useRef(setCounts)
-  useEffect(() => {
-    setCountsRef.current = setCounts
-  }, [setCounts])
-
-  // Track last notified state to avoid redundant notifications.
-  const lastNotifiedState = useRef<{ checked: number; total: number; resting: boolean } | null>(null)
-
-  // Hybrid workout status card when backgrounded; clear tags on return.
-  useEffect(() => {
-    if (!sessionId || completionData) return
-
-    function onVisibility() {
-      void wakeLockRef.current?.onVisibilityChange()
-      const prefs = pushPrefsRef.current
-      if (document.visibilityState === 'hidden') {
-        if (prefs?.enabled && prefs.workout_status) {
-          const resting = restTimer.active && !restTimer.paused
-          const checked = setCountsRef.current.checked
-          const total = setCountsRef.current.total
-          
-          // Only notify if state changed since last notification
-          const lastState = lastNotifiedState.current
-          if (
-            !lastState ||
-            lastState.checked !== checked ||
-            lastState.total !== total ||
-            lastState.resting !== resting
-          ) {
-            lastNotifiedState.current = { checked, total, resting }
-            updateWorkoutStatusNotification({
-              resting,
-              exerciseName: resting
-                ? (exercises.find(e => e.id === restTimer.exerciseId)?.name ?? undefined)
-                : undefined,
-              remainingMs: resting ? restTimer.remainingMs : undefined,
-              doneSets: checked,
-              totalSets: total,
-            })
-          }
-        }
-      } else {
-        clearWorkoutNotifications()
-        // Clear last notified state when returning to foreground
-        lastNotifiedState.current = null
-      }
-    }
-
-    document.addEventListener('visibilitychange', onVisibility)
-    return () => document.removeEventListener('visibilitychange', onVisibility)
-    // restTimer fields / set counts are read at hide-time; listing them would
-    // re-bind the listener every tick.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, completionData, exercises])
-
   /**
    * Flash a short bottom-anchored "saved" confirmation. Re-flashing resets the
    * timer so rapid edits don't leave a stale message lingering.
@@ -766,6 +710,62 @@ export default function ActiveWorkout({ day }: { day: string }) {
   function progressPercent(): number {
     return setCounts.percent
   }
+
+  // Track set counts in a ref so visibility listener always reads fresh values.
+  const setCountsRef = useRef(setCounts)
+  useEffect(() => {
+    setCountsRef.current = setCounts
+  }, [setCounts])
+
+  // Track last notified state to avoid redundant notifications.
+  const lastNotifiedState = useRef<{ checked: number; total: number; resting: boolean } | null>(null)
+
+  // Hybrid workout status card when backgrounded; clear tags on return.
+  useEffect(() => {
+    if (!sessionId || completionData) return
+
+    function onVisibility() {
+      void wakeLockRef.current?.onVisibilityChange()
+      const prefs = pushPrefsRef.current
+      if (document.visibilityState === 'hidden') {
+        if (prefs?.enabled && prefs.workout_status) {
+          const resting = restTimer.active && !restTimer.paused
+          const checked = setCountsRef.current.checked
+          const total = setCountsRef.current.total
+          
+          // Only notify if state changed since last notification
+          const lastState = lastNotifiedState.current
+          if (
+            !lastState ||
+            lastState.checked !== checked ||
+            lastState.total !== total ||
+            lastState.resting !== resting
+          ) {
+            lastNotifiedState.current = { checked, total, resting }
+            updateWorkoutStatusNotification({
+              resting,
+              exerciseName: resting
+                ? (exercises.find(e => e.id === restTimer.exerciseId)?.name ?? undefined)
+                : undefined,
+              remainingMs: resting ? restTimer.remainingMs : undefined,
+              doneSets: checked,
+              totalSets: total,
+            })
+          }
+        }
+      } else {
+        clearWorkoutNotifications()
+        // Clear last notified state when returning to foreground
+        lastNotifiedState.current = null
+      }
+    }
+
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => document.removeEventListener('visibilitychange', onVisibility)
+    // restTimer fields / set counts are read at hide-time; listing them would
+    // re-bind the listener every tick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, completionData, exercises])
 
   function updateLog(key: string, field: 'weight' | 'reps' | 'note', value: string) {
     setLogs(prev => ({
