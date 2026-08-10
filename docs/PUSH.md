@@ -38,15 +38,17 @@ external service and no Pro upgrade.
 
 Each invocation:
 
-1. Calls `schedule_streak_reminders()` for users whose **local** hour matches
-   their streak reminder hour (default 19:00).
+1. Calls `schedule_streak_reminders()` (migration **30**: catch-up if the exact
+   hour was missed, skip open sessions / invalid timezones).
 2. Claims due `scheduled_notifications` via `claim_due_notifications()`.
 3. Sends each via `web-push`. Auth: `Authorization: Bearer $CRON_SECRET`
    (Vercel injects this for its own crons).
+4. Best-effort prune of old sent/cancelled rows (`grind_prune_scheduled_notifications`).
 
 **Streak reminders:** when your local clock hits the chosen hour (17–21), the
-matching UTC-hour job picks you up that day. Hobby may fire anywhere in that
-UTC hour (±59 min). `unique(dedupe_key)` keeps it to one ping per local day.
+matching UTC-hour job picks you up that day; later hours catch up if that job
+failed. Hobby may fire anywhere in that UTC hour (±59 min).
+`unique(dedupe_key)` keeps it to one ping per local day.
 
 **Rest-end:** still primarily **page timers** while the PWA can run. The hourly
 Hobby fan-out is only a locked-phone fallback (up to ~1 hour late — not useful
