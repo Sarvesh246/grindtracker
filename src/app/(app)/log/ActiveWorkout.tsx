@@ -3553,21 +3553,30 @@ function SetRow({
            so they never butt up against each other; their column labels live in the
            header above the sets. The group is flex:1 so the action buttons sit at the
            far right. */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: 0 }}>
+        {/* Weight + reps inputs wrapped in a clickable container for edit mode entry.
+            When a set is checked (disabled inputs), clicking anywhere in this area enters edit mode. */}
+        <div 
+          style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '10px', 
+            flex: 1, 
+            minWidth: 0,
+            cursor: (logEntry.checked && !editing && !logEntry.skipped) ? 'pointer' : 'default',
+          }}
+          onClick={() => {
+            // Allow clicking the input area to enter edit mode if set is checked but not editing
+            if (logEntry.checked && !editing && !logEntry.skipped) {
+              onStartEdit()
+            }
+          }}
+        >
           <input
             ref={weightRef}
             type="text"
             inputMode="decimal"
             value={displayWeight}
             onChange={e => handleWeightChange(e.target.value)}
-            onClick={() => {
-              // Allow clicking the input to enter edit mode if set is checked but not editing
-              if (logEntry.checked && !editing && !logEntry.skipped) {
-                onStartEdit()
-                // Focus after a brief delay so the edit mode enables the input first
-                setTimeout(() => weightRef.current?.focus(), 0)
-              }
-            }}
             onFocus={e => {
               // When BW is shown, clear the buffer so the user types a fresh value
               // rather than appending to the 'BW' text.
@@ -3577,7 +3586,7 @@ function SetRow({
             }}
             onBlur={() => setRawWeight(null)}
             onKeyDown={handleWeightKeyDown}
-            readOnly={inputsDisabled}
+            disabled={inputsDisabled}
             placeholder="BW"
             aria-label={`Weight for set ${setNumber}`}
             style={{
@@ -3590,9 +3599,6 @@ function SetRow({
               fontSize: '16px',
               textAlign: 'center',
               outline: 'none',
-              cursor: inputsDisabled ? (logEntry.skipped ? 'default' : 'pointer') : 'text',
-              // When skipped, prevent any pointer interaction to avoid click-through bugs
-              pointerEvents: logEntry.skipped ? 'none' : 'auto',
             }}
           />
           <input
@@ -3601,18 +3607,10 @@ function SetRow({
             inputMode="numeric"
             value={logEntry.reps}
             onChange={e => handleRepsChange(e.target.value)}
-            onClick={() => {
-              // Allow clicking the input to enter edit mode if set is checked but not editing
-              if (logEntry.checked && !editing && !logEntry.skipped) {
-                onStartEdit()
-                // Focus after a brief delay so the edit mode enables the input first
-                setTimeout(() => repsRef.current?.focus(), 0)
-              }
-            }}
             onFocus={e => { e.target.select(); ensureVisible(e.currentTarget) }}
             onBlur={() => setNeedsReps(false)}
             onKeyDown={handleRepsKeyDown}
-            readOnly={inputsDisabled}
+            disabled={inputsDisabled}
             placeholder="0"
             aria-label={`Reps for set ${setNumber}`}
             aria-invalid={needsReps}
@@ -3628,9 +3626,6 @@ function SetRow({
               textAlign: 'center',
               outline: 'none',
               transition: 'border-color 150ms ease',
-              cursor: inputsDisabled ? (logEntry.skipped ? 'default' : 'pointer') : 'text',
-              // When skipped, prevent any pointer interaction to avoid click-through bugs
-              pointerEvents: logEntry.skipped ? 'none' : 'auto',
             }}
           />
         </div>
@@ -3679,14 +3674,14 @@ function SetRow({
             </svg>
           </button>
         ) : (
-          /* Skip / unskip set button. Also enabled in edit mode so the user can
-             skip a previously logged set (handleSkipSet will delete the DB row). */
+          /* Skip / unskip set button. Unskip is always enabled. Skip is enabled
+             when unchecked or when in edit mode (to skip a logged set). */
           <button
             className="press"
             data-onboard={onboardFirst ? 'aw-skip' : undefined}
             data-haptic="light"
-            onClick={logEntry.skipped ? onUnskip : (logEntry.checked && !editing ? undefined : onSkip)}
-            disabled={logEntry.checked && !editing}
+            onClick={logEntry.skipped ? onUnskip : onSkip}
+            disabled={!logEntry.skipped && logEntry.checked && !editing}
             title={
               logEntry.pendingSync
                 ? 'Saved on this device — syncing when back online'
@@ -3703,11 +3698,11 @@ function SetRow({
               borderRadius: '9999px',
               border: `2px solid ${logEntry.skipped ? 'rgba(239,68,68,0.5)' : 'var(--border)'}`,
               backgroundColor: logEntry.skipped ? 'rgba(239,68,68,0.1)' : 'transparent',
-              cursor: (logEntry.checked && !editing) ? 'default' : 'pointer',
+              cursor: (!logEntry.skipped && logEntry.checked && !editing) ? 'default' : 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               flexShrink: 0,
               transition: 'border-color 150ms ease, background-color 150ms ease',
-              opacity: (logEntry.checked && !editing) ? 0.3 : 1,
+              opacity: (!logEntry.skipped && logEntry.checked && !editing) ? 0.3 : 1,
             }}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
