@@ -761,8 +761,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         }
       } else {
         clearWorkoutNotifications()
-        // Clear last notified state when returning to foreground
-        lastNotifiedState.current = null
+        // Don't clear lastNotifiedState - keep it so we can detect changes on next background
       }
     }
 

@@ -386,7 +386,6 @@ export function updateWorkoutStatusNotification(opts: {
       body: `${opts.exerciseName} · ~${mins ?? '?'}m`,
       tag: 'grind-workout',
       url: '/log',
-      renotify: true,
     })
   } else {
     showLocalNotification({
@@ -394,7 +393,6 @@ export function updateWorkoutStatusNotification(opts: {
       body: `${opts.doneSets}/${opts.totalSets} sets`,
       tag: 'grind-workout',
       url: '/log',
-      renotify: true,
     })
   }
 }
