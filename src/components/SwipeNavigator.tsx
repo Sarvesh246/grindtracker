@@ -72,9 +72,12 @@ export default function SwipeNavigator({ children }: { children: React.ReactNode
   function onPointerDown(e: ReactPointerEvent) {
     if (!swipeEnabled || phase === 'settling' || e.pointerType === 'mouse') return
     const target = e.target as HTMLElement
-    // Let text fields keep native horizontal cursor/selection drag, and don't
-    // steal drag gestures a chart uses for its own touch-scrub interaction.
-    if (target.closest('input, textarea, select, [contenteditable="true"], .recharts-wrapper')) return
+    // Text fields are the one real exception — they need native horizontal
+    // cursor/selection drag, which a page-swipe would hijack. Everything else
+    // (charts included) stays swipeable: Recharts' own tooltip listeners are
+    // native and unaffected by our handlers running alongside them, and axis
+    // detection below still yields cleanly to a vertical drag anywhere.
+    if (target.closest('input, textarea, select, [contenteditable="true"]')) return
     dragRef.current = { startX: e.clientX, startY: e.clientY, axis: null }
   }
 
@@ -131,10 +134,14 @@ export default function SwipeNavigator({ children }: { children: React.ReactNode
     window.setTimeout(() => setPhase('idle'), reduceMotion ? 0 : SETTLE_MS)
   }
 
-  const style =
+  // minHeight (not height) so a page shorter than the viewport still fills
+  // .app-main and can be swiped from its blank lower area, without clipping a
+  // page that's taller and needs to scroll past 100%.
+  const style: React.CSSProperties =
     phase === 'idle'
-      ? undefined
+      ? { minHeight: '100%' }
       : {
+          minHeight: '100%',
           transform: `translateX(${dragX}px)`,
           transition: phase === 'settling' && !reduceMotion
             ? `transform ${SETTLE_MS}ms cubic-bezier(0.22,1,0.36,1)`
