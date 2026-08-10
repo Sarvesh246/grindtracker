@@ -48,6 +48,10 @@ interface SetState {
   /** Checked locally but the write to Supabase failed even after retries —
    * queued in offlineQueue and waiting to sync once the connection returns. */
   pendingSync?: boolean
+  /** Pre-skip backup: preserve weight/reps/note so unskip can restore them */
+  skippedWeight?: string
+  skippedReps?: string
+  skippedNote?: string
 }
 
 interface UndoState {
@@ -1270,16 +1274,30 @@ export default function ActiveWorkout({ day }: { day: string }) {
     haptic('light')
     const key = `${exerciseId}-${setNumber}`
     const wasChecked = logs[key]?.checked
+    const currentLog = logs[key]
     // persistSkip upserts the skip marker over whatever was there — including
     // an already-saved checked row, which it overwrites (weight/reps/is_pr
-    // back to null/false) so it doesn't persist as a completed set. Clear the
-    // local weight/reps/note too — otherwise a skipped-but-previously-logged
-    // set keeps showing its old (often accidental) numbers in the disabled,
-    // greyed-out inputs, which reads as "skip didn't actually clear anything."
+    // back to null/false) so it doesn't persist as a completed set. 
+    // Preserve the current weight/reps/note before clearing so unskip can restore them.
     setLogs(prev => {
+      const entry = prev[key]
       const next = {
         ...prev,
-        [key]: { ...prev[key], skipped: true, checked: false, isPR: false, logId: undefined, weight: '', reps: '', note: '' },
+        [key]: {
+          ...entry,
+          skipped: true,
+          checked: false,
+          isPR: false,
+          logId: undefined,
+          // Backup current values before clearing
+          skippedWeight: entry?.weight || '',
+          skippedReps: entry?.reps || '',
+          skippedNote: entry?.note || '',
+          // Clear the active fields
+          weight: '',
+          reps: '',
+          note: '',
+        },
       }
       if (wasChecked) {
         // Recompute live PR bars — the overwritten set may have been the best.
@@ -1300,10 +1318,25 @@ export default function ActiveWorkout({ day }: { day: string }) {
 
   async function handleUnskipSet(exerciseId: string, setNumber: number) {
     const key = `${exerciseId}-${setNumber}`
-    setLogs(prev => ({
-      ...prev,
-      [key]: { ...prev[key], skipped: false, logId: undefined },
-    }))
+    setLogs(prev => {
+      const entry = prev[key]
+      return {
+        ...prev,
+        [key]: {
+          ...entry,
+          skipped: false,
+          logId: undefined,
+          // Restore the backed-up values from before the skip
+          weight: entry?.skippedWeight || '',
+          reps: entry?.skippedReps || '',
+          note: entry?.skippedNote || '',
+          // Clear the backup fields
+          skippedWeight: undefined,
+          skippedReps: undefined,
+          skippedNote: undefined,
+        },
+      }
+    })
     const { error } = await persistUnskip(exerciseId, [setNumber])
     if (error) {
       queueUnskip(exerciseId, [setNumber])
@@ -1333,10 +1366,23 @@ export default function ActiveWorkout({ day }: { day: string }) {
       const next = { ...prev }
       for (const s of setsToSkip) {
         const key = `${exerciseId}-${s}`
-        // Clear weight/reps/note along with the skip flag — otherwise an
-        // exercise logged by accident still shows its old numbers, just
-        // greyed out, which doesn't read as "cleared."
-        next[key] = { ...next[key], skipped: true, checked: false, isPR: false, logId: undefined, weight: '', reps: '', note: '' }
+        const entry = next[key]
+        // Preserve the current values before clearing so unskip can restore them
+        next[key] = {
+          ...entry,
+          skipped: true,
+          checked: false,
+          isPR: false,
+          logId: undefined,
+          // Backup current values
+          skippedWeight: entry?.weight || '',
+          skippedReps: entry?.reps || '',
+          skippedNote: entry?.note || '',
+          // Clear active fields
+          weight: '',
+          reps: '',
+          note: '',
+        }
       }
       if (anyWasChecked) {
         // Recompute live PR bars — a set we just cleared may have been the best.
@@ -3544,7 +3590,9 @@ function SetRow({
               fontSize: '16px',
               textAlign: 'center',
               outline: 'none',
-              cursor: inputsDisabled ? 'pointer' : 'text',
+              cursor: inputsDisabled ? (logEntry.skipped ? 'default' : 'pointer') : 'text',
+              // When skipped, prevent any pointer interaction to avoid click-through bugs
+              pointerEvents: logEntry.skipped ? 'none' : 'auto',
             }}
           />
           <input
@@ -3580,7 +3628,9 @@ function SetRow({
               textAlign: 'center',
               outline: 'none',
               transition: 'border-color 150ms ease',
-              cursor: inputsDisabled ? 'pointer' : 'text',
+              cursor: inputsDisabled ? (logEntry.skipped ? 'default' : 'pointer') : 'text',
+              // When skipped, prevent any pointer interaction to avoid click-through bugs
+              pointerEvents: logEntry.skipped ? 'none' : 'auto',
             }}
           />
         </div>
