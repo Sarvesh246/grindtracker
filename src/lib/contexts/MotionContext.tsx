@@ -6,11 +6,19 @@ export type MotionPref = 'reduce' | 'no-preference'
 const PREF_KEY = 'grind_motion_pref'
 
 interface MotionContextValue {
+  /** Explicit in-app Reduce Motion preference (Profile toggle). */
+  prefReduceMotion: boolean
+  /**
+   * Effective reduce for JS-driven motion (charts, count-ups, delays).
+   * True when the in-app pref OR the OS prefers-reduced-motion media query is on —
+   * matching globals.css, which already zeros CSS transitions for both.
+   */
   reduceMotion: boolean
   toggleReduceMotion: () => void
 }
 
 const MotionContext = createContext<MotionContextValue>({
+  prefReduceMotion: false,
   reduceMotion: false,
   toggleReduceMotion: () => {},
 })
@@ -54,6 +62,7 @@ export function MotionProvider({
   initialPref?: MotionPref
 }) {
   const [pref, setPref] = useState<MotionPref>(initialPref)
+  const [osReduce, setOsReduce] = useState(false)
 
   // One-time migration for users who saved a preference before the cookie
   // existed: if the server sent no cookie but localStorage has a value, adopt
@@ -78,6 +87,17 @@ export function MotionProvider({
     }
   }, [])
 
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
+    // Sync OS media query into React so JS animations (Recharts, RAF count-ups)
+    // honor it the same way globals.css already does for transitions/keyframes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setOsReduce(mq.matches)
+    const onChange = () => setOsReduce(mq.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
+
   const toggleReduceMotion = useCallback(() => {
     setPref(prev => {
       const next: MotionPref = prev === 'reduce' ? 'no-preference' : 'reduce'
@@ -87,8 +107,12 @@ export function MotionProvider({
     })
   }, [])
 
-  const reduceMotion = pref === 'reduce'
-  const contextValue = useMemo(() => ({ reduceMotion, toggleReduceMotion }), [reduceMotion, toggleReduceMotion])
+  const prefReduceMotion = pref === 'reduce'
+  const reduceMotion = prefReduceMotion || osReduce
+  const contextValue = useMemo(
+    () => ({ prefReduceMotion, reduceMotion, toggleReduceMotion }),
+    [prefReduceMotion, reduceMotion, toggleReduceMotion],
+  )
 
   return (
     <MotionContext.Provider value={contextValue}>

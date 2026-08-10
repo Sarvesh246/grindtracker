@@ -35,30 +35,47 @@ export default function CompletionModal({
 }: {
   data: CompletionData
   onDone: () => void
-  onUndo?: () => void
+  /** Return false (or a rejected promise) to keep the modal open on failure. */
+  onUndo?: () => void | boolean | Promise<void | boolean>
 }) {
   const [visible, setVisible] = useState(false)
   const [closing, setClosing] = useState(false)
-  const [xpDisplay, setXpDisplay] = useState(() =>
-    // Snap immediately when reduce-motion may be active (SSR/cookie preferred).
-    data.xpEarned,
-  )
+  const [undoBusy, setUndoBusy] = useState(false)
   const { unitLabel, fmt } = useUnit()
   const { reduceMotion } = useMotionPref()
+  // Start at 0 when animating so we don't flash the full XP then jump back to 0.
+  const [xpDisplay, setXpDisplay] = useState(() => (reduceMotion ? data.xpEarned : 0))
 
   useEffect(() => {
     requestAnimationFrame(() => setVisible(true))
   }, [])
 
   function requestClose(action: () => void) {
-    if (closing) return
+    if (closing || undoBusy) return
     setClosing(true)
     setVisible(false)
     window.setTimeout(action, reduceMotion ? 0 : 380)
   }
+
+  async function handleUndoClick() {
+    if (!onUndo || closing || undoBusy) return
+    // Await undo BEFORE closing — on failure the modal used to stay stuck
+    // closing/invisible with pointer-events none while the session stayed completed.
+    setUndoBusy(true)
+    try {
+      const ok = await Promise.resolve(onUndo())
+      if (ok === false) return
+      setClosing(true)
+      setVisible(false)
+    } finally {
+      setUndoBusy(false)
+    }
+  }
+
   const shown = visible && !closing
 
   // XP count-up respects Reduce Motion — keep final value, animate only when allowed.
+  // Initial state already snaps when reduceMotion; this effect only runs the RAF count-up.
   useEffect(() => {
     const target = data.xpEarned
     if (target <= 0 || reduceMotion) return
@@ -67,7 +84,6 @@ export default function CompletionModal({
     let raf: number
     function tick(now: number) {
       const t = Math.min(1, (now - start) / durationMs)
-      // Start from 0 on the first frame rather than a sync setState in the effect body.
       setXpDisplay(Math.round(target * easeOutCubic(t)))
       if (t < 1) raf = requestAnimationFrame(tick)
     }
@@ -254,7 +270,8 @@ export default function CompletionModal({
 
           {onUndo && (
             <button
-              onClick={() => requestClose(onUndo)}
+              onClick={() => void handleUndoClick()}
+              disabled={undoBusy || closing}
               style={{
                 width: '100%', height: '44px', marginTop: '10px',
                 backgroundColor: 'transparent',
@@ -263,10 +280,11 @@ export default function CompletionModal({
                 borderRadius: '12px',
                 fontFamily: "'DM Sans', sans-serif",
                 fontSize: '14px', fontWeight: 600,
-                cursor: 'pointer',
+                cursor: undoBusy || closing ? 'default' : 'pointer',
+                opacity: undoBusy ? 0.7 : 1,
               }}
             >
-              Accidentally finished? Resume workout
+              {undoBusy ? 'Resuming…' : 'Accidentally finished? Resume workout'}
             </button>
           )}
         </div>

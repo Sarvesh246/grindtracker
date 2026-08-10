@@ -14,18 +14,23 @@ export default function ServiceWorkerRegister() {
   useEffect(() => {
     void syncTimezoneIfEnabled()
 
+    let debounce: ReturnType<typeof setTimeout> | null = null
     function onVisibility() {
-      if (document.visibilityState === 'visible') {
+      // visibilitychange alone — focus while already visible was double-firing
+      // close + timezone sync on every window focus.
+      if (document.visibilityState !== 'visible') return
+      if (debounce) clearTimeout(debounce)
+      debounce = setTimeout(() => {
+        debounce = null
         void closeGrindNotifications({ clearBadge: true })
         void syncTimezoneIfEnabled()
-      }
+      }, 150)
     }
 
     document.addEventListener('visibilitychange', onVisibility)
-    window.addEventListener('focus', onVisibility)
     return () => {
       document.removeEventListener('visibilitychange', onVisibility)
-      window.removeEventListener('focus', onVisibility)
+      if (debounce) clearTimeout(debounce)
     }
   }, [])
 

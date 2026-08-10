@@ -60,7 +60,14 @@ export async function PATCH(request: Request) {
   if (typeof body.workout_status === 'boolean') patch.workout_status = body.workout_status
   if (typeof body.streak_reminder === 'boolean') patch.streak_reminder = body.streak_reminder
   if (typeof body.timezone === 'string' && body.timezone.trim()) {
-    patch.timezone = body.timezone.trim().slice(0, 64)
+    const tz = body.timezone.trim().slice(0, 64)
+    // Reject non-IANA values so schedule_streak_reminders can't abort for everyone.
+    try {
+      Intl.DateTimeFormat('en-US', { timeZone: tz })
+      patch.timezone = tz
+    } catch {
+      return NextResponse.json({ error: 'Invalid timezone' }, { status: 400 })
+    }
   }
   if (typeof body.streak_reminder_hour === 'number') {
     const h = Math.round(body.streak_reminder_hour)

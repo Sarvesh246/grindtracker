@@ -10,7 +10,14 @@ import { haptic } from '@/lib/utils/haptics'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { deleteIncompleteSessions } from '@/lib/utils/sessions'
 import { advanceIndex, effectiveSequence } from '@/lib/utils/rotation'
-import { queueOp, flushQueuedOps, getQueuedOps } from '@/lib/utils/offlineQueue'
+import {
+  queueOp,
+  flushQueuedOps,
+  getQueuedOps,
+  removeQueuedOp,
+  clearQueuedOpsForSession,
+  clearQueuedOpsForExercise,
+} from '@/lib/utils/offlineQueue'
 import type { UserRotation, UserStats, CompleteSessionResult } from '@/lib/types'
 import { useRestTimer, getPauseRestOnExit } from '@/lib/hooks/useRestTimer'
 import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
@@ -87,7 +94,19 @@ function overlayQueuedOps(map: LogMap, sid: string) {
   for (const q of getQueuedOps(sid)) {
     const key = `${q.exerciseId}-${q.setNumber}`
     if (q.kind === 'delete') {
-      delete map[key]
+      // Unskip queues a delete of the skip marker — reset to a blank unchecked
+      // row instead of removing the key. Deleting the key left handleCheck
+      // bailing on `!logs[key]` after offline unskip → remount.
+      map[key] = {
+        weight: '',
+        reps: '',
+        checked: false,
+        skipped: false,
+        isPR: false,
+        isWarmup: false,
+        note: '',
+        pendingSync: true,
+      }
       continue
     }
     map[key] = {
@@ -239,12 +258,23 @@ export default function ActiveWorkout({ day }: { day: string }) {
 
   useEffect(() => {
     let cancelled = false
-    void fetchNotificationPrefs().then(prefs => {
+    async function loadPrefs() {
+      const prefs = await fetchNotificationPrefs()
       if (cancelled || !prefs) return
       setPushPrefs(prefs)
       pushPrefsRef.current = prefs
-    })
-    return () => { cancelled = true }
+    }
+    void loadPrefs()
+    // Re-read when returning to the tab so Profile toggles mid-workout apply
+    // instead of keeping the mount-time snapshot (unexpected rest pings).
+    function onVisibility() {
+      if (document.visibilityState === 'visible') void loadPrefs()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      cancelled = true
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
   }, [])
 
   useEffect(() => {
@@ -262,19 +292,26 @@ export default function ActiveWorkout({ day }: { day: string }) {
   }, [sessionId, completionData])
 
   // Schedule / cancel server + local rest notifications from timer transitions
-  // (not remainingMs — that ticks every 250ms). When remaining hits 0 the UI
-  // goes inactive but we must NOT cancel — page/SW local timers + cron fallback
-  // still need to deliver rest-end if the app is backgrounded.
+  // (not remainingMs — that ticks every 250ms). Pause/stop cancels; natural end
+  // (remaining hit 0 with exerciseId still set) is handled by the deliver effect
+  // below so we don't wipe the cron fallback before a remount can notify.
   useEffect(() => {
     if (!sessionId) return
     const prefs = pushPrefsRef.current
 
-    if (!restTimer.exerciseId || restTimer.paused) {
+    if (restTimer.paused) {
+      void cancelRestNotifications(sessionId)
+      return
+    }
+    if (!restTimer.exerciseId) {
+      // Explicit stop() clears exerciseId — cancel schedules. Expired remounts
+      // restore exerciseId with remainingMs=0 (see useRestTimer) so they hit
+      // the natural-end branch below instead of wiping the cron fallback first.
       void cancelRestNotifications(sessionId)
       return
     }
     if (!restTimer.active) {
-      // Natural end (remaining hit 0) — leave schedules for local timers / cron.
+      // Natural end (remaining hit 0) — deliver path below owns cancel-after-notify.
       return
     }
     // Prefs still loading — wait; effect re-runs when they arrive.
@@ -314,29 +351,40 @@ export default function ActiveWorkout({ day }: { day: string }) {
     pushPrefs?.rest_warning_10s,
   ])
 
-  // Belt-and-suspenders: when the in-page rest tick hits 0, fire rest-end
-  // immediately. Page/SW setTimeout should already be armed; this covers
-  // cases where those were lost (SW killed) but the workout page is still alive.
-  // Only fire when app is backgrounded - the page/SW timers handle foreground case.
+  // When the in-page rest tick hits 0 (or an expired timer was restored on
+  // remount), deliver rest-end once if backgrounded, then cancel server rows so
+  // Hobby cron can't fire an hour later. Deduped inside notifyRestEndedLocally
+  // against the page setTimeout path.
   const restEndNotifiedKey = useRef<string | null>(null)
   useEffect(() => {
     if (!sessionId || !restTimer.exerciseId) return
     if (restTimer.paused || restTimer.remainingMs > 0) return
     const prefs = pushPrefsRef.current
-    if (!prefs?.enabled || !prefs.rest_complete) return
-    // Only notify when backgrounded to avoid triple-notification with page/SW timers
-    if (typeof document !== 'undefined' && document.visibilityState === 'visible') return
+    if (!prefs?.enabled || !prefs.rest_complete) {
+      // Prefs off — still cancel any leftover server rows from before the toggle.
+      void cancelRestNotifications(sessionId)
+      return
+    }
 
+    const endsAtMs = restTimer.startedAt + restTimer.durationMs
     const key = `${sessionId}:${restTimer.exerciseId}:${restTimer.startedAt}`
     if (restEndNotifiedKey.current === key) return
     restEndNotifiedKey.current = key
 
     const exerciseName = exercises.find(e => e.id === restTimer.exerciseId)?.name ?? ''
-    notifyRestEndedLocally(exerciseName)
+    const backgrounded =
+      typeof document !== 'undefined' && document.visibilityState === 'hidden'
+    if (backgrounded) {
+      notifyRestEndedLocally(exerciseName, { endsAtMs, sessionId })
+    } else {
+      // Foreground: user already saw the rest bar hit 0 — just clear fallbacks.
+      void cancelRestNotifications(sessionId)
+    }
   }, [
     sessionId,
     restTimer.exerciseId,
     restTimer.startedAt,
+    restTimer.durationMs,
     restTimer.remainingMs,
     restTimer.paused,
     exercises,
@@ -704,16 +752,36 @@ export default function ActiveWorkout({ day }: { day: string }) {
   // change — not on every elapsed-timer tick (setInterval re-renders this
   // component every second for the duration of the workout).
   const setCounts = useMemo(() => {
-    const total = exercises.reduce((sum, ex) => sum + ex.sets_target, 0)
+    // Include bonus sets so progress never reads e.g. "4 / 3 sets" / >100%.
+    const total = exercises.reduce(
+      (sum, ex) => sum + ex.sets_target + (extraSets[ex.id] ?? 0),
+      0,
+    )
     let checked = 0
     let skipped = 0
     for (const l of Object.values(logs)) {
       if (l.checked) checked++
       else if (l.skipped) skipped++
     }
-    const percent = total === 0 ? 0 : ((checked + skipped) / total) * 100
+    const percent = total === 0 ? 0 : Math.min(100, ((checked + skipped) / total) * 100)
     return { total, checked, skipped, percent }
-  }, [exercises, logs])
+  }, [exercises, logs, extraSets])
+
+  /** Matches server grind_session_has_working_set: non-warmup, non-skipped, weight+reps. */
+  function hasWorkingSet(): boolean {
+    return Object.values(logs).some(l => {
+      if (!l.checked || l.skipped || l.isWarmup) return false
+      const w = l.weight !== '' ? parseFloat(l.weight) : NaN
+      const r = l.reps !== '' ? parseInt(l.reps, 10) : NaN
+      return Number.isFinite(w) && Number.isFinite(r)
+    })
+  }
+
+  function hasPendingSync(): boolean {
+    if (!sessionId) return false
+    if (getQueuedOps(sessionId).length > 0) return true
+    return Object.values(logs).some(l => l.pendingSync)
+  }
   function totalSets(): number {
     return setCounts.total
   }
@@ -801,150 +869,165 @@ export default function ActiveWorkout({ day }: { day: string }) {
     })
   }
 
+  const checkingKeysRef = useRef<Set<string>>(new Set())
+
   async function handleCheck(exerciseId: string, setNumber: number) {
     const key = `${exerciseId}-${setNumber}`
-    const logEntry = logs[key]
-    if (!logEntry || !sessionId || logEntry.checked) return
+    // Prefer the live ref — a second tap while the first await is in flight
+    // would otherwise see a stale closed-over `logs` and double-upsert / rest-start.
+    const logEntry = logsRef.current[key] ?? logs[key]
+    if (!logEntry || !sessionId || logEntry.checked || checkingKeysRef.current.has(key)) return
+    checkingKeysRef.current.add(key)
 
-    const weight = logEntry.weight !== '' ? parseFloat(logEntry.weight) : null
+    try {
+      const weight = logEntry.weight !== '' ? parseFloat(logEntry.weight) : null
+      if (weight !== null && !Number.isFinite(weight)) return
 
-    // If reps not entered, carry forward the nearest earlier set's reps for
-    // this exercise — not necessarily set N-1, since that one might itself be
-    // blank (e.g. set 2 skipped over while filling in set 1, then set 3).
-    let repsStr = logEntry.reps
-    if (repsStr === '') repsStr = findCarryReps(logs, exerciseId, setNumber)
-    // No reps and nothing to copy from — require the user to fill it in
-    if (repsStr === '') return
-    const reps = parseInt(repsStr)
+      // If reps not entered, carry forward the nearest earlier set's reps for
+      // this exercise — not necessarily set N-1, since that one might itself be
+      // blank (e.g. set 2 skipped over while filling in set 1, then set 3).
+      let repsStr = logEntry.reps
+      if (repsStr === '') repsStr = findCarryReps(logsRef.current, exerciseId, setNumber)
+      // No reps and nothing to copy from — require the user to fill it in
+      if (repsStr === '') return
+      const reps = parseInt(repsStr, 10)
+      if (!Number.isFinite(reps)) return
 
-    const prevBestVolume = previousBestVolumes[exerciseId]
-    const volume = weight !== null ? weight * reps : null
-    // Match server grind_recompute_stats: first-ever volume for an exercise is
-    // a PR (prior best treated as -1), not only improvements over a known best.
-    const isPR =
-      !logEntry.isWarmup &&
-      volume !== null &&
-      (prevBestVolume === null || volume > prevBestVolume)
+      const prevBestVolume = previousBestVolumes[exerciseId]
+      const volume = weight !== null ? weight * reps : null
+      // Match server grind_recompute_stats: first-ever volume for an exercise is
+      // a PR (prior best treated as -1), not only improvements over a known best.
+      // Live bar uses prior-session baseline only (not raised mid-session) so a
+      // later set that beats the old PR still badges even if set 1 already did.
+      const isPR =
+        !logEntry.isWarmup &&
+        volume !== null &&
+        (prevBestVolume === null || volume > prevBestVolume)
 
-    const { data: saved, error: saveError } = await runWithRetry(() =>
-      supabase
-        .from('session_logs')
-        .upsert(
-          {
-            session_id: sessionId,
-            exercise_id: exerciseId,
-            set_number: setNumber,
-            weight,
-            reps,
-            is_pr: isPR,
-            is_warmup: logEntry.isWarmup,
-            note: logEntry.note || null,
-            is_skipped: false,
-          },
-          { onConflict: 'session_id,exercise_id,set_number' },
-        )
-        .select('id')
-        .maybeSingle(),
-    )
+      const { data: saved, error: saveError } = await runWithRetry(() =>
+        supabase
+          .from('session_logs')
+          .upsert(
+            {
+              session_id: sessionId,
+              exercise_id: exerciseId,
+              set_number: setNumber,
+              weight,
+              reps,
+              is_pr: isPR,
+              is_warmup: logEntry.isWarmup,
+              note: logEntry.note || null,
+              is_skipped: false,
+            },
+            { onConflict: 'session_id,exercise_id,set_number' },
+          )
+          .select('id')
+          .maybeSingle(),
+      )
 
-    // If the set couldn't be persisted (even after runWithRetry's own retries —
-    // a real network drop, not just a blip), don't just fail silently: queue it
-    // for a background replay and still mark it checked, so a set logged with
-    // no signal in the gym isn't lost or stuck requiring the user to notice and
-    // retap once they're back near wifi.
-    if (saveError) {
-      queueOp({
-        kind: 'upsert',
-        sessionId,
-        exerciseId,
-        setNumber,
-        weight,
-        reps,
-        isPR,
-        isWarmup: logEntry.isWarmup,
-        note: logEntry.note || null,
-        isSkipped: false,
-        queuedAt: Date.now(),
-      })
-      setResumeToast('Saved on this device — will sync once back online.')
-      setTimeout(() => setResumeToast(null), 4000)
-    }
-
-    setLogs(prev => ({
-      ...prev,
-      [key]: {
-        ...prev[key],
-        reps: repsStr,
-        checked: true,
-        skipped: false,
-        isPR,
-        logId: saved?.id,
-        pendingSync: !!saveError,
-      },
-    }))
-
-    if (isPR && weight !== null && volume !== null) {
-      setPreviousBestVolumes(prev => ({ ...prev, [exerciseId]: volume }))
-      // The weight-only "prev" display should only ever rise to an actual
-      // heavier weight — a volume PR at a lower weight (more reps) shouldn't
-      // knock the displayed reference weight down.
-      setPreviousBests(prev => {
-        const cur = prev[exerciseId] ?? null
-        return cur !== null && cur >= weight ? prev : { ...prev, [exerciseId]: weight }
-      })
-      // Android-only: iOS already ticked from the check-button switch overlay
-      // on press. Post-await imperative haptics are dead on iOS 26.5+/27.
-      haptic('success')
-    }
-
-    setUndoState({ key, exerciseId, setNumber, expiresAt: Date.now() + 5000 })
-
-    // Update notification with new count if backgrounded - debounced to prevent
-    // spam when rapidly completing multiple sets in quick succession
-    if (
-      typeof document !== 'undefined' &&
-      document.visibilityState === 'hidden' &&
-      pushPrefsRef.current?.enabled &&
-      pushPrefsRef.current?.workout_status
-    ) {
-      // Clear any pending notification update
-      if (setCompletionNotifyDebounce.current) {
-        clearTimeout(setCompletionNotifyDebounce.current)
-      }
-      
-      // Debounce: wait 300ms after the last set completion before notifying
-      setCompletionNotifyDebounce.current = setTimeout(() => {
-        setCompletionNotifyDebounce.current = null
-        // Use setCountsRef for the updated count (will reflect the new check on next render)
-        // But we need to count manually since state hasn't updated yet
-        const newChecked = Object.entries(logsRef.current).filter(
-          ([k, l]) => (k === key ? true : l.checked)
-        ).length
-        const resting = restTimer.active && !restTimer.paused
-        lastNotifiedState.current = { checked: newChecked, total: totalSets(), resting }
-        updateWorkoutStatusNotification({
-          resting,
-          exerciseName: resting
-            ? (exercises.find(e => e.id === restTimer.exerciseId)?.name ?? undefined)
-            : undefined,
-          remainingMs: resting ? restTimer.remainingMs : undefined,
-          doneSets: newChecked,
-          totalSets: totalSets(),
+      // If the set couldn't be persisted (even after runWithRetry's own retries —
+      // a real network drop, not just a blip), don't just fail silently: queue it
+      // for a background replay and still mark it checked, so a set logged with
+      // no signal in the gym isn't lost or stuck requiring the user to notice and
+      // retap once they're back near wifi.
+      if (saveError) {
+        queueOp({
+          kind: 'upsert',
+          sessionId,
+          exerciseId,
+          setNumber,
+          weight,
+          reps,
+          isPR,
+          isWarmup: logEntry.isWarmup,
+          note: logEntry.note || null,
+          isSkipped: false,
+          queuedAt: Date.now(),
         })
-      }, 300)
-    }
+        setResumeToast('Saved on this device — will sync once back online.')
+        setTimeout(() => setResumeToast(null), 4000)
+      } else {
+        removeQueuedOp(sessionId, exerciseId, setNumber)
+      }
 
-    // Don't start a rest countdown when this check completes the whole workout —
-    // there's nothing left to rest for. Read from the ref (latest committed state)
-    // rather than the `logs` closed over at call time — another set may have been
-    // checked while this one's upsert was in flight above. The pre-check state
-    // still needs the just-checked key treated as processed when projecting completion.
-    const willAllBeProcessed =
-      totalSets() > 0 &&
-      Object.entries(logsRef.current).every(([k, l]) => (k === key ? true : l.checked || l.skipped))
+      setLogs(prev => ({
+        ...prev,
+        [key]: {
+          ...(prev[key] ?? logEntry),
+          weight: weight !== null ? String(weight) : (prev[key]?.weight ?? ''),
+          reps: repsStr,
+          checked: true,
+          skipped: false,
+          isPR,
+          logId: saved?.id,
+          pendingSync: !!saveError,
+        },
+      }))
 
-    if (!logEntry.isWarmup && !willAllBeProcessed) {
-      restTimer.start(exerciseId)
+      if (isPR && weight !== null && volume !== null) {
+        // Raise the live bar so subsequent sets need a new high — still matches
+        // server (prior sessions only) for the first PR of the session; later
+        // intra-session badges are optimistic UX only.
+        setPreviousBestVolumes(prev => ({ ...prev, [exerciseId]: volume }))
+        // The weight-only "prev" display should only ever rise to an actual
+        // heavier weight — a volume PR at a lower weight (more reps) shouldn't
+        // knock the displayed reference weight down.
+        setPreviousBests(prev => {
+          const cur = prev[exerciseId] ?? null
+          return cur !== null && cur >= weight ? prev : { ...prev, [exerciseId]: weight }
+        })
+        // Android-only: iOS already ticked from the check-button switch overlay
+        // on press. Post-await imperative haptics are dead on iOS 26.5+/27.
+        haptic('success')
+      }
+
+      setUndoState({ key, exerciseId, setNumber, expiresAt: Date.now() + 5000 })
+
+      // Update notification with new count if backgrounded - debounced to prevent
+      // spam when rapidly completing multiple sets in quick succession
+      if (
+        typeof document !== 'undefined' &&
+        document.visibilityState === 'hidden' &&
+        pushPrefsRef.current?.enabled &&
+        pushPrefsRef.current?.workout_status
+      ) {
+        if (setCompletionNotifyDebounce.current) {
+          clearTimeout(setCompletionNotifyDebounce.current)
+        }
+
+        setCompletionNotifyDebounce.current = setTimeout(() => {
+          setCompletionNotifyDebounce.current = null
+          const newChecked = Object.entries(logsRef.current).filter(
+            ([k, l]) => (k === key ? true : l.checked),
+          ).length
+          const resting = restTimer.active && !restTimer.paused
+          lastNotifiedState.current = { checked: newChecked, total: totalSets(), resting }
+          updateWorkoutStatusNotification({
+            resting,
+            exerciseName: resting
+              ? (exercises.find(e => e.id === restTimer.exerciseId)?.name ?? undefined)
+              : undefined,
+            remainingMs: resting ? restTimer.remainingMs : undefined,
+            doneSets: newChecked,
+            totalSets: totalSets(),
+          })
+        }, 300)
+      }
+
+      // Don't start a rest countdown when this check completes the whole workout —
+      // there's nothing left to rest for. Read from the ref (latest committed state)
+      // rather than the `logs` closed over at call time — another set may have been
+      // checked while this one's upsert was in flight above. The pre-check state
+      // still needs the just-checked key treated as processed when projecting completion.
+      const willAllBeProcessed =
+        totalSets() > 0 &&
+        Object.entries(logsRef.current).every(([k, l]) => (k === key ? true : l.checked || l.skipped))
+
+      if (!logEntry.isWarmup && !willAllBeProcessed) {
+        restTimer.start(exerciseId)
+      }
+    } finally {
+      checkingKeysRef.current.delete(key)
     }
   }
 
@@ -953,7 +1036,15 @@ export default function ActiveWorkout({ day }: { day: string }) {
     const { key, exerciseId, setNumber } = undoState
     const previous = logs[key]
     setUndoState(null)
-    restTimer.stop()
+    // Only kill the rest bar if it belongs to the set we just undid — undoing
+    // an older set shouldn't stop an unrelated exercise's countdown.
+    if (restTimer.exerciseId === exerciseId) {
+      restTimer.stop()
+      void cancelRestNotifications(sessionId)
+    }
+
+    // Drop any queued upsert for this slot so a later online flush can't revive it.
+    removeQueuedOp(sessionId, exerciseId, setNumber)
 
     const { error } = await supabase
       .from('session_logs')
@@ -963,15 +1054,19 @@ export default function ActiveWorkout({ day }: { day: string }) {
       .eq('set_number', setNumber)
 
     if (error) {
-      setResumeToast('Could not undo set. Check your connection and try again.')
+      // Re-queue a delete so the row still gets cleared when back online.
+      queueOp({ kind: 'delete', sessionId, exerciseId, setNumber, queuedAt: Date.now() })
+      setResumeToast('Undo saved on this device — will sync once back online.')
       setTimeout(() => setResumeToast(null), 4000)
-      return
     }
 
     setLogs(prev => {
       const cur = prev[key] ?? previous
       if (!cur) return prev
-      const next = { ...prev, [key]: { ...cur, checked: false, isPR: false, logId: undefined } }
+      const next = {
+        ...prev,
+        [key]: { ...cur, checked: false, isPR: false, logId: undefined, pendingSync: !!error },
+      }
       setPreviousBests(pb => ({ ...pb, [exerciseId]: bestFromLogs(exerciseId, next) }))
       setPreviousBestVolumes(pb => ({ ...pb, [exerciseId]: bestVolumeFromLogs(exerciseId, next) }))
       return next
@@ -989,7 +1084,17 @@ export default function ActiveWorkout({ day }: { day: string }) {
     if (!logEntry || !sessionId) return
 
     const weight = logEntry.weight !== '' ? parseFloat(logEntry.weight) : null
-    const reps = logEntry.reps !== '' ? parseInt(logEntry.reps) : null
+    const reps = logEntry.reps !== '' ? parseInt(logEntry.reps, 10) : null
+    // Checked sets must stay working sets — reject empty/non-finite edits so we
+    // don't persist a "checked" row the finish gate / server won't count.
+    if (
+      logEntry.checked &&
+      (weight === null || reps === null || !Number.isFinite(weight) || !Number.isFinite(reps))
+    ) {
+      setResumeToast('Enter weight and reps to save this set.')
+      setTimeout(() => setResumeToast(null), 3000)
+      return
+    }
 
     // Exclude this set from its own "best" — previousBestVolumes[exerciseId]
     // can equal this same set's own prior (pre-edit) volume when it was the
@@ -1275,10 +1380,9 @@ export default function ActiveWorkout({ day }: { day: string }) {
     haptic('light')
     const key = `${exerciseId}-${setNumber}`
     const wasChecked = logs[key]?.checked
-    const currentLog = logs[key]
     // persistSkip upserts the skip marker over whatever was there — including
     // an already-saved checked row, which it overwrites (weight/reps/is_pr
-    // back to null/false) so it doesn't persist as a completed set. 
+    // back to null/false) so it doesn't persist as a completed set.
     // Preserve the current weight/reps/note before clearing so unskip can restore them.
     setLogs(prev => {
       const entry = prev[key]
@@ -1318,6 +1422,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
   }
 
   async function handleUnskipSet(exerciseId: string, setNumber: number) {
+    haptic('light')
     const key = `${exerciseId}-${setNumber}`
     setLogs(prev => {
       const entry = prev[key]
@@ -1352,12 +1457,12 @@ export default function ActiveWorkout({ day }: { day: string }) {
     const ex = exercises.find(e => e.id === exerciseId)
     if (!ex) return
     // Skip every set that isn't already skipped — including already-checked
-    // ones, so an exercise that was logged by accident (e.g. tapped the wrong
-    // exercise's card) can still be cleared and skipped in one tap, rather
-    // than getting stuck as neither fully skipped nor undoable.
+    // ones and bonus sets beyond sets_target, so "skip exercise" fully clears
+    // the card (extras used to stay editable and break the SKIPPED badge).
+    const total = ex.sets_target + (extraSets[exerciseId] ?? 0)
     const setsToSkip: number[] = []
     let anyWasChecked = false
-    for (let s = 1; s <= ex.sets_target; s++) {
+    for (let s = 1; s <= total; s++) {
       const entry = logs[`${exerciseId}-${s}`]
       if (!entry?.skipped) setsToSkip.push(s)
       if (entry?.checked) anyWasChecked = true
@@ -1412,10 +1517,12 @@ export default function ActiveWorkout({ day }: { day: string }) {
   }
 
   async function handleUnskipExercise(exerciseId: string) {
+    haptic('light')
     const ex = exercises.find(e => e.id === exerciseId)
     if (!ex) return
+    const total = ex.sets_target + (extraSets[exerciseId] ?? 0)
     const setsToUnskip: number[] = []
-    for (let s = 1; s <= ex.sets_target; s++) {
+    for (let s = 1; s <= total; s++) {
       if (logs[`${exerciseId}-${s}`]?.skipped) setsToUnskip.push(s)
     }
     if (setsToUnskip.length === 0) return
@@ -1423,8 +1530,21 @@ export default function ActiveWorkout({ day }: { day: string }) {
       const next = { ...prev }
       for (const s of setsToUnskip) {
         const key = `${exerciseId}-${s}`
-        if (next[key]?.skipped) {
-          next[key] = { ...next[key], skipped: false, logId: undefined }
+        const entry = next[key]
+        if (entry?.skipped) {
+          // Same restore path as per-set unskip — exercise UNDO used to leave
+          // empty inputs even though skippedWeight/Reps were still on the object.
+          next[key] = {
+            ...entry,
+            skipped: false,
+            logId: undefined,
+            weight: entry.skippedWeight || '',
+            reps: entry.skippedReps || '',
+            note: entry.skippedNote || '',
+            skippedWeight: undefined,
+            skippedReps: undefined,
+            skippedNote: undefined,
+          }
         }
       }
       return next
@@ -1460,6 +1580,10 @@ export default function ActiveWorkout({ day }: { day: string }) {
       setTimeout(() => setResumeToast(null), 4000)
       return
     }
+
+    // Drop offline-queue ops for the swapped-out exercise so a later flush
+    // can't re-insert logs for a slot that's no longer on screen.
+    clearQueuedOpsForExercise(sessionId, swapTarget)
 
     let prevBest: number | null = previousBests[newExercise.id] !== undefined
       ? previousBests[newExercise.id]
@@ -1596,7 +1720,10 @@ export default function ActiveWorkout({ day }: { day: string }) {
     setDiscarding(true)
     setShowExitConfirm(false)
     restTimer.stop()
-    if (sessionId) void cancelRestNotifications(sessionId)
+    if (sessionId) {
+      void cancelRestNotifications(sessionId)
+      clearQueuedOpsForSession(sessionId)
+    }
     clearWorkoutNotifications()
     void wakeLockRef.current?.release()
 
@@ -1622,13 +1749,13 @@ export default function ActiveWorkout({ day }: { day: string }) {
 
   async function handleUndoFinish() {
     const raw = typeof window !== 'undefined' ? localStorage.getItem('grind_finish_undo') : null
-    if (!raw) return
+    if (!raw) return false
     let token: FinishUndoToken
-    try { token = JSON.parse(raw) } catch { return }
-    if (Date.now() > token.expiresAt) { localStorage.removeItem('grind_finish_undo'); return }
+    try { token = JSON.parse(raw) } catch { return false }
+    if (Date.now() > token.expiresAt) { localStorage.removeItem('grind_finish_undo'); return false }
 
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user || user.id !== token.userId) return
+    if (!user || user.id !== token.userId) return false
 
     // Reopen the session server-side; stats are re-derived from the remaining
     // logs rather than restored from values the client was holding. A tampered
@@ -1642,7 +1769,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
     if (undoError) {
       setResumeToast('Could not undo. Try again.')
       setTimeout(() => setResumeToast(null), 4000)
-      return
+      return false
     }
 
     await supabase
@@ -1652,13 +1779,15 @@ export default function ActiveWorkout({ day }: { day: string }) {
 
     localStorage.removeItem('grind_finish_undo')
     setCompletionData(null)
+    return true
   }
 
   async function handleFinish() {
     if (!sessionId || finishing) return
-    if (checkedSets() === 0) {
-      // Nothing to save — guard against an empty completion.
-      setResumeToast('Log at least one set before finishing.')
+    if (!hasWorkingSet()) {
+      // Align with server grind_session_has_working_set — warmups / empty weight
+      // don't count, even if the UI shows them as checked.
+      setResumeToast('Log at least one set with weight and reps before finishing.')
       setTimeout(() => setResumeToast(null), 4000)
       return
     }
@@ -1677,6 +1806,26 @@ export default function ActiveWorkout({ day }: { day: string }) {
     // left off. `runWithRetry` gives a transient blip, or an auth token that
     // just expired on a long session, a chance to recover on its own.
     try {
+      // Flush offline-queued set writes BEFORE complete_session — otherwise the
+      // server may see NO_WORKING_SETS or finish with missing sets/wrong XP.
+      await flushQueuedOps(sessionId, supabase)
+      if (getQueuedOps(sessionId).length > 0) {
+        setResumeToast('Still syncing sets — check your connection and try again.')
+        setTimeout(() => setResumeToast(null), 5000)
+        return
+      }
+      setLogs(prev => {
+        let changed = false
+        const next = { ...prev }
+        for (const [k, l] of Object.entries(next)) {
+          if (l.pendingSync) {
+            next[k] = { ...l, pendingSync: false }
+            changed = true
+          }
+        }
+        return changed ? next : prev
+      })
+
       const { data: userData } = await runWithRetry(() => supabase.auth.getUser())
       const user = userData?.user
       if (!user) { router.push('/login'); return }
@@ -2640,13 +2789,20 @@ export default function ActiveWorkout({ day }: { day: string }) {
       }}>
         <div className="wo-finish-inner">
         {(() => {
-          const canFinish = checked > 0 && !finishing
+          const canFinish = hasWorkingSet() && !hasPendingSync() && !finishing
           return (
             <button
               onClick={handleFinish}
               disabled={!canFinish}
               className="wo-finish-btn"
               data-haptic="medium"
+              title={
+                hasPendingSync()
+                  ? 'Waiting for sets to sync…'
+                  : !hasWorkingSet()
+                    ? 'Log at least one working set'
+                    : undefined
+              }
               style={{
                 position: 'relative',
                 height: '56px',
@@ -3404,23 +3560,33 @@ function SetRow({
   const repsRef = useRef<HTMLInputElement>(null)
 
   // Keep local unlock/save-arm in sync with the parent editing flag.
+  // Deferred via rAF so we don't sync-setState in the effect body (cascading render lint).
   useEffect(() => {
-    if (editing) {
-      setUnlocked(true)
-      setSaveArmed(false)
-      const t = window.setTimeout(() => setSaveArmed(true), 350)
-      return () => window.clearTimeout(t)
+    let armedTimer: number | undefined
+    const raf = window.requestAnimationFrame(() => {
+      if (editing) {
+        setUnlocked(true)
+        setSaveArmed(false)
+        armedTimer = window.setTimeout(() => setSaveArmed(true), 350) as unknown as number
+      } else {
+        setUnlocked(false)
+        setSaveArmed(false)
+      }
+    })
+    return () => {
+      window.cancelAnimationFrame(raf)
+      if (armedTimer != null) window.clearTimeout(armedTimer)
     }
-    setUnlocked(false)
-    setSaveArmed(false)
   }, [editing])
 
   // Clear unlock if the set gets skipped while we were mid-edit gesture.
   useEffect(() => {
-    if (logEntry.skipped) {
+    if (!logEntry.skipped) return
+    const raf = window.requestAnimationFrame(() => {
       setUnlocked(false)
       setSaveArmed(false)
-    }
+    })
+    return () => window.cancelAnimationFrame(raf)
   }, [logEntry.skipped])
 
   const inEdit = editing || unlocked

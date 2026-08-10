@@ -67,19 +67,20 @@ export default function CoachMark({
     return () => window.removeEventListener('resize', check)
   }, [])
 
-  // Move focus into the card on mount / step change so it's keyboard reachable,
-  // and let Escape skip the tour (matches the app's modal dismissal affordances).
+  // Move focus into the card on mount / step change so it's keyboard reachable.
+  // Escape dismisses just this step (same as ×) — not Skip tour, which would
+  // permanently opt out of every scripted tour and is easy to hit by habit.
   useEffect(() => {
     primaryRef.current?.focus()
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault()
-        onSkipTour()
+        onAdvance()
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [step, onSkipTour])
+  }, [step, onAdvance])
 
   useLayoutEffect(() => {
     if (!cardRef.current) return

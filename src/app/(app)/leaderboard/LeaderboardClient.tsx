@@ -188,7 +188,10 @@ export default function LeaderboardClient({ userId }: Props) {
         // globals.css) is pan-y-only so SwipeNavigator's page swipe wins by
         // default, but a horizontally-scrolling row needs pan-x for itself.
         touchAction: 'pan-x',
-      }}>
+      }}
+      data-swipe-ignore
+      className="scrollbar-hide"
+    >
         {CATEGORIES.map(c => {
           const active = category === c.key
           return (

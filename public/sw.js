@@ -1,11 +1,13 @@
 // Minimal offline-shell + Web Push service worker. Not a full precache/workbox
 // setup — just enough that a dead spot in the gym shows a branded retry screen,
 // already-fetched JS/CSS keep working, and lock-screen rest/streak pushes land.
-const CACHE_NAME = 'grind-shell-v3'
+const CACHE_NAME = 'grind-shell-v4'
 const PRECACHE_URLS = ['/offline.html', '/manifest.json', '/icon-192.png', '/icon-512.png']
 
 /** In-SW rest timers so rest-end can fire while the page is alive but cron hasn't. */
 const restTimeouts = new Map()
+/** Matches page-owned deliver dedupe so SW secondary timer doesn't double-buzz. */
+let lastRestEndDedupeKey = null
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(PRECACHE_URLS)))
@@ -150,7 +152,9 @@ self.addEventListener('message', event => {
   }
 
   if (msg.type === 'CLOSE_NOTIFICATIONS') {
-    const tags = Array.isArray(msg.tags) ? msg.tags : ['grind-rest', 'grind-workout', 'grind-streak']
+    const tags = Array.isArray(msg.tags)
+      ? msg.tags
+      : ['grind-rest', 'grind-rest-warn', 'grind-workout', 'grind-streak']
     event.waitUntil(
       (async () => {
         for (const tag of tags) {
@@ -173,7 +177,7 @@ self.addEventListener('message', event => {
     // Best-effort only: idle SWs are killed (~30s), so long rests rely on the
     // page-owned timers in src/lib/push/client.ts. Keep this as a secondary
     // path when the worker stays alive (e.g. short remaining time).
-    const { endsAt, payload, warnAt, warnPayload } = msg
+    const { endsAt, payload, warnAt, warnPayload, dedupeKey } = msg
     const key = 'rest'
     const prev = restTimeouts.get(key)
     if (prev) {
@@ -181,27 +185,34 @@ self.addEventListener('message', event => {
       if (prev.warnId) clearTimeout(prev.warnId)
     }
     const now = Date.now()
-    const endDelay = Math.max(0, (endsAt || 0) - now)
-    
-    // Don't arm timer if the end time has already passed - prevents immediate spam.
-    if (endDelay === 0) {
+    const endDelay = (endsAt || 0) - now
+
+    // Don't arm if already past — page path handles the short grace window.
+    if (endDelay <= 0) {
       restTimeouts.delete(key)
       return
     }
-    
-    // Add 150ms delay to SW timer so page-owned timer always fires first,
-    // preventing double-alert from near-simultaneous notifications
+
+    // +150ms so the page-owned timer wins; skip if page already delivered.
     const endId = setTimeout(() => {
-      void showGrindNotification(payload || { title: 'Rest over', tag: 'grind-rest', url: '/log', badge: 1 })
+      if (dedupeKey && lastRestEndDedupeKey === dedupeKey) {
+        restTimeouts.delete(key)
+        return
+      }
+      if (dedupeKey) lastRestEndDedupeKey = dedupeKey
+      void showGrindNotification(
+        payload || { title: 'Rest over', tag: 'grind-rest', url: '/log', badge: 1, renotify: true },
+      )
       restTimeouts.delete(key)
     }, endDelay + 150)
 
     let warnId = null
     if (warnAt && warnAt > now) {
       const warnDelay = warnAt - now
-      // Same 150ms delay for consistency
       warnId = setTimeout(() => {
-        void showGrindNotification(warnPayload || { title: 'Rest ending soon', tag: 'grind-rest', url: '/log' })
+        void showGrindNotification(
+          warnPayload || { title: 'Rest ending soon', tag: 'grind-rest-warn', url: '/log' },
+        )
       }, warnDelay + 150)
     }
     restTimeouts.set(key, { endId, warnId })
@@ -215,10 +226,7 @@ self.addEventListener('message', event => {
       if (prev.warnId) clearTimeout(prev.warnId)
       restTimeouts.delete('rest')
     }
-    event.waitUntil(
-      self.registration.getNotifications({ tag: 'grind-rest' }).then(notes => {
-        for (const n of notes) n.close()
-      }),
-    )
+    // Don't close grind-rest here — cancel often runs right after a successful
+    // local deliver, and closing would eat the alert the user needs.
   }
 })

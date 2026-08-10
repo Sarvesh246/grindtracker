@@ -102,7 +102,7 @@ export default function ProfileDashboard({
   const supabase = useMemo(() => createClient(), [])
   const { unit, toggleUnit, fmt, unitLabel } = useUnit()
   const { theme } = useTheme()
-  const { reduceMotion, toggleReduceMotion } = useMotionPref()
+  const { prefReduceMotion, toggleReduceMotion } = useMotionPref()
   const toast = useToast()
   const [tooltipBadgeId, setTooltipBadgeId] = useState<string | null>(null)
   const [badgesOpen, setBadgesOpen] = useState(false)
@@ -739,7 +739,7 @@ export default function ProfileDashboard({
             <button
               onClick={toggleReduceMotion}
               role="switch"
-              aria-checked={reduceMotion}
+              aria-checked={prefReduceMotion}
               aria-label="Reduce motion"
               style={{
                 width: '44px',
@@ -749,19 +749,19 @@ export default function ProfileDashboard({
                 border: 'none',
                 position: 'relative',
                 cursor: 'pointer',
-                backgroundColor: reduceMotion ? 'var(--accent)' : 'var(--surface-elevated)',
-                boxShadow: reduceMotion ? 'none' : 'inset 0 0 0 1px var(--border)',
+                backgroundColor: prefReduceMotion ? 'var(--accent)' : 'var(--surface-elevated)',
+                boxShadow: prefReduceMotion ? 'none' : 'inset 0 0 0 1px var(--border)',
                 transition: 'background-color 150ms ease',
               }}
             >
               <span style={{
                 position: 'absolute',
                 top: '3px',
-                left: reduceMotion ? '21px' : '3px',
+                left: prefReduceMotion ? '21px' : '3px',
                 width: '20px',
                 height: '20px',
                 borderRadius: '9999px',
-                backgroundColor: reduceMotion ? 'var(--on-accent)' : 'var(--text-muted)',
+                backgroundColor: prefReduceMotion ? 'var(--on-accent)' : 'var(--text-muted)',
                 transition: 'left 150ms ease',
               }} />
             </button>

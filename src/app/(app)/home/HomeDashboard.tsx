@@ -7,6 +7,7 @@ import { getLevel, getXpInCurrentLevel, getXpRequiredForLevel, getXpToNextLevel 
 import { formatHeaderDate, formatShortDate, localDateKey } from '@/lib/utils/formatting'
 import { advanceIndex, effectiveSequence, nextDay as nextDayFromRotation, overdueDays } from '@/lib/utils/rotation'
 import { deleteIncompleteSessions } from '@/lib/utils/sessions'
+import { flushQueuedOps, getQueuedOps, clearQueuedOpsForSession } from '@/lib/utils/offlineQueue'
 import { checkAndAwardBadges } from '@/lib/utils/badges'
 import { uncoveredDatesBetween } from '@/lib/utils/restDays'
 import WorkoutCalendar from '@/components/WorkoutCalendar'
@@ -303,6 +304,14 @@ export default function HomeDashboard({
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
 
+      // Same as ActiveWorkout.handleFinish — flush offline set writes first so
+      // complete_session sees every checked set (avoids NO_WORKING_SETS / missing XP).
+      await flushQueuedOps(activeSession.id, supabase)
+      if (getQueuedOps(activeSession.id).length > 0) {
+        flashToast('Still syncing sets — check your connection and try again.')
+        return
+      }
+
       const { data, error } = await supabase.rpc('complete_session', {
         p_session_id: activeSession.id,
         p_local_date: localDateKey(new Date()),
@@ -376,6 +385,7 @@ export default function HomeDashboard({
       if (!user) { router.push('/login'); return }
       const result = await deleteIncompleteSessions(supabase, user.id, activeSession.day_type)
       if (!result.ok) throw new Error(result.error)
+      clearQueuedOpsForSession(activeSession.id)
       setExitConfirm(false)
       flashToast('Workout discarded')
       router.refresh()

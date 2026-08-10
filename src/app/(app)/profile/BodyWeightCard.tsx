@@ -9,7 +9,7 @@ import {
   ResponsiveContainer,
 } from 'recharts'
 import { createClient } from '@/lib/supabase/client'
-import { useUnit } from '@/lib/contexts/UnitContext'
+import { useUnit, LBS_PER_KG } from '@/lib/contexts/UnitContext'
 import { useToast } from '@/lib/contexts/ToastContext'
 import { useMotionPref } from '@/lib/contexts/MotionContext'
 import Dialog from '@/components/ui/Dialog'
@@ -71,6 +71,24 @@ export default function BodyWeightCard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Drafts are display-unit strings. On unit toggle, re-express any open draft
+  // from its canonical lbs so save doesn't interpret "80" kg as 80 lbs.
+  const prevUnitRef = useRef(unitLabel)
+  useEffect(() => {
+    if (prevUnitRef.current === unitLabel) return
+    const wasMetric = prevUnitRef.current === 'kg'
+    prevUnitRef.current = unitLabel
+    const convertDraft = (raw: string) => {
+      const n = parseFloat(raw)
+      if (!Number.isFinite(n) || n <= 0) return raw
+      // Interpret under the previous unit, then fmt under the new one.
+      const canonical = wasMetric ? n * LBS_PER_KG : n
+      return fmt(canonical)
+    }
+    setDraft(d => (d ? convertDraft(d) : d))
+    setEditDraft(d => (d ? convertDraft(d) : d))
+  }, [unitLabel, fmt])
+
   async function load() {
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
@@ -105,7 +123,7 @@ export default function BodyWeightCard() {
     if (error) {
       setSaving(false)
       // Keep the draft so the user doesn't lose a typed value.
-      toast.show('Could not save weight. Try again.')
+      toast.show('Could not save weight. Try again.', 'error')
       return
     }
     await load()
@@ -152,7 +170,7 @@ export default function BodyWeightCard() {
     if (error) {
       setBusy(null)
       // Sheet stays open with the typed value intact so it can be retried.
-      toast.show('Could not update weight. Try again.')
+      toast.show('Could not update weight. Try again.', 'error')
       return
     }
     await load()
@@ -177,7 +195,7 @@ export default function BodyWeightCard() {
     if (error) {
       setBusy(null)
       setConfirmDelete(false)
-      toast.show('Could not delete entry. Try again.')
+      toast.show('Could not delete entry. Try again.', 'error')
       return
     }
     await load()
@@ -474,6 +492,9 @@ export default function BodyWeightCard() {
                 see .drawer in globals.css — and `inert` keeps the collapsed
                 rows out of the tab order and the accessibility tree. */}
             <div className="drawer" data-open={historyOpen}>
+              {/* Padding-free clip wrapper — pad the inner list so focus rings
+                  aren't cropped (outline-offset 2px + 2px ring needs 4px). */}
+              <div>
               <ul
                 id="bw-history"
                 aria-label="Body weight history, newest first"
@@ -481,7 +502,7 @@ export default function BodyWeightCard() {
                 style={{
                   listStyle: 'none',
                   margin: 0,
-                  padding: 0,
+                  padding: '4px 0 0',
                   // Cap the list so a year of daily logs can't stretch the card
                   // off the screen — it scrolls inside the card instead.
                   maxHeight: '240px',
@@ -531,6 +552,7 @@ export default function BodyWeightCard() {
                   </li>
                 ))}
               </ul>
+              </div>
             </div>
           </div>
         </>

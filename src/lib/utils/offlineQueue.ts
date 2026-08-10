@@ -63,6 +63,14 @@ export function removeQueuedOp(sessionId: string, exerciseId: string, setNumber:
   writeQueue(readQueue().filter(q => !sameSlot(q, { sessionId, exerciseId, setNumber, queuedAt: 0 })))
 }
 
+export function clearQueuedOpsForSession(sessionId: string) {
+  writeQueue(readQueue().filter(q => q.sessionId !== sessionId))
+}
+
+export function clearQueuedOpsForExercise(sessionId: string, exerciseId: string) {
+  writeQueue(readQueue().filter(q => !(q.sessionId === sessionId && q.exerciseId === exerciseId)))
+}
+
 export function getQueuedOps(sessionId: string): QueuedOp[] {
   return readQueue().filter(q => q.sessionId === sessionId)
 }

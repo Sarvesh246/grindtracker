@@ -80,7 +80,15 @@ export default function SwipeNavigator({ children }: { children: React.ReactNode
     // Dialog/sheet content is portaled to document.body but still bubbles
     // pointer events through this React tree — exclude it so a drag that
     // starts on a sheet's button can't be read as a page-swipe.
-    if (target.closest('input, textarea, select, [contenteditable="true"], .recharts-wrapper, [role="dialog"], [role="alertdialog"]')) return
+    // Horizontal pill/tab strips opt into pan-x (and often .scrollbar-hide);
+    // without excluding them, a day-pill or category-tab drag becomes a page swipe.
+    if (
+      target.closest(
+        'input, textarea, select, [contenteditable="true"], .recharts-wrapper, [role="dialog"], [role="alertdialog"], [data-swipe-ignore], .scrollbar-hide',
+      )
+    ) {
+      return
+    }
     dragRef.current = { startX: e.clientX, startY: e.clientY, axis: null }
   }
 

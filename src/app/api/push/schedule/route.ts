@@ -82,6 +82,11 @@ export async function POST(request: Request) {
       if (fireAt > Date.now() + 3 * 60 * 60 * 1000) {
         return NextResponse.json({ error: 'fireAt too far in the future' }, { status: 400 })
       }
+      // More than ~30s in the past won't help a rest timer — skip insert so
+      // hourly Hobby cron doesn't deliver a stale "rest over" much later.
+      if (fireAt < Date.now() - 30_000) {
+        continue
+      }
       const dedupeKey = action.dedupeKey?.trim()
       if (!dedupeKey || dedupeKey.length > 200 || !dedupeKey.startsWith('rest:')) {
         return NextResponse.json({ error: 'Invalid dedupeKey' }, { status: 400 })

@@ -77,9 +77,14 @@ async function runCron() {
         payload.tag =
           row.kind === 'streak_daily'
             ? 'grind-streak'
-            : row.kind === 'rest_warn' || row.kind === 'rest_end'
-              ? 'grind-rest'
-              : 'grind'
+            : row.kind === 'rest_warn'
+              ? 'grind-rest-warn'
+              : row.kind === 'rest_end'
+                ? 'grind-rest'
+                : 'grind'
+      }
+      if (row.kind === 'rest_end' && payload.renotify == null) {
+        payload.renotify = true
       }
 
       const result = await sendPushToSubscription(
@@ -96,6 +101,13 @@ async function runCron() {
       } else {
         errors++
       }
+    }
+
+    // Best-effort prune of old terminal rows (ignore failures).
+    try {
+      await supabase.rpc('grind_prune_scheduled_notifications')
+    } catch {
+      /* migration 30 may not be applied yet */
     }
 
     return NextResponse.json({

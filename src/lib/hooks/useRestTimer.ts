@@ -63,7 +63,9 @@ const ACTIVE_TIMER_KEY = 'grind.rest.active_timer'
  *  A RUNNING timer uses startedAt + durationMs to recompute remaining so the countdown is
  *  live-accurate even if the user spent time away. A PAUSED timer (e.g. frozen by "Save & Exit")
  *  restores its frozen remainingMs verbatim instead — it shouldn't have kept counting down while
- *  paused. Returns ZERO if there's nothing saved or the timer has expired. */
+ *  paused. An EXPIRED running timer is restored once with remainingMs=0 so the workout page can
+ *  fire a single rest-end notification before clearing — returning ZERO immediately would cancel
+ *  the server cron fallback without ever notifying. */
 function readPersistedTimer(): TimerState {
   if (typeof window === 'undefined') return ZERO
   try {
@@ -83,7 +85,18 @@ function readPersistedTimer(): TimerState {
     }
     const elapsed = Date.now() - saved.startedAt
     const remainingMs = Math.max(0, saved.durationMs - elapsed)
-    if (remainingMs <= 0) { localStorage.removeItem(ACTIVE_TIMER_KEY); return ZERO }
+    if (remainingMs <= 0) {
+      // Clear persistence so a later remount doesn't re-notify; keep one expired
+      // tick in memory for the consumer's rest-end path.
+      localStorage.removeItem(ACTIVE_TIMER_KEY)
+      return {
+        exerciseId: saved.exerciseId,
+        startedAt: saved.startedAt,
+        durationMs: saved.durationMs,
+        remainingMs: 0,
+        paused: false,
+      }
+    }
     return { exerciseId: saved.exerciseId, startedAt: saved.startedAt, durationMs: saved.durationMs, remainingMs, paused: false }
   } catch { return ZERO }
 }
