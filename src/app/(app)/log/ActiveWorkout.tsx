@@ -3514,6 +3514,14 @@ function SetRow({
             inputMode="decimal"
             value={displayWeight}
             onChange={e => handleWeightChange(e.target.value)}
+            onClick={() => {
+              // Allow clicking the input to enter edit mode if set is checked but not editing
+              if (logEntry.checked && !editing && !logEntry.skipped) {
+                onStartEdit()
+                // Focus after a brief delay so the edit mode enables the input first
+                setTimeout(() => weightRef.current?.focus(), 0)
+              }
+            }}
             onFocus={e => {
               // When BW is shown, clear the buffer so the user types a fresh value
               // rather than appending to the 'BW' text.
@@ -3523,7 +3531,7 @@ function SetRow({
             }}
             onBlur={() => setRawWeight(null)}
             onKeyDown={handleWeightKeyDown}
-            disabled={inputsDisabled}
+            readOnly={inputsDisabled}
             placeholder="BW"
             aria-label={`Weight for set ${setNumber}`}
             style={{
@@ -3536,6 +3544,7 @@ function SetRow({
               fontSize: '16px',
               textAlign: 'center',
               outline: 'none',
+              cursor: inputsDisabled ? 'pointer' : 'text',
             }}
           />
           <input
@@ -3544,10 +3553,18 @@ function SetRow({
             inputMode="numeric"
             value={logEntry.reps}
             onChange={e => handleRepsChange(e.target.value)}
+            onClick={() => {
+              // Allow clicking the input to enter edit mode if set is checked but not editing
+              if (logEntry.checked && !editing && !logEntry.skipped) {
+                onStartEdit()
+                // Focus after a brief delay so the edit mode enables the input first
+                setTimeout(() => repsRef.current?.focus(), 0)
+              }
+            }}
             onFocus={e => { e.target.select(); ensureVisible(e.currentTarget) }}
             onBlur={() => setNeedsReps(false)}
             onKeyDown={handleRepsKeyDown}
-            disabled={inputsDisabled}
+            readOnly={inputsDisabled}
             placeholder="0"
             aria-label={`Reps for set ${setNumber}`}
             aria-invalid={needsReps}
@@ -3563,6 +3580,7 @@ function SetRow({
               textAlign: 'center',
               outline: 'none',
               transition: 'border-color 150ms ease',
+              cursor: inputsDisabled ? 'pointer' : 'text',
             }}
           />
         </div>
