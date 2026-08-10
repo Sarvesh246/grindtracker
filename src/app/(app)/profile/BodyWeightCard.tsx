@@ -55,6 +55,10 @@ export default function BodyWeightCard() {
   // The entry currently open in the edit sheet — picked by tapping its dot on
   // the chart or its row in the history list.
   const [selected, setSelected] = useState<Point | null>(null)
+  // First tap on a dot just reveals its value inline (nothing about a plotted
+  // point reads as tappable on its own, so this doubles as a confirmation);
+  // tapping the SAME, already-peeked dot again is what opens the edit sheet.
+  const [peeked, setPeeked] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState('')
   const [busy, setBusy] = useState<'saving' | 'deleting' | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -113,6 +117,7 @@ export default function BodyWeightCard() {
   }
 
   function openEntry(p: Point) {
+    setPeeked(null)
     setSelected(p)
     setEditDraft(fmt(p.canonical))
     setConfirmDelete(false)
@@ -123,6 +128,15 @@ export default function BodyWeightCard() {
     setSelected(null)
     setEditDraft('')
     setConfirmDelete(false)
+  }
+
+  /** Chart dot tap: first tap peeks the value, a second tap on the same dot opens it. */
+  function handleDotClick(p: Point) {
+    if (peeked === p.date) {
+      openEntry(p)
+    } else {
+      setPeeked(p.date)
+    }
   }
 
   async function handleUpdate() {
@@ -201,13 +215,23 @@ export default function BodyWeightCard() {
   const renderDot = (props: any) => {
     const { cx, cy, payload } = props
     if (cx == null || cy == null) return <g key={payload?.date} />
-    const active = payload?.date === selected?.date
+    const isPeeked = payload?.date === peeked
+    const active = payload?.date === selected?.date || isPeeked
     const point = chartPoints.find(p => p.date === payload?.date)
+    const isFirst = point === chartPoints[0]
+    const isLast = point === chartPoints[chartPoints.length - 1]
+    const anchor = isFirst ? 'start' : isLast ? 'end' : 'middle'
+    const label = point ? `${fmt(point.canonical)} ${unitLabel}` : ''
+    const labelBelow = cy < 24
+    // Rough width from character count — good enough for a plain monospace pill.
+    const pillWidth = label.length * 6.5 + 16
+    const pillX = anchor === 'start' ? cx : anchor === 'end' ? cx - pillWidth : cx - pillWidth / 2
+    const pillY = labelBelow ? cy + 10 : cy - 30
     return (
       <g
         key={payload.date}
         style={{ cursor: 'pointer' }}
-        onClick={() => point && openEntry(point)}
+        onClick={() => point && handleDotClick(point)}
       >
         <circle cx={cx} cy={cy} r={14} fill="transparent" />
         {active && <circle cx={cx} cy={cy} r={9} fill="var(--accent)" opacity={0.25} />}
@@ -219,6 +243,29 @@ export default function BodyWeightCard() {
           stroke="var(--surface)"
           strokeWidth={2}
         />
+        {isPeeked && (
+          <g pointerEvents="none">
+            <rect
+              x={pillX}
+              y={pillY}
+              width={pillWidth}
+              height={18}
+              rx={5}
+              fill="var(--surface-elevated)"
+              stroke="var(--border)"
+            />
+            <text
+              x={anchor === 'start' ? pillX + 8 : anchor === 'end' ? pillX + pillWidth - 8 : cx}
+              y={pillY + 13}
+              textAnchor={anchor === 'middle' ? 'middle' : anchor}
+              fontSize={10}
+              fontFamily="var(--font-mono)"
+              fill="var(--text-primary)"
+            >
+              {label}
+            </text>
+          </g>
+        )}
       </g>
     )
   }
@@ -371,9 +418,11 @@ export default function BodyWeightCard() {
           </div>
 
           {/* The dots are the primary edit affordance, so say so — nothing about a
-              plotted point reads as tappable on its own. */}
+              plotted point reads as tappable on its own. Two-step because a bare
+              tap-to-edit made it too easy to open the sheet by accident while
+              scrubbing across the chart to read values. */}
           <div style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center' }}>
-            Tap a point to edit or delete it
+            Tap a point for its value, tap again to edit or delete
           </div>
 
           {/* History: collapsed by default. It doubles as the keyboard- and

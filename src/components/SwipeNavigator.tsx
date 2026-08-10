@@ -72,12 +72,12 @@ export default function SwipeNavigator({ children }: { children: React.ReactNode
   function onPointerDown(e: ReactPointerEvent) {
     if (!swipeEnabled || phase === 'settling' || e.pointerType === 'mouse') return
     const target = e.target as HTMLElement
-    // Text fields are the one real exception — they need native horizontal
-    // cursor/selection drag, which a page-swipe would hijack. Everything else
-    // (charts included) stays swipeable: Recharts' own tooltip listeners are
-    // native and unaffected by our handlers running alongside them, and axis
-    // detection below still yields cleanly to a vertical drag anywhere.
-    if (target.closest('input, textarea, select, [contenteditable="true"]')) return
+    // Text fields need native horizontal cursor/selection drag, which a
+    // page-swipe would hijack. Charts need their own hold-and-drag scrub
+    // across data points (Recharts' Tooltip tracks touchmove itself) — once a
+    // page-swipe commits mid-scrub it navigates away instead of just moving
+    // the crosshair, which is worse than the swipe being unavailable there.
+    if (target.closest('input, textarea, select, [contenteditable="true"], .recharts-wrapper')) return
     dragRef.current = { startX: e.clientX, startY: e.clientY, axis: null }
   }
 
