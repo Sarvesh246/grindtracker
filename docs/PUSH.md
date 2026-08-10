@@ -30,33 +30,30 @@ Locally, put the same keys in `.env.local`.
 
 ## Cron
 
-[`vercel.json`](../vercel.json) hits `/api/cron/notifications` once per day
-(`0 1 * * *` UTC). **Hobby only allows daily crons** — expressions like
-`*/15 * * * *` fail the deployment. The handler:
+[`vercel.json`](../vercel.json) registers **24 once-daily crons** (one per UTC
+hour), all hitting `/api/cron/notifications`. Hobby forbids a single expression
+that runs more than once per day (`*/15` fails the build), but allows up to 100
+daily jobs — so this fan-out gives roughly hourly coverage on Hobby with no
+external service and no Pro upgrade.
 
-1. Calls `schedule_streak_reminders()` for users whose local hour matches
+Each invocation:
+
+1. Calls `schedule_streak_reminders()` for users whose **local** hour matches
    their streak reminder hour (default 19:00).
 2. Claims due `scheduled_notifications` via `claim_due_notifications()`.
 3. Sends each via `web-push`. Auth: `Authorization: Bearer $CRON_SECRET`
    (Vercel injects this for its own crons).
 
-**Rest-end latency:** 60–180s rests are delivered by **page timers** (and a
-best-effort SW timer) while the PWA’s JS can still run. The Vercel daily cron
-is only a weak locked-phone fallback.
+**Streak reminders:** when your local clock hits the chosen hour (17–21), the
+matching UTC-hour job picks you up that day. Hobby may fire anywhere in that
+UTC hour (±59 min). `unique(dedupe_key)` keeps it to one ping per local day.
 
-### Recommended on Hobby: external 15‑minute ping
+**Rest-end:** still primarily **page timers** while the PWA can run. The hourly
+Hobby fan-out is only a locked-phone fallback (up to ~1 hour late — not useful
+for a 90s rest; don’t rely on it for gym rest alerts).
 
-For evening streak reminders at the right local hour and a better locked-phone
-rest fallback, point a free external cron (e.g. [cron-job.org](https://cron-job.org))
-at:
-
-`GET https://grindtrack.vercel.app/api/cron/notifications`
-
-Header: `Authorization: Bearer <your CRON_SECRET>`  
-Schedule: every 15 minutes.
-
-On **Pro**, you can change `vercel.json` to `*/15 * * * *` (or `* * * * *`)
-and skip the external cron.
+On **Pro**, you can collapse this to one `*/15 * * * *` (or `* * * * *`) entry
+instead of the 24 daily jobs.
 
 ## Client defaults (anti-spam)
 
