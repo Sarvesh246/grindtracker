@@ -1,7 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import ProfileDashboard from './ProfileDashboard'
-import { ALL_BADGES } from '@/lib/utils/badges'
 import { isAdminEmail } from '@/lib/utils/admin'
 
 export default async function ProfilePage() {
@@ -66,7 +65,6 @@ export default async function ProfilePage() {
       totalSets={totalSets ?? 0}
       activeDayTimestamps={[]}
       daysActive={daysActive}
-      allBadges={ALL_BADGES}
       isAdmin={isAdminEmail(user.email)}
     />
   )

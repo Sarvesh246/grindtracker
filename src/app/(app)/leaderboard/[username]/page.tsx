@@ -1,7 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { ALL_BADGES } from '@/lib/utils/badges'
 import FriendProfileView from './FriendProfileView'
 import type { FriendProfile } from '@/lib/types'
 
@@ -72,5 +71,5 @@ export default async function FriendProfilePage({
     )
   }
 
-  return <FriendProfileView profile={data as FriendProfile} allBadges={ALL_BADGES} />
+  return <FriendProfileView profile={data as FriendProfile} />
 }

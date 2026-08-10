@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { getLevel, getXpInCurrentLevel, getXpRequiredForLevel, getXpToNextLevel } from '@/lib/utils/gamification'
 import { localDateKey } from '@/lib/utils/formatting'
-import { BadgeDefinition } from '@/lib/utils/badges'
+import { ALL_BADGES } from '@/lib/utils/badges'
 import BadgeIcon from '@/components/BadgeIcon'
 import BodyWeightCard from './BodyWeightCard'
 import { useUnit } from '@/lib/contexts/UnitContext'
@@ -68,7 +68,6 @@ interface Props {
   activeDayTimestamps?: string[]
   /** Distinct local calendar days with a completed workout (server-derived). */
   daysActive?: number
-  allBadges: BadgeDefinition[]
   isAdmin: boolean
   recurringRestDays: number[]
 }
@@ -86,7 +85,6 @@ export default function ProfileDashboard({
   totalSets,
   activeDayTimestamps = [],
   daysActive,
-  allBadges,
   isAdmin,
   recurringRestDays,
 }: Props) {
@@ -1063,7 +1061,7 @@ export default function ProfileDashboard({
             BADGES
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{earnedCount}/{allBadges.length}</span>
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{earnedCount}/{ALL_BADGES.length}</span>
             <svg
               width="14" height="14" viewBox="0 0 24 24" fill="none"
               stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
@@ -1090,7 +1088,7 @@ export default function ProfileDashboard({
             borderRadius: '0 0 12px 12px',
             padding: '10px',
           }}>
-          {allBadges.map((badge) => {
+          {ALL_BADGES.map((badge) => {
             const earned = earnedSet.has(badge.id)
             const showTooltip = tooltipBadgeId === badge.id
             return (

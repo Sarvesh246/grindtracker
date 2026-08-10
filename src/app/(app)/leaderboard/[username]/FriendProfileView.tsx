@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { getLevel, getXpInCurrentLevel, getXpRequiredForLevel, getXpToNextLevel } from '@/lib/utils/gamification'
-import { BadgeDefinition } from '@/lib/utils/badges'
+import { ALL_BADGES } from '@/lib/utils/badges'
 import BadgeIcon from '@/components/BadgeIcon'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import type { FriendProfile } from '@/lib/types'
@@ -39,10 +39,9 @@ function initials(name: string) {
 
 interface Props {
   profile: FriendProfile
-  allBadges: BadgeDefinition[]
 }
 
-export default function FriendProfileView({ profile, allBadges }: Props) {
+export default function FriendProfileView({ profile }: Props) {
   const router = useRouter()
   const { fmt, unitLabel } = useUnit()
   const [badgesOpen, setBadgesOpen] = useState(false)
@@ -295,7 +294,7 @@ export default function FriendProfileView({ profile, allBadges }: Props) {
             BADGES
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{earnedSet.size}/{allBadges.length}</span>
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{earnedSet.size}/{ALL_BADGES.length}</span>
             <svg
               width="14" height="14" viewBox="0 0 24 24" fill="none"
               stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
@@ -313,7 +312,7 @@ export default function FriendProfileView({ profile, allBadges }: Props) {
             borderRadius: '0 0 12px 12px',
             padding: '10px',
           }}>
-            {allBadges.map((badge) => {
+            {ALL_BADGES.map((badge) => {
               const earned = earnedSet.has(badge.id)
               const showTooltip = tooltipBadgeId === badge.id
               return (

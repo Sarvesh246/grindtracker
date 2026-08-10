@@ -10,7 +10,7 @@ import { haptic } from '@/lib/utils/haptics'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { deleteIncompleteSessions } from '@/lib/utils/sessions'
 import { advanceIndex, effectiveSequence } from '@/lib/utils/rotation'
-import { queueSetLog, flushQueuedSetLogs, getQueuedSetLogs } from '@/lib/utils/offlineQueue'
+import { queueOp, flushQueuedOps, getQueuedOps } from '@/lib/utils/offlineQueue'
 import type { UserRotation, UserStats, CompleteSessionResult } from '@/lib/types'
 import { useRestTimer, getPauseRestOnExit } from '@/lib/hooks/useRestTimer'
 import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
@@ -57,6 +57,33 @@ function findCarryReps(logs: LogMap, exerciseId: string, setNumber: number): str
     if (r && r !== '') return r
   }
   return ''
+}
+
+/**
+ * Overlays anything still sitting in the offline queue onto a freshly-built
+ * LogMap (mutates in place) — the server hasn't seen these yet, so without
+ * this a set/skip/delete made with no signal (and never flushed before the
+ * app was closed) would silently revert on resume.
+ */
+function overlayQueuedOps(map: LogMap, sid: string) {
+  for (const q of getQueuedOps(sid)) {
+    const key = `${q.exerciseId}-${q.setNumber}`
+    if (q.kind === 'delete') {
+      delete map[key]
+      continue
+    }
+    map[key] = {
+      ...map[key],
+      weight: q.weight !== null ? String(q.weight) : '',
+      reps: q.reps !== null ? String(q.reps) : '',
+      checked: !q.isSkipped,
+      skipped: q.isSkipped,
+      isPR: q.isPR,
+      isWarmup: q.isWarmup,
+      note: q.note ?? '',
+      pendingSync: true,
+    }
+  }
 }
 
 interface PreviousBest {
@@ -201,13 +228,14 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const logsRef = useRef<LogMap>(logs)
   useEffect(() => { logsRef.current = logs }, [logs])
 
-  // Replay anything queued by handleCheck's offline fallback — once on mount
-  // (in case the connection was already back by the time the app reopened)
-  // and again whenever the browser regains connectivity mid-workout.
+  // Replay anything queued by the offline fallbacks below (check, edit, skip/
+  // unskip, delete) — once on mount (in case the connection was already back
+  // by the time the app reopened) and again whenever the browser regains
+  // connectivity mid-workout.
   useEffect(() => {
     if (!sessionId) return
     async function flush() {
-      const synced = await flushQueuedSetLogs(sessionId!, supabase)
+      const synced = await flushQueuedOps(sessionId!, supabase)
       if (synced.length === 0) return
       setLogs(prev => {
         const next = { ...prev }
@@ -444,23 +472,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
               logId: log.id,
             }
       }
-      // Overlay anything still sitting in the offline queue — the server hasn't
-      // seen these yet, so without this a set logged with no signal (and never
-      // flushed before the app was closed) would revert to "not done" on resume.
-      for (const q of getQueuedSetLogs(sid)) {
-        const key = `${q.exerciseId}-${q.setNumber}`
-        restored[key] = {
-          ...restored[key],
-          weight: q.weight !== null ? String(q.weight) : '',
-          reps: q.reps !== null ? String(q.reps) : '',
-          checked: true,
-          skipped: false,
-          isPR: q.isPR,
-          isWarmup: q.isWarmup,
-          note: q.note ?? '',
-          pendingSync: true,
-        }
-      }
+      overlayQueuedOps(restored, sid)
       setLogs(restored)
 
       const ageMs = Date.now() - sessionStart.getTime()
@@ -488,20 +500,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       // A brand-new session can still have offline-queued sets if every write
       // failed before the app was closed (so no session_logs rows exist yet)
       // — same overlay as the resumed branch above.
-      for (const q of getQueuedSetLogs(sid)) {
-        const key = `${q.exerciseId}-${q.setNumber}`
-        prefilled[key] = {
-          ...prefilled[key],
-          weight: q.weight !== null ? String(q.weight) : '',
-          reps: q.reps !== null ? String(q.reps) : '',
-          checked: true,
-          skipped: false,
-          isPR: q.isPR,
-          isWarmup: q.isWarmup,
-          note: q.note ?? '',
-          pendingSync: true,
-        }
-      }
+      overlayQueuedOps(prefilled, sid)
       setLogs(prefilled)
     }
 
@@ -653,7 +652,8 @@ export default function ActiveWorkout({ day }: { day: string }) {
     // no signal in the gym isn't lost or stuck requiring the user to notice and
     // retap once they're back near wifi.
     if (saveError) {
-      queueSetLog({
+      queueOp({
+        kind: 'upsert',
         sessionId,
         exerciseId,
         setNumber,
@@ -662,6 +662,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         isPR,
         isWarmup: logEntry.isWarmup,
         note: logEntry.note || null,
+        isSkipped: false,
         queuedAt: Date.now(),
       })
       setResumeToast('Saved on this device — will sync once back online.')
@@ -767,36 +768,53 @@ export default function ActiveWorkout({ day }: { day: string }) {
       prevBestVolume !== null &&
       volume > prevBestVolume
 
-    const { error } = await supabase.from('session_logs').upsert(
-      {
-        session_id: sessionId,
-        exercise_id: exerciseId,
-        set_number: setNumber,
-        weight,
-        reps,
-        is_pr: isPR,
-        is_warmup: logEntry.isWarmup,
-        note: logEntry.note || null,
-        is_skipped: false,
-      },
-      { onConflict: 'session_id,exercise_id,set_number' },
+    const { error } = await runWithRetry(() =>
+      supabase.from('session_logs').upsert(
+        {
+          session_id: sessionId,
+          exercise_id: exerciseId,
+          set_number: setNumber,
+          weight,
+          reps,
+          is_pr: isPR,
+          is_warmup: logEntry.isWarmup,
+          note: logEntry.note || null,
+          is_skipped: false,
+        },
+        { onConflict: 'session_id,exercise_id,set_number' },
+      ),
     )
 
+    // Even after retries, a real network drop shouldn't discard what the user
+    // just typed — queue it (same fallback as handleCheck) and keep the edit
+    // applied locally instead of leaving the row stuck in edit mode.
     if (error) {
-      setResumeToast('Could not save set. Check your connection and try again.')
+      queueOp({
+        kind: 'upsert',
+        sessionId,
+        exerciseId,
+        setNumber,
+        weight,
+        reps,
+        isPR,
+        isWarmup: logEntry.isWarmup,
+        note: logEntry.note || null,
+        isSkipped: false,
+        queuedAt: Date.now(),
+      })
+      setResumeToast('Saved on this device — will sync once back online.')
       setTimeout(() => setResumeToast(null), 4000)
-      return
     }
 
     setLogs(prev => {
-      const next = { ...prev, [key]: { ...prev[key], isPR } }
+      const next = { ...prev, [key]: { ...prev[key], isPR, pendingSync: !!error } }
       setPreviousBests(pb => ({ ...pb, [exerciseId]: bestFromLogs(exerciseId, next) }))
       setPreviousBestVolumes(pb => ({ ...pb, [exerciseId]: bestVolumeFromLogs(exerciseId, next) }))
       return next
     })
     setEditingKey(null)
     haptic('medium')
-    showSaveToast(`Set ${setNumber} saved`)
+    if (!error) showSaveToast(`Set ${setNumber} saved`)
   }
 
   /**
@@ -855,36 +873,80 @@ export default function ActiveWorkout({ day }: { day: string }) {
     const total = ex.sets_target + currentExtras
     if (setNumber <= ex.sets_target || setNumber > total) return
 
+    // Compute the shifted end-state locally first — every later bonus set's
+    // data moves down one slot to fill the gap. The DB writes below are
+    // reconciling toward this same end-state (an upsert per shifted slot,
+    // using the LOCAL truth for that slot rather than replaying the original
+    // row's set_number in place), so on a write failure we can queue exactly
+    // what's needed to reach it, instead of a mid-shift DB row move that has
+    // no well-defined "just retry this part" story once offline.
+    const next = { ...logs }
+    for (let s = setNumber; s < total; s++) {
+      const laterKey = `${exerciseId}-${s + 1}`
+      if (next[laterKey]) next[`${exerciseId}-${s}`] = next[laterKey]
+    }
+    delete next[`${exerciseId}-${total}`]
+
     if (sessionId) {
-      await supabase
-        .from('session_logs')
-        .delete()
-        .eq('session_id', sessionId)
-        .eq('exercise_id', exerciseId)
-        .eq('set_number', setNumber)
-      // Shift every later bonus set's DB row down by one to fill the gap.
+      let anyFailed = false
       for (let s = setNumber; s < total; s++) {
-        await supabase
+        const entry = next[`${exerciseId}-${s}`]
+        if (!entry) continue
+        const weight = entry.weight !== '' ? parseFloat(entry.weight) : null
+        const reps = entry.reps !== '' ? parseInt(entry.reps) : null
+        const { error } = await runWithRetry(() =>
+          supabase.from('session_logs').upsert(
+            {
+              session_id: sessionId,
+              exercise_id: exerciseId,
+              set_number: s,
+              weight,
+              reps,
+              is_pr: entry.isPR,
+              is_warmup: entry.isWarmup,
+              note: entry.note || null,
+              is_skipped: entry.skipped,
+            },
+            { onConflict: 'session_id,exercise_id,set_number' },
+          ),
+        )
+        if (error) {
+          anyFailed = true
+          queueOp({
+            kind: 'upsert',
+            sessionId,
+            exerciseId,
+            setNumber: s,
+            weight,
+            reps,
+            isPR: entry.isPR,
+            isWarmup: entry.isWarmup,
+            note: entry.note || null,
+            isSkipped: entry.skipped,
+            queuedAt: Date.now(),
+          })
+          next[`${exerciseId}-${s}`] = { ...entry, pendingSync: true }
+        }
+      }
+      const { error: deleteError } = await runWithRetry(() =>
+        supabase
           .from('session_logs')
-          .update({ set_number: s })
+          .delete()
           .eq('session_id', sessionId)
           .eq('exercise_id', exerciseId)
-          .eq('set_number', s + 1)
+          .eq('set_number', total),
+      )
+      if (deleteError) {
+        anyFailed = true
+        queueOp({ kind: 'delete', sessionId, exerciseId, setNumber: total, queuedAt: Date.now() })
       }
+      if (anyFailed) showQueuedSyncToast()
     }
 
-    setLogs(prev => {
-      const next = { ...prev }
-      for (let s = setNumber; s < total; s++) {
-        const laterKey = `${exerciseId}-${s + 1}`
-        if (next[laterKey]) next[`${exerciseId}-${s}`] = next[laterKey]
-      }
-      delete next[`${exerciseId}-${total}`]
-      // The deleted set may have held the live PR — recompute the bests.
-      setPreviousBests(pb => ({ ...pb, [exerciseId]: bestFromLogs(exerciseId, next) }))
-      setPreviousBestVolumes(pb => ({ ...pb, [exerciseId]: bestVolumeFromLogs(exerciseId, next) }))
-      return next
-    })
+    // The deleted set may have held the live PR — recompute the bests.
+    setPreviousBests(pb => ({ ...pb, [exerciseId]: bestFromLogs(exerciseId, next) }))
+    setPreviousBestVolumes(pb => ({ ...pb, [exerciseId]: bestVolumeFromLogs(exerciseId, next) }))
+    setLogs(next)
     setExtraSets(prev => ({ ...prev, [exerciseId]: currentExtras - 1 }))
     // The shift above moves every later set's data down one slot, so an in-progress
     // edit needs to follow it — otherwise editingKey keeps pointing at a set number
@@ -907,18 +969,20 @@ export default function ActiveWorkout({ day }: { day: string }) {
    */
   async function persistSkip(exerciseId: string, setNumbers: number[]) {
     if (!sessionId || setNumbers.length === 0) return { error: null }
-    const { error } = await supabase.from('session_logs').upsert(
-      setNumbers.map(s => ({
-        session_id: sessionId,
-        exercise_id: exerciseId,
-        set_number: s,
-        weight: null,
-        reps: null,
-        is_pr: false,
-        is_warmup: false,
-        is_skipped: true,
-      })),
-      { onConflict: 'session_id,exercise_id,set_number' },
+    const { error } = await runWithRetry(() =>
+      supabase.from('session_logs').upsert(
+        setNumbers.map(s => ({
+          session_id: sessionId,
+          exercise_id: exerciseId,
+          set_number: s,
+          weight: null,
+          reps: null,
+          is_pr: false,
+          is_warmup: false,
+          is_skipped: true,
+        })),
+        { onConflict: 'session_id,exercise_id,set_number' },
+      ),
     )
     return { error }
   }
@@ -926,24 +990,53 @@ export default function ActiveWorkout({ day }: { day: string }) {
   /** Undo persistSkip — deletes the marker row(s) so resume no longer sees them. */
   async function persistUnskip(exerciseId: string, setNumbers: number[]) {
     if (!sessionId || setNumbers.length === 0) return { error: null }
-    const { error } = await supabase
-      .from('session_logs')
-      .delete()
-      .eq('session_id', sessionId)
-      .eq('exercise_id', exerciseId)
-      .in('set_number', setNumbers)
+    const { error } = await runWithRetry(() =>
+      supabase
+        .from('session_logs')
+        .delete()
+        .eq('session_id', sessionId)
+        .eq('exercise_id', exerciseId)
+        .in('set_number', setNumbers),
+    )
     return { error }
   }
 
-  function showSkipSyncError() {
-    setResumeToast("Couldn't sync skip. Check your connection and try again.")
+  function showQueuedSyncToast() {
+    setResumeToast('Saved on this device — will sync once back online.')
     setTimeout(() => setResumeToast(null), 4000)
+  }
+
+  /** Queues a skip marker for each set (same fallback as handleCheck/handleSaveEdit)
+   * after persistSkip fails even after its own retries. */
+  function queueSkip(exerciseId: string, setNumbers: number[]) {
+    if (!sessionId) return
+    for (const s of setNumbers) {
+      queueOp({
+        kind: 'upsert',
+        sessionId,
+        exerciseId,
+        setNumber: s,
+        weight: null,
+        reps: null,
+        isPR: false,
+        isWarmup: false,
+        note: null,
+        isSkipped: true,
+        queuedAt: Date.now(),
+      })
+    }
+  }
+
+  function queueUnskip(exerciseId: string, setNumbers: number[]) {
+    if (!sessionId) return
+    for (const s of setNumbers) {
+      queueOp({ kind: 'delete', sessionId, exerciseId, setNumber: s, queuedAt: Date.now() })
+    }
   }
 
   async function handleSkipSet(exerciseId: string, setNumber: number) {
     const key = `${exerciseId}-${setNumber}`
-    const prevEntry = logs[key]
-    const wasChecked = prevEntry?.checked
+    const wasChecked = logs[key]?.checked
     // persistSkip upserts the skip marker over whatever was there — including
     // an already-saved checked row, which it overwrites (weight/reps/is_pr
     // back to null/false) so it doesn't persist as a completed set. Clear the
@@ -966,29 +1059,23 @@ export default function ActiveWorkout({ day }: { day: string }) {
     if (editingKey === key) setEditingKey(null)
     const { error } = await persistSkip(exerciseId, [setNumber])
     if (error) {
-      setLogs(prev => {
-        const next = { ...prev, [key]: prevEntry }
-        if (wasChecked) {
-          setPreviousBests(pb => ({ ...pb, [exerciseId]: bestFromLogs(exerciseId, next) }))
-          setPreviousBestVolumes(pb => ({ ...pb, [exerciseId]: bestVolumeFromLogs(exerciseId, next) }))
-        }
-        return next
-      })
-      showSkipSyncError()
+      queueSkip(exerciseId, [setNumber])
+      setLogs(prev => ({ ...prev, [key]: { ...prev[key], pendingSync: true } }))
+      showQueuedSyncToast()
     }
   }
 
   async function handleUnskipSet(exerciseId: string, setNumber: number) {
     const key = `${exerciseId}-${setNumber}`
-    const prevEntry = logs[key]
     setLogs(prev => ({
       ...prev,
       [key]: { ...prev[key], skipped: false, logId: undefined },
     }))
     const { error } = await persistUnskip(exerciseId, [setNumber])
     if (error) {
-      setLogs(prev => ({ ...prev, [key]: prevEntry }))
-      showSkipSyncError()
+      queueUnskip(exerciseId, [setNumber])
+      setLogs(prev => ({ ...prev, [key]: { ...prev[key], pendingSync: true } }))
+      showQueuedSyncToast()
     }
   }
 
@@ -1007,11 +1094,6 @@ export default function ActiveWorkout({ day }: { day: string }) {
       if (entry?.checked) anyWasChecked = true
     }
     if (setsToSkip.length === 0) return
-    const prevEntries: LogMap = {}
-    for (const s of setsToSkip) {
-      const key = `${exerciseId}-${s}`
-      prevEntries[key] = logs[key]
-    }
     setLogs(prev => {
       const next = { ...prev }
       for (const s of setsToSkip) {
@@ -1034,15 +1116,16 @@ export default function ActiveWorkout({ day }: { day: string }) {
     }
     const { error } = await persistSkip(exerciseId, setsToSkip)
     if (error) {
+      queueSkip(exerciseId, setsToSkip)
       setLogs(prev => {
-        const next = { ...prev, ...prevEntries }
-        if (anyWasChecked) {
-          setPreviousBests(pb => ({ ...pb, [exerciseId]: bestFromLogs(exerciseId, next) }))
-          setPreviousBestVolumes(pb => ({ ...pb, [exerciseId]: bestVolumeFromLogs(exerciseId, next) }))
+        const next = { ...prev }
+        for (const s of setsToSkip) {
+          const key = `${exerciseId}-${s}`
+          next[key] = { ...next[key], pendingSync: true }
         }
         return next
       })
-      showSkipSyncError()
+      showQueuedSyncToast()
     }
   }
 
@@ -1054,11 +1137,6 @@ export default function ActiveWorkout({ day }: { day: string }) {
       if (logs[`${exerciseId}-${s}`]?.skipped) setsToUnskip.push(s)
     }
     if (setsToUnskip.length === 0) return
-    const prevEntries: LogMap = {}
-    for (const s of setsToUnskip) {
-      const key = `${exerciseId}-${s}`
-      prevEntries[key] = logs[key]
-    }
     setLogs(prev => {
       const next = { ...prev }
       for (const s of setsToUnskip) {
@@ -1071,8 +1149,16 @@ export default function ActiveWorkout({ day }: { day: string }) {
     })
     const { error } = await persistUnskip(exerciseId, setsToUnskip)
     if (error) {
-      setLogs(prev => ({ ...prev, ...prevEntries }))
-      showSkipSyncError()
+      queueUnskip(exerciseId, setsToUnskip)
+      setLogs(prev => {
+        const next = { ...prev }
+        for (const s of setsToUnskip) {
+          const key = `${exerciseId}-${s}`
+          next[key] = { ...next[key], pendingSync: true }
+        }
+        return next
+      })
+      showQueuedSyncToast()
     }
   }
 
@@ -3196,9 +3282,18 @@ function SetRow({
             data-onboard={onboardFirst ? 'aw-skip' : undefined}
             onClick={logEntry.skipped ? onUnskip : (logEntry.checked && !editing ? undefined : onSkip)}
             disabled={logEntry.checked && !editing}
-            title={logEntry.skipped ? 'Undo skip' : 'Skip this set'}
-            aria-label={logEntry.skipped ? `Undo skip on set ${setNumber}` : `Skip set ${setNumber}`}
+            title={
+              logEntry.pendingSync
+                ? 'Saved on this device — syncing when back online'
+                : logEntry.skipped ? 'Undo skip' : 'Skip this set'
+            }
+            aria-label={
+              logEntry.skipped
+                ? `Undo skip on set ${setNumber}${logEntry.pendingSync ? ' (not yet synced)' : ''}`
+                : `Skip set ${setNumber}`
+            }
             style={{
+              position: 'relative',
               width: '44px', height: '44px', minWidth: '44px',
               borderRadius: '9999px',
               border: `2px solid ${logEntry.skipped ? 'rgba(239,68,68,0.5)' : 'var(--border)'}`,
@@ -3216,6 +3311,17 @@ function SetRow({
              style={{ color: logEntry.skipped ? 'var(--danger)' : 'var(--border-strong)' }}>
               <line x1="5" y1="12" x2="19" y2="12" />
             </svg>
+            {logEntry.skipped && logEntry.pendingSync && (
+              <span
+                aria-hidden="true"
+                style={{
+                  position: 'absolute', top: '-2px', right: '-2px',
+                  width: '10px', height: '10px', borderRadius: '9999px',
+                  backgroundColor: 'var(--text-muted)',
+                  border: '2px solid var(--bg)',
+                }}
+              />
+            )}
           </button>
         )}
 
