@@ -189,16 +189,20 @@ self.addEventListener('message', event => {
       return
     }
     
+    // Add 150ms delay to SW timer so page-owned timer always fires first,
+    // preventing double-alert from near-simultaneous notifications
     const endId = setTimeout(() => {
       void showGrindNotification(payload || { title: 'Rest over', tag: 'grind-rest', url: '/log', badge: 1 })
       restTimeouts.delete(key)
-    }, endDelay)
+    }, endDelay + 150)
 
     let warnId = null
     if (warnAt && warnAt > now) {
+      const warnDelay = warnAt - now
+      // Same 150ms delay for consistency
       warnId = setTimeout(() => {
         void showGrindNotification(warnPayload || { title: 'Rest ending soon', tag: 'grind-rest', url: '/log' })
-      }, warnAt - now)
+      }, warnDelay + 150)
     }
     restTimeouts.set(key, { endId, warnId })
     return

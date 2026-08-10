@@ -322,7 +322,10 @@ async function postSchedule(actions: ScheduleAction[]): Promise<boolean> {
 export async function scheduleRestNotifications(input: RestScheduleInput): Promise<void> {
   const { sessionId, exerciseId, exerciseName, endsAtMs, durationSec, prefs } = input
 
+  // Clear any existing rest timers and close existing rest notifications immediately
+  // to prevent overlap or double-firing when starting a new rest
   cancelLocalRestFallback()
+  await closeGrindNotifications({ tags: ['grind-rest'], clearBadge: false })
 
   if (!prefs.enabled || !prefs.rest_complete) {
     await postSchedule([{ action: 'cancel', sessionId }])

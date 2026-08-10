@@ -231,6 +231,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const [pushCoachOpen, setPushCoachOpen] = useState(false)
   const [pushCoachBusy, setPushCoachBusy] = useState(false)
   const restStartedOnce = useRef(false)
+  const setCompletionNotifyDebounce = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -312,12 +313,15 @@ export default function ActiveWorkout({ day }: { day: string }) {
   // Belt-and-suspenders: when the in-page rest tick hits 0, fire rest-end
   // immediately. Page/SW setTimeout should already be armed; this covers
   // cases where those were lost (SW killed) but the workout page is still alive.
+  // Only fire when app is backgrounded - the page/SW timers handle foreground case.
   const restEndNotifiedKey = useRef<string | null>(null)
   useEffect(() => {
     if (!sessionId || !restTimer.exerciseId) return
     if (restTimer.paused || restTimer.remainingMs > 0) return
     const prefs = pushPrefsRef.current
     if (!prefs?.enabled || !prefs.rest_complete) return
+    // Only notify when backgrounded to avoid triple-notification with page/SW timers
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible') return
 
     const key = `${sessionId}:${restTimer.exerciseId}:${restTimer.startedAt}`
     if (restEndNotifiedKey.current === key) return
@@ -357,6 +361,8 @@ export default function ActiveWorkout({ day }: { day: string }) {
   // Clear the pending save-toast timer on unmount so it can't fire into a
   // torn-down component.
   useEffect(() => () => { if (saveToastTimer.current) clearTimeout(saveToastTimer.current) }, [])
+  // Clear the pending notification debounce timer on unmount
+  useEffect(() => () => { if (setCompletionNotifyDebounce.current) clearTimeout(setCompletionNotifyDebounce.current) }, [])
   // handleCheck reads this after an `await`, by which point another set may have
   // been checked (and re-rendered) in the meantime — the `logs` captured in its
   // own closure would be stale. The ref always reflects the latest committed state.
@@ -888,29 +894,39 @@ export default function ActiveWorkout({ day }: { day: string }) {
 
     setUndoState({ key, exerciseId, setNumber, expiresAt: Date.now() + 5000 })
 
-    // Update notification with new count if backgrounded
+    // Update notification with new count if backgrounded - debounced to prevent
+    // spam when rapidly completing multiple sets in quick succession
     if (
       typeof document !== 'undefined' &&
       document.visibilityState === 'hidden' &&
       pushPrefsRef.current?.enabled &&
       pushPrefsRef.current?.workout_status
     ) {
-      // Use setCountsRef for the updated count (will reflect the new check on next render)
-      // But we need to count manually since state hasn't updated yet
-      const newChecked = Object.entries(logsRef.current).filter(
-        ([k, l]) => (k === key ? true : l.checked)
-      ).length
-      const resting = restTimer.active && !restTimer.paused
-      lastNotifiedState.current = { checked: newChecked, total: totalSets(), resting }
-      updateWorkoutStatusNotification({
-        resting,
-        exerciseName: resting
-          ? (exercises.find(e => e.id === restTimer.exerciseId)?.name ?? undefined)
-          : undefined,
-        remainingMs: resting ? restTimer.remainingMs : undefined,
-        doneSets: newChecked,
-        totalSets: totalSets(),
-      })
+      // Clear any pending notification update
+      if (setCompletionNotifyDebounce.current) {
+        clearTimeout(setCompletionNotifyDebounce.current)
+      }
+      
+      // Debounce: wait 300ms after the last set completion before notifying
+      setCompletionNotifyDebounce.current = setTimeout(() => {
+        setCompletionNotifyDebounce.current = null
+        // Use setCountsRef for the updated count (will reflect the new check on next render)
+        // But we need to count manually since state hasn't updated yet
+        const newChecked = Object.entries(logsRef.current).filter(
+          ([k, l]) => (k === key ? true : l.checked)
+        ).length
+        const resting = restTimer.active && !restTimer.paused
+        lastNotifiedState.current = { checked: newChecked, total: totalSets(), resting }
+        updateWorkoutStatusNotification({
+          resting,
+          exerciseName: resting
+            ? (exercises.find(e => e.id === restTimer.exerciseId)?.name ?? undefined)
+            : undefined,
+          remainingMs: resting ? restTimer.remainingMs : undefined,
+          doneSets: newChecked,
+          totalSets: totalSets(),
+        })
+      }, 300)
     }
 
     // Don't start a rest countdown when this check completes the whole workout —
