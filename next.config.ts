@@ -45,7 +45,8 @@ const securityHeaders = [
   // The app needs none of these; deny them outright.
   {
     key: 'Permissions-Policy',
-    value: 'camera=(), microphone=(), geolocation=(), interest-cohort=(), payment=(), usb=()',
+    // wake-lock: ActiveWorkout holds the screen on during a live session.
+    value: 'camera=(), microphone=(), geolocation=(), interest-cohort=(), payment=(), usb=(), wake-lock=(self)',
   },
   // Keep the origin out of cross-origin process groups.
   { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },

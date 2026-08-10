@@ -3,6 +3,7 @@ import { cookies } from 'next/headers'
 import BottomNav from '@/components/BottomNav'
 import TopNav from '@/components/TopNav'
 import SwipeNavigator from '@/components/SwipeNavigator'
+import HapticsSetup from '@/components/HapticsSetup'
 import { UnitProvider } from '@/lib/contexts/UnitContext'
 import { ToastProvider } from '@/lib/contexts/ToastContext'
 import { OnboardingProvider, type OnboardingState } from '@/lib/contexts/OnboardingContext'
@@ -41,6 +42,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <UnitProvider initialUnit={initialUnit}>
     <OnboardingProvider userId={onboardingUserId} initialState={onboardingInitial}>
     <ToastProvider>
+    <HapticsSetup />
     {/* Fixed, non-scrolling app shell. Only .app-main scrolls; the bottom nav is
         a flow child pinned at the bottom by layout (never position:fixed), so it
         can't strand. See .app-shell in globals.css. */}

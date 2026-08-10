@@ -21,6 +21,20 @@ import CompletionModal from './CompletionModal'
 import { useFeatureTooltip } from '@/components/onboarding/useFeatureTooltip'
 import { onboardTarget } from '@/components/onboarding/anchor'
 import { useOnboarding } from '@/lib/contexts/OnboardingContext'
+import {
+  cancelRestNotifications,
+  clearWorkoutNotifications,
+  fetchNotificationPrefs,
+  hasSeenPushCoach,
+  markPushCoachSeen,
+  notifyRestEndedLocally,
+  pushSupported,
+  scheduleRestNotifications,
+  subscribeToPush,
+  updateWorkoutStatusNotification,
+  WorkoutWakeLock,
+  type NotificationPrefs,
+} from '@/lib/push'
 
 interface SetState {
   weight: string
@@ -208,6 +222,153 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const resumeToastExit = useExitingValue(resumeToast, 200)
   const saveToastExit = useExitingValue(saveToast, 180)
   const { hasSeenTooltip, markTooltipSeen } = useOnboarding()
+
+  // Web Push prefs + wake lock (rest-end / hybrid status while backgrounded).
+  const [pushPrefs, setPushPrefs] = useState<NotificationPrefs | null>(null)
+  const pushPrefsRef = useRef<NotificationPrefs | null>(null)
+  const wakeLockRef = useRef<WorkoutWakeLock | null>(null)
+  if (wakeLockRef.current === null) wakeLockRef.current = new WorkoutWakeLock()
+  const [pushCoachOpen, setPushCoachOpen] = useState(false)
+  const [pushCoachBusy, setPushCoachBusy] = useState(false)
+  const restStartedOnce = useRef(false)
+
+  useEffect(() => {
+    let cancelled = false
+    void fetchNotificationPrefs().then(prefs => {
+      if (cancelled || !prefs) return
+      setPushPrefs(prefs)
+      pushPrefsRef.current = prefs
+    })
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
+    pushPrefsRef.current = pushPrefs
+  }, [pushPrefs])
+
+  // Screen Wake Lock while a live session is open and visible.
+  useEffect(() => {
+    if (!sessionId || completionData) {
+      void wakeLockRef.current?.release()
+      return
+    }
+    void wakeLockRef.current?.acquire()
+    return () => { void wakeLockRef.current?.release() }
+  }, [sessionId, completionData])
+
+  // Schedule / cancel server + local rest notifications from timer transitions
+  // (not remainingMs — that ticks every 250ms). When remaining hits 0 the UI
+  // goes inactive but we must NOT cancel — page/SW local timers + cron fallback
+  // still need to deliver rest-end if the app is backgrounded.
+  useEffect(() => {
+    if (!sessionId) return
+    const prefs = pushPrefsRef.current
+
+    if (!restTimer.exerciseId || restTimer.paused) {
+      void cancelRestNotifications(sessionId)
+      return
+    }
+    if (!restTimer.active) {
+      // Natural end (remaining hit 0) — leave schedules for local timers / cron.
+      return
+    }
+    // Prefs still loading — wait; effect re-runs when they arrive.
+    if (!prefs) return
+    if (!prefs.enabled || !prefs.rest_complete) {
+      void cancelRestNotifications(sessionId)
+      return
+    }
+
+    const endsAtMs = restTimer.startedAt + restTimer.durationMs
+    const durationSec = Math.round(restTimer.durationMs / 1000)
+    const exerciseName = exercises.find(e => e.id === restTimer.exerciseId)?.name ?? ''
+    void scheduleRestNotifications({
+      sessionId,
+      exerciseId: restTimer.exerciseId,
+      exerciseName,
+      endsAtMs,
+      durationSec,
+      prefs,
+    })
+  }, [
+    sessionId,
+    restTimer.active,
+    restTimer.paused,
+    restTimer.exerciseId,
+    restTimer.startedAt,
+    restTimer.durationMs,
+    exercises,
+    pushPrefs?.enabled,
+    pushPrefs?.rest_complete,
+    pushPrefs?.rest_warning_10s,
+  ])
+
+  // Belt-and-suspenders: when the in-page rest tick hits 0, fire rest-end
+  // immediately. Page/SW setTimeout should already be armed; this covers
+  // cases where those were lost (SW killed) but the workout page is still alive.
+  const restEndNotifiedKey = useRef<string | null>(null)
+  useEffect(() => {
+    if (!sessionId || !restTimer.exerciseId) return
+    if (restTimer.paused || restTimer.remainingMs > 0) return
+    const prefs = pushPrefsRef.current
+    if (!prefs?.enabled || !prefs.rest_complete) return
+
+    const key = `${sessionId}:${restTimer.exerciseId}:${restTimer.startedAt}`
+    if (restEndNotifiedKey.current === key) return
+    restEndNotifiedKey.current = key
+
+    const exerciseName = exercises.find(e => e.id === restTimer.exerciseId)?.name ?? ''
+    notifyRestEndedLocally(exerciseName)
+  }, [
+    sessionId,
+    restTimer.exerciseId,
+    restTimer.startedAt,
+    restTimer.remainingMs,
+    restTimer.paused,
+    exercises,
+  ])
+
+  // Soft coach mark after the first rest of a session (once per install).
+  useEffect(() => {
+    if (!restTimer.active || restStartedOnce.current) return
+    restStartedOnce.current = true
+    if (hasSeenPushCoach()) return
+    if (!pushSupported()) return
+    if (pushPrefsRef.current?.enabled) return
+    setPushCoachOpen(true)
+  }, [restTimer.active])
+
+  // Hybrid workout status card when backgrounded; clear tags on return.
+  useEffect(() => {
+    if (!sessionId || completionData) return
+
+    function onVisibility() {
+      void wakeLockRef.current?.onVisibilityChange()
+      const prefs = pushPrefsRef.current
+      if (document.visibilityState === 'hidden') {
+        if (prefs?.enabled && prefs.workout_status) {
+          const resting = restTimer.active && !restTimer.paused
+          updateWorkoutStatusNotification({
+            resting,
+            exerciseName: resting
+              ? (exercises.find(e => e.id === restTimer.exerciseId)?.name ?? undefined)
+              : undefined,
+            remainingMs: resting ? restTimer.remainingMs : undefined,
+            doneSets: checkedSets(),
+            totalSets: totalSets(),
+          })
+        }
+      } else {
+        clearWorkoutNotifications()
+      }
+    }
+
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => document.removeEventListener('visibilitychange', onVisibility)
+    // restTimer fields / set counts are read at hide-time; listing them would
+    // re-bind the listener every tick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, completionData, exercises])
 
   /**
    * Flash a short bottom-anchored "saved" confirmation. Re-flashing resets the
@@ -691,9 +852,9 @@ export default function ActiveWorkout({ day }: { day: string }) {
         const cur = prev[exerciseId] ?? null
         return cur !== null && cur >= weight ? prev : { ...prev, [exerciseId]: weight }
       })
+      // Android-only: iOS already ticked from the check-button switch overlay
+      // on press. Post-await imperative haptics are dead on iOS 26.5+/27.
       haptic('success')
-    } else {
-      haptic('light')
     }
 
     setUndoState({ key, exerciseId, setNumber, expiresAt: Date.now() + 5000 })
@@ -1035,6 +1196,8 @@ export default function ActiveWorkout({ day }: { day: string }) {
   }
 
   async function handleSkipSet(exerciseId: string, setNumber: number) {
+    // Sync before any await — Android vibrate; iOS overlay already fired on press.
+    haptic('light')
     const key = `${exerciseId}-${setNumber}`
     const wasChecked = logs[key]?.checked
     // persistSkip upserts the skip marker over whatever was there — including
@@ -1080,6 +1243,8 @@ export default function ActiveWorkout({ day }: { day: string }) {
   }
 
   async function handleSkipExercise(exerciseId: string) {
+    // Sync before any await — Android vibrate; iOS overlay already fired on press.
+    haptic('light')
     const ex = exercises.find(e => e.id === exerciseId)
     if (!ex) return
     // Skip every set that isn't already skipped — including already-checked
@@ -1314,6 +1479,9 @@ export default function ActiveWorkout({ day }: { day: string }) {
     setDiscarding(true)
     setShowExitConfirm(false)
     restTimer.stop()
+    if (sessionId) void cancelRestNotifications(sessionId)
+    clearWorkoutNotifications()
+    void wakeLockRef.current?.release()
 
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
@@ -1377,7 +1545,13 @@ export default function ActiveWorkout({ day }: { day: string }) {
       setTimeout(() => setResumeToast(null), 4000)
       return
     }
+    // Sync before any await — Android vibrate; iOS overlay already fired on press.
+    haptic('medium')
     setFinishing(true)
+    restTimer.stop()
+    void cancelRestNotifications(sessionId)
+    clearWorkoutNotifications()
+    void wakeLockRef.current?.release()
 
     // The whole finish is wrapped so a network failure can't leave the button
     // stuck on "SAVING…" or silently drop the workout. Every set is already
@@ -1486,8 +1660,6 @@ export default function ActiveWorkout({ day }: { day: string }) {
       const prExercises = result.pr_exercises ?? []
       const newLevel = result.level
       const leveledUp = result.leveled_up
-
-      haptic('medium')
 
       // Authoritative post-completion stats, for the badge check below.
       const updatedStats = {
@@ -1956,6 +2128,93 @@ export default function ActiveWorkout({ day }: { day: string }) {
         />
       )}
 
+      {/* Soft one-time opt-in after the first rest — not on cold launch. */}
+      {pushCoachOpen && (
+        <div
+          role="status"
+          style={{
+            position: 'fixed',
+            left: '12px',
+            right: '12px',
+            bottom: restTimer.active
+              ? 'calc(108px + env(safe-area-inset-bottom))'
+              : 'calc(72px + env(safe-area-inset-bottom))',
+            zIndex: 55,
+            backgroundColor: 'var(--surface-elevated)',
+            border: '1px solid var(--border)',
+            borderRadius: '12px',
+            padding: '12px 14px',
+            boxShadow: 'var(--card-shadow)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '10px',
+          }}
+        >
+          <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>
+            Get a lock-screen ping when rest ends?
+          </div>
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+            Optional. You can change this anytime in Profile → Settings.
+          </div>
+          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+            <button
+              type="button"
+              className="press"
+              disabled={pushCoachBusy}
+              onClick={() => {
+                markPushCoachSeen()
+                setPushCoachOpen(false)
+              }}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-secondary)',
+                fontSize: '13px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                padding: '8px 10px',
+              }}
+            >
+              Not now
+            </button>
+            <button
+              type="button"
+              className="press"
+              disabled={pushCoachBusy}
+              onClick={async () => {
+                setPushCoachBusy(true)
+                const result = await subscribeToPush()
+                setPushCoachBusy(false)
+                markPushCoachSeen()
+                setPushCoachOpen(false)
+                if (result.ok) {
+                  const prefs = await fetchNotificationPrefs()
+                  if (prefs) {
+                    setPushPrefs(prefs)
+                    pushPrefsRef.current = prefs
+                  }
+                } else {
+                  setResumeToast(result.error || 'Could not enable notifications')
+                  setTimeout(() => setResumeToast(null), 4000)
+                }
+              }}
+              style={{
+                backgroundColor: 'var(--accent)',
+                color: 'var(--on-accent)',
+                border: 'none',
+                borderRadius: '9999px',
+                fontSize: '13px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                padding: '8px 14px',
+              }}
+            >
+              {pushCoachBusy ? 'Enabling…' : 'Enable'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Rest timer */}
       {restTimer.active && restTimer.exerciseId && (
         <RestTimerBar
@@ -2249,7 +2508,9 @@ export default function ActiveWorkout({ day }: { day: string }) {
               onClick={handleFinish}
               disabled={!canFinish}
               className="wo-finish-btn"
+              data-haptic="medium"
               style={{
+                position: 'relative',
                 height: '56px',
                 backgroundColor: canFinish ? 'var(--accent)' : 'var(--border)',
                 color: canFinish ? 'var(--on-accent)' : 'var(--text-muted)',
@@ -2360,7 +2621,9 @@ function ExerciseCard({
               onClick={() => allSkipped ? onUnskipExercise(exercise.id) : onSkipExercise(exercise.id)}
               title={allSkipped ? 'Undo skip' : 'Skip exercise'}
               aria-label={allSkipped ? `Undo skip on ${exercise.name}` : `Skip ${exercise.name}`}
+              data-haptic="light"
               style={{
+                position: 'relative',
                 background: 'none', border: 'none', cursor: 'pointer',
                 padding: '2px 6px', opacity: 0.5,
                 display: 'flex', alignItems: 'center', gap: '3px',
@@ -3018,6 +3281,9 @@ function SetRow({
     if (document.activeElement === repsRef.current || document.activeElement === weightRef.current) {
       ;(document.activeElement as HTMLElement).blur()
     }
+    // Sync before onCheck (which awaits the upsert). Android vibrate here;
+    // iOS already ticked from the switch overlay on the check button.
+    haptic('light')
     onCheck()
   }
 
@@ -3280,6 +3546,7 @@ function SetRow({
           <button
             className="press"
             data-onboard={onboardFirst ? 'aw-skip' : undefined}
+            data-haptic="light"
             onClick={logEntry.skipped ? onUnskip : (logEntry.checked && !editing ? undefined : onSkip)}
             disabled={logEntry.checked && !editing}
             title={
@@ -3355,6 +3622,7 @@ function SetRow({
         ) : (
           <button
             data-onboard={onboardFirst ? 'aw-check' : undefined}
+            data-haptic="light"
             onClick={logEntry.checked ? onStartEdit : handleCheck}
             disabled={logEntry.skipped}
             aria-label={

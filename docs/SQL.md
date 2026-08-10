@@ -39,6 +39,13 @@ is fully linked to migration history.
 | [24-exercise-last-weight.sql](sql/24-exercise-last-weight.sql) | 24 | Last-used (not all-time-best) weight per exercise |
 | [25-exercise-weight-target.sql](sql/25-exercise-weight-target.sql) | 25 | Per-exercise default weight to prefill fresh sets |
 | [26-friend-profile-total-sets-fix.sql](sql/26-friend-profile-total-sets-fix.sql) | 26 | Fix `get_friend_profile` total_sets to exclude skipped sets |
+| [27-web-push.sql](sql/27-web-push.sql) | 27 | Web Push subscriptions, prefs, scheduled notifications + cron RPCs |
+| [28-web-push-hardening.sql](sql/28-web-push-hardening.sql) | 28 | Claim CTE join, `sent_at` client lock, `upsert_push_subscription` |
+
+See also [PUSH.md](PUSH.md) for VAPID keys, Vercel env, and cron setup.
+
+**If you already applied an older 27:** run **28** next. Fresh installs can apply the
+updated **27** alone (includes the hardening) or 27 then 28 (idempotent).
 
 ## Deploying 20
 
@@ -65,11 +72,12 @@ is fully linked to migration history.
 - `get_exercise_bests` + `grind_home_history` aggregate helpers
 - Owner delete policy on `feedback-images`
 
-## Online-only PWA note
+## PWA / service worker note
 
-GRIND is online-only today: the installable shell (manifest) does not include a
-service worker or offline workout queue. Connectivity is required to start,
-log, and finish workouts. A scoped offline queue is a future enhancement, not
-silently supported.
+GRIND ships a minimal service worker (`public/sw.js`) for an offline shell page
+and Web Push handlers. Workout logging still requires connectivity — there is
+no offline set queue beyond the in-session retry buffer. Apply migration **27**
+and set VAPID / `CRON_SECRET` / `SUPABASE_SERVICE_ROLE_KEY` before relying on
+push (see [PUSH.md](PUSH.md)). If an older 27 was already applied, run **28** as well.
 
 If you have multiple Supabase environments (e.g., preview + prod), run the same scripts on each.

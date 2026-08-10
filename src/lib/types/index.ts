@@ -160,6 +160,19 @@ export interface ProgressPhoto {
   created_at: string
 }
 
+/** Per-user Web Push preferences (docs/sql/27-web-push.sql). */
+export interface NotificationPrefs {
+  user_id: string
+  enabled: boolean
+  rest_complete: boolean
+  rest_warning_10s: boolean
+  workout_status: boolean
+  streak_reminder: boolean
+  streak_reminder_hour: number
+  timezone: string
+  updated_at?: string
+}
+
 /** Shape returned by the `complete_session` RPC (docs/sql/11-server-side-xp.sql). */
 export interface CompleteSessionResult {
   xp_earned: number

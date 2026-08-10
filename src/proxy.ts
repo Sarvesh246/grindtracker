@@ -17,7 +17,9 @@ const PROFILE_COOKIE_MAX_AGE = 60 * 60 * 24 * 365
 function isPublicPath(pathname: string): boolean {
   return (
     pathname.startsWith('/login') ||
-    pathname.startsWith('/auth')
+    pathname.startsWith('/auth') ||
+    // Cron authenticates via CRON_SECRET bearer, not the user session.
+    pathname.startsWith('/api/cron')
   )
 }
 

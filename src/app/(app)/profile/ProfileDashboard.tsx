@@ -17,6 +17,16 @@ import FeedbackModal from '@/components/FeedbackModal'
 import Link from 'next/link'
 import { useTour, type TourStep } from '@/components/onboarding/Tour'
 import { useOnboarding } from '@/lib/contexts/OnboardingContext'
+import {
+  DEFAULT_NOTIFICATION_PREFS,
+  fetchNotificationPrefs,
+  isStandalonePwa,
+  pushSupported,
+  saveNotificationPrefs,
+  subscribeToPush,
+  unsubscribeFromPush,
+  type NotificationPrefs,
+} from '@/lib/push'
 
 function FlameIcon({ size = 24, color = 'var(--accent-text)' }: { size?: number; color?: string }) {
   return (
@@ -104,6 +114,11 @@ export default function ProfileDashboard({
   // running in the background, persisted to localStorage via the rest-timer hook.
   const [pauseRestOnExit, setPauseRestOnExitState] = useState(true)
 
+  // Web Push prefs (Supabase). Master toggle requests permission + subscribes.
+  const [notifPrefs, setNotifPrefs] = useState<NotificationPrefs | null>(null)
+  const [notifBusy, setNotifBusy] = useState(false)
+  const [standalone, setStandalone] = useState(true)
+
   // Hydrate the default rest time and pause-on-exit preference from
   // localStorage (client-only external store) after mount.
   useEffect(() => {
@@ -112,7 +127,61 @@ export default function ProfileDashboard({
     setRestMin(Math.floor(total / 60))
     setRestSec(total % 60)
     setPauseRestOnExitState(getPauseRestOnExit())
+    setStandalone(isStandalonePwa())
+    void fetchNotificationPrefs().then(prefs => {
+      if (prefs) setNotifPrefs(prefs)
+      else setNotifPrefs({ user_id: '', ...DEFAULT_NOTIFICATION_PREFS })
+    })
   }, [])
+
+  async function toggleNotificationsMaster() {
+    if (notifBusy) return
+    setNotifBusy(true)
+    try {
+      if (notifPrefs?.enabled) {
+        await unsubscribeFromPush()
+        const prefs = await fetchNotificationPrefs()
+        setNotifPrefs(prefs ?? { user_id: '', ...DEFAULT_NOTIFICATION_PREFS, enabled: false })
+        toast.show('Notifications off')
+      } else {
+        if (!pushSupported()) {
+          toast.show(
+            standalone
+              ? 'Notifications are not supported here'
+              : 'Add GRIND to your Home Screen to enable alerts',
+            'error',
+          )
+          return
+        }
+        const result = await subscribeToPush()
+        if (!result.ok) {
+          toast.show(result.error || 'Could not enable notifications', 'error')
+          return
+        }
+        const prefs = await fetchNotificationPrefs()
+        setNotifPrefs(prefs ?? { user_id: '', ...DEFAULT_NOTIFICATION_PREFS, enabled: true })
+        toast.show('Notifications on')
+      }
+    } finally {
+      setNotifBusy(false)
+    }
+  }
+
+  async function patchNotifPref<K extends keyof NotificationPrefs>(
+    key: K,
+    value: NotificationPrefs[K],
+  ) {
+    if (!notifPrefs || notifBusy) return
+    const prev = notifPrefs
+    setNotifPrefs({ ...notifPrefs, [key]: value })
+    const saved = await saveNotificationPrefs({ [key]: value } as Partial<NotificationPrefs>)
+    if (!saved) {
+      setNotifPrefs(prev)
+      toast.show("Couldn't save notification setting", 'error')
+    } else {
+      setNotifPrefs(saved)
+    }
+  }
 
   function commitRest(min: number, sec: number) {
     const m = Math.max(0, Math.floor(min) || 0)
@@ -862,6 +931,155 @@ export default function ProfileDashboard({
               }} />
             </button>
           </div>
+
+          <div style={{ height: '1px', backgroundColor: 'var(--border)' }} />
+
+          {/* Notifications — Web Push (rest-end, workout status, streak). */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ fontSize: '14px', color: 'var(--text-primary)', fontWeight: 600, marginBottom: '2px' }}>
+                Notifications
+              </div>
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                {!standalone
+                  ? 'Add to Home Screen to enable alerts'
+                  : notifPrefs?.enabled
+                    ? 'Lock-screen rest & streak alerts'
+                    : 'Off — enable for rest & streak pings'}
+              </div>
+            </div>
+            <button
+              onClick={() => void toggleNotificationsMaster()}
+              disabled={notifBusy || notifPrefs === null}
+              role="switch"
+              aria-checked={!!notifPrefs?.enabled}
+              aria-label="Enable notifications"
+              style={{
+                width: '44px',
+                height: '26px',
+                flexShrink: 0,
+                borderRadius: '9999px',
+                border: 'none',
+                position: 'relative',
+                cursor: notifBusy ? 'wait' : 'pointer',
+                opacity: notifPrefs === null ? 0.5 : 1,
+                backgroundColor: notifPrefs?.enabled ? 'var(--accent)' : 'var(--surface-elevated)',
+                boxShadow: notifPrefs?.enabled ? 'none' : 'inset 0 0 0 1px var(--border)',
+                transition: 'background-color 150ms ease',
+              }}
+            >
+              <span style={{
+                position: 'absolute',
+                top: '3px',
+                left: notifPrefs?.enabled ? '21px' : '3px',
+                width: '20px',
+                height: '20px',
+                borderRadius: '9999px',
+                backgroundColor: notifPrefs?.enabled ? 'var(--on-accent)' : 'var(--text-muted)',
+                transition: 'left 150ms ease',
+              }} />
+            </button>
+          </div>
+
+          {notifPrefs?.enabled && (
+            <>
+              {(
+                [
+                  ['rest_complete', 'Rest ended', 'Ping when your rest timer hits zero'] as const,
+                  ['rest_warning_10s', 'Rest warning (10s)', 'Optional heads-up before rest ends'] as const,
+                  ['workout_status', 'Workout status', 'One card while the app is in the background'] as const,
+                  ['streak_reminder', 'Streak reminder', 'Evening nudge if you have not trained'] as const,
+                ] as const
+              ).map(([key, label, hint]) => (
+                <div key={key}>
+                  <div style={{ height: '1px', backgroundColor: 'var(--border)', margin: '12px 0' }} />
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                    <div>
+                      <div style={{ fontSize: '14px', color: 'var(--text-primary)', fontWeight: 600, marginBottom: '2px' }}>
+                        {label}
+                      </div>
+                      <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{hint}</div>
+                    </div>
+                    <button
+                      onClick={() => void patchNotifPref(key, !notifPrefs[key])}
+                      role="switch"
+                      aria-checked={notifPrefs[key]}
+                      aria-label={label}
+                      style={{
+                        width: '44px',
+                        height: '26px',
+                        flexShrink: 0,
+                        borderRadius: '9999px',
+                        border: 'none',
+                        position: 'relative',
+                        cursor: 'pointer',
+                        backgroundColor: notifPrefs[key] ? 'var(--accent)' : 'var(--surface-elevated)',
+                        boxShadow: notifPrefs[key] ? 'none' : 'inset 0 0 0 1px var(--border)',
+                        transition: 'background-color 150ms ease',
+                      }}
+                    >
+                      <span style={{
+                        position: 'absolute',
+                        top: '3px',
+                        left: notifPrefs[key] ? '21px' : '3px',
+                        width: '20px',
+                        height: '20px',
+                        borderRadius: '9999px',
+                        backgroundColor: notifPrefs[key] ? 'var(--on-accent)' : 'var(--text-muted)',
+                        transition: 'left 150ms ease',
+                      }} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+
+              {notifPrefs.streak_reminder && (
+                <>
+                  <div style={{ height: '1px', backgroundColor: 'var(--border)', margin: '12px 0' }} />
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                    <div>
+                      <div style={{ fontSize: '14px', color: 'var(--text-primary)', fontWeight: 600, marginBottom: '2px' }}>
+                        Reminder time
+                      </div>
+                      <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                        Local hour (17–21)
+                      </div>
+                    </div>
+                    <select
+                      value={notifPrefs.streak_reminder_hour}
+                      onChange={e => void patchNotifPref('streak_reminder_hour', Number(e.target.value))}
+                      aria-label="Streak reminder hour"
+                      style={{
+                        backgroundColor: 'var(--surface-elevated)',
+                        border: '1px solid var(--border)',
+                        borderRadius: '9999px',
+                        color: 'var(--text-primary)',
+                        fontFamily: "'JetBrains Mono', monospace",
+                        fontSize: '14px',
+                        padding: '6px 12px',
+                        height: '32px',
+                      }}
+                    >
+                      {[17, 18, 19, 20, 21].map(h => (
+                        <option key={h} value={h}>
+                          {h === 12 ? '12:00 PM' : h > 12 ? `${h - 12}:00 PM` : `${h}:00`}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </>
+              )}
+
+              {!standalone && (
+                <>
+                  <div style={{ height: '1px', backgroundColor: 'var(--border)', margin: '12px 0' }} />
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                    On iPhone, alerts work after you add GRIND to your Home Screen.
+                  </div>
+                </>
+              )}
+            </>
+          )}
 
           <div style={{ height: '1px', backgroundColor: 'var(--border)' }} />
 

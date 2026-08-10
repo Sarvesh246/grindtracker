@@ -293,12 +293,15 @@ export default function DaySelect() {
                   key={key}
                   className="press-card"
                   data-onboard={idx === 0 ? 'dayselect-days' : undefined}
+                  data-haptic="heavy"
                   onClick={() => {
+                    // Sync — Android vibrate; iOS overlay already ticked on press.
                     haptic('heavy')
                     router.push(`/log?day=${key}`)
                   }}
                   style={{
                     '--i': idx,
+                    position: 'relative',
                     backgroundColor: 'var(--surface)',
                     border: isUpNext ? '1px solid var(--accent)' : '1px solid var(--border)',
                     borderRadius: '12px',

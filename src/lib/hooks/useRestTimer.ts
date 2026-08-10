@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
-import { haptic } from '@/lib/utils/haptics'
+import { haptic, supportsVibrate } from '@/lib/utils/haptics'
 
 export const REST_PRESETS = [60, 90, 120, 180] as const
 const STORAGE_PREFIX = 'grind.rest.'
@@ -91,7 +91,9 @@ function readPersistedTimer(): TimerState {
 /**
  * Single global rest timer for the active workout.
  * Persists the active timer to localStorage so it survives page navigations.
- * Auto-fires light haptic at 10s remaining and at 0s.
+ * Auto-fires light haptic at 10s remaining and at 0s on Android only.
+ * iOS can't fire timer haptics without a direct switch tap (26.5+/27) — rest-end
+ * UI (and later push) covers that path instead.
  */
 export function useRestTimer() {
   const [state, setState] = useState<TimerState>(() => readPersistedTimer())
@@ -148,11 +150,12 @@ export function useRestTimer() {
 
       if (!tenSecFired.current && remaining <= 10_000 && remaining > 0) {
         tenSecFired.current = true
-        haptic('light')
+        // Timer-fired: Android vibrate only. iOS imperative path is dead on 26.5+.
+        if (supportsVibrate()) haptic('light')
       }
       if (!zeroFired.current && remaining === 0) {
         zeroFired.current = true
-        haptic('light')
+        if (supportsVibrate()) haptic('light')
       }
 
       setState(s => (s.exerciseId === state.exerciseId ? { ...s, remainingMs: remaining } : s))
@@ -236,6 +239,8 @@ export function useRestTimer() {
     exerciseId: state.exerciseId,
     remainingMs: state.remainingMs,
     durationMs: state.durationMs,
+    /** Epoch ms when the current (or paused) countdown clock was anchored. */
+    startedAt: state.startedAt,
     start,
     stop,
     addSeconds,
