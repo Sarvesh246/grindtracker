@@ -9,6 +9,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from 'react'
 import { createPortal } from 'react-dom'
+import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
 
 const FOCUSABLE =
   'a[href],button:not([disabled]),textarea:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])'
@@ -31,6 +32,7 @@ export default function Dialog({
   initialFocusRef,
   closeOnBackdrop = true,
   zIndex = 300,
+  avoidKeyboard = false,
 }: {
   open: boolean
   onClose?: () => void
@@ -45,8 +47,16 @@ export default function Dialog({
   initialFocusRef?: React.RefObject<HTMLElement | null>
   closeOnBackdrop?: boolean
   zIndex?: number
+  /**
+   * Lifts the sheet above the on-screen keyboard and exposes the inset as the
+   * `--grind-keyboard-inset` CSS var on the panel, so callers can shrink their
+   * own max-height cap via `calc(Ndvh - var(--grind-keyboard-inset))` instead
+   * of each hand-rolling `useKeyboardInset()` + the same padding/cap formula.
+   */
+  avoidKeyboard?: boolean
 }) {
   const panelRef = useRef<HTMLDivElement>(null)
+  const keyboardInset = useKeyboardInset()
   const previouslyFocused = useRef<HTMLElement | null>(null)
   const autoTitleId = useId()
   const titleId = labelledBy ?? (title ? autoTitleId : undefined)
@@ -130,6 +140,9 @@ export default function Dialog({
         display: 'flex',
         alignItems: 'flex-end',
         justifyContent: 'center',
+        ...(avoidKeyboard
+          ? { paddingBottom: keyboardInset, transition: 'padding-bottom 180ms ease' }
+          : null),
         ...style,
       }}
     >
@@ -146,6 +159,9 @@ export default function Dialog({
           width: '100%',
           maxWidth: '480px',
           outline: 'none',
+          ...(avoidKeyboard
+            ? ({ '--grind-keyboard-inset': `${keyboardInset}px` } as CSSProperties)
+            : null),
           ...panelStyle,
         }}
       >

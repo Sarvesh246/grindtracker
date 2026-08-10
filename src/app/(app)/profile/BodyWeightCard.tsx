@@ -12,7 +12,6 @@ import { createClient } from '@/lib/supabase/client'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { useToast } from '@/lib/contexts/ToastContext'
 import { useMotionPref } from '@/lib/contexts/MotionContext'
-import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
 import Dialog from '@/components/ui/Dialog'
 
 interface Row {
@@ -46,7 +45,6 @@ export default function BodyWeightCard() {
   // `html.reduce-motion` class in globals.css can't reach it, so it has to be
   // gated explicitly or it keeps playing with the setting on.
   const { reduceMotion } = useMotionPref()
-  const keyboardInset = useKeyboardInset()
   const [rows, setRows] = useState<Row[]>([])
   const [draft, setDraft] = useState('')
   const [saving, setSaving] = useState(false)
@@ -545,13 +543,10 @@ export default function BodyWeightCard() {
           title={`Edit body weight for ${selected.longDate}`}
           initialFocusRef={editInputRef}
           panelStyle={{ maxWidth: '480px' }}
-          style={{
-            // Lift the sheet above the iOS keyboard — the input autofocuses on
-            // open (below), so without this the keyboard opens immediately and
-            // covers the sheet with no compensation at all.
-            paddingBottom: keyboardInset > 0 ? keyboardInset : 0,
-            transition: 'padding-bottom 180ms ease',
-          }}
+          // Lifts the sheet above the iOS keyboard — the input autofocuses on
+          // open (below), so without this the keyboard opens immediately and
+          // covers the sheet with no compensation at all.
+          avoidKeyboard
         >
           <div
             style={{
@@ -567,7 +562,7 @@ export default function BodyWeightCard() {
               // Cap against the keyboard-adjusted viewport and scroll internally —
               // without this, paddingBottom above can push content taller than the
               // remaining space clean off the top of the screen (see PlateCalculator).
-              maxHeight: keyboardInset > 0 ? `calc(92dvh - ${keyboardInset}px)` : '92dvh',
+              maxHeight: 'calc(92dvh - var(--grind-keyboard-inset, 0px))',
               overflowY: 'auto',
               // CSS keyframe (not state-driven) so reduce-motion zeroes it for free.
               animation: 'sheet-up 220ms ease',

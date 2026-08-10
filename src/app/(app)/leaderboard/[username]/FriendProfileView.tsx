@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { getLevel, getXpInCurrentLevel, getXpRequiredForLevel, getXpToNextLevel } from '@/lib/utils/gamification'
 import { BadgeDefinition } from '@/lib/utils/badges'
 import BadgeIcon from '@/components/BadgeIcon'
+import { useUnit } from '@/lib/contexts/UnitContext'
 import type { FriendProfile } from '@/lib/types'
 
 function FlameIcon({ size = 24 }: { size?: number }) {
@@ -43,6 +44,7 @@ interface Props {
 
 export default function FriendProfileView({ profile, allBadges }: Props) {
   const router = useRouter()
+  const { fmt, unitLabel } = useUnit()
   const [badgesOpen, setBadgesOpen] = useState(false)
   const [tooltipBadgeId, setTooltipBadgeId] = useState<string | null>(null)
 
@@ -395,7 +397,7 @@ export default function FriendProfileView({ profile, allBadges }: Props) {
                         {badge.label}
                       </div>
                       <div style={{ fontSize: '10px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                        {badge.description}
+                        {badge.formatDescription ? badge.formatDescription(fmt, unitLabel) : badge.description}
                       </div>
                     </div>
                   )}

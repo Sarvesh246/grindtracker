@@ -1,5 +1,5 @@
 'use client'
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
 
 type ToastVariant = 'success' | 'error'
@@ -50,9 +50,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current) }, [])
 
   const isError = variant === 'error'
+  const contextValue = useMemo(() => ({ show }), [show])
 
   return (
-    <ToastContext.Provider value={{ show }}>
+    <ToastContext.Provider value={contextValue}>
       {children}
       {message && visible && (
         <div

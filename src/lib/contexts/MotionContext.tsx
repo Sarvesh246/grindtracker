@@ -1,5 +1,5 @@
 'use client'
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 
 export type MotionPref = 'reduce' | 'no-preference'
 
@@ -78,17 +78,20 @@ export function MotionProvider({
     }
   }, [])
 
-  function toggleReduceMotion() {
+  const toggleReduceMotion = useCallback(() => {
     setPref(prev => {
       const next: MotionPref = prev === 'reduce' ? 'no-preference' : 'reduce'
       persistPref(next)
       applyPref(next)
       return next
     })
-  }
+  }, [])
+
+  const reduceMotion = pref === 'reduce'
+  const contextValue = useMemo(() => ({ reduceMotion, toggleReduceMotion }), [reduceMotion, toggleReduceMotion])
 
   return (
-    <MotionContext.Provider value={{ reduceMotion: pref === 'reduce', toggleReduceMotion }}>
+    <MotionContext.Provider value={contextValue}>
       {children}
     </MotionContext.Provider>
   )

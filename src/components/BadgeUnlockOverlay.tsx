@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import BadgeIcon from './BadgeIcon'
 import { useMotionPref } from '@/lib/contexts/MotionContext'
+import { useUnit } from '@/lib/contexts/UnitContext'
 import type { BadgeDefinition } from '@/lib/utils/badges'
 
 /**
@@ -21,6 +22,7 @@ export default function BadgeUnlockOverlay({
   const [visible, setVisible] = useState(false)
   const [closing, setClosing] = useState(false)
   const { reduceMotion } = useMotionPref()
+  const { fmt, unitLabel } = useUnit()
 
   useEffect(() => {
     requestAnimationFrame(() => setVisible(true))
@@ -136,7 +138,7 @@ export default function BadgeUnlockOverlay({
                     {badge.label}
                   </div>
                   <div style={{ fontSize: '12.5px', color: 'var(--text-muted)', lineHeight: 1.35, marginTop: '2px' }}>
-                    {badge.description}
+                    {badge.formatDescription ? badge.formatDescription(fmt, unitLabel) : badge.description}
                   </div>
                 </div>
               </div>

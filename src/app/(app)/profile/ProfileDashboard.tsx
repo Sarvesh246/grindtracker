@@ -92,7 +92,7 @@ export default function ProfileDashboard({
 }: Props) {
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
-  const { unit, toggleUnit } = useUnit()
+  const { unit, toggleUnit, fmt, unitLabel } = useUnit()
   const { theme } = useTheme()
   const { reduceMotion, toggleReduceMotion } = useMotionPref()
   const toast = useToast()
@@ -1184,7 +1184,7 @@ export default function ProfileDashboard({
                       {badge.label}
                     </div>
                     <div style={{ fontSize: '10px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                      {badge.description}
+                      {badge.formatDescription ? badge.formatDescription(fmt, unitLabel) : badge.description}
                     </div>
                   </div>
                 )}

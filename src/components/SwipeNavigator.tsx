@@ -77,7 +77,10 @@ export default function SwipeNavigator({ children }: { children: React.ReactNode
     // across data points (Recharts' Tooltip tracks touchmove itself) — once a
     // page-swipe commits mid-scrub it navigates away instead of just moving
     // the crosshair, which is worse than the swipe being unavailable there.
-    if (target.closest('input, textarea, select, [contenteditable="true"], .recharts-wrapper')) return
+    // Dialog/sheet content is portaled to document.body but still bubbles
+    // pointer events through this React tree — exclude it so a drag that
+    // starts on a sheet's button can't be read as a page-swipe.
+    if (target.closest('input, textarea, select, [contenteditable="true"], .recharts-wrapper, [role="dialog"], [role="alertdialog"]')) return
     dragRef.current = { startX: e.clientX, startY: e.clientY, axis: null }
   }
 

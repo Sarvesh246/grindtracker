@@ -542,8 +542,8 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
                   return (
                     <div
                       key={f.friendship_id}
-                      onPointerDown={e => startHold(f.friendship_id, e.clientX, e.clientY)}
-                      onPointerMove={e => handleHoldPointerMove(e.clientX, e.clientY)}
+                      onPointerDown={e => { e.stopPropagation(); startHold(f.friendship_id, e.clientX, e.clientY) }}
+                      onPointerMove={e => { e.stopPropagation(); handleHoldPointerMove(e.clientX, e.clientY) }}
                       onPointerUp={cancelHold}
                       onPointerLeave={cancelHold}
                       onPointerCancel={cancelHold}

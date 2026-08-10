@@ -496,22 +496,31 @@ export default function ActiveWorkout({ day }: { day: string }) {
     return `${m}:${s}`
   }
 
+  // Single pass over logs, recomputed only when exercises/logs actually
+  // change — not on every elapsed-timer tick (setInterval re-renders this
+  // component every second for the duration of the workout).
+  const setCounts = useMemo(() => {
+    const total = exercises.reduce((sum, ex) => sum + ex.sets_target, 0)
+    let checked = 0
+    let skipped = 0
+    for (const l of Object.values(logs)) {
+      if (l.checked) checked++
+      else if (l.skipped) skipped++
+    }
+    const percent = total === 0 ? 0 : ((checked + skipped) / total) * 100
+    return { total, checked, skipped, percent }
+  }, [exercises, logs])
   function totalSets(): number {
-    return exercises.reduce((sum, ex) => sum + ex.sets_target, 0)
+    return setCounts.total
   }
-
   function checkedSets(): number {
-    return Object.values(logs).filter(l => l.checked).length
+    return setCounts.checked
   }
-
   function skippedSets(): number {
-    return Object.values(logs).filter(l => l.skipped).length
+    return setCounts.skipped
   }
-
   function progressPercent(): number {
-    if (totalSets() === 0) return 0
-    const processed = Object.values(logs).filter(l => l.checked || l.skipped).length
-    return (processed / totalSets()) * 100
+    return setCounts.percent
   }
 
   function updateLog(key: string, field: 'weight' | 'reps' | 'note', value: string) {
@@ -665,7 +674,12 @@ export default function ActiveWorkout({ day }: { day: string }) {
     const weight = logEntry.weight !== '' ? parseFloat(logEntry.weight) : null
     const reps = logEntry.reps !== '' ? parseInt(logEntry.reps) : null
 
-    const prevBestVolume = previousBestVolumes[exerciseId]
+    // Exclude this set from its own "best" — previousBestVolumes[exerciseId]
+    // can equal this same set's own prior (pre-edit) volume when it was the
+    // live PR, which would compare the edit against itself instead of the
+    // true previous best.
+    const otherLogs = Object.fromEntries(Object.entries(logs).filter(([k]) => k !== key))
+    const prevBestVolume = bestVolumeFromLogs(exerciseId, otherLogs)
     const volume = weight !== null && reps !== null ? weight * reps : null
     const isPR =
       !logEntry.isWarmup &&
@@ -812,8 +826,8 @@ export default function ActiveWorkout({ day }: { day: string }) {
    * inert for XP/streak/PR purposes.
    */
   async function persistSkip(exerciseId: string, setNumbers: number[]) {
-    if (!sessionId || setNumbers.length === 0) return
-    await supabase.from('session_logs').upsert(
+    if (!sessionId || setNumbers.length === 0) return { error: null }
+    const { error } = await supabase.from('session_logs').upsert(
       setNumbers.map(s => ({
         session_id: sessionId,
         exercise_id: exerciseId,
@@ -826,22 +840,30 @@ export default function ActiveWorkout({ day }: { day: string }) {
       })),
       { onConflict: 'session_id,exercise_id,set_number' },
     )
+    return { error }
   }
 
   /** Undo persistSkip — deletes the marker row(s) so resume no longer sees them. */
   async function persistUnskip(exerciseId: string, setNumbers: number[]) {
-    if (!sessionId || setNumbers.length === 0) return
-    await supabase
+    if (!sessionId || setNumbers.length === 0) return { error: null }
+    const { error } = await supabase
       .from('session_logs')
       .delete()
       .eq('session_id', sessionId)
       .eq('exercise_id', exerciseId)
       .in('set_number', setNumbers)
+    return { error }
+  }
+
+  function showSkipSyncError() {
+    setResumeToast("Couldn't sync skip. Check your connection and try again.")
+    setTimeout(() => setResumeToast(null), 4000)
   }
 
   async function handleSkipSet(exerciseId: string, setNumber: number) {
     const key = `${exerciseId}-${setNumber}`
-    const wasChecked = logs[key]?.checked
+    const prevEntry = logs[key]
+    const wasChecked = prevEntry?.checked
     // persistSkip upserts the skip marker over whatever was there — including
     // an already-saved checked row, which it overwrites (weight/reps/is_pr
     // back to null/false) so it doesn't persist as a completed set. Clear the
@@ -862,16 +884,32 @@ export default function ActiveWorkout({ day }: { day: string }) {
     })
     // Exit edit mode if the user is mid-edit when they skip.
     if (editingKey === key) setEditingKey(null)
-    await persistSkip(exerciseId, [setNumber])
+    const { error } = await persistSkip(exerciseId, [setNumber])
+    if (error) {
+      setLogs(prev => {
+        const next = { ...prev, [key]: prevEntry }
+        if (wasChecked) {
+          setPreviousBests(pb => ({ ...pb, [exerciseId]: bestFromLogs(exerciseId, next) }))
+          setPreviousBestVolumes(pb => ({ ...pb, [exerciseId]: bestVolumeFromLogs(exerciseId, next) }))
+        }
+        return next
+      })
+      showSkipSyncError()
+    }
   }
 
   async function handleUnskipSet(exerciseId: string, setNumber: number) {
     const key = `${exerciseId}-${setNumber}`
+    const prevEntry = logs[key]
     setLogs(prev => ({
       ...prev,
       [key]: { ...prev[key], skipped: false, logId: undefined },
     }))
-    await persistUnskip(exerciseId, [setNumber])
+    const { error } = await persistUnskip(exerciseId, [setNumber])
+    if (error) {
+      setLogs(prev => ({ ...prev, [key]: prevEntry }))
+      showSkipSyncError()
+    }
   }
 
   async function handleSkipExercise(exerciseId: string) {
@@ -889,6 +927,11 @@ export default function ActiveWorkout({ day }: { day: string }) {
       if (entry?.checked) anyWasChecked = true
     }
     if (setsToSkip.length === 0) return
+    const prevEntries: LogMap = {}
+    for (const s of setsToSkip) {
+      const key = `${exerciseId}-${s}`
+      prevEntries[key] = logs[key]
+    }
     setLogs(prev => {
       const next = { ...prev }
       for (const s of setsToSkip) {
@@ -909,7 +952,18 @@ export default function ActiveWorkout({ day }: { day: string }) {
     if (editingKey && setsToSkip.some(s => editingKey === `${exerciseId}-${s}`)) {
       setEditingKey(null)
     }
-    await persistSkip(exerciseId, setsToSkip)
+    const { error } = await persistSkip(exerciseId, setsToSkip)
+    if (error) {
+      setLogs(prev => {
+        const next = { ...prev, ...prevEntries }
+        if (anyWasChecked) {
+          setPreviousBests(pb => ({ ...pb, [exerciseId]: bestFromLogs(exerciseId, next) }))
+          setPreviousBestVolumes(pb => ({ ...pb, [exerciseId]: bestVolumeFromLogs(exerciseId, next) }))
+        }
+        return next
+      })
+      showSkipSyncError()
+    }
   }
 
   async function handleUnskipExercise(exerciseId: string) {
@@ -918,6 +972,12 @@ export default function ActiveWorkout({ day }: { day: string }) {
     const setsToUnskip: number[] = []
     for (let s = 1; s <= ex.sets_target; s++) {
       if (logs[`${exerciseId}-${s}`]?.skipped) setsToUnskip.push(s)
+    }
+    if (setsToUnskip.length === 0) return
+    const prevEntries: LogMap = {}
+    for (const s of setsToUnskip) {
+      const key = `${exerciseId}-${s}`
+      prevEntries[key] = logs[key]
     }
     setLogs(prev => {
       const next = { ...prev }
@@ -929,7 +989,11 @@ export default function ActiveWorkout({ day }: { day: string }) {
       }
       return next
     })
-    await persistUnskip(exerciseId, setsToUnskip)
+    const { error } = await persistUnskip(exerciseId, setsToUnskip)
+    if (error) {
+      setLogs(prev => ({ ...prev, ...prevEntries }))
+      showSkipSyncError()
+    }
   }
 
   async function handleSwapExercise(newExercise: Exercise) {
@@ -937,11 +1001,17 @@ export default function ActiveWorkout({ day }: { day: string }) {
     const oldExercise = exercises.find(e => e.id === swapTarget)
     const oldExtras = extraSets[swapTarget] ?? 0
 
-    await supabase
+    const { error: deleteError } = await supabase
       .from('session_logs')
       .delete()
       .eq('session_id', sessionId)
       .eq('exercise_id', swapTarget)
+
+    if (deleteError) {
+      setResumeToast('Could not swap exercise. Check your connection and try again.')
+      setTimeout(() => setResumeToast(null), 4000)
+      return
+    }
 
     let prevBest: number | null = previousBests[newExercise.id] !== undefined
       ? previousBests[newExercise.id]
@@ -2224,7 +2294,7 @@ function ExerciseCard({
                 left: '50%',
                 top: '50%',
                 transform: 'translate(-50%, -50%)',
-                width: '28px', height: '28px',
+                width: '44px', height: '44px',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 backgroundColor: 'transparent', border: 'none',
                 cursor: 'pointer', padding: 0,
@@ -2895,6 +2965,16 @@ function SetRow({
             aria-label={logEntry.isWarmup ? `Unmark set ${setNumber} as warm-up` : `Mark set ${setNumber} as warm-up`}
             title={logEntry.isWarmup ? 'Warm-up set (excluded from PRs)' : 'Mark as warm-up'}
             style={{
+              // 44px tap target wrapping a visually-unchanged 28px pill — see
+              // the inner span below — so the button doesn't grow on screen.
+              width: '44px', height: '44px',
+              backgroundColor: 'transparent', border: 'none',
+              cursor: (logEntry.checked && !editing) ? 'default' : 'pointer',
+              flexShrink: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >
+            <span style={{
               width: '28px', height: '28px',
               borderRadius: '999px',
               border: `1px solid ${logEntry.isWarmup ? 'var(--accent-dim)' : 'var(--border)'}`,
@@ -2903,12 +2983,10 @@ function SetRow({
               fontFamily: "'DM Sans', sans-serif",
               fontSize: '11px',
               fontWeight: 700,
-              cursor: (logEntry.checked && !editing) ? 'default' : 'pointer',
-              flexShrink: 0,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}
-          >
-            W
+            }}>
+              W
+            </span>
           </button>
           {setNumber === 1 && !isBonus && (
             <span style={{
