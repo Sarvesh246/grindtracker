@@ -10,6 +10,7 @@ import { haptic } from '@/lib/utils/haptics'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { deleteIncompleteSessions } from '@/lib/utils/sessions'
 import { advanceIndex, effectiveSequence } from '@/lib/utils/rotation'
+import { queueSetLog, flushQueuedSetLogs, getQueuedSetLogs } from '@/lib/utils/offlineQueue'
 import type { UserRotation, UserStats, CompleteSessionResult } from '@/lib/types'
 import { useRestTimer, getPauseRestOnExit } from '@/lib/hooks/useRestTimer'
 import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
@@ -30,6 +31,9 @@ interface SetState {
   isWarmup: boolean
   note: string
   logId?: string
+  /** Checked locally but the write to Supabase failed even after retries —
+   * queued in offlineQueue and waiting to sync once the connection returns. */
+  pendingSync?: boolean
 }
 
 interface UndoState {
@@ -196,6 +200,28 @@ export default function ActiveWorkout({ day }: { day: string }) {
   // own closure would be stale. The ref always reflects the latest committed state.
   const logsRef = useRef<LogMap>(logs)
   useEffect(() => { logsRef.current = logs }, [logs])
+
+  // Replay anything queued by handleCheck's offline fallback — once on mount
+  // (in case the connection was already back by the time the app reopened)
+  // and again whenever the browser regains connectivity mid-workout.
+  useEffect(() => {
+    if (!sessionId) return
+    async function flush() {
+      const synced = await flushQueuedSetLogs(sessionId!, supabase)
+      if (synced.length === 0) return
+      setLogs(prev => {
+        const next = { ...prev }
+        for (const { exerciseId, setNumber } of synced) {
+          const key = `${exerciseId}-${setNumber}`
+          if (next[key]) next[key] = { ...next[key], pendingSync: false }
+        }
+        return next
+      })
+    }
+    flush()
+    window.addEventListener('online', flush)
+    return () => window.removeEventListener('online', flush)
+  }, [sessionId, supabase])
 
   useEffect(() => {
     // Freeze the displayed elapsed time once the workout is finished — otherwise
@@ -418,6 +444,23 @@ export default function ActiveWorkout({ day }: { day: string }) {
               logId: log.id,
             }
       }
+      // Overlay anything still sitting in the offline queue — the server hasn't
+      // seen these yet, so without this a set logged with no signal (and never
+      // flushed before the app was closed) would revert to "not done" on resume.
+      for (const q of getQueuedSetLogs(sid)) {
+        const key = `${q.exerciseId}-${q.setNumber}`
+        restored[key] = {
+          ...restored[key],
+          weight: q.weight !== null ? String(q.weight) : '',
+          reps: q.reps !== null ? String(q.reps) : '',
+          checked: true,
+          skipped: false,
+          isPR: q.isPR,
+          isWarmup: q.isWarmup,
+          note: q.note ?? '',
+          pendingSync: true,
+        }
+      }
       setLogs(restored)
 
       const ageMs = Date.now() - sessionStart.getTime()
@@ -440,6 +483,23 @@ export default function ActiveWorkout({ day }: { day: string }) {
             isWarmup: false,
             note: '',
           }
+        }
+      }
+      // A brand-new session can still have offline-queued sets if every write
+      // failed before the app was closed (so no session_logs rows exist yet)
+      // — same overlay as the resumed branch above.
+      for (const q of getQueuedSetLogs(sid)) {
+        const key = `${q.exerciseId}-${q.setNumber}`
+        prefilled[key] = {
+          ...prefilled[key],
+          weight: q.weight !== null ? String(q.weight) : '',
+          reps: q.reps !== null ? String(q.reps) : '',
+          checked: true,
+          skipped: false,
+          isPR: q.isPR,
+          isWarmup: q.isWarmup,
+          note: q.note ?? '',
+          pendingSync: true,
         }
       }
       setLogs(prefilled)
@@ -587,18 +647,38 @@ export default function ActiveWorkout({ day }: { day: string }) {
         .maybeSingle(),
     )
 
-    // If the set couldn't be persisted, don't mark it checked — that would show
-    // a saved-looking set the DB never received, and it would silently vanish on
-    // resume. Surface it so the user can tap again once the connection recovers.
+    // If the set couldn't be persisted (even after runWithRetry's own retries —
+    // a real network drop, not just a blip), don't just fail silently: queue it
+    // for a background replay and still mark it checked, so a set logged with
+    // no signal in the gym isn't lost or stuck requiring the user to notice and
+    // retap once they're back near wifi.
     if (saveError) {
-      setResumeToast('Could not save set. Check your connection and try again.')
+      queueSetLog({
+        sessionId,
+        exerciseId,
+        setNumber,
+        weight,
+        reps,
+        isPR,
+        isWarmup: logEntry.isWarmup,
+        note: logEntry.note || null,
+        queuedAt: Date.now(),
+      })
+      setResumeToast('Saved on this device — will sync once back online.')
       setTimeout(() => setResumeToast(null), 4000)
-      return
     }
 
     setLogs(prev => ({
       ...prev,
-      [key]: { ...prev[key], reps: repsStr, checked: true, skipped: false, isPR, logId: saved?.id },
+      [key]: {
+        ...prev[key],
+        reps: repsStr,
+        checked: true,
+        skipped: false,
+        isPR,
+        logId: saved?.id,
+        pendingSync: !!saveError,
+      },
     }))
 
     if (isPR && weight !== null && volume !== null) {
@@ -3173,11 +3253,13 @@ function SetRow({
             disabled={logEntry.skipped}
             aria-label={
               logEntry.checked
-                ? `Edit set ${setNumber}`
+                ? `Edit set ${setNumber}${logEntry.pendingSync ? ' (not yet synced)' : ''}`
                 : `Mark set ${setNumber} complete`
             }
+            title={logEntry.pendingSync ? 'Saved on this device — syncing when back online' : undefined}
             aria-pressed={logEntry.checked}
             style={{
+              position: 'relative',
               width: '44px', height: '44px', minWidth: '44px',
               borderRadius: '9999px',
               border: `2px solid ${logEntry.checked ? 'var(--accent)' : 'var(--border-strong)'}`,
@@ -3195,6 +3277,17 @@ function SetRow({
              style={{ color: logEntry.checked ? 'var(--accent-text)' : 'var(--text-muted)' }}>
               <polyline points="20 6 9 17 4 12" />
             </svg>
+            {logEntry.checked && logEntry.pendingSync && (
+              <span
+                aria-hidden="true"
+                style={{
+                  position: 'absolute', top: '-2px', right: '-2px',
+                  width: '10px', height: '10px', borderRadius: '9999px',
+                  backgroundColor: 'var(--text-muted)',
+                  border: '2px solid var(--bg)',
+                }}
+              />
+            )}
           </button>
         )}
       </div>

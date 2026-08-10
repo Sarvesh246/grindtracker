@@ -102,6 +102,6 @@ export const config = {
   // Exclude static assets and PWA files. Each excluded path is one fewer
   // middleware invocation — which on Vercel is both latency and billed compute.
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|manifest.json|sw.js|robots.txt|sitemap.xml|.*\\.(?:png|jpg|jpeg|gif|webp|svg|ico|woff|woff2|ttf)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|manifest.json|sw.js|offline.html|robots.txt|sitemap.xml|.*\\.(?:png|jpg|jpeg|gif|webp|svg|ico|woff|woff2|ttf)$).*)',
   ],
 }
