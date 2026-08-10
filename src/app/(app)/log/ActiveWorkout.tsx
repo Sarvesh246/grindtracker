@@ -3361,6 +3361,8 @@ function SetRow({
   const { fromDisplay, fmt } = useUnit()
   const [justChecked, setJustChecked] = useState(false)
   const [needsReps, setNeedsReps] = useState(false)
+  // Track local editing intent - set immediately on click, before parent state updates
+  const [editingIntent, setEditingIntent] = useState(false)
   // null = auto: a row with a saved note starts open (notes can arrive after
   // mount when an in-progress session loads), an empty one starts closed.
   // The chevron under the set label sets it explicitly.
@@ -3374,8 +3376,15 @@ function SetRow({
   const weightRef = useRef<HTMLInputElement>(null)
   const repsRef = useRef<HTMLInputElement>(null)
 
-  // Editable when not yet checked, OR currently in the edit window.
-  const inputsDisabled = (logEntry.checked && !editing) || logEntry.skipped
+  // Sync editingIntent: clear when editing prop becomes true, or when set is checked/skipped
+  useEffect(() => {
+    if (editing || logEntry.checked || logEntry.skipped) {
+      setEditingIntent(false)
+    }
+  }, [editing, logEntry.checked, logEntry.skipped])
+
+  // Editable when: not yet checked, OR in edit mode, OR have local edit intent
+  const inputsDisabled = ((logEntry.checked && !editing && !editingIntent) || logEntry.skipped)
 
   function handleCheck() {
     if (logEntry.checked) return
@@ -3575,9 +3584,10 @@ function SetRow({
             onClick={() => {
               // Enter edit mode on click if set is checked
               if (logEntry.checked && !editing && !logEntry.skipped) {
+                setEditingIntent(true) // Set immediately so inputsDisabled becomes false
                 onStartEdit()
-                // Focus after state updates
-                setTimeout(() => weightRef.current?.focus(), 10)
+                // Focus after a tick to ensure intent state has updated
+                setTimeout(() => weightRef.current?.focus(), 0)
               }
             }}
             onFocus={e => {
@@ -3618,9 +3628,10 @@ function SetRow({
             onClick={() => {
               // Enter edit mode on click if set is checked
               if (logEntry.checked && !editing && !logEntry.skipped) {
+                setEditingIntent(true) // Set immediately so inputsDisabled becomes false
                 onStartEdit()
-                // Focus after state updates
-                setTimeout(() => repsRef.current?.focus(), 10)
+                // Focus after a tick to ensure intent state has updated
+                setTimeout(() => repsRef.current?.focus(), 0)
               }
             }}
             onFocus={e => { 
