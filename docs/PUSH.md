@@ -30,20 +30,33 @@ Locally, put the same keys in `.env.local`.
 
 ## Cron
 
-[`vercel.json`](../vercel.json) hits `POST /api/cron/notifications` every 15
-minutes with `Authorization: Bearer $CRON_SECRET`. The handler:
+[`vercel.json`](../vercel.json) hits `/api/cron/notifications` once per day
+(`0 1 * * *` UTC). **Hobby only allows daily crons** — expressions like
+`*/15 * * * *` fail the deployment. The handler:
 
 1. Calls `schedule_streak_reminders()` for users whose local hour matches
    their streak reminder hour (default 19:00).
 2. Claims due `scheduled_notifications` via `claim_due_notifications()`.
-3. Sends each via `web-push`.
+3. Sends each via `web-push`. Auth: `Authorization: Bearer $CRON_SECRET`
+   (Vercel injects this for its own crons).
 
 **Rest-end latency:** 60–180s rests are delivered by **page timers** (and a
-best-effort SW timer) while the PWA’s JS can still run. The 15-minute cron is
-only a fallback for when the phone is locked / JS is frozen — expect up to
-~15 minutes of delay in that case. Vercel Hobby cron cannot run more often;
-Pro can use `* * * * *` (every minute) if you want tighter locked-phone
-delivery.
+best-effort SW timer) while the PWA’s JS can still run. The Vercel daily cron
+is only a weak locked-phone fallback.
+
+### Recommended on Hobby: external 15‑minute ping
+
+For evening streak reminders at the right local hour and a better locked-phone
+rest fallback, point a free external cron (e.g. [cron-job.org](https://cron-job.org))
+at:
+
+`GET https://grindtrack.vercel.app/api/cron/notifications`
+
+Header: `Authorization: Bearer <your CRON_SECRET>`  
+Schedule: every 15 minutes.
+
+On **Pro**, you can change `vercel.json` to `*/15 * * * *` (or `* * * * *`)
+and skip the external cron.
 
 ## Client defaults (anti-spam)
 
