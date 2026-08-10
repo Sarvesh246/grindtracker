@@ -468,7 +468,7 @@ export default function ProgressPage() {
       <div data-onboard="progress-selector">
 
       {/* Day picker (level 1) */}
-      <div style={{ padding: '0 16px 8px', display: 'flex', gap: '6px', overflowX: 'auto' }} className="scrollbar-hide">
+      <div style={{ padding: '0 16px 8px', display: 'flex', gap: '6px', overflowX: 'auto', touchAction: 'pan-x' }} className="scrollbar-hide">
         {dayTypes.map(dt => {
           const active = dt === selectedDay
           return (

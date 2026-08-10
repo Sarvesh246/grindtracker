@@ -2,6 +2,7 @@ import { Suspense } from 'react'
 import { cookies } from 'next/headers'
 import BottomNav from '@/components/BottomNav'
 import TopNav from '@/components/TopNav'
+import SwipeNavigator from '@/components/SwipeNavigator'
 import { UnitProvider } from '@/lib/contexts/UnitContext'
 import { ToastProvider } from '@/lib/contexts/ToastContext'
 import { OnboardingProvider, type OnboardingState } from '@/lib/contexts/OnboardingContext'
@@ -48,7 +49,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           768px breakpoint shows exactly one — no JS width detection. */}
       <TopNav />
       <main className="app-main">
-        {children}
+        <Suspense fallback={children}>
+          <SwipeNavigator>{children}</SwipeNavigator>
+        </Suspense>
       </main>
       <Suspense fallback={null}>
         <BottomNav />

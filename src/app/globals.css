@@ -142,12 +142,17 @@ html.light {
   margin: 0;
   padding: 0;
   -webkit-tap-highlight-color: transparent;
-  /* Disables iOS Safari's ~300ms double-tap-to-zoom detection delay. Without
-     this, a tap that triggers a layout shift (e.g. expanding a note field)
-     can have its deferred "click" re-targeted at whatever element slides
-     under the original touch point by the time WebKit dispatches it —
-     symptom: tapping a control sometimes fires the one below/after it. */
-  touch-action: manipulation;
+  /* `manipulation` (pan-x pan-y, no double-tap-zoom) used to be the default
+     here, but pan-x is exactly what lets iOS/WKWebView treat a left-edge drag
+     as its own "swipe back" gesture — which fights SwipeNavigator below and,
+     in a standalone PWA with no browser chrome to go "back" to, just looks
+     broken. Dropping pan-x kills that system gesture app-wide while keeping
+     vertical scroll, pinch-zoom (WCAG — see layout.tsx), and the same
+     no-double-tap-delay benefit (any non-'auto' value suppresses it, not
+     just 'manipulation'). Any element that genuinely needs native horizontal
+     scroll (tab rows, timelines) opts back in locally with `touchAction:
+     'pan-x'`. */
+  touch-action: pan-y pinch-zoom;
 }
 
 html,

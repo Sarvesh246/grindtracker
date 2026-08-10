@@ -31,6 +31,7 @@ export default function TimelineStrip({
         overflowX: 'auto',
         padding: '10px 16px',
         WebkitOverflowScrolling: 'touch',
+        touchAction: 'pan-x',
       }}
     >
       {dates.map(date => {

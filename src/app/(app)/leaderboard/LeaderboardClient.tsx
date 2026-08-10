@@ -184,6 +184,10 @@ export default function LeaderboardClient({ userId }: Props) {
         marginBottom: '16px',
         overflowX: 'auto',
         scrollbarWidth: 'none',
+        // Opts back into native horizontal panning — the global default (see
+        // globals.css) is pan-y-only so SwipeNavigator's page swipe wins by
+        // default, but a horizontally-scrolling row needs pan-x for itself.
+        touchAction: 'pan-x',
       }}>
         {CATEGORIES.map(c => {
           const active = category === c.key
