@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { getLevel, getXpInCurrentLevel, getXpRequiredForLevel, getXpToNextLevel } from '@/lib/utils/gamification'
 import { localDateKey } from '@/lib/utils/formatting'
-import { ALL_BADGES } from '@/lib/utils/badges'
+import { ALL_BADGES, formatBadgeDescription } from '@/lib/utils/badges'
 import BadgeIcon from '@/components/BadgeIcon'
 import BodyWeightCard from './BodyWeightCard'
 import { useUnit } from '@/lib/contexts/UnitContext'
@@ -1182,7 +1182,7 @@ export default function ProfileDashboard({
                       {badge.label}
                     </div>
                     <div style={{ fontSize: '10px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                      {badge.formatDescription ? badge.formatDescription(fmt, unitLabel) : badge.description}
+                      {formatBadgeDescription(badge, fmt, unitLabel)}
                     </div>
                   </div>
                 )}

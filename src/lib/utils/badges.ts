@@ -1,17 +1,23 @@
 import { SupabaseClient } from '@supabase/supabase-js'
 import { UserStats } from '@/lib/types'
 
+export type BadgeWeightKind = 'volume' | 'plates'
+
 export interface BadgeDefinition {
   id: string
   label: string
   emoji: string
-  /** Unit-free fallback wording. For badges whose wording states a weight,
-   * prefer `formatDescription` (below) so the number renders in the user's
-   * active display unit instead of a fixed "lbs" string. */
+  /** Fallback wording (always lbs). Prefer `formatBadgeDescription` when a
+   * weight kind is set so the number renders in the user's display unit. */
   description: string
-  /** Rebuilds `description` in the caller's active unit — `fmtWeight` is
-   * UnitContext's `fmt` (canonical lbs -> rounded display string). */
-  formatDescription?: (fmtWeight: (canonicalLbs: number) => string, unitLabel: string) => string
+  /**
+   * Canonical lbs amount used by `formatBadgeDescription`. Kept as plain
+   * data (never a function) so badge objects stay RSC-serializable — passing
+   * `formatDescription` closures from a Server Component into a Client
+   * Component is what broke /profile (digest 4241374136).
+   */
+  weightLbs?: number
+  weightKind?: BadgeWeightKind
 }
 
 export const ALL_BADGES: BadgeDefinition[] = [
@@ -37,12 +43,12 @@ export const ALL_BADGES: BadgeDefinition[] = [
   { id: 'level_10', label: 'Icon', emoji: '⭐', description: 'Reach Level 10' },
   { id: 'level_15', label: 'Ascended', emoji: '💎', description: 'Reach Level 15' },
   { id: 'level_20', label: 'Immortal', emoji: '⚜️', description: 'Reach Level 20' },
-  { id: 'volume_100k', label: '100K Club', emoji: '🏋️', description: '100,000 lbs of total volume lifted', formatDescription: (fmtWeight, unitLabel) => `${fmtWeight(100000)} ${unitLabel} of total volume lifted` },
-  { id: 'volume_500k', label: '500K Club', emoji: '🏋️', description: '500,000 lbs of total volume lifted', formatDescription: (fmtWeight, unitLabel) => `${fmtWeight(500000)} ${unitLabel} of total volume lifted` },
-  { id: 'volume_1m', label: 'Million Pound Club', emoji: '🏋️', description: '1,000,000 lbs of total volume lifted', formatDescription: (fmtWeight, unitLabel) => `${fmtWeight(1000000)} ${unitLabel} of total volume lifted` },
-  { id: 'plates_225', label: 'Two Plates', emoji: '⚫', description: 'Log a set at 225 lbs or more', formatDescription: (fmtWeight, unitLabel) => `Log a set at ${fmtWeight(225)} ${unitLabel} or more` },
-  { id: 'plates_315', label: 'Three Plates', emoji: '⚫', description: 'Log a set at 315 lbs or more', formatDescription: (fmtWeight, unitLabel) => `Log a set at ${fmtWeight(315)} ${unitLabel} or more` },
-  { id: 'plates_405', label: 'Four Plates', emoji: '⚫', description: 'Log a set at 405 lbs or more', formatDescription: (fmtWeight, unitLabel) => `Log a set at ${fmtWeight(405)} ${unitLabel} or more` },
+  { id: 'volume_100k', label: '100K Club', emoji: '🏋️', description: '100,000 lbs of total volume lifted', weightLbs: 100000, weightKind: 'volume' },
+  { id: 'volume_500k', label: '500K Club', emoji: '🏋️', description: '500,000 lbs of total volume lifted', weightLbs: 500000, weightKind: 'volume' },
+  { id: 'volume_1m', label: 'Million Pound Club', emoji: '🏋️', description: '1,000,000 lbs of total volume lifted', weightLbs: 1000000, weightKind: 'volume' },
+  { id: 'plates_225', label: 'Two Plates', emoji: '⚫', description: 'Log a set at 225 lbs or more', weightLbs: 225, weightKind: 'plates' },
+  { id: 'plates_315', label: 'Three Plates', emoji: '⚫', description: 'Log a set at 315 lbs or more', weightLbs: 315, weightKind: 'plates' },
+  { id: 'plates_405', label: 'Four Plates', emoji: '⚫', description: 'Log a set at 405 lbs or more', weightLbs: 405, weightKind: 'plates' },
   { id: 'early_bird', label: 'Early Bird', emoji: '🌅', description: 'Start a workout before 7 AM' },
   { id: 'night_owl', label: 'Night Owl', emoji: '🌙', description: 'Start a workout at 10 PM or later' },
   { id: 'comeback', label: 'The Comeback', emoji: '🔁', description: 'Return after a break of 14+ days' },
@@ -53,6 +59,19 @@ export const ALL_BADGES: BadgeDefinition[] = [
   { id: 'weight_tracked', label: 'Tracked', emoji: '⚖️', description: 'Log your body weight 5 times' },
   { id: 'completionist', label: 'Completionist', emoji: '🏅', description: 'Earn every other badge' },
 ]
+
+/** Rebuilds a badge's description in the caller's active display unit. */
+export function formatBadgeDescription(
+  badge: BadgeDefinition,
+  fmtWeight: (canonicalLbs: number) => string,
+  unitLabel: string,
+): string {
+  if (badge.weightLbs == null || !badge.weightKind) return badge.description
+  if (badge.weightKind === 'volume') {
+    return `${fmtWeight(badge.weightLbs)} ${unitLabel} of total volume lifted`
+  }
+  return `Log a set at ${fmtWeight(badge.weightLbs)} ${unitLabel} or more`
+}
 
 export interface BadgeContext {
   /** Local start time of the just-finished session — powers early_bird/night_owl. */

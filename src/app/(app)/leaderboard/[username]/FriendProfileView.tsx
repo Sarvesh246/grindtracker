@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { getLevel, getXpInCurrentLevel, getXpRequiredForLevel, getXpToNextLevel } from '@/lib/utils/gamification'
-import { ALL_BADGES } from '@/lib/utils/badges'
+import { ALL_BADGES, formatBadgeDescription } from '@/lib/utils/badges'
 import BadgeIcon from '@/components/BadgeIcon'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import type { FriendProfile } from '@/lib/types'
@@ -396,7 +396,7 @@ export default function FriendProfileView({ profile }: Props) {
                         {badge.label}
                       </div>
                       <div style={{ fontSize: '10px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                        {badge.formatDescription ? badge.formatDescription(fmt, unitLabel) : badge.description}
+                        {formatBadgeDescription(badge, fmt, unitLabel)}
                       </div>
                     </div>
                   )}

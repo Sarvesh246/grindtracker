@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import BadgeIcon from './BadgeIcon'
 import { useMotionPref } from '@/lib/contexts/MotionContext'
 import { useUnit } from '@/lib/contexts/UnitContext'
-import type { BadgeDefinition } from '@/lib/utils/badges'
+import { formatBadgeDescription, type BadgeDefinition } from '@/lib/utils/badges'
 
 /**
  * Full-screen celebration shown before CompletionModal when a live workout
@@ -138,7 +138,7 @@ export default function BadgeUnlockOverlay({
                     {badge.label}
                   </div>
                   <div style={{ fontSize: '12.5px', color: 'var(--text-muted)', lineHeight: 1.35, marginTop: '2px' }}>
-                    {badge.formatDescription ? badge.formatDescription(fmt, unitLabel) : badge.description}
+                    {formatBadgeDescription(badge, fmt, unitLabel)}
                   </div>
                 </div>
               </div>
