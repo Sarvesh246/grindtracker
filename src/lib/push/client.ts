@@ -151,6 +151,11 @@ export function scheduleLocalRestFallback(opts: {
   const now = Date.now()
   const endDelay = Math.max(0, opts.endsAtMs - now)
 
+  // Don't arm timer if the end time has already passed - prevents immediate spam.
+  if (endDelay === 0) {
+    return
+  }
+
   pageRestEndId = setTimeout(() => {
     pageRestEndId = null
     showLocalNotification(endPayload)

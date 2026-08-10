@@ -280,6 +280,12 @@ export default function ActiveWorkout({ day }: { day: string }) {
     }
 
     const endsAtMs = restTimer.startedAt + restTimer.durationMs
+    // Don't schedule if the timer has already expired - prevents spam when
+    // adjusting time after rest has ended or when effect re-runs at 0.
+    if (endsAtMs <= Date.now()) {
+      return
+    }
+
     const durationSec = Math.round(restTimer.durationMs / 1000)
     const exerciseName = exercises.find(e => e.id === restTimer.exerciseId)?.name ?? ''
     void scheduleRestNotifications({

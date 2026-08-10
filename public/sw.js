@@ -182,6 +182,13 @@ self.addEventListener('message', event => {
     }
     const now = Date.now()
     const endDelay = Math.max(0, (endsAt || 0) - now)
+    
+    // Don't arm timer if the end time has already passed - prevents immediate spam.
+    if (endDelay === 0) {
+      restTimeouts.delete(key)
+      return
+    }
+    
     const endId = setTimeout(() => {
       void showGrindNotification(payload || { title: 'Rest over', tag: 'grind-rest', url: '/log', badge: 1 })
       restTimeouts.delete(key)
