@@ -147,9 +147,10 @@ export default function CoachSheet() {
               capped ? ' coach-sheet__quota--danger' : ''
             }`}
             aria-live="polite"
+            title="Coach messages you can send today — resets 24 hours after your first message"
           >
             {dailyRemaining != null
-              ? `${dailyRemaining} left`
+              ? `${dailyRemaining} message${dailyRemaining === 1 ? '' : 's'} left today`
               : quota
                 ? '…'
                 : '—'}

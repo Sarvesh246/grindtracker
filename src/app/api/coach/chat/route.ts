@@ -177,19 +177,67 @@ ${contextJson}`
       messages: [...history, { role: 'user', content: message }],
       maxOutputTokens: 1024,
       temperature: 0.4,
-      onFinish: async ({ text }) => {
-        const reply = (text ?? '').trim()
-        if (!reply) return
-        const { error } = await supabase.from('coach_messages').insert({
-          user_id: user.id,
-          role: 'assistant',
-          content: reply.slice(0, 4000),
-        })
-        if (error) console.error('[grind] coach insert assistant', error)
+      // gemini-2.5-* models can spend the whole maxOutputTokens budget on
+      // hidden "thinking" tokens and return empty visible text — this coach
+      // doesn't need chain-of-thought, so turn it off explicitly rather than
+      // relying on the provider's current default.
+      providerOptions: { google: { thinkingConfig: { thinkingBudget: 0 } } },
+      onError: ({ error }) => {
+        // streamText() returns before the model call actually runs, so this
+        // is the ONLY place upstream failures (bad key, quota, model
+        // rename, safety block, network) surface — the outer try/catch below
+        // never sees them, since they happen while the stream is consumed,
+        // not while streamText() itself is called.
+        console.error('[grind] coach stream error', error)
       },
     })
 
-    const response = result.toTextStreamResponse()
+    // Build the response by hand instead of result.toTextStreamResponse():
+    // that helper silently drops 'error' parts of the stream, so an upstream
+    // failure used to produce a 200 response with an empty body and no
+    // indication anything went wrong. Consuming fullStream lets us turn a
+    // failure into a visible message instead of dead air.
+    const encoder = new TextEncoder()
+    let full = ''
+    let sawError = false
+
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        try {
+          for await (const part of result.fullStream) {
+            if (part.type === 'text-delta') {
+              full += part.text
+              controller.enqueue(encoder.encode(part.text))
+            } else if (part.type === 'error') {
+              sawError = true
+              console.error('[grind] coach stream error', part.error)
+            }
+          }
+        } catch (err) {
+          sawError = true
+          console.error('[grind] coach stream error', err)
+        } finally {
+          if (sawError && !full.trim()) {
+            full = 'Sorry, I hit an error generating a reply. Try again in a moment.'
+            controller.enqueue(encoder.encode(full))
+          }
+          controller.close()
+          const reply = full.trim()
+          if (reply) {
+            const { error } = await supabase.from('coach_messages').insert({
+              user_id: user.id,
+              role: 'assistant',
+              content: reply.slice(0, 4000),
+            })
+            if (error) console.error('[grind] coach insert assistant', error)
+          }
+        }
+      },
+    })
+
+    const response = new Response(stream, {
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    })
     // Expose remaining quota after this turn for a future UI.
     response.headers.set(
       'X-Coach-Daily-Remaining',

@@ -1273,6 +1273,9 @@ html.light .coach-sheet {
   font-size: 11px;
   color: var(--text-secondary);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 132px;
 }
 .coach-sheet__quota--danger {
   color: var(--danger);
