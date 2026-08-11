@@ -45,7 +45,7 @@ export default function CoachSheet() {
   const [draft, setDraft] = useState('')
 
   const dailyRemaining = quota?.dailyRemaining
-  const capped = dailyRemaining != null && dailyRemaining <= 0
+  const capped = !quota?.unlimited && dailyRemaining != null && dailyRemaining <= 0
   const sendDisabled =
     !draft.trim() || streaming || capped || configured === false
 
@@ -147,13 +147,19 @@ export default function CoachSheet() {
               capped ? ' coach-sheet__quota--danger' : ''
             }`}
             aria-live="polite"
-            title="Coach messages you can send today — resets 24 hours after your first message"
+            title={
+              quota?.unlimited
+                ? 'Dev toggle is on — the app’s 15/day limit is bypassed until you hit Gemini’s own free-tier quota'
+                : 'Coach messages you can send today — resets 24 hours after your first message'
+            }
           >
-            {dailyRemaining != null
-              ? `${dailyRemaining} message${dailyRemaining === 1 ? '' : 's'} left today`
-              : quota
-                ? '…'
-                : '—'}
+            {quota?.unlimited
+              ? 'Unlimited (dev)'
+              : dailyRemaining != null
+                ? `${dailyRemaining} message${dailyRemaining === 1 ? '' : 's'} left today`
+                : quota
+                  ? '…'
+                  : '—'}
           </div>
           <div className="coach-sheet__actions">
             <IconButton

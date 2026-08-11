@@ -20,7 +20,7 @@ export default async function ProfileSettingsPage() {
 
   const { data: profile } = await supabase
     .from('user_profiles')
-    .select('username')
+    .select('username, coach_dev_unlimited')
     .eq('id', user.id)
     .maybeSingle()
 
@@ -30,6 +30,7 @@ export default async function ProfileSettingsPage() {
       isAdmin={isAdminEmail(user.email)}
       displayName={displayName}
       username={profile?.username ?? null}
+      coachDevUnlimited={profile?.coach_dev_unlimited ?? false}
     />
   )
 }

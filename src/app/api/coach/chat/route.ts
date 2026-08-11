@@ -3,6 +3,7 @@ import { streamText, type ModelMessage } from 'ai'
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
+import { isAdminEmail } from '@/lib/utils/admin'
 import {
   COACH_DEFAULT_MODEL,
   COACH_MAX_HISTORY_MESSAGES,
@@ -87,7 +88,8 @@ export async function POST(request: Request) {
     )
   }
 
-  const quota = await getCoachQuota(supabase, user.id)
+  const isAdmin = isAdminEmail(user.email)
+  const quota = await getCoachQuota(supabase, user.id, isAdmin)
   if (!quota) {
     return NextResponse.json(
       {
@@ -97,7 +99,7 @@ export async function POST(request: Request) {
       { status: 503 },
     )
   }
-  if (quota.dailyRemaining <= 0) {
+  if (!quota.unlimited && quota.dailyRemaining <= 0) {
     return NextResponse.json(
       {
         error: `Daily coach limit reached (${quota.dailyLimit} messages per day). Try again tomorrow.`,
@@ -107,7 +109,7 @@ export async function POST(request: Request) {
       { status: 429 },
     )
   }
-  if (quota.burstRemaining <= 0) {
+  if (!quota.unlimited && quota.burstRemaining <= 0) {
     return NextResponse.json(
       {
         error: `Too many messages too quickly. Max ${quota.burstLimit} per 10 minutes.`,
@@ -118,12 +120,15 @@ export async function POST(request: Request) {
     )
   }
 
-  // Persist user turn first — trigger is authoritative if racing.
-  const { error: insertUserErr } = await supabase.from('coach_messages').insert({
-    user_id: user.id,
-    role: 'user',
-    content: message,
-  })
+  // Persist user turn first — trigger is authoritative if racing. Its id is
+  // kept so a total model-call failure below can refund this turn instead of
+  // silently burning the user's daily/burst allowance for a reply they never
+  // got (see grind_coach_refund_message, docs/sql/34-coach-quota-fixes.sql).
+  const { data: insertedMessage, error: insertUserErr } = await supabase
+    .from('coach_messages')
+    .insert({ user_id: user.id, role: 'user', content: message })
+    .select('id')
+    .single()
   if (insertUserErr) {
     const mapped = mapCoachRateLimitError(insertUserErr.message)
     if (mapped) {
@@ -217,19 +222,27 @@ ${contextJson}`
           sawError = true
           console.error('[grind] coach stream error', err)
         } finally {
-          if (sawError && !full.trim()) {
+          const gotReply = full.trim().length > 0
+          if (sawError && !gotReply) {
             full = 'Sorry, I hit an error generating a reply. Try again in a moment.'
             controller.enqueue(encoder.encode(full))
           }
           controller.close()
-          const reply = full.trim()
-          if (reply) {
+          if (gotReply) {
             const { error } = await supabase.from('coach_messages').insert({
               user_id: user.id,
               role: 'assistant',
-              content: reply.slice(0, 4000),
+              content: full.trim().slice(0, 4000),
             })
             if (error) console.error('[grind] coach insert assistant', error)
+          } else {
+            // The model never actually produced anything — refund the slot
+            // enforce_coach_rate_limit() charged when the user turn was
+            // inserted, so a broken/unavailable model doesn't cost quota.
+            const { error } = await supabase.rpc('grind_coach_refund_message', {
+              p_message_id: insertedMessage.id,
+            })
+            if (error) console.error('[grind] coach refund failed', error)
           }
         }
       },
@@ -238,12 +251,6 @@ ${contextJson}`
     const response = new Response(stream, {
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
     })
-    // Expose remaining quota after this turn for a future UI.
-    response.headers.set(
-      'X-Coach-Daily-Remaining',
-      String(Math.max(0, quota.dailyRemaining - 1)),
-    )
-    response.headers.set('X-Coach-Daily-Limit', String(quota.dailyLimit))
     response.headers.set('X-Coach-Model', modelId)
     return response
   } catch (err) {
@@ -265,7 +272,7 @@ export async function GET() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const quota = await getCoachQuota(supabase, user.id)
+  const quota = await getCoachQuota(supabase, user.id, isAdminEmail(user.email))
   if (!quota) {
     return NextResponse.json(
       {

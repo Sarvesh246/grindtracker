@@ -46,6 +46,7 @@ is fully linked to migration history.
 | [31-is-pr-guard-rpe-delete.sql](sql/31-is-pr-guard-rpe-delete.sql) | 31 | Ignore client `is_pr`, optional `rpe`, `delete_my_grind_data` RPC |
 | [32-setup-completed.sql](sql/32-setup-completed.sql) | 32 | First-run setup wizard gate (`setup_completed_at`) |
 | [33-coach.sql](sql/33-coach.sql) | 33 | Coach chat log + per-user Gemini rate limits |
+| [34-coach-quota-fixes.sql](sql/34-coach-quota-fixes.sql) | 34 | Refund quota for failed Coach turns + admin dev-unlimited toggle |
 
 See also [PUSH.md](PUSH.md) for VAPID keys, Vercel env, and cron setup.
 See [COACH.md](COACH.md) for Gemini env, rate limits, and `/api/coach/chat`.

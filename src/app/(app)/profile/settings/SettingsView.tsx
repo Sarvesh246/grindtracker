@@ -201,6 +201,7 @@ interface Props {
   isAdmin: boolean
   displayName: string
   username: string | null
+  coachDevUnlimited: boolean
 }
 
 export default function SettingsView({
@@ -208,6 +209,7 @@ export default function SettingsView({
   isAdmin,
   displayName,
   username,
+  coachDevUnlimited,
 }: Props) {
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
@@ -233,6 +235,9 @@ export default function SettingsView({
   const [restDays, setRestDays] = useState<Set<number>>(new Set(recurringRestDays))
   const [savingRestDay, setSavingRestDay] = useState<number | null>(null)
   const [replayingSetup, setReplayingSetup] = useState(false)
+
+  const [devUnlimited, setDevUnlimited] = useState(coachDevUnlimited)
+  const [savingDevUnlimited, setSavingDevUnlimited] = useState(false)
 
   useEffect(() => {
     const total = getDefaultRest()
@@ -337,6 +342,29 @@ export default function SettingsView({
       toast.show("Couldn't save rest day", 'error')
     } else {
       toast.show(wasActive ? 'Rest day removed' : 'Rest day saved')
+    }
+  }
+
+  async function toggleDevUnlimited() {
+    if (savingDevUnlimited) return
+    const next = !devUnlimited
+    setSavingDevUnlimited(true)
+    setDevUnlimited(next)
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { setSavingDevUnlimited(false); return }
+
+    const { error } = await supabase
+      .from('user_profiles')
+      .update({ coach_dev_unlimited: next })
+      .eq('id', user.id)
+
+    setSavingDevUnlimited(false)
+    if (error) {
+      setDevUnlimited(!next)
+      toast.show("Couldn't save Coach dev mode", 'error')
+    } else {
+      toast.show(next ? 'Unlimited Coach messages on' : 'Unlimited Coach messages off')
     }
   }
 
@@ -908,6 +936,19 @@ export default function SettingsView({
               <div style={hintStyle}>Show a fake name, photo, stats &amp; friends for screenshots</div>
             </div>
             <Switch checked={demoMode} onClick={toggleDemoMode} ariaLabel="Demo mode" />
+          </div>
+          <div style={dividerStyle} />
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+            <div>
+              <div style={titleStyle}>Unlimited Coach Messages</div>
+              <div style={hintStyle}>Bypass the 15/day limit until Gemini&apos;s own free-tier quota is hit</div>
+            </div>
+            <Switch
+              checked={devUnlimited}
+              onClick={() => void toggleDevUnlimited()}
+              disabled={savingDevUnlimited}
+              ariaLabel="Unlimited Coach messages"
+            />
           </div>
           <div style={dividerStyle} />
           <NavRow

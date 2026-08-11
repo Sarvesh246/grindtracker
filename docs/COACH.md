@@ -5,9 +5,11 @@ Server-only Gemini key; free-tier friendly with hard per-user rate limits.
 
 ## Apply SQL first
 
-Paste and run [`sql/33-coach.sql`](sql/33-coach.sql) in the Supabase SQL editor
-**before** calling `/api/coach/chat`. Creates `coach_messages` + RLS + rate-limit
-trigger.
+Paste and run [`sql/33-coach.sql`](sql/33-coach.sql) then
+[`sql/34-coach-quota-fixes.sql`](sql/34-coach-quota-fixes.sql) in the Supabase
+SQL editor **before** calling `/api/coach/chat`. 33 creates `coach_messages` +
+RLS + rate-limit trigger; 34 adds a refund path for failed turns and the
+admin dev-unlimited toggle (both described below).
 
 Limits (also in `src/lib/coach/constants.ts` — change both):
 
@@ -16,6 +18,15 @@ Limits (also in `src/lib/coach/constants.ts` — change both):
 | User messages / 24 hours | 15 |
 | User messages / 10 minutes | 8 |
 | Max user message length | 2000 chars (API); 4000 in DB |
+
+A turn that never produces a visible reply (model call fails, retired model,
+network error) doesn't count against these — the route calls
+`grind_coach_refund_message` to delete that turn's row instead of charging
+the user's quota for a reply they never got. The admin account can also flip
+"Unlimited Coach Messages" in Profile → Settings → Developer to bypass both
+limits entirely (`user_profiles.coach_dev_unlimited`, enforced in Postgres by
+`enforce_coach_rate_limit()` — not just hidden in the UI) for testing against
+Gemini's own free-tier quota without the app's 15/day cap in the way.
 
 ## Env
 
@@ -43,12 +54,17 @@ Auth required. Returns:
     "dailyRemaining": 15,
     "burstUsed": 0,
     "burstLimit": 8,
-    "burstRemaining": 8
+    "burstRemaining": 8,
+    "unlimited": false
   },
   "model": "gemini-flash-lite-latest",
   "configured": true
 }
 ```
+
+`quota.unlimited` is only ever `true` for the admin account with the dev
+toggle on (see above) — the client skips both cap checks when it's set, and
+Postgres enforces the same exemption independently.
 
 ### `POST /api/coach/chat`
 
@@ -69,15 +85,19 @@ Auth required. Body:
 - `unit` optional (`lbs`/`kg` or `imperial`/`metric`); falls back to
   `grind_unit_pref` cookie.
 
-**Success:** plain text stream (`text/plain` stream via AI SDK
-`toTextStreamResponse`). Headers:
-
-- `X-Coach-Daily-Remaining`
-- `X-Coach-Daily-Limit`
-- `X-Coach-Model`
+**Success:** plain text stream (`text/plain`), assembled from the AI SDK's
+`fullStream` by hand rather than `toTextStreamResponse()` — that helper
+silently drops `error` parts, which used to make upstream failures look like
+Coach wasn't responding at all. Header: `X-Coach-Model`. The client re-fetches
+`GET /api/coach/chat` after every turn (success or failure) to read the
+post-turn quota back from Postgres, rather than trusting an optimistic
+pre-call estimate — necessary because a failed turn gets refunded server-side
+and a header set before streaming starts can't know that yet.
 
 **Errors:** `401`, `400`, `429` (rate limit), `503` (missing key / SQL not applied),
-`502` (model failure).
+`502` (model failure). A `200` with a visible in-body error message ("Sorry, I
+hit an error generating a reply…") happens instead of a hard error status when
+the failure occurs mid-stream, after headers are already sent.
 
 ## How context works
 
@@ -101,7 +121,7 @@ Floating coach on authenticated `(app)` routes (`src/components/coach/`):
 | **FAB** | Lime 56px circle, G+spark mark; drag past 8px snaps to four corners (`br` default). Dock in `localStorage` key `grind_coach_fab_dock`. |
 | **Visibility** | Hidden when `pathname === '/log' && searchParams.has('day')` (active workout), same as bottom nav. |
 | **Sheet** | Compact / expanded sizes; backdrop close; Escape closes; session history in memory only. |
-| **API** | First open → `GET /api/coach/chat` (quota). Send → `POST` stream + `unit` from `UnitContext`; quota pill from `X-Coach-Daily-*` headers. |
+| **API** | First open → `GET /api/coach/chat` (quota). Send → `POST` stream + `unit` from `UnitContext`; quota pill re-synced via `GET` after every turn settles. |
 | **z-index** | FAB 420 · backdrop 430 · sheet 440. |
 
 Not a nav tab; not a `/coach` route in v1.

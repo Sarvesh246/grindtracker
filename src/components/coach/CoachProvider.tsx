@@ -10,11 +10,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react'
-import {
-  COACH_DAILY_LIMIT,
-  COACH_MAX_HISTORY_MESSAGES,
-  COACH_MAX_MESSAGE_CHARS,
-} from '@/lib/coach'
+import { COACH_MAX_HISTORY_MESSAGES, COACH_MAX_MESSAGE_CHARS } from '@/lib/coach'
 import { useUnit } from '@/lib/contexts/UnitContext'
 
 export type CoachDockId = 'br' | 'bl' | 'tr' | 'tl'
@@ -32,6 +28,7 @@ export type CoachQuotaState = {
   burstUsed: number
   burstLimit: number
   burstRemaining: number
+  unlimited: boolean
 }
 
 type CoachContextValue = {
@@ -181,7 +178,7 @@ export function CoachProvider({ children }: { children: ReactNode }) {
         setError(`Message must be at most ${COACH_MAX_MESSAGE_CHARS} characters.`)
         return
       }
-      if (quota && quota.dailyRemaining <= 0) {
+      if (quota && !quota.unlimited && quota.dailyRemaining <= 0) {
         setError(
           `Daily coach limit reached (${quota.dailyLimit} messages per day). Try again tomorrow.`,
         )
@@ -213,23 +210,6 @@ export function CoachProvider({ children }: { children: ReactNode }) {
             unit: unitLabel,
           }),
         })
-
-        const remainingHdr = res.headers.get('X-Coach-Daily-Remaining')
-        const limitHdr = res.headers.get('X-Coach-Daily-Limit')
-        if (remainingHdr != null) {
-          const dailyRemaining = Math.max(0, parseInt(remainingHdr, 10) || 0)
-          const dailyLimit = limitHdr
-            ? parseInt(limitHdr, 10) || COACH_DAILY_LIMIT
-            : (quota?.dailyLimit ?? COACH_DAILY_LIMIT)
-          setQuota(prev => ({
-            dailyUsed: Math.max(0, dailyLimit - dailyRemaining),
-            dailyLimit,
-            dailyRemaining,
-            burstUsed: prev?.burstUsed ?? 0,
-            burstLimit: prev?.burstLimit ?? 8,
-            burstRemaining: prev?.burstRemaining ?? 8,
-          }))
-        }
 
         if (!res.ok) {
           let errText = 'Coach failed to respond. Try again in a moment.'
@@ -298,9 +278,13 @@ export function CoachProvider({ children }: { children: ReactNode }) {
         setError('Could not reach Coach. Check your connection.')
       } finally {
         setStreaming(false)
+        // Re-sync from the server instead of trusting an optimistic count:
+        // a failed/empty turn gets refunded server-side (see route.ts), so
+        // the true remaining count can only be known after the fact.
+        void refreshQuota()
       }
     },
-    [messages, quota, streaming, unitLabel],
+    [messages, quota, streaming, unitLabel, refreshQuota],
   )
 
   const value = useMemo<CoachContextValue>(
