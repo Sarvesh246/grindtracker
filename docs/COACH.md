@@ -22,7 +22,7 @@ Limits (also in `src/lib/coach/constants.ts` — change both):
 | Variable | Where | Notes |
 | --- | --- | --- |
 | `GEMINI_API_KEY` | Server only | AI Studio key — never `NEXT_PUBLIC_*` |
-| `GEMINI_MODEL` | Server only | Default `gemini-2.5-flash-lite` |
+| `GEMINI_MODEL` | Server only | Default `gemini-flash-lite-latest` (a floating alias — pinned model IDs like `gemini-2.5-flash-lite` get retired by Google and start 404ing) |
 
 (`GOOGLE_GENERATIVE_AI_API_KEY` is accepted as a fallback name.)
 
@@ -45,7 +45,7 @@ Auth required. Returns:
     "burstLimit": 8,
     "burstRemaining": 8
   },
-  "model": "gemini-2.5-flash-lite",
+  "model": "gemini-flash-lite-latest",
   "configured": true
 }
 ```

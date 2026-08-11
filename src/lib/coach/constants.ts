@@ -13,7 +13,10 @@ export const COACH_MAX_MESSAGE_CHARS = 2000
 /** Max prior turns (user+assistant pairs count as 2) accepted from the client. */
 export const COACH_MAX_HISTORY_MESSAGES = 12
 
-export const COACH_DEFAULT_MODEL = 'gemini-2.5-flash-lite'
+// Pinned model IDs get retired out from under you (gemini-2.5-flash-lite
+// started 404ing "no longer available to new users" — see PR #69). Track
+// Google's floating flash-lite alias instead so this doesn't happen again.
+export const COACH_DEFAULT_MODEL = 'gemini-flash-lite-latest'
 
 /** How many completed sessions to include in the personal context pack. */
 export const COACH_CONTEXT_SESSIONS = 10
