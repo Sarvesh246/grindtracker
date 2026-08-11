@@ -182,11 +182,13 @@ ${contextJson}`
       messages: [...history, { role: 'user', content: message }],
       maxOutputTokens: 1024,
       temperature: 0.4,
-      // gemini-2.5-* models can spend the whole maxOutputTokens budget on
-      // hidden "thinking" tokens and return empty visible text — this coach
-      // doesn't need chain-of-thought, so turn it off explicitly rather than
-      // relying on the provider's current default.
-      providerOptions: { google: { thinkingConfig: { thinkingBudget: 0 } } },
+      // Keep thinking minimal / off. Do NOT hardcode thinkingBudget: 0 —
+      // gemini-flash-lite-latest resolves to Gemini 3.x Flash-Lite, which
+      // rejects thinkingBudget (INVALID_ARGUMENT) and wants thinkingLevel.
+      // `reasoning: 'none'` lets @ai-sdk/google map per family:
+      //   2.5 → thinkingBudget: 0
+      //   3.x / -latest → thinkingLevel: 'minimal'
+      reasoning: 'none',
       onError: ({ error }) => {
         // streamText() returns before the model call actually runs, so this
         // is the ONLY place upstream failures (bad key, quota, model

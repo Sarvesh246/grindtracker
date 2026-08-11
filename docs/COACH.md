@@ -33,7 +33,7 @@ Gemini's own free-tier quota without the app's 15/day cap in the way.
 | Variable | Where | Notes |
 | --- | --- | --- |
 | `GEMINI_API_KEY` | Server only | AI Studio key — never `NEXT_PUBLIC_*` |
-| `GEMINI_MODEL` | Server only | Default `gemini-flash-lite-latest` (a floating alias — pinned model IDs like `gemini-2.5-flash-lite` get retired by Google and start 404ing) |
+| `GEMINI_MODEL` | Server only | Default `gemini-flash-lite-latest` (a floating alias — pinned model IDs like `gemini-2.5-flash-lite` get retired by Google and start 404ing). Coach uses AI SDK `reasoning: 'none'` so thinking config stays valid across 2.5 (`thinkingBudget: 0`) and 3.x / `-latest` (`thinkingLevel: 'minimal'`) — do not hardcode `thinkingBudget` for the alias. |
 
 (`GOOGLE_GENERATIVE_AI_API_KEY` is accepted as a fallback name.)
 
