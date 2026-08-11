@@ -13,6 +13,8 @@ interface UnitContextValue {
   unit: Unit
   unitLabel: 'kg' | 'lbs'
   toggleUnit: () => void
+  /** Set display unit directly (setup wizard / prefs). */
+  setUnit: (unit: Unit) => void
   /** Convert a canonical (lbs) value into the active display unit. */
   toDisplay: (canonicalLbs: number) => number
   /** Convert a value typed in the active display unit back to canonical lbs. */
@@ -29,6 +31,7 @@ const UnitContext = createContext<UnitContextValue>({
   unit: 'imperial',
   unitLabel: 'lbs',
   toggleUnit: () => {},
+  setUnit: () => {},
   toDisplay: identity,
   fromDisplay: identity,
   fmt: (n: number) => String(n),
@@ -103,6 +106,14 @@ export function UnitProvider({
     })
   }
 
+  function setUnitPref(next: Unit) {
+    setUnit(prev => {
+      if (prev === next) return prev
+      persistUnit(next)
+      return next
+    })
+  }
+
   const metric = unit === 'metric'
   // Display is intentionally lossy (rounded), but the canonical lbs store is never
   // overwritten on a toggle, so toggling a read-only value drifts zero. Drift can only
@@ -127,7 +138,15 @@ export function UnitProvider({
 
   return (
     <UnitContext.Provider
-      value={{ unit, unitLabel: metric ? 'kg' : 'lbs', toggleUnit, toDisplay, fromDisplay, fmt }}
+      value={{
+        unit,
+        unitLabel: metric ? 'kg' : 'lbs',
+        toggleUnit,
+        setUnit: setUnitPref,
+        toDisplay,
+        fromDisplay,
+        fmt,
+      }}
     >
       {children}
     </UnitContext.Provider>

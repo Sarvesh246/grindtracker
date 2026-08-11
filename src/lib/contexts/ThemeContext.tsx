@@ -14,11 +14,14 @@ const THEME_COLOR: Record<Theme, string> = {
 interface ThemeContextValue {
   theme: Theme
   toggleTheme: () => void
+  /** Set theme directly (setup wizard / prefs). */
+  setTheme: (theme: Theme) => void
 }
 
 const ThemeContext = createContext<ThemeContextValue>({
   theme: 'dark',
   toggleTheme: () => {},
+  setTheme: () => {},
 })
 
 function readCookieTheme(): Theme | null {
@@ -93,7 +96,19 @@ export function ThemeProvider({
     })
   }, [])
 
-  const contextValue = useMemo(() => ({ theme, toggleTheme }), [theme, toggleTheme])
+  const setThemePref = useCallback((next: Theme) => {
+    setTheme(prev => {
+      if (prev === next) return prev
+      persistTheme(next)
+      applyTheme(next)
+      return next
+    })
+  }, [])
+
+  const contextValue = useMemo(
+    () => ({ theme, toggleTheme, setTheme: setThemePref }),
+    [theme, toggleTheme, setThemePref],
+  )
 
   return (
     <ThemeContext.Provider value={contextValue}>

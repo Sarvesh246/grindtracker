@@ -69,6 +69,8 @@ export interface UserProfile {
   display_name: string
   avatar_url: string | null
   created_at: string
+  /** Null until first-run setup finishes (migration 32). */
+  setup_completed_at?: string | null
 }
 
 export interface Friendship {

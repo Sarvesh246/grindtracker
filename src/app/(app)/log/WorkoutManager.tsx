@@ -6,7 +6,8 @@ import { autoSequence, effectiveSequence, orderedDayKeys } from '@/lib/utils/rot
 import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
 import { useToast } from '@/lib/contexts/ToastContext'
 import { useUnit } from '@/lib/contexts/UnitContext'
-import { WORKOUT_TEMPLATES, getWorkoutTemplate } from '@/lib/utils/workoutTemplates'
+import { WORKOUT_TEMPLATES } from '@/lib/utils/workoutTemplates'
+import { applyWorkoutTemplate } from '@/lib/utils/applyWorkoutTemplate'
 
 interface WorkoutManagerProps {
   onClose: () => void
@@ -269,52 +270,21 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
   // manual rotation matching the template sequence.
   async function applyTemplate(templateId: string) {
     if (applyingTemplate) return
-    const template = getWorkoutTemplate(templateId)
-    if (!template) return
     setApplyingTemplate(true)
     setTemplateError('')
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { setTemplateError('You are signed out. Sign in and try again.'); return }
 
-      const exerciseRows = Object.entries(template.days).flatMap(([dayKey, day]) =>
-        day.exercises.map((ex, i) => ({
-          user_id: user.id,
-          name: ex.name,
-          day_type: dayKey,
-          sets_target: ex.sets,
-          reps_target: ex.reps,
-          sort_order: i + 1,
-          active: ex.active ?? true,
-        }))
-      )
-      const categoryRows = Object.entries(template.days).map(([dayKey, day]) => ({
-        user_id: user.id, day_key: dayKey, category: day.category,
-      }))
-
-      const [{ error: exError }, { error: catError }, { error: rotError }] = await Promise.all([
-        supabase.from('exercises').insert(exerciseRows),
-        supabase.from('user_day_categories').upsert(categoryRows, { onConflict: 'user_id,day_key' }),
-        supabase.from('user_rotation').upsert(
-          {
-            user_id: user.id,
-            mode: 'manual',
-            sequence: template.sequence,
-            current_index: 0,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'user_id' },
-        ),
-      ])
-
-      if (exError || catError || rotError) {
-        setTemplateError('Could not set up your template. Check your connection and try again.')
+      const result = await applyWorkoutTemplate(supabase, user.id, templateId)
+      if (!result.ok) {
+        setTemplateError(result.error)
         return
       }
 
       await load()
       onChanged()
-      toast.show(`${template.label.replace(/^USE\s+/i, '')} added`)
+      toast.show(`${result.label.replace(/^USE\s+/i, '')} added`)
       onClose()
     } catch {
       setTemplateError('Could not set up your template. Check your connection and try again.')

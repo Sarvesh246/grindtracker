@@ -15,12 +15,15 @@ interface MotionContextValue {
    */
   reduceMotion: boolean
   toggleReduceMotion: () => void
+  /** Set in-app reduce-motion directly (setup wizard / prefs). */
+  setReduceMotion: (reduce: boolean) => void
 }
 
 const MotionContext = createContext<MotionContextValue>({
   prefReduceMotion: false,
   reduceMotion: false,
   toggleReduceMotion: () => {},
+  setReduceMotion: () => {},
 })
 
 function readCookiePref(): MotionPref | null {
@@ -107,11 +110,21 @@ export function MotionProvider({
     })
   }, [])
 
+  const setReduceMotion = useCallback((reduce: boolean) => {
+    const next: MotionPref = reduce ? 'reduce' : 'no-preference'
+    setPref(prev => {
+      if (prev === next) return prev
+      persistPref(next)
+      applyPref(next)
+      return next
+    })
+  }, [])
+
   const prefReduceMotion = pref === 'reduce'
   const reduceMotion = prefReduceMotion || osReduce
   const contextValue = useMemo(
-    () => ({ prefReduceMotion, reduceMotion, toggleReduceMotion }),
-    [prefReduceMotion, reduceMotion, toggleReduceMotion],
+    () => ({ prefReduceMotion, reduceMotion, toggleReduceMotion, setReduceMotion }),
+    [prefReduceMotion, reduceMotion, toggleReduceMotion, setReduceMotion],
   )
 
   return (

@@ -527,6 +527,34 @@ select:focus-visible,
    a containing block for the fixed nav and workout bars. */
 .page { animation: fade-in 200ms ease; }
 
+/* First-run setup wizard. Direction-aware slide + soft fade + slight scale.
+   fill-mode: backwards (not both) — same containing-block rule as swap-in. */
+@keyframes setup-enter-forward {
+  from { opacity: 0; transform: translateX(16px) scale(0.985); }
+  to { opacity: 1; transform: translateX(0) scale(1); }
+}
+@keyframes setup-enter-back {
+  from { opacity: 0; transform: translateX(-16px) scale(0.985); }
+  to { opacity: 1; transform: translateX(0) scale(1); }
+}
+.setup-step-enter-forward {
+  animation: setup-enter-forward 320ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+.setup-step-enter-back {
+  animation: setup-enter-back 320ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+.setup-progress-fill {
+  transform-origin: left center;
+  transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.setup-welcome-grid {
+  background-image:
+    linear-gradient(rgba(200, 241, 53, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(200, 241, 53, 0.04) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, black 20%, transparent 75%);
+}
+
 /* ---------------------------------------------------------------------------
    Reduced motion — respect user preference. Zero out transitions and
    keyframe animations rather than disabling functionality. Two independent

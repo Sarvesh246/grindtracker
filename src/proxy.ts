@@ -1,17 +1,21 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import {
+  isProfileCookieForUser,
+  PROFILE_COOKIE,
+  PROFILE_COOKIE_MAX_AGE,
+  profileCookieOptions,
+  profileCookieValue,
+} from '@/lib/setup/profileCookie'
 
 /**
- * Marks "this user has completed username setup".
+ * Marks "this user finished first-run setup" (`setup_completed_at` set).
  *
- * The profile-existence check used to run as a `user_profiles` SELECT on EVERY
- * authenticated request. It can only ever flip once (no profile → profile) and
- * never back, so the result is cached here instead. Forging this cookie only
- * skips your own onboarding — it grants no data access, since every read is
- * still bounded by RLS.
+ * The check used to be a `user_profiles` SELECT on every authenticated request
+ * and only meant "row exists". It still caches once setup is complete (rarely
+ * flips except Replay Setup / data delete), so forging the cookie only skips
+ * setup — every read is still bounded by RLS.
  */
-const PROFILE_COOKIE = 'grind_profile_ok'
-const PROFILE_COOKIE_MAX_AGE = 60 * 60 * 24 * 365
 
 /** Paths that never need an auth decision. */
 function isPublicPath(pathname: string): boolean {
@@ -21,6 +25,11 @@ function isPublicPath(pathname: string): boolean {
     // Cron authenticates via CRON_SECRET bearer, not the user session.
     pathname.startsWith('/api/cron')
   )
+}
+
+/** Setup UI + its complete/replay routes must stay reachable mid-wizard. */
+function isSetupPath(pathname: string): boolean {
+  return pathname.startsWith('/setup') || pathname.startsWith('/api/setup')
 }
 
 export async function proxy(request: NextRequest) {
@@ -66,35 +75,29 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  if (
-    userId &&
-    !pathname.startsWith('/setup') &&
-    !isPublicPath(pathname)
-  ) {
-    if (request.cookies.get(PROFILE_COOKIE)?.value === userId) {
-      // Already verified for this user — skip the database round trip.
+  if (userId && !isSetupPath(pathname) && !isPublicPath(pathname)) {
+    if (isProfileCookieForUser(request.cookies.get(PROFILE_COOKIE)?.value, userId)) {
+      // Already verified setup-complete for this user — skip the DB round trip.
       return supabaseResponse
     }
 
     const { data: profile } = await supabase
       .from('user_profiles')
-      .select('id')
+      .select('id, setup_completed_at')
       .eq('id', userId)
       .maybeSingle()
 
-    if (!profile) {
+    if (!profile || !profile.setup_completed_at) {
       return NextResponse.redirect(new URL('/setup', request.url))
     }
 
     // Cache against the user id, so switching accounts on a shared device
     // re-verifies rather than inheriting the previous user's flag.
-    supabaseResponse.cookies.set(PROFILE_COOKIE, userId, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      path: '/',
-      maxAge: PROFILE_COOKIE_MAX_AGE,
-    })
+    supabaseResponse.cookies.set(
+      PROFILE_COOKIE,
+      profileCookieValue(userId),
+      profileCookieOptions(PROFILE_COOKIE_MAX_AGE),
+    )
   }
 
   return supabaseResponse

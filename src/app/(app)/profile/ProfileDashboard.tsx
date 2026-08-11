@@ -479,6 +479,26 @@ export default function ProfileDashboard({
     router.push('/home')
   }
 
+  const [replayingSetup, setReplayingSetup] = useState(false)
+  async function handleReplaySetup() {
+    if (replayingSetup) return
+    setReplayingSetup(true)
+    try {
+      const res = await fetch('/api/setup/replay', { method: 'POST' })
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null
+        toast.show(body?.error || "Couldn't reopen setup", 'error')
+        setReplayingSetup(false)
+        return
+      }
+      router.push('/setup')
+      router.refresh()
+    } catch {
+      toast.show("Couldn't reopen setup", 'error')
+      setReplayingSetup(false)
+    }
+  }
+
   return (
     <div className="page page--profile" style={{
       fontFamily: "'DM Sans', sans-serif",
@@ -1375,6 +1395,47 @@ export default function ProfileDashboard({
               </svg>
             </span>
           </button>
+
+          {/* Developer-only: re-open first-run setup without wiping workouts / prefs. */}
+          {isAdmin && (
+            <>
+              <div style={{ height: '1px', backgroundColor: 'var(--border)' }} />
+              <button
+                onClick={handleReplaySetup}
+                disabled={replayingSetup}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  gap: '12px', width: '100%',
+                  background: 'transparent', border: 'none', padding: 0,
+                  cursor: replayingSetup ? 'default' : 'pointer', textAlign: 'left',
+                  opacity: replayingSetup ? 0.7 : 1,
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: '14px', color: 'var(--text-primary)', fontWeight: 600, marginBottom: '2px' }}>
+                    {replayingSetup ? 'Opening Setup…' : 'Replay Setup'}
+                  </div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                    Run the first-run setup wizard again
+                  </div>
+                </div>
+                <span style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: '32px', height: '32px', flexShrink: 0,
+                  borderRadius: '9999px',
+                  backgroundColor: 'var(--surface-elevated)',
+                  border: '1px solid var(--border)',
+                  color: 'var(--accent-text)',
+                }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="3" />
+                    <path d="M12 2v3M12 19v3M4.93 4.93l2.12 2.12M16.95 16.95l2.12 2.12M2 12h3M19 12h3M4.93 19.07l2.12-2.12M16.95 7.05l2.12-2.12" />
+                  </svg>
+                </span>
+              </button>
+            </>
+          )}
 
           {/* Developer inbox. Rendered only for the admin account; the route
               404s and RLS returns nothing for anyone else regardless. */}
