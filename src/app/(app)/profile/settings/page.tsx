@@ -1,0 +1,35 @@
+import { createClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
+import { isAdminEmail } from '@/lib/utils/admin'
+import SettingsView from './SettingsView'
+
+export default async function ProfileSettingsPage() {
+  const supabase = await createClient()
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
+
+  const { data: restDayRows } = await supabase
+    .from('user_rest_days')
+    .select('day_of_week')
+    .eq('user_id', user.id)
+
+  const displayName = (user.user_metadata?.full_name as string | undefined)
+    ?? user.email
+    ?? 'Athlete'
+
+  const { data: profile } = await supabase
+    .from('user_profiles')
+    .select('username')
+    .eq('id', user.id)
+    .maybeSingle()
+
+  return (
+    <SettingsView
+      recurringRestDays={(restDayRows ?? []).map(r => r.day_of_week)}
+      isAdmin={isAdminEmail(user.email)}
+      displayName={displayName}
+      username={profile?.username ?? null}
+    />
+  )
+}

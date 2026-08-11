@@ -1,7 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import ProfileDashboard from './ProfileDashboard'
-import { isAdminEmail } from '@/lib/utils/admin'
 
 export default async function ProfilePage() {
   const supabase = await createClient()
@@ -16,7 +15,6 @@ export default async function ProfilePage() {
     { count: totalSets },
     { data: history },
     { data: profile },
-    { data: restDayRows },
   ] = await Promise.all([
     supabase.from('user_stats').select('*').eq('user_id', user.id).maybeSingle(),
     supabase.from('user_badges').select('badge_id, earned_at').eq('user_id', user.id),
@@ -34,7 +32,6 @@ export default async function ProfilePage() {
       .not('weight', 'is', null),
     supabase.rpc('grind_home_history', { p_lookback_days: 7 }),
     supabase.from('user_profiles').select('username, created_at').eq('id', user.id).maybeSingle(),
-    supabase.from('user_rest_days').select('day_of_week').eq('user_id', user.id),
   ])
 
   const earnedSet = new Set((earnedBadges ?? []).map(b => b.badge_id))
@@ -52,7 +49,6 @@ export default async function ProfilePage() {
       avatarUrl={avatarUrl}
       username={profile?.username ?? null}
       joinedAt={profile?.created_at ?? null}
-      recurringRestDays={(restDayRows ?? []).map(r => r.day_of_week)}
       stats={stats ?? {
         xp_total: 0,
         level: 1,
@@ -65,7 +61,6 @@ export default async function ProfilePage() {
       totalSets={totalSets ?? 0}
       activeDayTimestamps={[]}
       daysActive={daysActive}
-      isAdmin={isAdminEmail(user.email)}
     />
   )
 }
