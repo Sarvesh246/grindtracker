@@ -247,6 +247,20 @@ select:focus-visible,
   padding-bottom: max(8px, env(safe-area-inset-bottom));
 }
 
+/* Active tab is color only — never keep a focus/haptic square around it. */
+.bottom-nav a:focus,
+.bottom-nav a:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+.bottom-nav [data-haptic-overlay],
+.bottom-nav [data-haptic-overlay]:focus,
+.bottom-nav [data-haptic-overlay]:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+  border: 0 !important;
+}
+
 /* Workout Manager modal — bottom sheet on mobile, centered dialog on desktop */
 .wm-backdrop {
   position: fixed;

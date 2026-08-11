@@ -52,9 +52,32 @@ export default function BadgeIcon({ badgeId, size = 28, earned }: { badgeId: str
     case 'pr_5':
       return <svg {...props}><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
     case 'pr_25':
-      return <svg {...props}><path d="M12 2L9.1 8.6 2 9.6l5 4.9-1.2 6.9L12 18l6.2 3.4L17 14.5l5-4.9-7.1-1L12 2z"/><path d="M9 9l2 2 4-4" stroke={color} strokeWidth="1.4"/></svg>
+      // Rising — ascending area chart + clear up-arrow (25 PRs).
+      return (
+        <svg {...props}>
+          <path
+            d="M2.5 19.2 L7 14 L10.5 15.8 L15.5 9.2 L20.5 5.2 V19.2 Z"
+            fill={color}
+            fillOpacity="0.15"
+            stroke="none"
+          />
+          <polyline points="2.5 19.2 7 14 10.5 15.8 15.5 9.2 20.5 5.2" />
+          <line x1="2" y1="19.5" x2="22" y2="19.5" strokeWidth="1.5" />
+          <polyline points="16.8 5.4 20.5 5.2 20.5 8.9" />
+        </svg>
+      )
     case 'pr_50':
-      return <svg {...props}><polyline points="2 20 8 20 8 12 13 12 13 15 22 15 22 20"/><polyline points="4 16 9 9 14 9 21 4"/></svg>
+      // Powerhouse — ascending power columns + crest spark (50 PRs).
+      return (
+        <svg {...props}>
+          <line x1="2.2" y1="20" x2="21.8" y2="20" strokeWidth="1.5" />
+          <rect x="3" y="13.6" width="3.7" height="6.4" rx="1" fill={color} fillOpacity="0.1" strokeWidth="1.5" />
+          <rect x="7.9" y="10.2" width="3.7" height="9.8" rx="1" fill={color} fillOpacity="0.16" strokeWidth="1.5" />
+          <rect x="12.8" y="6.6" width="3.7" height="13.4" rx="1" fill={color} fillOpacity="0.22" strokeWidth="1.5" />
+          <rect x="17.7" y="3.2" width="3.7" height="16.8" rx="1" fill={color} fillOpacity="0.3" strokeWidth="1.5" />
+          <path d="M19.55 1.35 L19.55 3.05 M18.4 2.2 L20.7 2.2" strokeWidth="1.55" />
+        </svg>
+      )
     case 'pr_100':
       return <svg {...props}><path d="M6 21V10a6 6 0 0 1 12 0v11"/><path d="M6 21h12"/><circle cx="12" cy="8" r="2.2"/></svg>
     case 'level_5':

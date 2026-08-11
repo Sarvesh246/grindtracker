@@ -151,7 +151,8 @@ export function attachHapticOverlay(el: HTMLElement): () => void {
   // opacity:0 keeps the switch hittable; appearance keeps iOS treating it as a switch.
   sw.style.cssText =
     'position:absolute;inset:0;width:100%;height:100%;margin:0;padding:0;border:0;' +
-    '-webkit-appearance:switch;appearance:auto;opacity:0;cursor:inherit;pointer-events:auto;z-index:1;'
+    '-webkit-appearance:switch;appearance:auto;opacity:0;cursor:inherit;pointer-events:auto;z-index:1;' +
+    'outline:none;box-shadow:none;-webkit-tap-highlight-color:transparent;'
 
   const syncPointerEvents = () => {
     sw.style.pointerEvents = hostIsDisabled(el) ? 'none' : 'auto'
@@ -164,12 +165,26 @@ export function attachHapticOverlay(el: HTMLElement): () => void {
     if (hostIsDisabled(el)) return
     // One system tick already fired from the direct tap on the switch.
     // Re-dispatch so the host's React onClick / navigation still runs.
+    // Don't leave focus on <a> hosts — iOS/Safari keeps :focus-visible on the
+    // tapped nav link and paints a lasting lime square around the active tab.
     try {
-      el.focus({ preventScroll: true })
+      if (!(el instanceof HTMLAnchorElement)) {
+        el.focus({ preventScroll: true })
+      }
     } catch {
       /* non-focusable hosts are fine */
     }
     el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }))
+    if (el instanceof HTMLAnchorElement) {
+      queueMicrotask(() => el.blur())
+    }
+    // Reset switch chrome so a checked/focused state can't flash a visible box.
+    sw.checked = false
+    try {
+      sw.blur()
+    } catch {
+      /* ignore */
+    }
   }
 
   sw.addEventListener('click', onClick)

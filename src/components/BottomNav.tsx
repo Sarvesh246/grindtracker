@@ -88,6 +88,10 @@ export default function BottomNav() {
             href={tab.href}
             className="press"
             data-haptic="light"
+            onClick={(e) => {
+              // Drop any focus ring left on the tapped tab after client nav.
+              e.currentTarget.blur()
+            }}
             style={{
               position: 'relative',
               flex: 1,
@@ -99,6 +103,7 @@ export default function BottomNav() {
               height: '64px',
               textDecoration: 'none',
               WebkitTapHighlightColor: 'transparent',
+              outline: 'none',
             }}
           >
             {/* The active tab's icon lifts and grows a hair. Colour alone is a
