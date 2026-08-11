@@ -27,7 +27,7 @@ function renderInline(nodes: CoachInline[], keyPrefix: string): ReactNode[] {
 }
 
 /**
- * Renders Coach assistant text with light Markdown (bold, lists, paragraphs).
+ * Renders Coach assistant text with light Markdown (bold, lists, labels).
  * User bubbles should stay plain `pre-wrap` text.
  */
 export default function CoachMessageContent({ content }: { content: string }) {
@@ -44,9 +44,21 @@ export default function CoachMessageContent({ content }: { content: string }) {
             </p>
           )
         }
+        if (block.type === 'label') {
+          return (
+            <p key={i} className="coach-md__label">
+              {renderInline(block.children, `h${i}`)}
+            </p>
+          )
+        }
         const ListTag = block.ordered ? 'ol' : 'ul'
         return (
-          <ListTag key={i} className="coach-md__list">
+          <ListTag
+            key={i}
+            className={`coach-md__list${
+              block.ordered ? ' coach-md__list--ordered' : ''
+            }`}
+          >
             {block.items.map((item, j) => (
               <li key={j} className="coach-md__li">
                 {renderInline(item, `l${i}-${j}`)}

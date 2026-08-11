@@ -114,8 +114,9 @@ to convert when `unit_preference` is `kg`.
 
 Reply formatting is enforced in `COACH_SYSTEM_PROMPT` for **every** turn
 (starter chips and free-typed questions share `POST /api/coach/chat`). The
-prompt asks for answer-first structure plus `- ` bullets when listing 2+
-items; the sheet renders that Markdown via `CoachMessageContent`.
+prompt picks a structure by intent — stats/PRs use `- ` bullets, how-tos use
+numbered steps, simple facts stay 1–2 sentences, multi-topic answers may use
+`###` labels — and the sheet renders that Markdown via `CoachMessageContent`.
 
 ## UI
 

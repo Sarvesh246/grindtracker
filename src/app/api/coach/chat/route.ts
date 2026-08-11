@@ -178,7 +178,7 @@ export async function POST(request: Request) {
 USER_DATA (JSON; personal facts only — trust this over memory):
 ${contextJson}
 
-Remember: structure THIS reply for skimming (lead sentence, then "- " bullets when listing 2+ items). Applies to every question, not only suggested chips.`
+Remember: pick the best structure for THIS question (stats→bullets, how-to→numbered steps, simple fact→1–2 sentences, multi-topic→### sections). Do not reuse one template for every ask.`
 
   try {
     const result = streamText({

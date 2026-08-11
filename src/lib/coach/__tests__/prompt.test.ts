@@ -3,23 +3,23 @@ import assert from 'node:assert/strict'
 import { COACH_SYSTEM_PROMPT } from '../prompt'
 
 describe('COACH_SYSTEM_PROMPT', () => {
-  it('requires skimmable formatting on every reply, not only chips', () => {
+  it('requires adaptive formatting on every reply, not only chips', () => {
     assert.match(COACH_SYSTEM_PROMPT, /EVERY reply/i)
     assert.match(COACH_SYSTEM_PROMPT, /typed questions and starter chips/i)
-    assert.match(COACH_SYSTEM_PROMPT, /"- "/)
+    assert.match(COACH_SYSTEM_PROMPT, /Pick the structure that best fits/i)
+    assert.match(COACH_SYSTEM_PROMPT, /Do not force the same template/i)
   })
 
-  it('covers freeform question shapes beyond the starter chips', () => {
-    // Chips cover streak / PRs / last workout / progressing — prompt must
-    // also steer body weight, schedule, advice, and thin-data answers.
+  it('defines distinct structures for different question intents', () => {
     for (const shape of [
-      'Body weight',
-      'Next day / rotation',
-      'Advice',
+      'Stats / progress / PRs',
+      'Technique / how-to',
+      'NUMBERED list',
+      'Simple fact',
+      'Explanation',
+      'Multi-topic',
+      'Coaching advice',
       'Missing / thin data',
-      'Last workout',
-      'PRs',
-      'Streak',
     ]) {
       assert.match(
         COACH_SYSTEM_PROMPT,
@@ -27,5 +27,13 @@ describe('COACH_SYSTEM_PROMPT', () => {
         `missing shape guidance for ${shape}`,
       )
     }
+  })
+
+  it('forbids collapsing every answer into identical bullets', () => {
+    assert.match(COACH_SYSTEM_PROMPT, /Do not turn every answer into lead/i)
+    assert.match(
+      COACH_SYSTEM_PROMPT,
+      /Do not use unordered bullets for a sequence/i,
+    )
   })
 })

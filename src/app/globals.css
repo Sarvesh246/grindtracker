@@ -1378,6 +1378,18 @@ html.light .coach-sheet {
 .coach-md__p {
   margin: 0;
 }
+.coach-md__label {
+  margin: 2px 0 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent-text);
+}
+.coach-md__label + .coach-md__list,
+.coach-md__label + .coach-md__p {
+  margin-top: -2px;
+}
 .coach-md__list {
   margin: 0;
   padding: 0 0 0 1.15em;
@@ -1389,8 +1401,11 @@ html.light .coach-sheet {
 ul.coach-md__list {
   list-style: disc;
 }
-ol.coach-md__list {
+ol.coach-md__list,
+.coach-md__list--ordered {
   list-style: decimal;
+  padding-left: 1.35em;
+  gap: 8px;
 }
 .coach-md__li {
   margin: 0;
@@ -1398,6 +1413,8 @@ ol.coach-md__list {
 }
 .coach-md__li::marker {
   color: var(--accent-text);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 .coach-md strong {
   font-weight: 700;

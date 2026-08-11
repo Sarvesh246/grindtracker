@@ -1,6 +1,7 @@
 /**
  * Lightweight Markdown subset for Coach replies.
- * Supports paragraphs, soft line breaks, unordered/ordered lists, **bold**, *italic*.
+ * Supports paragraphs, soft line breaks, unordered/ordered lists,
+ * ### section labels, **bold**, *italic*.
  * Pure + XSS-safe when rendered as React text nodes (no HTML passthrough).
  */
 
@@ -11,12 +12,14 @@ export type CoachInline =
 
 export type CoachBlock =
   | { type: 'paragraph'; children: CoachInline[] }
+  | { type: 'label'; children: CoachInline[] }
   | { type: 'list'; ordered: boolean; items: CoachInline[][] }
 
 export type CoachFormattedMessage = CoachBlock[]
 
 const UL_RE = /^\s*[-*•]\s+(.+)$/
 const OL_RE = /^\s*\d+[.)]\s+(.+)$/
+const LABEL_RE = /^\s*#{2,3}\s+(.+?)\s*$/
 
 function parseInline(input: string): CoachInline[] {
   const out: CoachInline[] = []
@@ -96,6 +99,24 @@ function matchListLine(
   return null
 }
 
+function matchLabelLine(line: string): string | null {
+  const hit = line.match(LABEL_RE)
+  return hit ? hit[1]!.trim() : null
+}
+
+/** True when a paragraph is only a short bold label (optional trailing colon). */
+function asBoldOnlyLabel(children: CoachInline[]): CoachInline[] | null {
+  if (children.length !== 1) return null
+  const only = children[0]!
+  if (only.type !== 'bold') return null
+  const text = only.children
+    .map(c => (c.type === 'text' ? c.value : ''))
+    .join('')
+    .trim()
+  if (!text || text.length > 40) return null
+  return only.children
+}
+
 /**
  * Parse Coach assistant text into structured blocks for readable rendering.
  */
@@ -115,6 +136,13 @@ export function formatCoachMessage(raw: string): CoachFormattedMessage {
       continue
     }
 
+    const labelText = matchLabelLine(line)
+    if (labelText) {
+      blocks.push({ type: 'label', children: parseInline(labelText) })
+      i += 1
+      continue
+    }
+
     const listHit = matchListLine(line)
     if (listHit) {
       const ordered = listHit.ordered
@@ -122,6 +150,7 @@ export function formatCoachMessage(raw: string): CoachFormattedMessage {
       while (i < lines.length) {
         const cur = lines[i]!
         if (!cur.trim()) break
+        if (matchLabelLine(cur)) break
         const hit = matchListLine(cur)
         if (!hit || hit.ordered !== ordered) break
         items.push(parseInline(hit.content.trim()))
@@ -135,15 +164,21 @@ export function formatCoachMessage(raw: string): CoachFormattedMessage {
     while (i < lines.length) {
       const cur = lines[i]!
       if (!cur.trim()) break
-      if (matchListLine(cur)) break
+      if (matchListLine(cur) || matchLabelLine(cur)) break
       paraLines.push(cur.trimEnd())
       i += 1
     }
     if (paraLines.length) {
-      blocks.push({
-        type: 'paragraph',
-        children: parseParagraphLines(paraLines),
-      })
+      const children = parseParagraphLines(paraLines)
+      // A lone **Label** line becomes a section label for multi-topic answers.
+      if (paraLines.length === 1) {
+        const boldLabel = asBoldOnlyLabel(children)
+        if (boldLabel) {
+          blocks.push({ type: 'label', children: boldLabel })
+          continue
+        }
+      }
+      blocks.push({ type: 'paragraph', children })
     }
   }
 
