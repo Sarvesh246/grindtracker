@@ -170,10 +170,15 @@ export async function POST(request: Request) {
     process.env.GEMINI_MODEL?.trim() || COACH_DEFAULT_MODEL
 
   const google = createGoogleGenerativeAI({ apiKey })
+  // Same system prompt for every turn (starter chips and free-typed questions
+  // share this route). Format reminder sits after USER_DATA so structure stays
+  // salient once the model has the facts.
   const system = `${COACH_SYSTEM_PROMPT}
 
 USER_DATA (JSON; personal facts only — trust this over memory):
-${contextJson}`
+${contextJson}
+
+Remember: structure THIS reply for skimming (lead sentence, then "- " bullets when listing 2+ items). Applies to every question, not only suggested chips.`
 
   try {
     const result = streamText({

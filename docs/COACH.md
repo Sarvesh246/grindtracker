@@ -112,6 +112,11 @@ the failure occurs mid-stream, after headers are already sent.
 Weights stay **canonical lbs** in the pack; the system prompt tells the model
 to convert when `unit_preference` is `kg`.
 
+Reply formatting is enforced in `COACH_SYSTEM_PROMPT` for **every** turn
+(starter chips and free-typed questions share `POST /api/coach/chat`). The
+prompt asks for answer-first structure plus `- ` bullets when listing 2+
+items; the sheet renders that Markdown via `CoachMessageContent`.
+
 ## UI
 
 Floating coach on authenticated `(app)` routes (`src/components/coach/`):
