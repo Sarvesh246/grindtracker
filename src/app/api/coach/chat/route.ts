@@ -183,8 +183,9 @@ ${contextJson}`
       maxOutputTokens: 1024,
       temperature: 0.4,
       // Keep thinking minimal / off. Do NOT hardcode thinkingBudget: 0 —
-      // gemini-flash-lite-latest resolves to Gemini 3.x Flash-Lite, which
-      // rejects thinkingBudget (INVALID_ARGUMENT) and wants thinkingLevel.
+      // Gemini 3.x Flash-Lite (incl. gemini-3.5-flash-lite and
+      // gemini-flash-lite-latest) rejects thinkingBudget with
+      // INVALID_ARGUMENT and wants thinkingLevel instead.
       // `reasoning: 'none'` lets @ai-sdk/google map per family:
       //   2.5 → thinkingBudget: 0
       //   3.x / -latest → thinkingLevel: 'minimal'
