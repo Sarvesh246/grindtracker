@@ -1,7 +1,9 @@
 # GRIND — Gym Tracker
 
 ## Status: COMPLETE ✅
-All core phases (1–7) built and deployed. Single-user PWA, in daily use.
+Core phases (1–7) plus later ships (flex days, photos, onboarding, web push,
+weight targets, offline set queue, RPE, data export) — single-user PWA in daily use.
+Schema migrations run through `docs/sql/31-*.sql`.
 
 ## Git Workflow
 Single-user repo, no review process. Commit and push directly to `main` —
@@ -133,11 +135,13 @@ Both share `UnitContext`, so the kg/lbs toggle stays in sync across them.
   See migration `17-exercise-active-flag.sql`.
 - sessions — user_id, day_type, started_at, completed_at, xp_earned, note
 - session_logs — session_id, exercise_id, set_number, weight, reps, is_pr,
-  is_warmup, note, is_skipped (default false). UNIQUE on (session_id,
-  exercise_id, set_number). `is_skipped` rows are markers (weight/reps always
-  null, enforced by a CHECK) that let a skipped set in ActiveWorkout survive
-  closing/resuming the app — see Skip persistence below and migration
-  `18-skip-persistence.sql`.
+  is_warmup, note, rpe (optional 1–10, migration `31`), is_skipped (default
+  false). UNIQUE on (session_id, exercise_id, set_number). Client writes of
+  `is_pr` are forced false by trigger; authoritative flags come from
+  `grind_recompute_stats` on finish. `is_skipped` rows are markers
+  (weight/reps always null, enforced by a CHECK) that let a skipped set in
+  ActiveWorkout survive closing/resuming the app — see Skip persistence below
+  and migration `18-skip-persistence.sql`.
 - user_stats — xp_total, level, current_streak, longest_streak,
   last_workout_date, total_workouts
 - user_badges — user_id, badge_id, earned_at

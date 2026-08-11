@@ -43,10 +43,17 @@ export function reportError(
 
   console.error('[grind]', payload.operation ?? 'error', payload)
 
+  // Browser: default to same-origin `/api/errors` (Vercel runtime logs).
+  // Server/cron: only POST when an absolute NEXT_PUBLIC_ERROR_ENDPOINT is set —
+  // a relative URL has no origin in Node and would fail silently.
+  const configured =
+    typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_ERROR_ENDPOINT : undefined
   const endpoint =
-    typeof process !== 'undefined'
-      ? process.env.NEXT_PUBLIC_ERROR_ENDPOINT
-      : undefined
+    configured && configured.length > 0
+      ? configured
+      : typeof window !== 'undefined'
+        ? '/api/errors'
+        : null
   if (endpoint && typeof fetch === 'function') {
     try {
       void fetch(endpoint, {

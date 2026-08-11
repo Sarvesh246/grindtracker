@@ -25,7 +25,7 @@ const csp = [
   `style-src 'self' 'unsafe-inline'`,
   `img-src 'self' data: blob: https://lh3.googleusercontent.com ${supabaseOrigin}`,
   `font-src 'self' data:`,
-  `connect-src 'self' ${supabaseOrigin} wss://*.supabase.co`,
+  `connect-src 'self' ${supabaseOrigin} wss://*.supabase.co https://vitals.vercel-insights.com https://va.vercel-scripts.com`,
   `frame-ancestors 'none'`,
   `object-src 'none'`,
   `base-uri 'self'`,

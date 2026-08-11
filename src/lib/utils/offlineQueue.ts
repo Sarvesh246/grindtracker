@@ -18,6 +18,8 @@ export type QueuedOp =
       isWarmup: boolean
       note: string | null
       isSkipped: boolean
+      /** Optional RPE 1–10; omitted/undefined on older queued ops. */
+      rpe?: number | null
     })
   | (QueuedOpBase & { kind: 'delete' })
 
@@ -48,10 +50,7 @@ function sameSlot(a: QueuedOpBase, b: QueuedOpBase) {
 /**
  * Persist a write that failed to reach Supabase (after the caller's own
  * retries) so it survives closing the app, and can be replayed once the
- * connection comes back — instead of the change silently reverting or being
- * lost the moment the user navigates away. Only one op per (session,
- * exercise, set) slot is kept — a later queued op for the same slot replaces
- * an earlier one, since only the final intended state needs to sync.
+ * connection comes back. Only one op per (session, exercise, set) slot is kept.
  */
 export function queueOp(op: QueuedOp) {
   const queue = readQueue().filter(q => !sameSlot(q, op))
@@ -78,7 +77,7 @@ export function getQueuedOps(sessionId: string): QueuedOp[] {
 /**
  * Replay every queued op for a session, oldest first. Returns the slots that
  * synced successfully so the caller can clear their local "pending sync"
- * indicator.
+ * indicator. Always writes is_pr: false — server recomputes on finish.
  */
 export async function flushQueuedOps(
   sessionId: string,
@@ -96,10 +95,11 @@ export async function flushQueuedOps(
               set_number: op.setNumber,
               weight: op.weight,
               reps: op.reps,
-              is_pr: op.isPR,
+              is_pr: false,
               is_warmup: op.isWarmup,
               note: op.note,
               is_skipped: op.isSkipped,
+              rpe: op.rpe ?? null,
             },
             { onConflict: 'session_id,exercise_id,set_number' },
           )

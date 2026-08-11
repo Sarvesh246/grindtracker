@@ -3,6 +3,7 @@ import { cookies } from 'next/headers'
 import { ThemeProvider, type Theme } from '@/lib/contexts/ThemeContext'
 import { MotionProvider, type MotionPref } from '@/lib/contexts/MotionContext'
 import ServiceWorkerRegister from '@/components/ServiceWorkerRegister'
+import Analytics from '@/components/Analytics'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -96,6 +97,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       </head>
       <body>
         <ServiceWorkerRegister />
+        <Analytics />
         <ThemeProvider initialTheme={theme}>
           <MotionProvider initialPref={motionPref}>{children}</MotionProvider>
         </ThemeProvider>

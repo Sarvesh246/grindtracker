@@ -94,4 +94,23 @@ describe('rest days connectivity', () => {
     const gap = uncoveredDatesBetween('2026-08-01', '2026-08-04', new Set(), new Set())
     assert.deepEqual(gap, ['2026-08-02', '2026-08-03'])
   })
+
+  it('honors one-off confirmed rest dates', () => {
+    assert.equal(
+      datesConnected('2026-08-01', '2026-08-03', new Set(), new Set(['2026-08-02'])),
+      true,
+    )
+  })
+})
+
+describe('gamification display helpers', () => {
+  it('xp required grows linearly with level', () => {
+    assert.equal(getXpRequiredForLevel(1), 500)
+    assert.equal(getXpRequiredForLevel(3), 1500)
+  })
+
+  it('xp in current level at mid-level-2', () => {
+    // level 2 starts at 500; 500+250 = 750 → 250 into level 2
+    assert.equal(getXpInCurrentLevel(750), 250)
+  })
 })

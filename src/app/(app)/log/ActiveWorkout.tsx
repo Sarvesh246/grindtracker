@@ -18,7 +18,18 @@ import {
   clearQueuedOpsForSession,
   clearQueuedOpsForExercise,
 } from '@/lib/utils/offlineQueue'
+import { reportError } from '@/lib/utils/reportError'
+import { warmupRampWeights } from '@/lib/utils/warmupSets'
 import type { UserRotation, UserStats, CompleteSessionResult } from '@/lib/types'
+import {
+  emptySetState,
+  findCarryReps,
+  computeLocalIsPR,
+  parseRpe,
+  overlayQueuedOps,
+  type LogMap,
+  type SetState,
+} from './sessionLogState'
 import { useRestTimer, getPauseRestOnExit } from '@/lib/hooks/useRestTimer'
 import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
 import { useExitingValue } from '@/lib/hooks/useExitingValue'
@@ -43,84 +54,11 @@ import {
   type NotificationPrefs,
 } from '@/lib/push'
 
-interface SetState {
-  weight: string
-  reps: string
-  checked: boolean
-  skipped: boolean
-  isPR: boolean
-  isWarmup: boolean
-  note: string
-  logId?: string
-  /** Checked locally but the write to Supabase failed even after retries —
-   * queued in offlineQueue and waiting to sync once the connection returns. */
-  pendingSync?: boolean
-  /** Pre-skip backup: preserve weight/reps/note so unskip can restore them */
-  skippedWeight?: string
-  skippedReps?: string
-  skippedNote?: string
-}
-
 interface UndoState {
   key: string
   exerciseId: string
   setNumber: number
   expiresAt: number
-}
-
-type LogMap = Record<string, SetState>
-
-/**
- * The reps to carry forward into a blank set: the nearest EARLIER set number
- * for this exercise that has reps filled in, not necessarily set N-1 — a set
- * in between may itself be blank (e.g. filled in out of order: set 1, then
- * set 3, skipping over set 2).
- */
-function findCarryReps(logs: LogMap, exerciseId: string, setNumber: number): string {
-  for (let s = setNumber - 1; s >= 1; s--) {
-    const r = logs[`${exerciseId}-${s}`]?.reps
-    if (r && r !== '') return r
-  }
-  return ''
-}
-
-/**
- * Overlays anything still sitting in the offline queue onto a freshly-built
- * LogMap (mutates in place) — the server hasn't seen these yet, so without
- * this a set/skip/delete made with no signal (and never flushed before the
- * app was closed) would silently revert on resume.
- */
-function overlayQueuedOps(map: LogMap, sid: string) {
-  for (const q of getQueuedOps(sid)) {
-    const key = `${q.exerciseId}-${q.setNumber}`
-    if (q.kind === 'delete') {
-      // Unskip queues a delete of the skip marker — reset to a blank unchecked
-      // row instead of removing the key. Deleting the key left handleCheck
-      // bailing on `!logs[key]` after offline unskip → remount.
-      map[key] = {
-        weight: '',
-        reps: '',
-        checked: false,
-        skipped: false,
-        isPR: false,
-        isWarmup: false,
-        note: '',
-        pendingSync: true,
-      }
-      continue
-    }
-    map[key] = {
-      ...map[key],
-      weight: q.weight !== null ? String(q.weight) : '',
-      reps: q.reps !== null ? String(q.reps) : '',
-      checked: !q.isSkipped,
-      skipped: q.isSkipped,
-      isPR: q.isPR,
-      isWarmup: q.isWarmup,
-      note: q.note ?? '',
-      pendingSync: true,
-    }
-  }
 }
 
 interface PreviousBest {
@@ -581,6 +519,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       is_warmup?: boolean
       note?: string | null
       is_skipped?: boolean
+      rpe?: number | null
     }
 
     // Atomic create-or-resume — prevents two tabs from forking open sessions.
@@ -639,19 +578,19 @@ export default function ActiveWorkout({ day }: { day: string }) {
         const total = ex.sets_target + (extras[ex.id] ?? 0)
         for (let s = 1; s <= total; s++) {
           const key = `${ex.id}-${s}`
-          restored[key] = {
-            weight: fillWeights[ex.id] !== null ? String(fillWeights[ex.id]) : '',
-            reps: '',
-            checked: false,
-            skipped: false,
-            isPR: false,
-            isWarmup: false,
-            note: '',
-          }
+          restored[key] = emptySetState(
+            fillWeights[ex.id] !== null ? String(fillWeights[ex.id]) : '',
+          )
         }
       }
       for (const log of existingLogs) {
         const key = `${log.exercise_id}-${log.set_number}`
+        const isWarmup = !!log.is_warmup
+        // Open sessions store is_pr=false (client writes ignored); recompute locally.
+        const localPR =
+          !log.is_skipped &&
+          log.reps != null &&
+          computeLocalIsPR(isWarmup, log.weight, log.reps, bestVolumes[log.exercise_id])
         restored[key] = log.is_skipped
           ? { ...restored[key], checked: false, skipped: true, isPR: false, logId: log.id }
           : {
@@ -659,9 +598,10 @@ export default function ActiveWorkout({ day }: { day: string }) {
               reps: log.reps !== null ? String(log.reps) : '',
               checked: true,
               skipped: false,
-              isPR: log.is_pr,
-              isWarmup: !!log.is_warmup,
+              isPR: localPR,
+              isWarmup,
               note: log.note ?? '',
+              rpe: log.rpe != null ? String(log.rpe) : '',
               logId: log.id,
             }
       }
@@ -679,15 +619,9 @@ export default function ActiveWorkout({ day }: { day: string }) {
       for (const ex of exs) {
         for (let s = 1; s <= ex.sets_target; s++) {
           const key = `${ex.id}-${s}`
-          prefilled[key] = {
-            weight: fillWeights[ex.id] !== null ? String(fillWeights[ex.id]) : '',
-            reps: '',
-            checked: false,
-            skipped: false,
-            isPR: false,
-            isWarmup: false,
-            note: '',
-          }
+          prefilled[key] = emptySetState(
+            fillWeights[ex.id] !== null ? String(fillWeights[ex.id]) : '',
+          )
         }
       }
       // A brand-new session can still have offline-queued sets if every write
@@ -850,7 +784,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, completionData, exercises])
 
-  function updateLog(key: string, field: 'weight' | 'reps' | 'note', value: string) {
+  function updateLog(key: string, field: 'weight' | 'reps' | 'note' | 'rpe', value: string) {
     setLogs(prev => ({
       ...prev,
       [key]: { ...prev[key], [field]: value },
@@ -899,10 +833,9 @@ export default function ActiveWorkout({ day }: { day: string }) {
       // a PR (prior best treated as -1), not only improvements over a known best.
       // Live bar uses prior-session baseline only (not raised mid-session) so a
       // later set that beats the old PR still badges even if set 1 already did.
-      const isPR =
-        !logEntry.isWarmup &&
-        volume !== null &&
-        (prevBestVolume === null || volume > prevBestVolume)
+      // Client always writes is_pr:false; local isPR is UI-only until finish.
+      const isPR = computeLocalIsPR(logEntry.isWarmup, weight, reps, prevBestVolume)
+      const rpe = parseRpe(logEntry.rpe)
 
       const { data: saved, error: saveError } = await runWithRetry(() =>
         supabase
@@ -914,10 +847,11 @@ export default function ActiveWorkout({ day }: { day: string }) {
               set_number: setNumber,
               weight,
               reps,
-              is_pr: isPR,
+              is_pr: false,
               is_warmup: logEntry.isWarmup,
               note: logEntry.note || null,
               is_skipped: false,
+              rpe,
             },
             { onConflict: 'session_id,exercise_id,set_number' },
           )
@@ -942,6 +876,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
           isWarmup: logEntry.isWarmup,
           note: logEntry.note || null,
           isSkipped: false,
+          rpe,
           queuedAt: Date.now(),
         })
         setResumeToast('Saved on this device — will sync once back online.')
@@ -1103,11 +1038,10 @@ export default function ActiveWorkout({ day }: { day: string }) {
     const otherLogs = Object.fromEntries(Object.entries(logs).filter(([k]) => k !== key))
     const prevBestVolume = bestVolumeFromLogs(exerciseId, otherLogs)
     const volume = weight !== null && reps !== null ? weight * reps : null
-    // Match server: null prior best ⇒ first lift is a PR.
+    // Match server: null prior best ⇒ first lift is a PR. Client writes is_pr:false.
     const isPR =
-      !logEntry.isWarmup &&
-      volume !== null &&
-      (prevBestVolume === null || volume > prevBestVolume)
+      reps !== null && computeLocalIsPR(logEntry.isWarmup, weight, reps, prevBestVolume)
+    const rpe = parseRpe(logEntry.rpe)
 
     const { error } = await runWithRetry(() =>
       supabase.from('session_logs').upsert(
@@ -1117,10 +1051,11 @@ export default function ActiveWorkout({ day }: { day: string }) {
           set_number: setNumber,
           weight,
           reps,
-          is_pr: isPR,
+          is_pr: false,
           is_warmup: logEntry.isWarmup,
           note: logEntry.note || null,
           is_skipped: false,
+          rpe,
         },
         { onConflict: 'session_id,exercise_id,set_number' },
       ),
@@ -1141,6 +1076,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         isWarmup: logEntry.isWarmup,
         note: logEntry.note || null,
         isSkipped: false,
+        rpe,
         queuedAt: Date.now(),
       })
       setResumeToast('Saved on this device — will sync once back online.')
@@ -1188,17 +1124,41 @@ export default function ActiveWorkout({ day }: { day: string }) {
     setExtraSets(prev => ({ ...prev, [exerciseId]: currentExtras + 1 }))
     setLogs(prev => ({
       ...prev,
-      [`${exerciseId}-${newSetNum}`]: {
-        weight: fillWeight !== null ? String(fillWeight) : '',
-        reps: '',
-        checked: false,
-        skipped: false,
-        isPR: false,
-        isWarmup: false,
-        note: '',
-      },
+      [`${exerciseId}-${newSetNum}`]: emptySetState(fillWeight !== null ? String(fillWeight) : ''),
     }))
     showSaveToast('Set added')
+  }
+
+  /** Prefill leading sets as warm-ups at 40/60/80% of the working weight. */
+  function applyWarmupRamp(exerciseId: string) {
+    const working = (() => {
+      const keys = Object.keys(logs)
+        .filter(k => k.startsWith(`${exerciseId}-`))
+        .sort((a, b) => parseInt(a.split('-').pop()!, 10) - parseInt(b.split('-').pop()!, 10))
+      for (let i = keys.length - 1; i >= 0; i--) {
+        const w = parseFloat(logs[keys[i]]?.weight || '')
+        if (Number.isFinite(w) && w > 0) return w
+      }
+      return previousBests[exerciseId]
+    })()
+    if (working == null || working <= 0) {
+      setResumeToast('Enter a working weight first, then apply warm-ups.')
+      setTimeout(() => setResumeToast(null), 4000)
+      return
+    }
+    const ramp = warmupRampWeights(working)
+    if (ramp.length === 0) return
+    setLogs(prev => {
+      const next = { ...prev }
+      ramp.forEach((w, i) => {
+        const key = `${exerciseId}-${i + 1}`
+        const cur = next[key]
+        if (!cur || cur.checked || cur.skipped) return
+        next[key] = { ...cur, weight: String(w), isWarmup: true }
+      })
+      return next
+    })
+    showSaveToast('Warm-up ramp applied')
   }
 
   /**
@@ -1243,10 +1203,11 @@ export default function ActiveWorkout({ day }: { day: string }) {
               set_number: s,
               weight,
               reps,
-              is_pr: entry.isPR,
+              is_pr: false,
               is_warmup: entry.isWarmup,
               note: entry.note || null,
               is_skipped: entry.skipped,
+              rpe: parseRpe(entry.rpe),
             },
             { onConflict: 'session_id,exercise_id,set_number' },
           ),
@@ -1264,6 +1225,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
             isWarmup: entry.isWarmup,
             note: entry.note || null,
             isSkipped: entry.skipped,
+            rpe: parseRpe(entry.rpe),
             queuedAt: Date.now(),
           })
           next[`${exerciseId}-${s}`] = { ...entry, pendingSync: true }
@@ -1321,6 +1283,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
           is_pr: false,
           is_warmup: false,
           is_skipped: true,
+          rpe: null,
         })),
         { onConflict: 'session_id,exercise_id,set_number' },
       ),
@@ -1402,6 +1365,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
           weight: '',
           reps: '',
           note: '',
+          rpe: '',
         },
       }
       if (wasChecked) {
@@ -1488,6 +1452,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
           weight: '',
           reps: '',
           note: '',
+          rpe: '',
         }
       }
       if (anyWasChecked) {
@@ -1648,15 +1613,9 @@ export default function ActiveWorkout({ day }: { day: string }) {
         }
       }
       for (let s = 1; s <= newExercise.sets_target; s++) {
-        next[`${newExercise.id}-${s}`] = {
-          weight: fillWeight !== null ? String(fillWeight) : '',
-          reps: '',
-          checked: false,
-          skipped: false,
-          isPR: false,
-          isWarmup: false,
-          note: '',
-        }
+        next[`${newExercise.id}-${s}`] = emptySetState(
+          fillWeight !== null ? String(fillWeight) : '',
+        )
       }
       return next
     })
@@ -2039,7 +1998,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       // them try again. Reuse the top toast so the message is impossible to
       // miss. Log the underlying error too: if the toast keeps firing on a good
       // connection it's a server-side RPC failure, and this is the only trace.
-      console.error('[grind] handleFinish failed', err)
+      reportError(err, { operation: 'handleFinish', route: '/log' })
       setResumeToast('Could not finish workout. Check your connection and try again.')
       setTimeout(() => setResumeToast(null), 5000)
     } finally {
@@ -2717,6 +2676,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
               onSkipExercise={handleSkipExercise}
               onUnskipExercise={handleUnskipExercise}
               onToggleWarmup={toggleWarmup}
+              onWarmupRamp={() => applyWarmupRamp(ex.id)}
               onAddSet={() => handleAddSet(ex.id)}
               onStartEdit={handleStartEdit}
               onSaveEdit={handleSaveEdit}
@@ -2842,7 +2802,7 @@ interface ExerciseCardProps {
   previousBest: number | null
   editingKey: string | null
   onCheck: (exerciseId: string, setNumber: number) => void
-  onUpdate: (key: string, field: 'weight' | 'reps' | 'note', value: string) => void
+  onUpdate: (key: string, field: 'weight' | 'reps' | 'note' | 'rpe', value: string) => void
   onSwap: () => void
   onSkipSet: (exerciseId: string, setNumber: number) => void
   onUnskipSet: (exerciseId: string, setNumber: number) => void
@@ -2850,6 +2810,7 @@ interface ExerciseCardProps {
   onSkipExercise: (exerciseId: string) => void
   onUnskipExercise: (exerciseId: string) => void
   onToggleWarmup: (exerciseId: string, setNumber: number) => void
+  onWarmupRamp: () => void
   onAddSet: () => void
   onStartEdit: (key: string) => void
   onSaveEdit: (exerciseId: string, setNumber: number) => void
@@ -2862,7 +2823,7 @@ function ExerciseCard({
   onCheck, onUpdate, onSwap,
   onSkipSet, onUnskipSet, onDeleteSet,
   onSkipExercise, onUnskipExercise,
-  onToggleWarmup, onAddSet, onStartEdit, onSaveEdit, onPersistNote,
+  onToggleWarmup, onWarmupRamp, onAddSet, onStartEdit, onSaveEdit, onPersistNote,
   onOpenPlateCalc,
 }: ExerciseCardProps) {
   const { unitLabel, fmt, toDisplay } = useUnit()
@@ -3042,10 +3003,7 @@ function ExerciseCard({
         </div>
         {setNumbers.map((setNum) => {
           const key = `${exercise.id}-${setNum}`
-          const logEntry = logs[key] ?? {
-            weight: '', reps: '', checked: false, skipped: false, isPR: false,
-            isWarmup: false, note: '',
-          }
+          const logEntry = logs[key] ?? emptySetState()
           const isBonus = setNum > exercise.sets_target
           const editing = editingKey === key
           const prevReps = findCarryReps(logs, exercise.id, setNum)
@@ -3065,6 +3023,7 @@ function ExerciseCard({
               onRepsChange={(v) => onUpdate(key, 'reps', v)}
               onNoteChange={(v) => onUpdate(key, 'note', v)}
               onNoteBlur={() => onPersistNote(exercise.id, setNum)}
+              onRpeChange={(v) => onUpdate(key, 'rpe', v)}
               onToggleWarmup={() => onToggleWarmup(exercise.id, setNum)}
               onSkip={() => onSkipSet(exercise.id, setNum)}
               onUnskip={() => onUnskipSet(exercise.id, setNum)}
@@ -3073,13 +3032,34 @@ function ExerciseCard({
           )
         })}
 
-        <div style={{ padding: '6px 16px 4px' }}>
+        <div style={{ padding: '6px 16px 10px', display: 'flex', gap: '8px' }}>
+          <button
+            type="button"
+            onClick={onWarmupRamp}
+            aria-label={`Apply warm-up ramp for ${exercise.name}`}
+            title="Prefill leading sets at 40/60/80% as warm-ups"
+            style={{
+              flex: 1,
+              height: '40px',
+              backgroundColor: 'transparent',
+              border: '1px dashed var(--border-strong)',
+              borderRadius: 'var(--radius-sm)',
+              color: 'var(--text-secondary)',
+              fontFamily: 'var(--font-sans)',
+              fontSize: '12px',
+              fontWeight: 600,
+              letterSpacing: '0.5px',
+              cursor: 'pointer',
+            }}
+          >
+            WARM-UP %
+          </button>
           <button
             data-onboard={firstExercise ? 'aw-addset' : undefined}
             onClick={onAddSet}
             aria-label={`Add another set to ${exercise.name}`}
             style={{
-              width: '100%',
+              flex: 1,
               height: '40px',
               backgroundColor: 'transparent',
               border: '1px dashed var(--border-strong)',
@@ -3523,6 +3503,7 @@ interface SetRowProps {
   onRepsChange: (v: string) => void
   onNoteChange: (v: string) => void
   onNoteBlur: () => void
+  onRpeChange: (v: string) => void
   onToggleWarmup: () => void
   onSkip: () => void
   onUnskip: () => void
@@ -3533,7 +3514,7 @@ function SetRow({
   setNumber, isBonus, onboardFirst, editing,
   logEntry, prevReps,
   onCheck, onSaveEdit, onStartEdit,
-  onWeightChange, onRepsChange, onNoteChange, onNoteBlur,
+  onWeightChange, onRepsChange, onNoteChange, onNoteBlur, onRpeChange,
   onToggleWarmup, onSkip, onUnskip, onDelete,
 }: SetRowProps) {
   const { fromDisplay, fmt } = useUnit()
@@ -3550,7 +3531,7 @@ function SetRow({
   // mount when an in-progress session loads), an empty one starts closed.
   // The chevron under the set label sets it explicitly.
   const [noteOpen, setNoteOpen] = useState<boolean | null>(null)
-  const noteVisible = noteOpen ?? logEntry.note !== ''
+  const noteVisible = noteOpen ?? (logEntry.note !== '' || logEntry.rpe !== '')
   // logEntry.weight is stored canonically in lbs. We show it in the active display unit.
   // While the field is focused we keep the raw typed string in `rawWeight` so the user can
   // type freely (decimals, partial entries) without conversion fighting the keystrokes; on
@@ -4078,7 +4059,46 @@ function SetRow({
             input's keyboard focus ring: outline-offset 2px + outline width 2px
             = 4px of clearance needed, not 2px — with only 2px the ring's top
             edge (and the input's own top border under it) got sliced off. */}
-        <div inert={!noteVisible} style={{ padding: '4px 16px 8px' }}>
+        <div inert={!noteVisible} style={{ padding: '4px 16px 8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <label
+              htmlFor={`rpe-${setNumber}`}
+              style={{
+                fontSize: '11px',
+                color: 'var(--text-muted)',
+                fontFamily: "'DM Sans', sans-serif",
+                fontWeight: 600,
+                letterSpacing: '0.5px',
+                flexShrink: 0,
+              }}
+            >
+              RPE
+            </label>
+            <select
+              id={`rpe-${setNumber}`}
+              value={logEntry.rpe}
+              disabled={inputsLocked}
+              onChange={e => onRpeChange(e.target.value)}
+              aria-label={`RPE for set ${setNumber}`}
+              style={{
+                flex: 1,
+                height: '36px',
+                backgroundColor: 'var(--surface-elevated)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-sm)',
+                color: 'var(--text-primary)',
+                fontFamily: 'var(--font-sans)',
+                fontSize: '16px',
+                padding: '0 8px',
+                outline: 'none',
+              }}
+            >
+              <option value="">—</option>
+              {[6, 7, 8, 9, 10].map(n => (
+                <option key={n} value={String(n)}>{n}</option>
+              ))}
+            </select>
+          </div>
           <input
             type="text"
             value={logEntry.note}
@@ -4087,7 +4107,7 @@ function SetRow({
               // Persist to DB if the row is already saved (otherwise the next
               // check/save will flush the note via upsert).
               if (logEntry.checked) onNoteBlur()
-              if (!logEntry.note) setNoteOpen(false)
+              if (!logEntry.note && !logEntry.rpe) setNoteOpen(false)
             }}
             placeholder="Set note (form, feel...)"
             aria-label={`Note for set ${setNumber}`}

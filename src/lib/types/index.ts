@@ -35,6 +35,11 @@ export interface SessionLog {
   weight: number | null
   reps: number | null
   is_pr: boolean
+  is_warmup?: boolean
+  is_skipped?: boolean
+  note?: string | null
+  /** Optional RPE 1–10 (docs/sql/29). */
+  rpe?: number | null
   created_at: string
 }
 

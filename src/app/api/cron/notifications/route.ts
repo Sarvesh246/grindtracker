@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/admin'
 import { sendPushToSubscription } from '@/lib/push/webPush'
+import { reportError } from '@/lib/utils/reportError'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -119,7 +120,7 @@ async function runCron() {
       errors,
     })
   } catch (err) {
-    console.error('[grind] cron notifications', err)
+    reportError(err, { operation: 'cron-notifications', route: '/api/cron/notifications' })
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Cron failed' },
       { status: 500 },

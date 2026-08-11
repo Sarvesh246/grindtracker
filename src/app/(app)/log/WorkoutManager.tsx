@@ -6,6 +6,7 @@ import { autoSequence, effectiveSequence, orderedDayKeys } from '@/lib/utils/rot
 import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
 import { useToast } from '@/lib/contexts/ToastContext'
 import { useUnit } from '@/lib/contexts/UnitContext'
+import { WORKOUT_TEMPLATES, getWorkoutTemplate } from '@/lib/utils/workoutTemplates'
 
 interface WorkoutManagerProps {
   onClose: () => void
@@ -26,45 +27,6 @@ type Screen =
 type DeleteTarget =
   | { type: 'day'; key: string; label: string }
   | { type: 'exercise'; id: string; name: string; dayKey: string }
-
-/** The blank-slate "Use Push / Pull / Legs" option — a fully worked 3-day split
- *  a new user can start training immediately, editable afterward like any other
- *  day. `active: false` marks an optional variant pre-disabled (kept for history
- *  if the user ever turns it on), matching the per-day active flag elsewhere. */
-const PPL_TEMPLATE: Record<string, { category: DayCategory; exercises: { name: string; sets: number; reps: string; active?: boolean }[] }> = {
-  push: {
-    category: 'push',
-    exercises: [
-      { name: 'Barbell Bench Press', sets: 4, reps: '6-8' },
-      { name: 'Incline Dumbbell Press', sets: 3, reps: '8-10' },
-      { name: 'Overhead Press', sets: 3, reps: '8-10' },
-      { name: 'Cable Lateral Raises', sets: 3, reps: '12-15' },
-      { name: 'Tricep Rope Pushdown', sets: 3, reps: '12' },
-    ],
-  },
-  pull: {
-    category: 'pull',
-    exercises: [
-      { name: 'Chest-Supported Dumbbell Row', sets: 4, reps: '8-10' },
-      { name: 'Pull-Ups', sets: 4, reps: '6-10', active: false },
-      { name: 'Barbell or Cable Row', sets: 3, reps: '8-10' },
-      { name: 'Lat Pulldown', sets: 3, reps: '10-12' },
-      { name: 'Face Pulls', sets: 3, reps: '15' },
-      { name: 'Dumbbell Curl', sets: 3, reps: '10-12' },
-    ],
-  },
-  legs: {
-    category: 'legs',
-    exercises: [
-      { name: 'Barbell Squat', sets: 4, reps: '6-8' },
-      { name: 'Dumbbell RDL', sets: 3, reps: '8-10' },
-      { name: 'Leg Press', sets: 3, reps: '10-12' },
-      { name: 'Walking Lunges', sets: 3, reps: '10 each' },
-      { name: 'Leg Curl', sets: 3, reps: '12' },
-      { name: 'Calf Raises', sets: 4, reps: '15-20' },
-    ],
-  },
-}
 
 export default function WorkoutManager({ onClose, onChanged, initialNewDay = false }: WorkoutManagerProps) {
   const supabase = useMemo(() => createClient(), [])
@@ -302,20 +264,20 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
     openExerciseForm(key)
   }
 
-  // Blank-slate shortcut: bulk-create the Push/Pull/Legs split (PPL_TEMPLATE)
-  // instead of building days one exercise at a time. Also sets each day's
-  // leaderboard category and a manual push→pull→legs rotation — the auto
-  // rotation would otherwise sort those three keys alphabetically (legs,
-  // pull, push), which isn't the order anyone trains a PPL split in.
-  async function applyTemplate() {
+  // Blank-slate shortcut: bulk-create a starter split instead of building days
+  // one exercise at a time. Also sets each day's leaderboard category and a
+  // manual rotation matching the template sequence.
+  async function applyTemplate(templateId: string) {
     if (applyingTemplate) return
+    const template = getWorkoutTemplate(templateId)
+    if (!template) return
     setApplyingTemplate(true)
     setTemplateError('')
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { setTemplateError('You are signed out. Sign in and try again.'); return }
 
-      const exerciseRows = Object.entries(PPL_TEMPLATE).flatMap(([dayKey, day]) =>
+      const exerciseRows = Object.entries(template.days).flatMap(([dayKey, day]) =>
         day.exercises.map((ex, i) => ({
           user_id: user.id,
           name: ex.name,
@@ -326,7 +288,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
           active: ex.active ?? true,
         }))
       )
-      const categoryRows = Object.entries(PPL_TEMPLATE).map(([dayKey, day]) => ({
+      const categoryRows = Object.entries(template.days).map(([dayKey, day]) => ({
         user_id: user.id, day_key: dayKey, category: day.category,
       }))
 
@@ -334,7 +296,13 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
         supabase.from('exercises').insert(exerciseRows),
         supabase.from('user_day_categories').upsert(categoryRows, { onConflict: 'user_id,day_key' }),
         supabase.from('user_rotation').upsert(
-          { user_id: user.id, mode: 'manual', sequence: ['push', 'pull', 'legs'], current_index: 0, updated_at: new Date().toISOString() },
+          {
+            user_id: user.id,
+            mode: 'manual',
+            sequence: template.sequence,
+            current_index: 0,
+            updated_at: new Date().toISOString(),
+          },
           { onConflict: 'user_id' },
         ),
       ])
@@ -346,7 +314,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
 
       await load()
       onChanged()
-      toast.show('Push / Pull / Legs added')
+      toast.show(`${template.label.replace(/^USE\s+/i, '')} added`)
       onClose()
     } catch {
       setTemplateError('Could not set up your template. Check your connection and try again.')
@@ -974,27 +942,36 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
                   Start with a ready-made split, or build your own days and exercises from scratch.
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  <button
-                    className="press"
-                    onClick={applyTemplate}
-                    disabled={applyingTemplate}
-                    style={{
-                      width: '100%', textAlign: 'left',
-                      backgroundColor: 'var(--accent-wash)',
-                      border: '1px solid var(--accent)', borderRadius: '10px',
-                      padding: '16px',
-                      cursor: applyingTemplate ? 'default' : 'pointer',
-                      opacity: applyingTemplate ? 0.7 : 1,
-                      display: 'flex', flexDirection: 'column', gap: '4px',
-                    }}
-                  >
-                    <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '20px', color: 'var(--accent-text)', letterSpacing: '1px' }}>
-                      {applyingTemplate ? 'SETTING UP...' : 'USE PUSH / PULL / LEGS'}
-                    </span>
-                    <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '12px', color: 'var(--text-secondary)' }}>
-                      A proven 3-day split, pre-loaded with exercises, sets &amp; reps. Edit anything after.
-                    </span>
-                  </button>
+                  {WORKOUT_TEMPLATES.map((t, i) => (
+                    <button
+                      key={t.id}
+                      className="press"
+                      onClick={() => applyTemplate(t.id)}
+                      disabled={applyingTemplate}
+                      style={{
+                        width: '100%', textAlign: 'left',
+                        backgroundColor: i === 0 ? 'var(--accent-wash)' : 'var(--surface-elevated)',
+                        border: i === 0 ? '1px solid var(--accent)' : '1px solid var(--border)',
+                        borderRadius: '10px',
+                        padding: '16px',
+                        cursor: applyingTemplate ? 'default' : 'pointer',
+                        opacity: applyingTemplate ? 0.7 : 1,
+                        display: 'flex', flexDirection: 'column', gap: '4px',
+                      }}
+                    >
+                      <span style={{
+                        fontFamily: "'Bebas Neue', sans-serif",
+                        fontSize: '20px',
+                        color: i === 0 ? 'var(--accent-text)' : 'var(--text-primary)',
+                        letterSpacing: '1px',
+                      }}>
+                        {applyingTemplate ? 'SETTING UP...' : t.label}
+                      </span>
+                      <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '12px', color: 'var(--text-secondary)' }}>
+                        {t.description}
+                      </span>
+                    </button>
+                  ))}
                   <button
                     className="press"
                     onClick={() => setScreen({ id: 'new-day' })}

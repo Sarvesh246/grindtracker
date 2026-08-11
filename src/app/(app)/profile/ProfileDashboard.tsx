@@ -14,6 +14,14 @@ import { useTheme } from '@/lib/contexts/ThemeContext'
 import ThemeToggle from '@/components/ThemeToggle'
 import { useMotionPref } from '@/lib/contexts/MotionContext'
 import FeedbackModal from '@/components/FeedbackModal'
+import {
+  downloadJson,
+  downloadText,
+  exportFilename,
+  sessionsLogsToCsv,
+  type GrindExportPayload,
+} from '@/lib/utils/exportData'
+import { reportError } from '@/lib/utils/reportError'
 import Link from 'next/link'
 import { useTour, type TourStep } from '@/components/onboarding/Tour'
 import { useOnboarding } from '@/lib/contexts/OnboardingContext'
@@ -107,6 +115,9 @@ export default function ProfileDashboard({
   const [tooltipBadgeId, setTooltipBadgeId] = useState<string | null>(null)
   const [badgesOpen, setBadgesOpen] = useState(false)
   const [feedbackOpen, setFeedbackOpen] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [deletingData, setDeletingData] = useState(false)
+  const [deleteConfirm, setDeleteConfirm] = useState(false)
   // Default rest time (min:sec), persisted to localStorage via the rest-timer hook.
   const [restMin, setRestMin] = useState(2)
   const [restSec, setRestSec] = useState(0)
@@ -362,6 +373,91 @@ export default function ProfileDashboard({
   async function handleSignOut() {
     await supabase.auth.signOut()
     router.push('/login')
+  }
+
+  async function handleExportData(format: 'json' | 'csv') {
+    if (exporting) return
+    setExporting(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { router.push('/login'); return }
+
+      const [
+        { data: sessions },
+        { data: exercises },
+        { data: bodyWeights },
+        { data: badges },
+        { data: restDays },
+        { data: restDates },
+        { data: statsRow },
+      ] = await Promise.all([
+        supabase.from('sessions').select('*').eq('user_id', user.id).order('started_at', { ascending: true }),
+        supabase.from('exercises').select('*').eq('user_id', user.id),
+        supabase.from('body_weights').select('*').eq('user_id', user.id).order('recorded_at', { ascending: true }),
+        supabase.from('user_badges').select('*').eq('user_id', user.id),
+        supabase.from('user_rest_days').select('*').eq('user_id', user.id),
+        supabase.from('user_rest_dates').select('*').eq('user_id', user.id),
+        supabase.from('user_stats').select('*').eq('user_id', user.id).maybeSingle(),
+      ])
+
+      const sessionIds = (sessions ?? []).map(s => s.id)
+      const { data: logs } = sessionIds.length
+        ? await supabase.from('session_logs').select('*').in('session_id', sessionIds)
+        : { data: [] as unknown[] }
+
+      if (format === 'csv') {
+        const names: Record<string, string> = {}
+        for (const ex of exercises ?? []) names[ex.id] = ex.name
+        downloadText(
+          exportFilename('grind-sets').replace(/\.json$/, '.csv'),
+          sessionsLogsToCsv(sessions ?? [], (logs ?? []) as never[], names),
+          'text/csv;charset=utf-8',
+        )
+        toast.show('Exported sets as CSV')
+        return
+      }
+
+      const payload: GrindExportPayload = {
+        exported_at: new Date().toISOString(),
+        format_version: 1,
+        profile: { username: initialUsername, display_name: displayName },
+        stats: statsRow ?? null,
+        sessions: sessions ?? [],
+        session_logs: logs ?? [],
+        exercises: exercises ?? [],
+        body_weights: bodyWeights ?? [],
+        badges: badges ?? [],
+        rest_days: restDays ?? [],
+        rest_dates: restDates ?? [],
+      }
+      downloadJson(exportFilename(), payload)
+      toast.show('Exported your GRIND data')
+    } catch (err) {
+      reportError(err, { operation: 'exportData', route: '/profile' })
+      toast.show('Export failed — check your connection')
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  async function handleDeleteMyData() {
+    if (deletingData) return
+    if (!deleteConfirm) {
+      setDeleteConfirm(true)
+      return
+    }
+    setDeletingData(true)
+    try {
+      const { error } = await supabase.rpc('delete_my_grind_data')
+      if (error) throw error
+      await supabase.auth.signOut()
+      router.push('/login')
+    } catch (err) {
+      reportError(err, { operation: 'deleteMyData', route: '/profile' })
+      toast.show('Could not delete data — apply migration 29, then try again')
+      setDeletingData(false)
+      setDeleteConfirm(false)
+    }
   }
 
   // Settings walkthrough. Paused while the username field is being edited (its
@@ -1133,6 +1229,82 @@ export default function ProfileDashboard({
 
           <div style={{ height: '1px', backgroundColor: 'var(--border)' }} />
 
+          {/* Export — JSON full dump + CSV of sets. */}
+          <button
+            onClick={() => handleExportData('json')}
+            disabled={exporting}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              gap: '12px', width: '100%',
+              background: 'transparent', border: 'none', padding: 0,
+              cursor: exporting ? 'default' : 'pointer', textAlign: 'left',
+              opacity: exporting ? 0.7 : 1,
+            }}
+          >
+            <div>
+              <div style={{ fontSize: '14px', color: 'var(--text-primary)', fontWeight: 600, marginBottom: '2px' }}>
+                {exporting ? 'Exporting…' : 'Export Data'}
+              </div>
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                Download workouts, sets &amp; body weight as JSON
+              </div>
+            </div>
+            <span style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: '32px', height: '32px', flexShrink: 0,
+              borderRadius: '9999px',
+              backgroundColor: 'var(--surface-elevated)',
+              border: '1px solid var(--border)',
+              color: 'var(--accent-text)',
+            }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+            </span>
+          </button>
+
+          <div style={{ height: '1px', backgroundColor: 'var(--border)' }} />
+
+          <button
+            onClick={() => handleExportData('csv')}
+            disabled={exporting}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              gap: '12px', width: '100%',
+              background: 'transparent', border: 'none', padding: 0,
+              cursor: exporting ? 'default' : 'pointer', textAlign: 'left',
+              opacity: exporting ? 0.7 : 1,
+            }}
+          >
+            <div>
+              <div style={{ fontSize: '14px', color: 'var(--text-primary)', fontWeight: 600, marginBottom: '2px' }}>
+                Export Sets (CSV)
+              </div>
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                Spreadsheet-friendly set history
+              </div>
+            </div>
+            <span style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: '32px', height: '32px', flexShrink: 0,
+              borderRadius: '9999px',
+              backgroundColor: 'var(--surface-elevated)',
+              border: '1px solid var(--border)',
+              color: 'var(--accent-text)',
+            }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+              </svg>
+            </span>
+          </button>
+
+          <div style={{ height: '1px', backgroundColor: 'var(--border)' }} />
+
           {/* Send feedback — the only entry point users have to reach me. */}
           <button
             onClick={() => setFeedbackOpen(true)}
@@ -1411,6 +1583,31 @@ export default function ProfileDashboard({
         </div>
         </div>
       </div>
+
+      {/* Delete data (keeps the auth account — re-setup after). Requires migration 29. */}
+      <button
+        onClick={handleDeleteMyData}
+        disabled={deletingData}
+        style={{
+          width: '100%', height: '48px',
+          marginBottom: '10px',
+          backgroundColor: 'transparent',
+          border: '1px solid var(--border)',
+          borderRadius: '12px',
+          color: deleteConfirm ? 'var(--danger)' : 'var(--text-muted)',
+          fontFamily: "'DM Sans', sans-serif",
+          fontSize: '13px', fontWeight: 600,
+          cursor: deletingData ? 'default' : 'pointer',
+          letterSpacing: '0.3px',
+          opacity: deletingData ? 0.7 : 1,
+        }}
+      >
+        {deletingData
+          ? 'DELETING…'
+          : deleteConfirm
+            ? 'TAP AGAIN TO CONFIRM DELETE ALL DATA'
+            : 'DELETE MY DATA'}
+      </button>
 
       {/* Sign out */}
       <button

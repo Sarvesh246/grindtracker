@@ -43,6 +43,7 @@ is fully linked to migration history.
 | [28-web-push-hardening.sql](sql/28-web-push-hardening.sql) | 28 | Claim CTE join, `sent_at` client lock, `upsert_push_subscription` |
 | [29-complete-session-all-prs.sql](sql/29-complete-session-all-prs.sql) | 29 | Completion modal lists every PR set (not one-per-exercise) |
 | [30-notification-edge-fixes.sql](sql/30-notification-edge-fixes.sql) | 30 | Streak reminder catch-up, skip open sessions, timezone safety |
+| [31-is-pr-guard-rpe-delete.sql](sql/31-is-pr-guard-rpe-delete.sql) | 31 | Ignore client `is_pr`, optional `rpe`, `delete_my_grind_data` RPC |
 
 See also [PUSH.md](PUSH.md) for VAPID keys, Vercel env, and cron setup.
 
@@ -77,9 +78,9 @@ updated **27** alone (includes the hardening) or 27 then 28 (idempotent).
 ## PWA / service worker note
 
 GRIND ships a minimal service worker (`public/sw.js`) for an offline shell page
-and Web Push handlers. Workout logging still requires connectivity — there is
-no offline set queue beyond the in-session retry buffer. Apply migration **27**
-and set VAPID / `CRON_SECRET` / `SUPABASE_SERVICE_ROLE_KEY` before relying on
+and Web Push handlers. Live set writes that fail after retries are queued in
+`localStorage` (`offlineQueue.ts`) and flushed on reconnect / before finish.
+Starting a session and calling `complete_session` still require connectivity.
+Apply migration **27** (and **28** if needed) and set VAPID / `CRON_SECRET` /
+`SUPABASE_SERVICE_ROLE_KEY` before relying on
 push (see [PUSH.md](PUSH.md)). If an older 27 was already applied, run **28** as well.
-
-If you have multiple Supabase environments (e.g., preview + prod), run the same scripts on each.
