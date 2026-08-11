@@ -1047,7 +1047,6 @@ export default function ActiveWorkout({ day }: { day: string }) {
     // true previous best.
     const otherLogs = Object.fromEntries(Object.entries(logs).filter(([k]) => k !== key))
     const prevBestVolume = bestVolumeFromLogs(exerciseId, otherLogs)
-    const volume = weight !== null && reps !== null ? weight * reps : null
     // Match server: null prior best ⇒ first lift is a PR. Client writes is_pr:false.
     const isPR =
       reps !== null && computeLocalIsPR(logEntry.isWarmup, weight, reps, prevBestVolume)
