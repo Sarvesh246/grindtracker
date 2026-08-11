@@ -4,6 +4,7 @@ import BottomNav from '@/components/BottomNav'
 import TopNav from '@/components/TopNav'
 import SwipeNavigator from '@/components/SwipeNavigator'
 import HapticsSetup from '@/components/HapticsSetup'
+import CoachRoot from '@/components/coach/CoachRoot'
 import { UnitProvider } from '@/lib/contexts/UnitContext'
 import { ToastProvider } from '@/lib/contexts/ToastContext'
 import { OnboardingProvider, type OnboardingState } from '@/lib/contexts/OnboardingContext'
@@ -52,6 +53,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <OnboardingProvider userId={onboardingUserId} initialState={onboardingInitial}>
     <ToastProvider>
     <HapticsSetup />
+    {/* Coach FAB + sheet: portal-friendly fixed UI above app chrome; hidden on
+        active workout via CoachRoot (same /log?day= gate as BottomNav). */}
+    <CoachRoot />
     {/* Fixed, non-scrolling app shell. Only .app-main scrolls; the bottom nav is
         a flow child pinned at the bottom by layout (never position:fixed), so it
         can't strand. See .app-shell in globals.css. */}

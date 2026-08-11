@@ -45,8 +45,10 @@ is fully linked to migration history.
 | [30-notification-edge-fixes.sql](sql/30-notification-edge-fixes.sql) | 30 | Streak reminder catch-up, skip open sessions, timezone safety |
 | [31-is-pr-guard-rpe-delete.sql](sql/31-is-pr-guard-rpe-delete.sql) | 31 | Ignore client `is_pr`, optional `rpe`, `delete_my_grind_data` RPC |
 | [32-setup-completed.sql](sql/32-setup-completed.sql) | 32 | First-run setup wizard gate (`setup_completed_at`) |
+| [33-coach.sql](sql/33-coach.sql) | 33 | Coach chat log + per-user Gemini rate limits |
 
 See also [PUSH.md](PUSH.md) for VAPID keys, Vercel env, and cron setup.
+See [COACH.md](COACH.md) for Gemini env, rate limits, and `/api/coach/chat`.
 
 **If you already applied an older 27:** run **28** next. Fresh installs can apply the
 updated **27** alone (includes the hardening) or 27 then 28 (idempotent).

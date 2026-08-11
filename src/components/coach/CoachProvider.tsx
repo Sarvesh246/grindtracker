@@ -1,0 +1,354 @@
+'use client'
+
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react'
+import {
+  COACH_DAILY_LIMIT,
+  COACH_MAX_HISTORY_MESSAGES,
+  COACH_MAX_MESSAGE_CHARS,
+} from '@/lib/coach'
+import { useUnit } from '@/lib/contexts/UnitContext'
+
+export type CoachDockId = 'br' | 'bl' | 'tr' | 'tl'
+export type CoachSheetSize = 'compact' | 'expanded'
+export type CoachMessage = {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export type CoachQuotaState = {
+  dailyUsed: number
+  dailyLimit: number
+  dailyRemaining: number
+  burstUsed: number
+  burstLimit: number
+  burstRemaining: number
+}
+
+type CoachContextValue = {
+  open: boolean
+  size: CoachSheetSize
+  dock: CoachDockId
+  messages: CoachMessage[]
+  streaming: boolean
+  error: string | null
+  quota: CoachQuotaState | null
+  configured: boolean | null
+  quotaLoaded: boolean
+  fabRef: React.RefObject<HTMLButtonElement | null>
+  setDock: (dock: CoachDockId) => void
+  openCoach: () => void
+  closeCoach: () => void
+  toggleSize: () => void
+  setSize: (size: CoachSheetSize) => void
+  sendMessage: (text: string) => Promise<void>
+  clearError: () => void
+}
+
+const DOCK_KEY = 'grind_coach_fab_dock'
+const DOCK_EVENT = 'grind-coach-dock'
+const DOCKS: CoachDockId[] = ['br', 'bl', 'tr', 'tl']
+
+const CoachContext = createContext<CoachContextValue | null>(null)
+
+function readStoredDock(): CoachDockId {
+  if (typeof window === 'undefined') return 'br'
+  try {
+    const raw = window.localStorage.getItem(DOCK_KEY)
+    if (raw && DOCKS.includes(raw as CoachDockId)) return raw as CoachDockId
+  } catch {
+    // private mode / blocked storage
+  }
+  return 'br'
+}
+
+function persistDock(dock: CoachDockId) {
+  try {
+    window.localStorage.setItem(DOCK_KEY, dock)
+  } catch {
+    // ignore
+  }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(DOCK_EVENT))
+  }
+}
+
+function subscribeDock(onChange: () => void) {
+  if (typeof window === 'undefined') return () => {}
+  window.addEventListener(DOCK_EVENT, onChange)
+  window.addEventListener('storage', onChange)
+  return () => {
+    window.removeEventListener(DOCK_EVENT, onChange)
+    window.removeEventListener('storage', onChange)
+  }
+}
+
+function uid() {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+export function CoachProvider({ children }: { children: ReactNode }) {
+  const { unitLabel } = useUnit()
+  const [open, setOpen] = useState(false)
+  const [size, setSize] = useState<CoachSheetSize>('compact')
+  const dock = useSyncExternalStore(
+    subscribeDock,
+    readStoredDock,
+    () => 'br' as CoachDockId,
+  )
+  const [messages, setMessages] = useState<CoachMessage[]>([])
+  const [streaming, setStreaming] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [quota, setQuota] = useState<CoachQuotaState | null>(null)
+  const [configured, setConfigured] = useState<boolean | null>(null)
+  const [quotaLoaded, setQuotaLoaded] = useState(false)
+  const fabRef = useRef<HTMLButtonElement | null>(null)
+  const openedOnce = useRef(false)
+
+  const setDock = useCallback((next: CoachDockId) => {
+    persistDock(next)
+  }, [])
+
+  const refreshQuota = useCallback(async () => {
+    try {
+      const res = await fetch('/api/coach/chat')
+      const data = (await res.json().catch(() => ({}))) as {
+        quota?: CoachQuotaState
+        configured?: boolean
+        error?: string
+      }
+      if (!res.ok) {
+        if (res.status === 503) {
+          setConfigured(false)
+          setError(
+            data.error ??
+              "Coach isn't ready yet. Apply the coach SQL migration and set GEMINI_API_KEY.",
+          )
+        }
+        setQuotaLoaded(true)
+        return
+      }
+      if (data.quota) setQuota(data.quota)
+      setConfigured(data.configured ?? true)
+      setQuotaLoaded(true)
+    } catch {
+      setQuotaLoaded(true)
+      setError('Could not load coach status. Check your connection.')
+    }
+  }, [])
+
+  const openCoach = useCallback(() => {
+    setOpen(true)
+    setSize('compact')
+    setError(null)
+    if (!openedOnce.current) {
+      openedOnce.current = true
+      void refreshQuota()
+    } else if (!quotaLoaded) {
+      void refreshQuota()
+    }
+  }, [quotaLoaded, refreshQuota])
+
+  const closeCoach = useCallback(() => {
+    setOpen(false)
+    setSize('compact')
+    // Return focus to FAB after close settles.
+    requestAnimationFrame(() => {
+      fabRef.current?.focus()
+    })
+  }, [])
+
+  const toggleSize = useCallback(() => {
+    setSize(s => (s === 'compact' ? 'expanded' : 'compact'))
+  }, [])
+
+  const clearError = useCallback(() => setError(null), [])
+
+  const sendMessage = useCallback(
+    async (raw: string) => {
+      const text = raw.trim()
+      if (!text || streaming) return
+      if (text.length > COACH_MAX_MESSAGE_CHARS) {
+        setError(`Message must be at most ${COACH_MAX_MESSAGE_CHARS} characters.`)
+        return
+      }
+      if (quota && quota.dailyRemaining <= 0) {
+        setError(
+          `Daily coach limit reached (${quota.dailyLimit} messages per day). Try again tomorrow.`,
+        )
+        return
+      }
+
+      setError(null)
+      const userMsg: CoachMessage = { id: uid(), role: 'user', content: text }
+      const history = messages
+        .filter(m => m.content.trim())
+        .slice(-COACH_MAX_HISTORY_MESSAGES)
+        .map(m => ({ role: m.role, content: m.content }))
+
+      const assistantId = uid()
+      setMessages(prev => [
+        ...prev,
+        userMsg,
+        { id: assistantId, role: 'assistant', content: '' },
+      ])
+      setStreaming(true)
+
+      try {
+        const res = await fetch('/api/coach/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: text,
+            history,
+            unit: unitLabel,
+          }),
+        })
+
+        const remainingHdr = res.headers.get('X-Coach-Daily-Remaining')
+        const limitHdr = res.headers.get('X-Coach-Daily-Limit')
+        if (remainingHdr != null) {
+          const dailyRemaining = Math.max(0, parseInt(remainingHdr, 10) || 0)
+          const dailyLimit = limitHdr
+            ? parseInt(limitHdr, 10) || COACH_DAILY_LIMIT
+            : (quota?.dailyLimit ?? COACH_DAILY_LIMIT)
+          setQuota(prev => ({
+            dailyUsed: Math.max(0, dailyLimit - dailyRemaining),
+            dailyLimit,
+            dailyRemaining,
+            burstUsed: prev?.burstUsed ?? 0,
+            burstLimit: prev?.burstLimit ?? 8,
+            burstRemaining: prev?.burstRemaining ?? 8,
+          }))
+        }
+
+        if (!res.ok) {
+          let errText = 'Coach failed to respond. Try again in a moment.'
+          try {
+            const body = (await res.json()) as {
+              error?: string
+              quota?: CoachQuotaState
+            }
+            if (body.error) errText = body.error
+            if (body.quota) setQuota(body.quota)
+          } catch {
+            if (res.status === 503) {
+              errText = "Coach isn't ready yet."
+            } else if (res.status === 429) {
+              errText = 'Rate limit reached. Try again later.'
+            }
+          }
+          // Drop empty assistant placeholder on hard failure.
+          setMessages(prev =>
+            prev.filter(m => !(m.id === assistantId && !m.content)),
+          )
+          setError(errText)
+          if (res.status === 503) setConfigured(false)
+          return
+        }
+
+        const reader = res.body?.getReader()
+        if (!reader) {
+          setMessages(prev =>
+            prev.filter(m => !(m.id === assistantId && !m.content)),
+          )
+          setError('Coach failed to respond. Try again in a moment.')
+          return
+        }
+
+        const decoder = new TextDecoder()
+        let acc = ''
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          acc += decoder.decode(value, { stream: true })
+          const snapshot = acc
+          setMessages(prev =>
+            prev.map(m =>
+              m.id === assistantId ? { ...m, content: snapshot } : m,
+            ),
+          )
+        }
+        acc += decoder.decode()
+        const finalText = acc.trim()
+        setMessages(prev =>
+          prev.map(m =>
+            m.id === assistantId
+              ? { ...m, content: finalText || m.content }
+              : m,
+          ),
+        )
+        if (!finalText) {
+          setMessages(prev => prev.filter(m => m.id !== assistantId))
+          setError('Coach returned an empty reply. Try again.')
+        }
+      } catch {
+        setMessages(prev =>
+          prev.filter(m => !(m.id === assistantId && !m.content)),
+        )
+        setError('Could not reach Coach. Check your connection.')
+      } finally {
+        setStreaming(false)
+      }
+    },
+    [messages, quota, streaming, unitLabel],
+  )
+
+  const value = useMemo<CoachContextValue>(
+    () => ({
+      open,
+      size,
+      dock,
+      messages,
+      streaming,
+      error,
+      quota,
+      configured,
+      quotaLoaded,
+      fabRef,
+      setDock,
+      openCoach,
+      closeCoach,
+      toggleSize,
+      setSize,
+      sendMessage,
+      clearError,
+    }),
+    [
+      open,
+      size,
+      dock,
+      messages,
+      streaming,
+      error,
+      quota,
+      configured,
+      quotaLoaded,
+      setDock,
+      openCoach,
+      closeCoach,
+      toggleSize,
+      sendMessage,
+      clearError,
+    ],
+  )
+
+  return (
+    <CoachContext.Provider value={value}>{children}</CoachContext.Provider>
+  )
+}
+
+export function useCoach() {
+  const ctx = useContext(CoachContext)
+  if (!ctx) throw new Error('useCoach must be used within CoachProvider')
+  return ctx
+}
