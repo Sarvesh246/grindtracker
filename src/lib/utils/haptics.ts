@@ -154,10 +154,16 @@ export function attachHapticOverlay(el: HTMLElement): () => void {
   sw.setAttribute('aria-hidden', 'true')
   sw.tabIndex = -1
   // opacity:0 keeps the switch hittable; appearance keeps iOS treating it as a switch.
+  // touch-action is set explicitly (not just inherited from the `*` rule in
+  // globals.css) because a `switch`-styled control has its own native
+  // slide-to-toggle drag gesture in WebKit — without an explicit touch-action
+  // here that gesture can claim the touch for itself instead of handing pans
+  // off to the page's scroll/SwipeNavigator, same as a `<select>` or
+  // `<input type=range>` would.
   sw.style.cssText =
     'position:absolute;inset:0;width:100%;height:100%;margin:0;padding:0;border:0;' +
     '-webkit-appearance:switch;appearance:auto;opacity:0;cursor:inherit;pointer-events:auto;z-index:1;' +
-    'outline:none;box-shadow:none;-webkit-tap-highlight-color:transparent;'
+    'outline:none;box-shadow:none;-webkit-tap-highlight-color:transparent;touch-action:pan-y pinch-zoom;'
 
   const syncPointerEvents = () => {
     sw.style.pointerEvents = hostIsDisabled(el) ? 'none' : 'auto'
