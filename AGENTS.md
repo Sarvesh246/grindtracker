@@ -7,18 +7,20 @@ This version has breaking changes — APIs, conventions, and file structure may 
 ## Learned User Preferences
 
 - Do not commit `.cursor/hooks/state/continual-learning.json`; it is Cursor hook internal state, not app code.
+- Primary daily use is iOS PWA (Add to Home Screen); optimize UX feedback for that path (real-tap `data-haptic`), not Android-only vibrate.
+- Haptics should feel satisfying but tasteful: light for routine controls; heavier feel on set-complete, saves, and confirms — do not overdo.
 
 ## Learned Workspace Facts
 
-- Production site: https://grindtrack.vercel.app/ (Vercel auto-deploys from `main`).
-- GitHub repo: https://github.com/Sarvesh246/grindtracker.git (`main` branch).
+- Production site: https://grindtrack.vercel.app/ auto-deploys from `main` (https://github.com/Sarvesh246/grindtracker.git).
 - Last Workout panel must list exercises in the order they were logged (`session_logs.created_at`), not by set number.
-- Workout discard requires Supabase delete RLS policies from `docs/sql/04-session-delete-rls.sql` to be applied.
-- Production hardening (security/data-integrity RPCs, working-set completion gate, session write guards) lives in `docs/sql/20-production-hardening.sql`; past workout save/edit must use `upsert_past_session`, not client delete-then-insert of `session_logs`.
+- Workout discard needs Supabase delete RLS from `docs/sql/04-session-delete-rls.sql`; production hardening and past save/edit via `upsert_past_session` live in `docs/sql/20-production-hardening.sql` (never client delete-then-insert of `session_logs`).
 - Badge catalog objects must stay RSC-serializable: never put functions on `ALL_BADGES` (or pass them server→client); weight-threshold copy uses plain `weightLbs`/`weightKind` with `formatBadgeDescription()` at the call site.
-- Web Push (subscriptions, prefs, scheduled sends) lives in `docs/sql/27-web-push.sql`; if an older 27 was already applied, also run `docs/sql/28-web-push-hardening.sql`. Setup/env notes are in `docs/PUSH.md` (`NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, `CRON_SECRET`, `SUPABASE_SERVICE_ROLE_KEY`).
-- Vercel Hobby forbids sub-daily cron expressions; `vercel.json` fans out 24 once-daily UTC-hour jobs to `/api/cron/notifications` for roughly hourly coverage. Rest-end alerts must use in-page/local timers — Hobby cron is too coarse for short gym rests (locked-phone fallback only).
+- Web Push (subscriptions, prefs, scheduled sends) lives in `docs/sql/27-web-push.sql`; if an older 27 was already applied, also run `docs/sql/28-web-push-hardening.sql`. Setup/env notes are in `docs/PUSH.md`.
+- Vercel Hobby forbids sub-daily cron expressions; `vercel.json` fans out 24 once-daily UTC-hour jobs to `/api/cron/notifications` for roughly hourly coverage. Rest-end alerts must use in-page/local timers — Hobby cron is too coarse for short gym rests.
+- On Vercel only, `next.config.ts` sets `typescript.ignoreBuildErrors` when `VERCEL === '1'` to skip redundant Hobby typecheck; still run `npm run typecheck` / local `next build` for types.
 - iOS 26.5+/27 closed programmatic switch-click haptics; use `data-haptic` + mounted `HapticsSetup` overlay taps. Imperative `haptic()` still vibrates on Android but is a no-op for ticks on those iOS versions.
 - First-run onboarding is a multi-step setup wizard (`src/components/setup/`, `/setup`) gated by `user_profiles.setup_completed_at` (migration `docs/sql/32-setup-completed.sql`); proxy + `grind_profile_ok` cookie use `s1:` once setup is done; complete via `POST /api/setup/complete`, clear via `POST /api/setup/replay`.
 - "Replay Setup" in Profile settings is admin-only (`isAdmin` / `isAdminEmail`), same gate pattern as the feedback inbox — not shown to normal users.
 - Profile (`/profile`) is the stats/dashboard surface; account preferences live at `/profile/settings`, opened from the profile header gear (not an inline settings stack on the dashboard).
+- Log DaySelect day chips share calendar category colors via `src/lib/utils/dayColors.ts` as text/icon/outline accents (not full filled buttons); UP NEXT outline should read clearly vs the default state.
