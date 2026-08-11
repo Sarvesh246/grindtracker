@@ -7,7 +7,9 @@ import HapticsSetup from '@/components/HapticsSetup'
 import { UnitProvider } from '@/lib/contexts/UnitContext'
 import { ToastProvider } from '@/lib/contexts/ToastContext'
 import { OnboardingProvider, type OnboardingState } from '@/lib/contexts/OnboardingContext'
+import { DemoModeProvider } from '@/lib/contexts/DemoModeContext'
 import { createClient } from '@/lib/supabase/server'
+import { isAdminEmail } from '@/lib/utils/admin'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const pref = (await cookies()).get('grind_unit_pref')?.value
@@ -21,6 +23,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const onboardingUserId = user?.id ?? 'anon'
+
+  // Demo Mode is developer-only display trickery (see DemoModeContext) — the
+  // cookie only has effect for the hardcoded admin account, so a non-admin
+  // browser can't get stuck rendering fake data by poking the cookie.
+  const demoModePref = (await cookies()).get('grind_demo_mode_pref')?.value
+  const initialDemoMode = demoModePref === 'on' && isAdminEmail(user?.email)
   let onboardingInitial: OnboardingState = { toursSeen: [], tooltipsSeen: [], skipAll: false, tooltipsSkipped: false }
   if (user) {
     const { data: onboardingRow } = await supabase
@@ -40,6 +48,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <UnitProvider initialUnit={initialUnit}>
+    <DemoModeProvider initialDemoMode={initialDemoMode}>
     <OnboardingProvider userId={onboardingUserId} initialState={onboardingInitial}>
     <ToastProvider>
     <HapticsSetup />
@@ -61,6 +70,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     </div>
     </ToastProvider>
     </OnboardingProvider>
+    </DemoModeProvider>
     </UnitProvider>
   )
 }

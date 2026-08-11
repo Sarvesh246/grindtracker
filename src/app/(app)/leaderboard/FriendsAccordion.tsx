@@ -3,6 +3,8 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { UserProfile } from '@/lib/types'
 import { useToast } from '@/lib/contexts/ToastContext'
+import { useDemoMode } from '@/lib/contexts/DemoModeContext'
+import { DEMO_FRIENDS, DEMO_PENDING_INCOMING, DEMO_SENT } from '@/lib/demoMode/fakeData'
 
 // Pin the projection instead of `select('*')`. Every column here is safe to
 // show to another user; selecting explicitly means a column added to
@@ -44,6 +46,7 @@ interface Props {
 export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
   const supabase = useMemo(() => createClient(), [])
   const toast = useToast()
+  const { demoMode } = useDemoMode()
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [open, setOpen] = useState(false)
@@ -67,6 +70,14 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
   const selectionListenerRef = useRef<(() => void) | null>(null)
 
   const loadFriendsData = useCallback(async () => {
+    if (demoMode) {
+      setFriends(DEMO_FRIENDS)
+      setPending(DEMO_PENDING_INCOMING)
+      setSent(DEMO_SENT)
+      onFriendsChange(DEMO_FRIENDS.map(f => f.profile.id))
+      return
+    }
+
     const { data } = await supabase
       .from('friendships')
       .select('id, requester_id, addressee_id, status')
@@ -133,19 +144,20 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
     setPending(pendingRows)
     setSent(sentRows)
     onFriendsChange(friendRows.map(f => f.profile.id))
-  }, [userId, supabase, onFriendsChange])
+  }, [userId, supabase, onFriendsChange, demoMode])
 
   // Initial + dependency-driven load of the friendship graph from Supabase.
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { loadFriendsData() }, [loadFriendsData])
 
-  // Debounced username search
+  // Debounced username search — skipped entirely in Demo Mode so a real
+  // username search never hits the screen while faking the rest of the page.
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
     const q = query.trim().toLowerCase()
     // Clear stale results as the user types; the lookup below is debounced.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (!q) { setSearchResults([]); return }
+    if (!q || demoMode) { setSearchResults([]); return }
 
     debounceRef.current = setTimeout(async () => {
       const existingIds = [
@@ -167,9 +179,10 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
         .limit(6)
       setSearchResults((data ?? []) as UserProfile[])
     }, 350)
-  }, [query, userId, friends, pending, sent, supabase])
+  }, [query, userId, friends, pending, sent, supabase, demoMode])
 
   async function sendRequest(targetId: string) {
+    if (demoMode) return
     // `status` is set explicitly rather than left to the column default: the
     // INSERT policy (docs/sql/12-friendship-authz.sql) requires 'pending', and
     // relying on a default to satisfy a policy is a silent dependency.
@@ -198,6 +211,7 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
   }
 
   async function acceptRequest(friendshipId: string) {
+    if (demoMode) return
     // Only the addressee can accept, enforced in Postgres — the requester has
     // no UPDATE path at all, which is what prevents accepting your own request.
     const { error } = await supabase
@@ -216,16 +230,19 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
   }
 
   async function declineRequest(friendshipId: string) {
+    if (demoMode) return
     await supabase.from('friendships').delete().eq('id', friendshipId)
     loadFriendsData()
   }
 
   async function cancelRequest(friendshipId: string) {
+    if (demoMode) return
     await supabase.from('friendships').delete().eq('id', friendshipId)
     loadFriendsData()
   }
 
   async function removeFriend(friendshipId: string) {
+    if (demoMode) return
     await supabase.from('friendships').delete().eq('id', friendshipId)
     setHoldingId(null)
     loadFriendsData()
@@ -239,6 +256,7 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
   // bar back down via a much shorter transition instead of reversing the
   // full hold duration.
   function startHold(id: string, x: number, y: number) {
+    if (demoMode) return
     setHoldingId(id)
     holdStartPos.current = { x, y }
     window.getSelection()?.removeAllRanges()
@@ -366,6 +384,17 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
             </div>
           )}
 
+          {demoMode && (
+            <div style={{
+              fontSize: '12px',
+              color: 'var(--text-muted)',
+              fontFamily: "'DM Sans', sans-serif",
+              fontStyle: 'italic',
+            }}>
+              Demo Mode — friend actions disabled
+            </div>
+          )}
+
           {/* Search */}
           <div>
             <input
@@ -375,6 +404,7 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
               placeholder="Search by username…"
               autoComplete="off"
               autoCapitalize="none"
+              disabled={demoMode}
               style={{
                 width: '100%',
                 padding: '10px 14px',
@@ -382,6 +412,7 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
                 border: '1px solid var(--border)',
                 borderRadius: '8px',
                 color: 'var(--text-primary)',
+                opacity: demoMode ? 0.5 : 1,
                 fontFamily: "'DM Sans', sans-serif",
                 fontSize: '16px', // ≥16px — anything smaller makes iOS auto-zoom on focus
                 outline: 'none',
@@ -459,6 +490,7 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
                       <button
                         data-haptic="medium"
                         onClick={() => acceptRequest(p.friendship_id)}
+                        disabled={demoMode}
                         style={{
                           position: 'relative',
                           padding: '6px 12px',
@@ -469,12 +501,14 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
                           fontFamily: "'DM Sans', sans-serif",
                           fontWeight: 700,
                           fontSize: '12px',
-                          cursor: 'pointer',
+                          cursor: demoMode ? 'default' : 'pointer',
+                          opacity: demoMode ? 0.5 : 1,
                         }}
                       >Accept</button>
                       <button
                         data-haptic="light"
                         onClick={() => declineRequest(p.friendship_id)}
+                        disabled={demoMode}
                         style={{
                           position: 'relative',
                           padding: '6px 12px',
@@ -484,7 +518,8 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
                           borderRadius: '9999px',
                           fontFamily: "'DM Sans', sans-serif",
                           fontSize: '12px',
-                          cursor: 'pointer',
+                          cursor: demoMode ? 'default' : 'pointer',
+                          opacity: demoMode ? 0.5 : 1,
                         }}
                       >Decline</button>
                     </div>
@@ -521,6 +556,7 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
                     </div>
                     <button
                       onClick={() => cancelRequest(s.friendship_id)}
+                      disabled={demoMode}
                       style={{
                         padding: '6px 12px',
                         backgroundColor: 'transparent',
@@ -529,7 +565,8 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
                         borderRadius: '9999px',
                         fontFamily: "'DM Sans', sans-serif",
                         fontSize: '12px',
-                        cursor: 'pointer',
+                        cursor: demoMode ? 'default' : 'pointer',
+                        opacity: demoMode ? 0.5 : 1,
                       }}
                     >Cancel</button>
                   </div>
@@ -607,7 +644,7 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
                         color: holding ? 'var(--danger)' : 'var(--text-muted)',
                         fontWeight: holding ? 700 : 400,
                       }}>
-                        {holding ? 'Keep holding…' : 'Hold to remove'}
+                        {demoMode ? '' : holding ? 'Keep holding…' : 'Hold to remove'}
                       </div>
                     </div>
                   )

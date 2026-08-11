@@ -9,6 +9,7 @@ import { getDefaultRest, setDefaultRest, getPauseRestOnExit, setPauseRestOnExit 
 import { useTheme } from '@/lib/contexts/ThemeContext'
 import ThemeToggle from '@/components/ThemeToggle'
 import { useMotionPref } from '@/lib/contexts/MotionContext'
+import { useDemoMode } from '@/lib/contexts/DemoModeContext'
 import FeedbackModal from '@/components/FeedbackModal'
 import {
   downloadJson,
@@ -213,6 +214,7 @@ export default function SettingsView({
   const { unit, toggleUnit } = useUnit()
   const { theme } = useTheme()
   const { prefReduceMotion, toggleReduceMotion } = useMotionPref()
+  const { demoMode, toggleDemoMode } = useDemoMode()
   const toast = useToast()
 
   const [feedbackOpen, setFeedbackOpen] = useState(false)
@@ -900,6 +902,14 @@ export default function SettingsView({
 
       {isAdmin && (
         <Section label="Developer">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+            <div>
+              <div style={titleStyle}>Demo Mode</div>
+              <div style={hintStyle}>Show a fake name, photo, stats &amp; friends for screenshots</div>
+            </div>
+            <Switch checked={demoMode} onClick={toggleDemoMode} ariaLabel="Demo mode" />
+          </div>
+          <div style={dividerStyle} />
           <NavRow
             title={replayingSetup ? 'Opening Setup…' : 'Replay Setup'}
             hint="Run the first-run setup wizard again"

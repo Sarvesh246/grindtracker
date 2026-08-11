@@ -1,8 +1,11 @@
+import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import HomeDashboard from './HomeDashboard'
 import type { UserRotation } from '@/lib/types'
 import { effectiveSequence, nextDay as nextDayFromRotation } from '@/lib/utils/rotation'
+import { isAdminEmail } from '@/lib/utils/admin'
+import { DEMO_IDENTITY } from '@/lib/demoMode/fakeData'
 
 export default async function HomePage() {
   const supabase = await createClient()
@@ -56,8 +59,13 @@ export default async function HomePage() {
     supabase.from('user_rest_dates').select('rest_date').eq('user_id', user.id),
   ])
 
+  const demoModePref = (await cookies()).get('grind_demo_mode_pref')?.value
+  const demoMode = demoModePref === 'on' && isAdminEmail(user.email)
+
   const fullName = ((user.user_metadata?.full_name as string) || profile?.display_name || '').trim()
-  const firstName = fullName.split(/\s+/)[0] || profile?.username || 'there'
+  const firstName = demoMode
+    ? DEMO_IDENTITY.displayName.split(/\s+/)[0]
+    : fullName.split(/\s+/)[0] || profile?.username || 'there'
 
   // Working-set count only (skip markers never count toward save eligibility).
   let activeSession:

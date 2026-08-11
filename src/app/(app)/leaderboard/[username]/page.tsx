@@ -1,8 +1,11 @@
+import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import FriendProfileView from './FriendProfileView'
 import type { FriendProfile } from '@/lib/types'
+import { isAdminEmail } from '@/lib/utils/admin'
+import { DEMO_FRIEND_PROFILES } from '@/lib/demoMode/fakeData'
 
 /**
  * Read-only friend profile, reached by tapping a row on the leaderboard.
@@ -22,6 +25,16 @@ export default async function FriendProfilePage({
 
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
+
+  const demoModePref = (await cookies()).get('grind_demo_mode_pref')?.value
+  const demoMode = demoModePref === 'on' && isAdminEmail(user.email)
+
+  // Fake usernames from the Demo Mode leaderboard don't exist in the real
+  // user_profiles table — serve their canned profile directly rather than
+  // falling through to the real (always-empty) lookup below.
+  if (demoMode && username in DEMO_FRIEND_PROFILES) {
+    return <FriendProfileView profile={DEMO_FRIEND_PROFILES[username]} />
+  }
 
   const { data: targetProfile } = await supabase
     .from('user_profiles')

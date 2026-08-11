@@ -6,6 +6,8 @@ import { LeaderboardEntry } from '@/lib/types'
 import FriendsAccordion from './FriendsAccordion'
 import ShareCard from './ShareCard'
 import { useUnit } from '@/lib/contexts/UnitContext'
+import { useDemoMode } from '@/lib/contexts/DemoModeContext'
+import { buildDemoLeaderboard } from '@/lib/demoMode/fakeData'
 import { useTour, type TourStep } from '@/components/onboarding/Tour'
 
 type Category = 'push' | 'pull' | 'legs' | 'overall'
@@ -38,6 +40,7 @@ export default function LeaderboardClient({ userId }: Props) {
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
   const { unitLabel, fmt } = useUnit()
+  const { demoMode } = useDemoMode()
   const [category, setCategory] = useState<Category>('overall')
   const [entries, setEntries] = useState<LeaderboardEntry[]>([])
   const [friendIds, setFriendIds] = useState<string[]>([])
@@ -56,6 +59,13 @@ export default function LeaderboardClient({ userId }: Props) {
   const fetchLeaderboard = useCallback(async (cat: Category, fIds: string[]) => {
     const reqId = ++requestIdRef.current
     lastFetchAtRef.current = Date.now()
+
+    if (demoMode) {
+      setLoading(false)
+      setEntries(buildDemoLeaderboard(cat, userId))
+      return
+    }
+
     setLoading(true)
     const userIds = [userId, ...fIds]
     const { data, error } = await supabase.rpc('get_leaderboard', {
@@ -72,7 +82,7 @@ export default function LeaderboardClient({ userId }: Props) {
     if (data) {
       setEntries(data as LeaderboardEntry[])
     }
-  }, [userId, supabase])
+  }, [userId, supabase, demoMode])
 
   // Refetch when category or friends change
   useEffect(() => {

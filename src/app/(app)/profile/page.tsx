@@ -1,12 +1,44 @@
+import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import ProfileDashboard from './ProfileDashboard'
+import { isAdminEmail } from '@/lib/utils/admin'
+import {
+  DEMO_IDENTITY,
+  DEMO_JOINED_AT,
+  DEMO_STATS,
+  DEMO_BADGE_IDS,
+  DEMO_TOTAL_PRS,
+  DEMO_TOTAL_SETS,
+  DEMO_DAYS_ACTIVE,
+} from '@/lib/demoMode/fakeData'
 
 export default async function ProfilePage() {
   const supabase = await createClient()
 
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
+
+  const demoModePref = (await cookies()).get('grind_demo_mode_pref')?.value
+  const demoMode = demoModePref === 'on' && isAdminEmail(user.email)
+
+  if (demoMode) {
+    return (
+      <ProfileDashboard
+        displayName={DEMO_IDENTITY.displayName}
+        avatarUrl={DEMO_IDENTITY.avatarUrl}
+        username={DEMO_IDENTITY.username}
+        joinedAt={DEMO_JOINED_AT}
+        stats={DEMO_STATS}
+        earnedBadgeIds={DEMO_BADGE_IDS}
+        totalPRs={DEMO_TOTAL_PRS}
+        totalSets={DEMO_TOTAL_SETS}
+        activeDayTimestamps={[]}
+        daysActive={DEMO_DAYS_ACTIVE}
+        demoMode
+      />
+    )
+  }
 
   const [
     { data: stats },
