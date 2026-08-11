@@ -120,7 +120,7 @@ Floating coach on authenticated `(app)` routes (`src/components/coach/`):
 | --- | --- |
 | **FAB** | Lime 56px circle, G+spark mark; drag past 8px snaps to four corners (`br` default). Dock in `localStorage` key `grind_coach_fab_dock`. |
 | **Visibility** | Hidden when `pathname === '/log' && searchParams.has('day')` (active workout), same as bottom nav. |
-| **Sheet** | Compact / expanded sizes; backdrop close; Escape closes; session history in memory only. |
+| **Sheet** | Compact / expanded sizes; backdrop close; Escape closes; session history in memory only. Assistant replies render a light Markdown subset (paragraphs, lists, **bold**) via `CoachMessageContent` — raw `**` / bullet markers should never show. |
 | **API** | First open → `GET /api/coach/chat` (quota). Send → `POST` stream + `unit` from `UnitContext`; quota pill re-synced via `GET` after every turn settles. |
 | **z-index** | FAB 420 · backdrop 430 · sheet 440. |
 

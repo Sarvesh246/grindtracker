@@ -12,6 +12,7 @@ import { COACH_MAX_MESSAGE_CHARS } from '@/lib/coach'
 import { useMotionPref } from '@/lib/contexts/MotionContext'
 import IconButton from '@/components/ui/IconButton'
 import CoachFabIcon from './CoachFabIcon'
+import CoachMessageContent from './CoachMessageContent'
 import { useCoach } from './CoachProvider'
 
 const CHIPS = [
@@ -245,6 +246,8 @@ export default function CoachSheet() {
                       <span className="coach-bubble__pending" aria-label="Thinking">
                         …
                       </span>
+                    ) : m.role === 'assistant' ? (
+                      <CoachMessageContent content={m.content} />
                     ) : (
                       m.content
                     )}

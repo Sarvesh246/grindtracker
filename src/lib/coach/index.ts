@@ -13,6 +13,12 @@ export {
 export { buildCoachContext, type CoachContext, type CoachUnitPreference } from './buildContext'
 export { COACH_SYSTEM_PROMPT } from './prompt'
 export {
+  formatCoachMessage,
+  type CoachBlock,
+  type CoachFormattedMessage,
+  type CoachInline,
+} from './formatMessage'
+export {
   getCoachQuota,
   mapCoachRateLimitError,
   type CoachQuota,

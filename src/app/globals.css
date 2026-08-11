@@ -1348,7 +1348,6 @@ html.light .coach-sheet {
   padding: 10px 12px;
   font-size: 14px;
   line-height: 1.45;
-  white-space: pre-wrap;
   word-break: break-word;
 }
 .coach-bubble--user {
@@ -1356,6 +1355,7 @@ html.light .coach-sheet {
   background: var(--accent);
   color: var(--on-accent);
   border-radius: 12px 12px 4px 12px;
+  white-space: pre-wrap;
 }
 .coach-bubble--assistant {
   align-self: flex-start;
@@ -1367,6 +1367,44 @@ html.light .coach-sheet {
 .coach-bubble__pending {
   color: var(--text-muted);
   letter-spacing: 2px;
+}
+
+/* Structured Markdown inside assistant bubbles (see CoachMessageContent). */
+.coach-md {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.coach-md__p {
+  margin: 0;
+}
+.coach-md__list {
+  margin: 0;
+  padding: 0 0 0 1.15em;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+/* Parent message list sets list-style: none (inherited) — restore markers. */
+ul.coach-md__list {
+  list-style: disc;
+}
+ol.coach-md__list {
+  list-style: decimal;
+}
+.coach-md__li {
+  margin: 0;
+  padding: 0;
+}
+.coach-md__li::marker {
+  color: var(--accent-text);
+}
+.coach-md strong {
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.coach-md em {
+  font-style: italic;
 }
 .coach-sheet__error {
   margin: 10px 0 0;
