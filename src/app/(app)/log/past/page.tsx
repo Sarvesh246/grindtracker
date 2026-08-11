@@ -2,6 +2,8 @@
 import { Suspense, useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { useDemoMode } from '@/lib/contexts/DemoModeContext'
+import { demoSafeClient } from '@/lib/demoMode/demoSafeSupabase'
 import { Exercise, UserStats } from '@/lib/types'
 import { checkAndAwardBadges } from '@/lib/utils/badges'
 import { localDateKey } from '@/lib/utils/formatting'
@@ -25,7 +27,8 @@ type ExistingSession = { id: string; day_type: string; xp_earned: number }
 function LogPastContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const supabase = createClient()
+  const { demoMode } = useDemoMode()
+  const supabase = demoMode ? demoSafeClient(createClient()) : createClient()
   const { unitLabel, fromDisplay, fmt } = useUnit()
 
   const yesterday = getYesterdayString()

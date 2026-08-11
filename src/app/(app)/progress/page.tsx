@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { useDemoMode } from '@/lib/contexts/DemoModeContext'
 import { Exercise } from '@/lib/types'
 import { formatHeaderDate, formatShortDate } from '@/lib/utils/formatting'
 import ProgressChart from './ProgressChart'
@@ -71,6 +72,7 @@ function epley(weight: number, reps: number): number {
 export default function ProgressPage() {
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
+  const { demoMode } = useDemoMode()
   const { unitLabel, toDisplay } = useUnit()
 
   const [exercises, setExercises] = useState<Exercise[]>([])
@@ -98,6 +100,14 @@ export default function ProgressPage() {
   // never touch storage.
   useEffect(() => {
     async function loadPhotoSummary() {
+      // Demo Mode shows nothing here at all — real progress photos never
+      // touch the screen, and there's no plausible fake photo to show instead.
+      if (demoMode) {
+        setPhotoCount(0)
+        setLatestPhotoDate(null)
+        setLatestPhotoThumb(null)
+        return
+      }
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
       const { count } = await supabase
@@ -132,7 +142,7 @@ export default function ProgressPage() {
       if (signed?.signedUrl) setLatestPhotoThumb(signed.signedUrl)
     }
     loadPhotoSummary()
-  }, [supabase])
+  }, [supabase, demoMode])
 
   useEffect(() => {
     async function loadExercises() {

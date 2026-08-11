@@ -2,6 +2,8 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { useDemoMode } from '@/lib/contexts/DemoModeContext'
+import { demoSafeClient } from '@/lib/demoMode/demoSafeSupabase'
 import { Session, UserStats, UserRotation, CompleteSessionResult } from '@/lib/types'
 import { getLevel, getXpInCurrentLevel, getXpRequiredForLevel, getXpToNextLevel } from '@/lib/utils/gamification'
 import { formatHeaderDate, formatShortDate, localDateKey } from '@/lib/utils/formatting'
@@ -152,7 +154,16 @@ export default function HomeDashboard({
   restDates,
 }: Props) {
   const router = useRouter()
-  const supabase = useMemo(() => createClient(), [])
+  const { demoMode } = useDemoMode()
+  // Every write this component makes (rotation skip, rest-day confirm,
+  // stale-streak refresh_stats) becomes a local no-op in Demo Mode — see
+  // src/lib/demoMode/demoSafeSupabase.ts. The resume-active-session banner
+  // (handleSaveActive/handleExitActive) never even renders in Demo Mode since
+  // home/page.tsx always passes activeSession={null} there.
+  const supabase = useMemo(
+    () => (demoMode ? demoSafeClient(createClient()) : createClient()),
+    [demoMode],
+  )
   const { unitLabel, fmt } = useUnit()
   const toast = useToast()
   const recurringRestSet = useMemo(() => new Set(recurringRestDays), [recurringRestDays])

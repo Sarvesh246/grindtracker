@@ -2,6 +2,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { useDemoMode } from '@/lib/contexts/DemoModeContext'
+import { demoSafeClient } from '@/lib/demoMode/demoSafeSupabase'
 import { Exercise } from '@/lib/types'
 import { checkAndAwardBadges, ALL_BADGES, type BadgeDefinition } from '@/lib/utils/badges'
 import BadgeUnlockOverlay from '@/components/BadgeUnlockOverlay'
@@ -127,7 +129,15 @@ async function runWithRetry<R extends { error: unknown }>(
 
 export default function ActiveWorkout({ day }: { day: string }) {
   const router = useRouter()
-  const supabase = useMemo(() => createClient(), [])
+  const { demoMode } = useDemoMode()
+  // Every write this screen makes (session_logs, complete_session, badges,
+  // rotation) becomes a local no-op while Demo Mode is on — see
+  // src/lib/demoMode/demoSafeSupabase.ts. Reads (exercises, last weights)
+  // still hit Supabase normally, so the workout UI stays fully populated.
+  const supabase = useMemo(
+    () => (demoMode ? demoSafeClient(createClient()) : createClient()),
+    [demoMode],
+  )
 
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [exercises, setExercises] = useState<Exercise[]>([])

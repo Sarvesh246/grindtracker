@@ -12,6 +12,9 @@ import { createClient } from '@/lib/supabase/client'
 import { useUnit, LBS_PER_KG } from '@/lib/contexts/UnitContext'
 import { useToast } from '@/lib/contexts/ToastContext'
 import { useMotionPref } from '@/lib/contexts/MotionContext'
+import { useDemoMode } from '@/lib/contexts/DemoModeContext'
+import { demoSafeClient } from '@/lib/demoMode/demoSafeSupabase'
+import { demoBodyWeightRows } from '@/lib/demoMode/fakeData'
 import Dialog from '@/components/ui/Dialog'
 
 interface Row {
@@ -38,7 +41,11 @@ function todayDateKey(): string {
 }
 
 export default function BodyWeightCard() {
-  const supabase = createClient()
+  const { demoMode } = useDemoMode()
+  // Writes (save/update/delete) become local no-ops in Demo Mode — see
+  // src/lib/demoMode/demoSafeSupabase.ts — and load() below sources a fake
+  // 90-day trend instead of the real body_weights table.
+  const supabase = demoMode ? demoSafeClient(createClient()) : createClient()
   const { unitLabel, toDisplay, fromDisplay, fmt } = useUnit()
   const toast = useToast()
   // Recharts' line-draw is a JS (react-smooth) animation, not CSS — the
@@ -72,7 +79,7 @@ export default function BodyWeightCard() {
   useEffect(() => {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [demoMode])
 
   // Drafts are display-unit strings. On unit toggle, re-express any open draft
   // from its canonical lbs so save doesn't interpret "80" kg as 80 lbs.
@@ -94,6 +101,13 @@ export default function BodyWeightCard() {
 
   async function load() {
     setLoading(true)
+
+    if (demoMode) {
+      setRows(demoBodyWeightRows())
+      setLoading(false)
+      return
+    }
+
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setLoading(false); return }
 

@@ -3,6 +3,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useTheme } from '@/lib/contexts/ThemeContext'
+import { useDemoMode } from '@/lib/contexts/DemoModeContext'
+import { demoCalendarWorkoutDays } from '@/lib/demoMode/fakeData'
 import { localDateKey } from '@/lib/utils/formatting'
 import {
   NAMED_DAY_COLORS,
@@ -21,6 +23,7 @@ const MONTH_NAMES = [
 export default function WorkoutCalendar() {
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
+  const { demoMode } = useDemoMode()
   const { theme } = useTheme()
   const isLight = theme === 'light'
 
@@ -39,11 +42,18 @@ export default function WorkoutCalendar() {
 
   const loadMonth = useCallback(async () => {
     setLoading(true)
+    const year = currentMonth.getFullYear()
+    const month = currentMonth.getMonth()
+
+    if (demoMode) {
+      setWorkoutDays(demoCalendarWorkoutDays(year, month))
+      setLoading(false)
+      return
+    }
+
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setLoading(false); return }
 
-    const year = currentMonth.getFullYear()
-    const month = currentMonth.getMonth()
     // Month bounds as YYYY-MM-DD local_date keys (authoritative streak/calendar day).
     const monthStart = `${year}-${String(month + 1).padStart(2, '0')}-01`
     const lastDay = new Date(year, month + 1, 0).getDate()
@@ -65,7 +75,7 @@ export default function WorkoutCalendar() {
     }
     setWorkoutDays(map)
     setLoading(false)
-  }, [supabase, currentMonth])
+  }, [supabase, currentMonth, demoMode])
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { loadMonth() }, [loadMonth])

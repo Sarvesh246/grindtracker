@@ -5,7 +5,14 @@ import HomeDashboard from './HomeDashboard'
 import type { UserRotation } from '@/lib/types'
 import { effectiveSequence, nextDay as nextDayFromRotation } from '@/lib/utils/rotation'
 import { isAdminEmail } from '@/lib/utils/admin'
-import { DEMO_IDENTITY } from '@/lib/demoMode/fakeData'
+import {
+  DEMO_IDENTITY,
+  DEMO_TOTAL_PRS,
+  DEMO_LAST_SESSION_LOGS,
+  demoHomeStats,
+  demoLastSession,
+  demoCompletedLocalDates,
+} from '@/lib/demoMode/fakeData'
 
 export default async function HomePage() {
   const supabase = await createClient()
@@ -163,14 +170,20 @@ export default async function HomePage() {
   // completedAt stays as local_date strings so week/month bucketing is timezone-safe.
   const completedLocalDates = historyPayload.recent_local_dates ?? []
 
+  // Demo Mode fabricates level/streak/workout numbers, the last-session band,
+  // and recent activity — never the real ones. Day/rotation/exercise
+  // structure (nextDay, rotationSeq, lastTrainedByDay, rest days) stays real:
+  // it's app configuration, not personal identity or performance data.
+  // activeSession is forced null so the resume banner (and its real writes,
+  // see HomeDashboard.handleSaveActive/handleExitActive) never renders.
   return (
     <HomeDashboard
-      stats={stats}
+      stats={demoMode ? demoHomeStats() : stats}
       recurringRestDays={(restDayRows ?? []).map(r => r.day_of_week)}
       restDates={(restDateRows ?? []).map(r => r.rest_date)}
-      activeSession={activeSession}
-      lastSession={lastSession ?? null}
-      lastSessionLogs={lastSessionLogs}
+      activeSession={demoMode ? null : activeSession}
+      lastSession={demoMode ? demoLastSession() : (lastSession ?? null)}
+      lastSessionLogs={demoMode ? DEMO_LAST_SESSION_LOGS : lastSessionLogs}
       nextDay={nextDay}
       nextDayExercises={(nextDayExercises ?? []).map(e => e.name)}
       hasDays={dayKeys.length > 0}
@@ -178,8 +191,8 @@ export default async function HomePage() {
       rotationIndex={rotation?.current_index ?? -1}
       lastTrainedByDay={lastTrainedByDay}
       firstName={firstName}
-      completedAt={completedLocalDates}
-      totalPRs={totalPRs ?? 0}
+      completedAt={demoMode ? demoCompletedLocalDates() : completedLocalDates}
+      totalPRs={demoMode ? DEMO_TOTAL_PRS : (totalPRs ?? 0)}
     />
   )
 }
