@@ -1087,8 +1087,9 @@ export default function HomeDashboard({
           disabled={skippingDay}
           style={{
             position: 'relative',
-            width: '100%',
+            alignSelf: 'center',
             height: '40px',
+            padding: '0 14px',
             background: 'none',
             border: 'none',
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
