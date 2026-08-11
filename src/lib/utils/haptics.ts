@@ -32,6 +32,11 @@ export type HapticIntensity = 'light' | 'medium' | 'heavy' | 'success'
 const OVERLAY_ATTR = 'data-haptic-overlay'
 const DATA_HAPTIC = 'data-haptic'
 
+/** Same drift tolerance as the hold-to-remove gesture in FriendsAccordion and
+ *  SwipeNavigator's axis deadzone — a few px of finger wobble is a tap, more
+ *  than that is a drag/swipe. */
+const TAP_DRAG_CANCEL_PX = 10
+
 type NavWithVibrate = Navigator & {
   vibrate?: (p: number | number[]) => boolean
 }
@@ -277,5 +282,69 @@ export function setupHaptics(root: ParentNode = document): () => void {
     observer.disconnect()
     for (const d of detachers.values()) d()
     detachers.clear()
+  }
+}
+
+/**
+ * Cancels the click a touch would otherwise fire once it's dragged more than
+ * a few px — a swipe (page-nav swipe, scroll, or just a finger sliding off a
+ * button mid-scroll) should never also activate whatever it started or
+ * passed over. Covers every element, not just `[data-haptic]` hosts: on iOS
+ * this is what actually matters, since `attachHapticOverlay`'s switch
+ * overlay fires its own native `click` on touch release regardless of how
+ * far the finger travelled first — a plain `<button>` doesn't reliably get
+ * that same click-after-scroll cancellation from WebKit either once
+ * `touch-action: pan-y` is in play (see globals.css). A capture-phase click
+ * listener on the document root runs before any element's own click
+ * handler (including the switch overlay's), so `stopImmediatePropagation`
+ * here reliably kills the whole chain.
+ *
+ * Chart interactions (Recharts `<Line>` dot tap/scrub) manage their own
+ * touch handling and are excluded — this guard would otherwise fight them.
+ * Mount once via `<HapticsSetup />`, alongside `setupHaptics`.
+ */
+export function setupTapDragGuard(root: ParentNode = document): () => void {
+  if (typeof document === 'undefined') return () => {}
+
+  let start: { x: number; y: number } | null = null
+  let dragged = false
+
+  const onPointerDown = (e: PointerEvent) => {
+    start = { x: e.clientX, y: e.clientY }
+    dragged = false
+  }
+
+  const onPointerMove = (e: PointerEvent) => {
+    if (!start) return
+    const dx = e.clientX - start.x
+    const dy = e.clientY - start.y
+    if (Math.hypot(dx, dy) > TAP_DRAG_CANCEL_PX) dragged = true
+  }
+
+  const onPointerEnd = () => {
+    start = null
+  }
+
+  const onClickCapture = (e: MouseEvent) => {
+    if (!dragged) return
+    const t = e.target
+    if (t instanceof Element && t.closest('.recharts-wrapper')) return
+    e.stopImmediatePropagation()
+    e.preventDefault()
+  }
+
+  const target = root instanceof Document ? root.documentElement : (root as HTMLElement)
+  target.addEventListener('pointerdown', onPointerDown, { capture: true, passive: true })
+  target.addEventListener('pointermove', onPointerMove, { capture: true, passive: true })
+  target.addEventListener('pointerup', onPointerEnd, { capture: true, passive: true })
+  target.addEventListener('pointercancel', onPointerEnd, { capture: true, passive: true })
+  target.addEventListener('click', onClickCapture, true)
+
+  return () => {
+    target.removeEventListener('pointerdown', onPointerDown, true)
+    target.removeEventListener('pointermove', onPointerMove, true)
+    target.removeEventListener('pointerup', onPointerEnd, true)
+    target.removeEventListener('pointercancel', onPointerEnd, true)
+    target.removeEventListener('click', onClickCapture, true)
   }
 }

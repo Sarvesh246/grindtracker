@@ -1,14 +1,17 @@
 'use client'
 
 import { useEffect, type CSSProperties, type ReactNode } from 'react'
-import { hapticAttrs, setupHaptics, type HapticIntensity } from '@/lib/utils/haptics'
+import { hapticAttrs, setupHaptics, setupTapDragGuard, type HapticIntensity } from '@/lib/utils/haptics'
 
 /**
  * Mount once in the authenticated app shell. Wires `[data-haptic]`:
  * iOS switch overlays (MutationObserver) + Android delegated click vibrate.
+ * Also installs the tap/drag guard so swiping (page-nav swipe, scroll, or a
+ * finger sliding off a button) never also activates whatever it passed over.
  */
 export default function HapticsSetup() {
   useEffect(() => setupHaptics(), [])
+  useEffect(() => setupTapDragGuard(), [])
   return null
 }
 
