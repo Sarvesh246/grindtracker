@@ -312,7 +312,7 @@ export default function AddPhotoSheet({
       )}
 
       <div style={{ display: 'flex', gap: '10px' }}>
-        <Button variant="secondary" onClick={onClose} disabled={submitting} style={{ flex: '0 0 auto', padding: '0 18px' }}>
+        <Button variant="secondary" haptic="light" onClick={onClose} disabled={submitting} style={{ flex: '0 0 auto', padding: '0 18px' }}>
           Cancel
         </Button>
         {/* flex + minWidth:0 (not `fullWidth`, which sets a literal width:100%
@@ -321,6 +321,7 @@ export default function AddPhotoSheet({
             min-width:auto overflow trap) so this shrinks to share the row. */}
         <Button
           variant="primary"
+          haptic="medium"
           onClick={handleSubmit}
           disabled={submitting || attachments.length === 0}
           style={{ flex: 1, minWidth: 0 }}
@@ -361,9 +362,11 @@ function TagPill({
 }) {
   return (
     <button
+      data-haptic="light"
       onClick={onClick}
       disabled={disabled}
       style={{
+        position: 'relative',
         height: '34px', padding: '0 14px', borderRadius: 'var(--radius-pill, 9999px)',
         backgroundColor: active ? 'var(--accent)' : 'var(--surface-elevated)',
         color: active ? 'var(--on-accent)' : 'var(--text-secondary)',

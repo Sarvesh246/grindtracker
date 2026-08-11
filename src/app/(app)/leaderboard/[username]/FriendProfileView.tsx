@@ -6,15 +6,7 @@ import { ALL_BADGES, formatBadgeDescription } from '@/lib/utils/badges'
 import BadgeIcon from '@/components/BadgeIcon'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import type { FriendProfile } from '@/lib/types'
-
-function FlameIcon({ size = 24 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="var(--accent-text)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 2c0 4-4 6-4 10a4 4 0 0 0 8 0c0-4-4-6-4-10z" />
-      <path d="M12 12c0 2-1.5 3-1.5 4.5a1.5 1.5 0 0 0 3 0C13.5 15 12 14 12 12z" />
-    </svg>
-  )
-}
+import FlameIcon from '@/components/FlameIcon'
 
 function BoltIcon({ size = 24 }: { size?: number }) {
   return (
@@ -196,7 +188,7 @@ export default function FriendProfileView({ profile }: Props) {
 
         <div style={{ display: 'flex', gap: '8px' }}>
           {[
-            { icon: <FlameIcon size={24} />, value: profile.current_streak, label: 'CURRENT STREAK' },
+            { icon: <FlameIcon size={24} color="var(--accent-text)" />, value: profile.current_streak, label: 'CURRENT STREAK' },
             { icon: <BoltIcon size={24} />, value: profile.longest_streak, label: 'LONGEST STREAK' },
           ].map((item) => (
             <div key={item.label} style={{

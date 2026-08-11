@@ -59,10 +59,22 @@ export default function ConfirmDialog({
         {message}
       </p>
       <div style={{ display: 'flex', gap: '10px' }}>
-        <Button variant="secondary" onClick={onCancel} disabled={busy} style={{ flex: 1 }}>
+        <Button
+          variant="secondary"
+          haptic="light"
+          onClick={onCancel}
+          disabled={busy}
+          style={{ flex: 1 }}
+        >
           Cancel
         </Button>
-        <Button variant={danger ? 'danger' : 'primary'} onClick={onConfirm} disabled={busy} style={{ flex: 1 }}>
+        <Button
+          variant={danger ? 'danger' : 'primary'}
+          haptic={danger ? 'heavy' : 'medium'}
+          onClick={onConfirm}
+          disabled={busy}
+          style={{ flex: 1 }}
+        >
           {busy ? 'Working…' : confirmLabel}
         </Button>
       </div>

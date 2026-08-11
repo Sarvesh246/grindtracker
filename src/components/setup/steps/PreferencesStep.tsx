@@ -10,7 +10,6 @@ import {
   getDefaultRest,
   setDefaultRest,
 } from '@/lib/hooks/useRestTimer'
-import { haptic } from '@/lib/utils/haptics'
 
 function formatRest(seconds: number): string {
   if (seconds < 60) return `${seconds}s`
@@ -55,7 +54,6 @@ function PillToggle({
             aria-pressed={active}
             onClick={() => {
               onChange(opt.value)
-              haptic('light')
             }}
             style={{
               flex: 1,
@@ -185,7 +183,6 @@ export default function PreferencesStep({ onContinue }: { onContinue: () => void
             data-haptic="light"
             onClick={() => {
               setReduceMotion(!prefReduceMotion)
-              haptic('light')
             }}
             style={{
               width: '48px',
@@ -239,7 +236,6 @@ export default function PreferencesStep({ onContinue }: { onContinue: () => void
                   aria-pressed={active}
                   onClick={() => {
                     setRest(sec)
-                    haptic('light')
                   }}
                   style={{
                     minWidth: '64px',

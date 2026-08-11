@@ -96,10 +96,12 @@ export default function RestTimerBar({
 
       <div style={{ display: 'flex', alignItems: 'center', padding: '16px 16px', gap: '10px' }}>
         <button
+          data-haptic="light"
           onClick={() => setOpen(o => !o)}
           aria-label={open ? 'Collapse rest timer' : 'Expand rest timer'}
           aria-expanded={open}
           style={{
+            position: 'relative',
             background: 'none',
             border: 'none',
             cursor: 'pointer',
@@ -140,9 +142,11 @@ export default function RestTimerBar({
 
         {/* Pause / Resume */}
         <button
+          data-haptic="light"
           onClick={paused ? onResume : onPause}
           aria-label={paused ? 'Resume rest timer' : 'Pause rest timer'}
           style={{
+            position: 'relative',
             backgroundColor: 'var(--surface)',
             border: '1px solid var(--border)',
             borderRadius: 'var(--radius-sm)',
@@ -172,10 +176,12 @@ export default function RestTimerBar({
         <div style={{ position: 'relative', flexShrink: 0 }}>
           <button
             data-onboard="aw-rest-adjust"
+            data-haptic="light"
             onClick={() => setAddOpen(o => !o)}
             aria-label="Adjust rest timer"
             aria-expanded={addOpen}
             style={{
+              position: 'relative',
               backgroundColor: 'var(--surface)',
               border: `1px solid ${addOpen ? 'var(--accent)' : 'var(--border)'}`,
               borderRadius: 'var(--radius-sm)',
@@ -221,11 +227,13 @@ export default function RestTimerBar({
               {ADJUST_OPTIONS.map(opt => (
                 <button
                   key={opt.sec}
+                  data-haptic="light"
                   onClick={() => {
                     onAdd(opt.sec)
                     setAddOpen(false)
                   }}
                   style={{
+                    position: 'relative',
                     height: '34px',
                     borderRadius: 'var(--radius-pill, 9999px)',
                     border: '1px solid var(--border)',
@@ -246,9 +254,11 @@ export default function RestTimerBar({
         </div>
 
         <button
+          data-haptic="light"
           onClick={onStop}
           aria-label="Skip rest"
           style={{
+            position: 'relative',
             backgroundColor: 'transparent',
             border: '1px solid var(--border)',
             borderRadius: 'var(--radius-sm)',
@@ -270,10 +280,12 @@ export default function RestTimerBar({
           that this bar expands to reveal the default-rest presets. Flips to
           point down once expanded. */}
       <button
+        data-haptic="light"
         onClick={() => setOpen(o => !o)}
         aria-label={open ? 'Hide default rest options' : 'Show default rest options'}
         aria-expanded={open}
         style={{
+          position: 'relative',
           display: 'flex',
           justifyContent: 'center',
           alignItems: 'center',
@@ -332,12 +344,14 @@ export default function RestTimerBar({
             return (
               <button
                 key={sec}
+                data-haptic="light"
                 onClick={() => {
                   setExerciseRest(exerciseId, sec)
                   setRest(sec)
                 }}
                 aria-pressed={selected}
                 style={{
+                  position: 'relative',
                   height: '32px',
                   minWidth: '52px',
                   borderRadius: 'var(--radius-pill, 9999px)',

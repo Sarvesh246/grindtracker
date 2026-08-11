@@ -10,15 +10,7 @@ import BodyWeightCard from './BodyWeightCard'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { useToast } from '@/lib/contexts/ToastContext'
 import { useTour, type TourStep } from '@/components/onboarding/Tour'
-
-function FlameIcon({ size = 24, color = 'var(--accent-text)' }: { size?: number; color?: string }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 2c0 4-4 6-4 10a4 4 0 0 0 8 0c0-4-4-6-4-10z" />
-      <path d="M12 12c0 2-1.5 3-1.5 4.5a1.5 1.5 0 0 0 3 0C13.5 15 12 14 12 12z" />
-    </svg>
-  )
-}
+import FlameIcon from '@/components/FlameIcon'
 
 function BoltIcon({ size = 24, color = 'var(--accent-text)' }: { size?: number; color?: string }) {
   return (
@@ -323,9 +315,11 @@ export default function ProfileDashboard({
                 </span>
                 <button
                   data-onboard="profile-username"
+                  data-haptic="light"
                   onClick={openUsernameEdit}
                   title="Change username"
                   style={{
+                    position: 'relative',
                     background: 'none', border: 'none', padding: '2px',
                     cursor: 'pointer', display: 'flex', alignItems: 'center',
                   }}
@@ -363,8 +357,10 @@ export default function ProfileDashboard({
                     }}
                   />
                   <button
+                    data-haptic="medium"
                     onClick={saveUsername}
                     style={{
+                      position: 'relative',
                       padding: '7px 12px',
                       backgroundColor: canSaveUsername ? 'var(--accent)' : 'var(--surface-elevated)',
                       color: canSaveUsername ? 'var(--on-accent)' : 'var(--text-muted)',
@@ -381,8 +377,10 @@ export default function ProfileDashboard({
                     {usernameSaving ? '…' : 'Save'}
                   </button>
                   <button
+                    data-haptic="light"
                     onClick={cancelUsernameEdit}
                     style={{
+                      position: 'relative',
                       padding: '7px 10px',
                       backgroundColor: 'transparent',
                       color: 'var(--text-muted)',
@@ -467,7 +465,7 @@ export default function ProfileDashboard({
 
         <div style={{ display: 'flex', gap: '8px' }}>
           {[
-            { icon: <FlameIcon size={24} />, value: stats.current_streak, label: 'CURRENT STREAK' },
+            { icon: <FlameIcon size={24} color="var(--accent-text)" />, value: stats.current_streak, label: 'CURRENT STREAK' },
             { icon: <BoltIcon size={24} />, value: stats.longest_streak, label: 'LONGEST STREAK' },
           ].map((item) => (
             <div key={item.label} style={{

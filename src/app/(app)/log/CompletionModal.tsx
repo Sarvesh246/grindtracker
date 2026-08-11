@@ -254,8 +254,10 @@ export default function CompletionModal({
 
         <div style={{ ...sectionStyle(6) }}>
           <button
+            data-haptic="medium"
             onClick={() => requestClose(onDone)}
             style={{
+              position: 'relative',
               width: '100%', height: '56px',
               backgroundColor: 'var(--accent)',
               color: 'var(--on-accent)',
@@ -270,9 +272,11 @@ export default function CompletionModal({
 
           {onUndo && (
             <button
+              data-haptic="medium"
               onClick={() => void handleUndoClick()}
               disabled={undoBusy || closing}
               style={{
+                position: 'relative',
                 width: '100%', height: '44px', marginTop: '10px',
                 backgroundColor: 'transparent',
                 color: 'var(--text-secondary)',

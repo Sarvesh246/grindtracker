@@ -14,6 +14,7 @@ import WorkoutCalendar from '@/components/WorkoutCalendar'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { useToast } from '@/lib/contexts/ToastContext'
 import { useTour, type TourStep } from '@/components/onboarding/Tour'
+import FlameIcon from '@/components/FlameIcon'
 
 // "This week"/"this month" start in the VIEWER's local timezone — computed here
 // (client) rather than on the server, whose clock/timezone is very often not
@@ -577,8 +578,10 @@ export default function HomeDashboard({
           </p>
           <button
             data-onboard="home-welcome-cta"
+            data-haptic="medium"
             onClick={() => router.push(hasDays ? `/log?day=${nextDay}` : '/log?new=1')}
             style={{
+              position: 'relative',
               marginTop: '4px',
               height: '48px',
               padding: '0 28px',
@@ -689,9 +692,7 @@ export default function HomeDashboard({
             }}
           >
             <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 2c0 4-4 6-4 10a4 4 0 0 0 8 0c0-4-4-6-4-10z"/><path d="M12 12c0 2-1.5 3-1.5 4.5a1.5 1.5 0 0 0 3 0C13.5 15 12 14 12 12z"/>
-              </svg>
+              <FlameIcon size={28} />
             </span>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '2px' }}>
@@ -717,9 +718,7 @@ export default function HomeDashboard({
           }}
         >
           <span style={{ color: 'var(--accent-text)', flexShrink: 0 }}>
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 2c0 4-4 6-4 10a4 4 0 0 0 8 0c0-4-4-6-4-10z"/><path d="M12 12c0 2-1.5 3-1.5 4.5a1.5 1.5 0 0 0 3 0C13.5 15 12 14 12 12z"/>
-            </svg>
+            <FlameIcon size={28} />
           </span>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '2px' }}>
@@ -741,9 +740,7 @@ export default function HomeDashboard({
         }}>
           <div style={{ flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent-text)' }}>
-                <path d="M12 2c0 4-4 6-4 10a4 4 0 0 0 8 0c0-4-4-6-4-10z"/><path d="M12 12c0 2-1.5 3-1.5 4.5a1.5 1.5 0 0 0 3 0C13.5 15 12 14 12 12z"/>
-              </svg>
+              <FlameIcon size={28} color="var(--accent-text)" />
               <span style={{
                 fontFamily: "'Bebas Neue', sans-serif",
                 fontSize: '52px',
@@ -790,9 +787,7 @@ export default function HomeDashboard({
         }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
             <span style={{ color: 'var(--accent-text)', flexShrink: 0, marginTop: '1px' }} aria-hidden>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 2c0 4-4 6-4 10a4 4 0 0 0 8 0c0-4-4-6-4-10z"/><path d="M12 12c0 2-1.5 3-1.5 4.5a1.5 1.5 0 0 0 3 0C13.5 15 12 14 12 12z"/>
-              </svg>
+              <FlameIcon size={18} />
             </span>
             <div style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
               Missed {gapUncoveredDates.length === 1 ? formatShortDate(gapUncoveredDates[0]) : `${gapUncoveredDates.length} days`}?
@@ -843,9 +838,11 @@ export default function HomeDashboard({
       {showResume && activeSession && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <button
+            data-haptic="medium"
             onClick={handleResume}
             title={DAY_MUSCLES[activeSession.day_type]}
             style={{
+              position: 'relative',
               width: '100%',
               minHeight: '96px',
               padding: '0 24px',
@@ -913,10 +910,12 @@ export default function HomeDashboard({
           {!exitConfirm ? (
             <div style={{ display: 'flex', gap: '10px' }}>
               <button
+                data-haptic="medium"
                 onClick={handleSaveActive}
                 disabled={savingActive || exiting || activeSession.loggedSets === 0}
                 title={activeSession.loggedSets === 0 ? 'Log a set before saving' : undefined}
                 style={{
+                  position: 'relative',
                   flex: 1,
                   height: '48px',
                   backgroundColor: 'var(--surface)',
@@ -939,9 +938,11 @@ export default function HomeDashboard({
                 {savingActive ? 'Saving…' : 'Save workout'}
               </button>
               <button
+                data-haptic="light"
                 onClick={() => setExitConfirm(true)}
                 disabled={savingActive || exiting}
                 style={{
+                  position: 'relative',
                   flex: 1,
                   height: '48px',
                   backgroundColor: 'transparent',
@@ -971,9 +972,11 @@ export default function HomeDashboard({
               </div>
               <div style={{ display: 'flex', gap: '10px' }}>
                 <button
+                  data-haptic="light"
                   onClick={() => setExitConfirm(false)}
                   disabled={exiting}
                   style={{
+                    position: 'relative',
                     flex: 1, height: '44px',
                     backgroundColor: 'var(--surface-elevated)',
                     border: '1px solid var(--border)', borderRadius: '10px',
@@ -984,9 +987,11 @@ export default function HomeDashboard({
                   Keep
                 </button>
                 <button
+                  data-haptic="heavy"
                   onClick={handleExitActive}
                   disabled={exiting}
                   style={{
+                    position: 'relative',
                     flex: 1, height: '44px',
                     backgroundColor: 'rgba(239,68,68,0.15)',
                     border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px',
@@ -1011,9 +1016,11 @@ export default function HomeDashboard({
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
       <button
         data-onboard="home-cta"
+        data-haptic="medium"
         onClick={() => router.push(hasDays ? `/log?day=${nextDay}` : '/log')}
         title={hasDays ? DAY_MUSCLES[nextDay] : undefined}
         style={{
+          position: 'relative',
           width: '100%',
           minHeight: '96px',
           padding: '0 24px',
@@ -1064,9 +1071,11 @@ export default function HomeDashboard({
       {hasDays && rotationSeq.length > 1 && (
         <button
           className="press"
+          data-haptic="light"
           onClick={handleSkipDay}
           disabled={skippingDay}
           style={{
+            position: 'relative',
             width: '100%',
             height: '40px',
             background: 'none',

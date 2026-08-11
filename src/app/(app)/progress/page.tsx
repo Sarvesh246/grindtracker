@@ -475,6 +475,7 @@ export default function ProgressPage() {
             <button
               key={dt}
               className="press"
+              data-haptic="light"
               onClick={() => {
                 setSelectedDay(dt)
                 const first = exercises.find(e => e.day_type === dt)
@@ -482,6 +483,7 @@ export default function ProgressPage() {
               }}
               aria-pressed={active}
               style={{
+                position: 'relative',
                 height: '32px',
                 padding: '0 14px',
                 borderRadius: 'var(--radius-pill, 9999px)',
@@ -515,9 +517,11 @@ export default function ProgressPage() {
             <button
               key={ex.id}
               className="press"
+              data-haptic="light"
               onClick={() => setSelectedId(ex.id)}
               aria-pressed={active}
               style={{
+                position: 'relative',
                 height: '34px',
                 padding: '0 12px',
                 borderRadius: 'var(--radius-pill, 9999px)',
@@ -557,10 +561,12 @@ export default function ProgressPage() {
               <button
                 key={m.id}
                 className="press"
+                data-haptic="light"
                 role="tab"
                 aria-selected={active}
                 onClick={() => setMetric(m.id)}
                 style={{
+                  position: 'relative',
                   flex: 1,
                   height: '34px',
                   borderRadius: 'var(--radius-sm)',

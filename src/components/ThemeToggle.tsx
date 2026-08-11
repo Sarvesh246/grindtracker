@@ -15,6 +15,7 @@ export default function ThemeToggle({ size = 44 }: { size?: number }) {
 
   return (
     <button
+      data-haptic="light"
       onClick={toggleTheme}
       aria-label={`Switch to ${isLight ? 'dark' : 'light'} mode`}
       title={`Switch to ${isLight ? 'dark' : 'light'} mode`}

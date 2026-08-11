@@ -1090,7 +1090,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       return next
     })
     setEditingKey(null)
-    haptic('medium')
+    // Save-edit tick comes from data-haptic="heavy" on the check/save button.
     if (!error) showSaveToast(`Set ${setNumber} saved`)
   }
 
@@ -1339,8 +1339,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
   }
 
   async function handleSkipSet(exerciseId: string, setNumber: number) {
-    // Sync before any await — Android vibrate; iOS overlay already fired on press.
-    haptic('light')
+    // Haptic: data-haptic on the skip control (delegated / overlay).
     const key = `${exerciseId}-${setNumber}`
     const wasChecked = logs[key]?.checked
     // persistSkip upserts the skip marker over whatever was there — including
@@ -1386,7 +1385,6 @@ export default function ActiveWorkout({ day }: { day: string }) {
   }
 
   async function handleUnskipSet(exerciseId: string, setNumber: number) {
-    haptic('light')
     const key = `${exerciseId}-${setNumber}`
     setLogs(prev => {
       const entry = prev[key]
@@ -1416,8 +1414,6 @@ export default function ActiveWorkout({ day }: { day: string }) {
   }
 
   async function handleSkipExercise(exerciseId: string) {
-    // Sync before any await — Android vibrate; iOS overlay already fired on press.
-    haptic('light')
     const ex = exercises.find(e => e.id === exerciseId)
     if (!ex) return
     // Skip every set that isn't already skipped — including already-checked
@@ -1482,7 +1478,6 @@ export default function ActiveWorkout({ day }: { day: string }) {
   }
 
   async function handleUnskipExercise(exerciseId: string) {
-    haptic('light')
     const ex = exercises.find(e => e.id === exerciseId)
     if (!ex) return
     const total = ex.sets_target + (extraSets[exerciseId] ?? 0)
@@ -1750,8 +1745,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       setTimeout(() => setResumeToast(null), 4000)
       return
     }
-    // Sync before any await — Android vibrate; iOS overlay already fired on press.
-    haptic('medium')
+    // Haptic: data-haptic="heavy" on FINISH (delegated / overlay).
     setFinishing(true)
     restTimer.stop()
     void cancelRestNotifications(sessionId)
@@ -2189,8 +2183,10 @@ export default function ActiveWorkout({ day }: { day: string }) {
             </div>
             <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
               <button
+                data-haptic="light"
                 onClick={() => setShowExitConfirm(false)}
                 style={{
+                  position: 'relative',
                   flex: 1, height: '44px', backgroundColor: 'var(--surface-elevated)',
                   border: '1px solid var(--border)', borderRadius: '8px',
                   color: 'var(--text-primary)', fontFamily: "'DM Sans', sans-serif",
@@ -2200,6 +2196,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
                 Cancel
               </button>
               <button
+                data-haptic="medium"
                 onClick={() => {
                   setShowExitConfirm(false)
                   // Default: freeze the rest timer right where it is so it doesn't
@@ -2210,6 +2207,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
                   router.replace('/log')
                 }}
                 style={{
+                  position: 'relative',
                   flex: 1, height: '44px', backgroundColor: 'var(--surface-elevated)',
                   border: '1px solid var(--border)', borderRadius: '8px',
                   color: 'var(--text-primary)', fontFamily: "'DM Sans', sans-serif",
@@ -2220,9 +2218,11 @@ export default function ActiveWorkout({ day }: { day: string }) {
               </button>
             </div>
             <button
+              data-haptic="heavy"
               onClick={handleDiscard}
               disabled={discarding}
               style={{
+                position: 'relative',
                 width: '100%', height: '44px', backgroundColor: 'rgba(239,68,68,0.15)',
                 border: '1px solid rgba(239,68,68,0.3)', borderRadius: '8px',
                 color: 'var(--danger)', fontFamily: "'DM Sans', sans-serif",
@@ -2307,8 +2307,10 @@ export default function ActiveWorkout({ day }: { day: string }) {
             )}
           </span>
           <button
+            data-haptic="medium"
             onClick={handleUndo}
             style={{
+              position: 'relative',
               background: 'transparent',
               border: 'none',
               color: 'var(--accent-text)',
@@ -2755,7 +2757,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
               onClick={handleFinish}
               disabled={!canFinish}
               className="wo-finish-btn"
-              data-haptic="medium"
+              data-haptic="heavy"
               title={
                 hasPendingSync()
                   ? 'Waiting for sets to sync…'
@@ -2909,10 +2911,12 @@ function ExerciseCard({
             {/* Swap button */}
             <button
               data-onboard={firstExercise ? 'aw-swap' : undefined}
+              data-haptic="light"
               onClick={onSwap}
               title="Swap exercise"
               aria-label={`Swap ${exercise.name} for another exercise`}
               style={{
+                position: 'relative',
                 background: 'none', border: 'none', cursor: 'pointer',
                 padding: '2px', flexShrink: 0,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -2959,6 +2963,7 @@ function ExerciseCard({
             {/* Absolutely positioned so it doesn't affect the flex layout of LBS/REPS */}
             <button
               data-onboard={firstExercise ? 'aw-plate' : undefined}
+              data-haptic="light"
               onClick={() => {
                 // Prefer first unchecked+unskipped set; fall back to set 1 when all are done.
                 const target = setNumbers.find(s => {
@@ -3035,10 +3040,12 @@ function ExerciseCard({
         <div style={{ padding: '6px 16px 10px', display: 'flex', gap: '8px' }}>
           <button
             type="button"
+            data-haptic="light"
             onClick={onWarmupRamp}
             aria-label={`Apply warm-up ramp for ${exercise.name}`}
             title="Prefill leading sets at 40/60/80% as warm-ups"
             style={{
+              position: 'relative',
               flex: 1,
               height: '40px',
               backgroundColor: 'transparent',
@@ -3056,9 +3063,11 @@ function ExerciseCard({
           </button>
           <button
             data-onboard={firstExercise ? 'aw-addset' : undefined}
+            data-haptic="light"
             onClick={onAddSet}
             aria-label={`Add another set to ${exercise.name}`}
             style={{
+              position: 'relative',
               flex: 1,
               height: '40px',
               backgroundColor: 'transparent',
@@ -3315,8 +3324,10 @@ function ExerciseSwapModal({ currentExerciseId, day, allExercises, currentExerci
                       return (
                         <button
                           key={ex.id}
+                          data-haptic={isCurrent ? undefined : 'light'}
                           onClick={() => !isCurrent && onSelect(ex)}
                           style={{
+                            position: 'relative',
                             width: '100%', textAlign: 'left',
                             background: isCurrent ? 'rgba(200, 241, 53, 0.05)' : 'none',
                             border: 'none',
@@ -3622,9 +3633,8 @@ function SetRow({
     if (document.activeElement === repsRef.current || document.activeElement === weightRef.current) {
       ;(document.activeElement as HTMLElement).blur()
     }
-    // Sync before onCheck (which awaits the upsert). Android vibrate here;
-    // iOS already ticked from the switch overlay on the check button.
-    haptic('light')
+    // Haptic comes from data-haptic on the check button (iOS overlay + Android
+    // delegated click). Keep post-await success buzz for PRs only.
     onCheck()
   }
 
@@ -3735,6 +3745,7 @@ function SetRow({
         }}>
           <button
             data-onboard={onboardFirst ? 'aw-warmup' : undefined}
+            data-haptic="light"
             onClick={onToggleWarmup}
             disabled={logEntry.checked && !inEdit}
             aria-pressed={logEntry.isWarmup}
@@ -3743,6 +3754,7 @@ function SetRow({
             style={{
               // 44px tap target wrapping a visually-unchanged 28px pill — see
               // the inner span below — so the button doesn't grow on screen.
+              position: 'relative',
               width: '44px', height: '44px',
               backgroundColor: 'transparent', border: 'none',
               cursor: (logEntry.checked && !inEdit) ? 'default' : 'pointer',
@@ -3982,7 +3994,7 @@ function SetRow({
             edit mode (especially on iOS). saveArmed gates Save for 350ms. */}
         <button
           data-onboard={onboardFirst && !inEdit ? 'aw-check' : undefined}
-          data-haptic={inEdit ? undefined : 'light'}
+          data-haptic="heavy"
           onClick={handlePrimaryAction}
           disabled={logEntry.skipped || (inEdit && !saveArmed && logEntry.checked)}
           aria-label={

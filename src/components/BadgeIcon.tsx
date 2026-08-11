@@ -1,3 +1,5 @@
+import { FLAME_OUTER, FlamePaths } from '@/components/FlameIcon'
+
 /**
  * Hand-drawn line icon per badge id (same visual language across the profile
  * badge grid, the completion modal's "badges earned" list, and the full-screen
@@ -15,11 +17,20 @@ export default function BadgeIcon({ badgeId, size = 28, earned }: { badgeId: str
     case 'first_pr':
       return <svg {...props}><polyline points="8 6 12 2 16 6"/><path d="M12 2v10"/><path d="M5 17l1.5-5h11L19 17"/><path d="M3 22h18"/></svg>
     case 'streak_3':
-      return <svg {...props}><path d="M12 2c0 4-4 6-4 10a4 4 0 0 0 8 0c0-4-4-6-4-10z"/><path d="M12 12c0 2-1.5 3-1.5 4.5a1.5 1.5 0 0 0 3 0C13.5 15 12 14 12 12z"/></svg>
+      return <svg {...props}><FlamePaths /></svg>
     case 'streak_7':
       return <svg {...props}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
     case 'streak_14':
-      return <svg {...props}><path d="M9 3c0 3.2-3 4.8-3 8a3 3 0 0 0 6 0c0-3.2-3-4.8-3-8z"/><path d="M16 6c0 2.6-2.4 3.9-2.4 6.5a2.4 2.4 0 0 0 4.8 0c0-2.6-2.4-3.9-2.4-6.5z"/></svg>
+      return (
+        <svg {...props}>
+          <g transform="translate(-1.2 0.4) scale(0.72)">
+            <path d={FLAME_OUTER} />
+          </g>
+          <g transform="translate(6.8 3.2) scale(0.58)">
+            <path d={FLAME_OUTER} />
+          </g>
+        </svg>
+      )
     case 'streak_30':
       return <svg {...props}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
     case 'streak_60':
@@ -61,11 +72,11 @@ export default function BadgeIcon({ badgeId, size = 28, earned }: { badgeId: str
     case 'volume_1m':
       return <svg {...props}><path d="M3 21l4-7 4 4 5-9 5 5"/><circle cx="21" cy="14" r="1.4" fill={color}/><circle cx="7" cy="14" r="1.4" fill={color}/><circle cx="11" cy="18" r="1.4" fill={color}/><circle cx="16" cy="9" r="1.4" fill={color}/></svg>
     case 'plates_225':
-      return <svg {...props}><line x1="1" y1="12" x2="23" y2="12"/><circle cx="5" cy="12" r="4"/><circle cx="19" cy="12" r="4"/></svg>
+      return <svg {...props}><line x1="8.4" y1="12" x2="15.6" y2="12"/><rect x="1.6" y="5.8" width="2.5" height="12.4" rx="1.1" strokeWidth="1.4" fill={color} fillOpacity="0.08"/><rect x="4.7" y="5.8" width="2.5" height="12.4" rx="1.1" strokeWidth="1.4" fill={color} fillOpacity="0.22"/><rect x="16.8" y="5.8" width="2.5" height="12.4" rx="1.1" strokeWidth="1.4" fill={color} fillOpacity="0.22"/><rect x="19.9" y="5.8" width="2.5" height="12.4" rx="1.1" strokeWidth="1.4" fill={color} fillOpacity="0.08"/><line x1="0.4" y1="12" x2="1.6" y2="12"/><line x1="22.4" y1="12" x2="23.6" y2="12"/></svg>
     case 'plates_315':
-      return <svg {...props}><line x1="1" y1="12" x2="23" y2="12"/><circle cx="5.5" cy="12" r="4.5"/><circle cx="2.5" cy="12" r="2.3" fill={color} fillOpacity="0.2"/><circle cx="18.5" cy="12" r="4.5"/><circle cx="21.5" cy="12" r="2.3" fill={color} fillOpacity="0.2"/></svg>
+      return <svg {...props}><line x1="9.6" y1="12" x2="14.4" y2="12"/><rect x="0.8" y="5.8" width="2.15" height="12.4" rx="0.95" strokeWidth="1.35" fill={color} fillOpacity="0.06"/><rect x="3.4" y="5.8" width="2.15" height="12.4" rx="0.95" strokeWidth="1.35" fill={color} fillOpacity="0.14"/><rect x="6" y="5.8" width="2.15" height="12.4" rx="0.95" strokeWidth="1.35" fill={color} fillOpacity="0.24"/><rect x="15.85" y="5.8" width="2.15" height="12.4" rx="0.95" strokeWidth="1.35" fill={color} fillOpacity="0.24"/><rect x="18.45" y="5.8" width="2.15" height="12.4" rx="0.95" strokeWidth="1.35" fill={color} fillOpacity="0.14"/><rect x="21.05" y="5.8" width="2.15" height="12.4" rx="0.95" strokeWidth="1.35" fill={color} fillOpacity="0.06"/><line x1="0.2" y1="12" x2="0.8" y2="12"/><line x1="23.2" y1="12" x2="23.8" y2="12"/></svg>
     case 'plates_405':
-      return <svg {...props}><line x1="0.5" y1="12" x2="23.5" y2="12"/><circle cx="6" cy="12" r="5"/><circle cx="2.5" cy="12" r="2.6" fill={color} fillOpacity="0.25"/><circle cx="18" cy="12" r="5"/><circle cx="21.5" cy="12" r="2.6" fill={color} fillOpacity="0.25"/></svg>
+      return <svg {...props}><line x1="10.4" y1="12" x2="13.6" y2="12"/><rect x="0.4" y="6" width="1.85" height="12" rx="0.8" strokeWidth="1.25" fill={color} fillOpacity="0.05"/><rect x="2.6" y="6" width="1.85" height="12" rx="0.8" strokeWidth="1.25" fill={color} fillOpacity="0.1"/><rect x="4.8" y="6" width="1.85" height="12" rx="0.8" strokeWidth="1.25" fill={color} fillOpacity="0.16"/><rect x="7" y="6" width="1.85" height="12" rx="0.8" strokeWidth="1.25" fill={color} fillOpacity="0.26"/><rect x="15.15" y="6" width="1.85" height="12" rx="0.8" strokeWidth="1.25" fill={color} fillOpacity="0.26"/><rect x="17.35" y="6" width="1.85" height="12" rx="0.8" strokeWidth="1.25" fill={color} fillOpacity="0.16"/><rect x="19.55" y="6" width="1.85" height="12" rx="0.8" strokeWidth="1.25" fill={color} fillOpacity="0.1"/><rect x="21.75" y="6" width="1.85" height="12" rx="0.8" strokeWidth="1.25" fill={color} fillOpacity="0.05"/></svg>
     case 'early_bird':
       return <svg {...props}><circle cx="12" cy="14" r="4.5"/><line x1="2" y1="19" x2="22" y2="19"/><line x1="12" y1="4" x2="12" y2="6.5"/><line x1="5.5" y1="7.5" x2="7.2" y2="9.2"/><line x1="18.5" y1="7.5" x2="16.8" y2="9.2"/></svg>
     case 'night_owl':
@@ -75,7 +86,7 @@ export default function BadgeIcon({ badgeId, size = 28, earned }: { badgeId: str
     case 'flawless':
       return <svg {...props}><path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2z"/><path d="M19 15l.7 2.3L22 18l-2.3.7L19 21l-.7-2.3L16 18l2.3-.7L19 15z" strokeWidth="1.3"/></svg>
     case 'rest_day_set':
-      return <svg {...props}><path d="M20.5 13.5A8.5 8.5 0 1 1 12 3a1 1 0 0 0 0 8 1 1 0 0 0 8 2.5z"/><path d="M12.5 8.5l-2 3h2.5l-2 3" strokeWidth="1.3"/></svg>
+      return <svg {...props}><path d="M18.5 15.8A7.4 7.4 0 1 1 9.8 5a5.9 5.9 0 0 0 8.7 10.8z"/><line x1="16.2" y1="7.2" x2="16.2" y2="13.2" strokeWidth="2"/><line x1="19.4" y1="7.2" x2="19.4" y2="13.2" strokeWidth="2"/></svg>
     case 'not_alone':
       return <svg {...props}><circle cx="8.5" cy="8" r="3"/><path d="M2.5 20v-1.5A4.5 4.5 0 0 1 8.5 14a4.5 4.5 0 0 1 5 4.5V20"/><circle cx="16.5" cy="8.5" r="2.5"/><path d="M14.7 14.2A4 4 0 0 1 21 17.7V19" strokeWidth="1.5"/></svg>
     case 'rep_machine':

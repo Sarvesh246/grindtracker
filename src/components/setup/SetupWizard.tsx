@@ -11,7 +11,6 @@ import PreferencesStep from '@/components/setup/steps/PreferencesStep'
 import BodyWeightStep from '@/components/setup/steps/BodyWeightStep'
 import RestDaysStep from '@/components/setup/steps/RestDaysStep'
 import WorkoutStep from '@/components/setup/steps/WorkoutStep'
-import { haptic } from '@/lib/utils/haptics'
 
 const STEP_COUNT = 6
 
@@ -43,7 +42,6 @@ export default function SetupWizard({
     setDirection(dir)
     setStep(Math.min(Math.max(next, 0), STEP_COUNT - 1))
     setFinishError(null)
-    if (dir === 'forward') haptic('light')
   }, [])
 
   const finishSetup = useCallback(async () => {

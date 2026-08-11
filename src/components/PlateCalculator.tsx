@@ -272,6 +272,7 @@ export default function PlateCalculator({ initialTarget, onClose, onApply }: Pro
         </div>
 
         <button
+          data-haptic="medium"
           onClick={() => {
             if (!valid) return
             onApply(fromDisplay(targetNum))
@@ -279,6 +280,7 @@ export default function PlateCalculator({ initialTarget, onClose, onApply }: Pro
           }}
           disabled={!valid}
           style={{
+            position: 'relative',
             height: '48px',
             backgroundColor: valid ? 'var(--accent)' : 'var(--surface-elevated)',
             color: valid ? 'var(--on-accent)' : 'var(--text-disabled)',

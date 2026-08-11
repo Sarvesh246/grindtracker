@@ -1,4 +1,5 @@
 import { ButtonHTMLAttributes, CSSProperties, forwardRef, ReactNode } from 'react'
+import type { HapticIntensity } from '@/lib/utils/haptics'
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger'
 type Size = 'sm' | 'md' | 'lg'
@@ -60,11 +61,23 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant
   size?: Size
   fullWidth?: boolean
+  /** Opt-in: stamps `data-haptic` only — no default buzz on every Button. */
+  haptic?: HapticIntensity
   children: ReactNode
 }
 
 const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { variant = 'primary', size = 'md', fullWidth = false, disabled = false, style, className, children, ...rest },
+  {
+    variant = 'primary',
+    size = 'md',
+    fullWidth = false,
+    disabled = false,
+    haptic: hapticIntensity,
+    style,
+    className,
+    children,
+    ...rest
+  },
   ref,
 ) {
   return (
@@ -74,6 +87,7 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
       // `press` adds the shared tap-dip; a caller's own className still wins
       // for anything it sets, it just can't drop the press feedback.
       className={className ? `press ${className}` : 'press'}
+      data-haptic={hapticIntensity}
       style={{
         height: HEIGHT[size],
         padding: `0 ${size === 'lg' ? '20px' : size === 'md' ? '16px' : '12px'}`,

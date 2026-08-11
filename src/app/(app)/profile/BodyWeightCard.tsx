@@ -57,6 +57,9 @@ export default function BodyWeightCard() {
   // point reads as tappable on its own, so this doubles as a confirmation);
   // tapping the SAME, already-peeked dot again is what opens the edit sheet.
   const [peeked, setPeeked] = useState<string | null>(null)
+  // Keep peek in a ref so chart/dot handlers always see the latest value even
+  // if Recharts reuses a stale closure from a previous render.
+  const peekedRef = useRef<string | null>(null)
   const [editDraft, setEditDraft] = useState('')
   const [busy, setBusy] = useState<'saving' | 'deleting' | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -133,6 +136,7 @@ export default function BodyWeightCard() {
   }
 
   function openEntry(p: Point) {
+    peekedRef.current = null
     setPeeked(null)
     setSelected(p)
     setEditDraft(fmt(p.canonical))
@@ -146,13 +150,27 @@ export default function BodyWeightCard() {
     setConfirmDelete(false)
   }
 
-  /** Chart dot tap: first tap peeks the value, a second tap on the same dot opens it. */
+  /** Chart tap: first tap peeks the value, a second tap on the same point opens it. */
   function handleDotClick(p: Point) {
-    if (peeked === p.date) {
+    if (peekedRef.current === p.date) {
       openEntry(p)
     } else {
+      peekedRef.current = p.date
       setPeeked(p.date)
     }
+  }
+
+  /**
+   * Prefer the chart-level click (nearest point under the pointer) over per-dot
+   * SVG handlers. Recharts' default activeDot + Tooltip HTML sit on top of custom
+   * dots after the first tap and swallow the second — that was the "spam the
+   * dot" failure mode.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function handleChartClick(state: any) {
+    const payload = state?.activePayload?.[0]?.payload as Point | undefined
+    if (!payload?.date) return
+    handleDotClick(payload)
   }
 
   async function handleUpdate() {
@@ -225,8 +243,8 @@ export default function BodyWeightCard() {
 
   const pointsNewestFirst = [...chartPoints].reverse()
 
-  // Chart point: a transparent 14px-radius circle sits under the visible dot so
-  // the tap target clears the 44px minimum even though the dot itself is 8px.
+  // Dots are visual-only — taps go through LineChart.onClick (nearest point).
+  // pointerEvents="none" so the dots never sit above the chart hit layer.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const renderDot = (props: any) => {
     const { cx, cy, payload } = props
@@ -244,12 +262,7 @@ export default function BodyWeightCard() {
     const pillX = anchor === 'start' ? cx : anchor === 'end' ? cx - pillWidth : cx - pillWidth / 2
     const pillY = labelBelow ? cy + 10 : cy - 30
     return (
-      <g
-        key={payload.date}
-        style={{ cursor: 'pointer' }}
-        onClick={() => point && handleDotClick(point)}
-      >
-        <circle cx={cx} cy={cy} r={14} fill="transparent" />
+      <g key={payload.date} pointerEvents="none">
         {active && <circle cx={cx} cy={cy} r={9} fill="var(--accent)" opacity={0.25} />}
         <circle
           cx={cx}
@@ -260,7 +273,7 @@ export default function BodyWeightCard() {
           strokeWidth={2}
         />
         {isPeeked && (
-          <g pointerEvents="none">
+          <g>
             <rect
               x={pillX}
               y={pillY}
@@ -361,9 +374,11 @@ export default function BodyWeightCard() {
           }}
         />
         <button
+          data-haptic="heavy"
           onClick={handleSave}
           disabled={saving || !draft}
           style={{
+            position: 'relative',
             height: '44px',
             padding: '0 18px',
             borderRadius: 'var(--radius-sm)',
@@ -391,7 +406,12 @@ export default function BodyWeightCard() {
         <>
           <div style={{ height: '120px' }} aria-hidden="true">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartPoints} margin={{ top: 4, right: 20, bottom: 0, left: 4 }}>
+              <LineChart
+                data={chartPoints}
+                margin={{ top: 4, right: 20, bottom: 0, left: 4 }}
+                onClick={handleChartClick}
+                style={{ cursor: 'pointer' }}
+              >
                 <XAxis
                   dataKey="displayDate"
                   stroke="transparent"
@@ -409,16 +429,14 @@ export default function BodyWeightCard() {
                   domain={['dataMin - 2', 'dataMax + 2']}
                   tickFormatter={(v: number) => String(Math.round(v))}
                 />
+                {/* Invisible Tooltip keeps Recharts' nearest-point index wired up
+                    for onClick.activePayload; pointer-events none so it can never
+                    steal the second tap (that was half of the spam-the-dot bug).
+                    Value display is the custom peek pill on the dot, not this. */}
                 <Tooltip
-                  contentStyle={{
-                    backgroundColor: 'var(--surface-elevated)',
-                    border: '1px solid var(--border)',
-                    borderRadius: '8px',
-                    fontSize: '12px',
-                  }}
-                  labelStyle={{ color: 'var(--text-secondary)' }}
-                  itemStyle={{ color: 'var(--text-primary)' }}
-                  cursor={{ stroke: 'var(--border-strong)', strokeWidth: 1 }}
+                  content={() => null}
+                  cursor={false}
+                  wrapperStyle={{ display: 'none', pointerEvents: 'none' }}
                 />
                 <Line
                   type="monotone"
@@ -426,7 +444,10 @@ export default function BodyWeightCard() {
                   stroke="var(--accent-text)"
                   strokeWidth={2}
                   dot={renderDot}
-                  activeDot={{ r: 5, fill: 'var(--accent)', stroke: 'var(--surface)', strokeWidth: 2 }}
+                  // No activeDot: it paints on top of the tapped point after the
+                  // first interaction and swallows the second tap that should
+                  // open the edit sheet.
+                  activeDot={false}
                   isAnimationActive={!reduceMotion}
                 />
               </LineChart>
@@ -626,9 +647,11 @@ export default function BodyWeightCard() {
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <button
                     type="button"
+                    data-haptic="heavy"
                     onClick={handleDelete}
                     disabled={busy !== null}
                     style={{
+                      position: 'relative',
                       flex: 1, height: '46px', borderRadius: 'var(--radius-sm)', border: 'none',
                       backgroundColor: 'var(--danger)', color: '#fff',
                       fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 700,
@@ -640,9 +663,11 @@ export default function BodyWeightCard() {
                   </button>
                   <button
                     type="button"
+                    data-haptic="light"
                     onClick={() => setConfirmDelete(false)}
                     disabled={busy !== null}
                     style={{
+                      position: 'relative',
                       flex: 1, height: '46px', borderRadius: 'var(--radius-sm)',
                       border: '1px solid var(--border)', backgroundColor: 'var(--surface-elevated)',
                       color: 'var(--text-primary)', fontFamily: 'var(--font-sans)',
@@ -680,9 +705,11 @@ export default function BodyWeightCard() {
                   <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{unitLabel}</span>
                   <button
                     type="button"
+                    data-haptic="medium"
                     onClick={handleUpdate}
                     disabled={busy !== null || !editDraft}
                     style={{
+                      position: 'relative',
                       height: '46px', padding: '0 20px', borderRadius: 'var(--radius-sm)', border: 'none',
                       backgroundColor: busy || !editDraft ? 'var(--surface-elevated)' : 'var(--accent)',
                       color: busy || !editDraft ? 'var(--text-muted)' : 'var(--on-accent)',
@@ -697,9 +724,11 @@ export default function BodyWeightCard() {
 
                 <button
                   type="button"
+                  data-haptic="light"
                   onClick={() => setConfirmDelete(true)}
                   disabled={busy !== null}
                   style={{
+                    position: 'relative',
                     alignSelf: 'center',
                     display: 'flex', alignItems: 'center', gap: '6px',
                     minHeight: '44px', padding: '0 12px',

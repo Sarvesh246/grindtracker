@@ -4,8 +4,8 @@ import { useEffect, type CSSProperties, type ReactNode } from 'react'
 import { hapticAttrs, setupHaptics, type HapticIntensity } from '@/lib/utils/haptics'
 
 /**
- * Mount once in the authenticated app shell. Wires iOS switch overlays onto
- * every `[data-haptic]` host (current + future via MutationObserver).
+ * Mount once in the authenticated app shell. Wires `[data-haptic]`:
+ * iOS switch overlays (MutationObserver) + Android delegated click vibrate.
  */
 export default function HapticsSetup() {
   useEffect(() => setupHaptics(), [])

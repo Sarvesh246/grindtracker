@@ -147,8 +147,10 @@ export default function BadgeUnlockOverlay({
         </div>
 
         <button
+          data-haptic="medium"
           onClick={requestClose}
           style={{
+            position: 'relative',
             width: '100%',
             height: '52px',
             backgroundColor: 'var(--accent)',

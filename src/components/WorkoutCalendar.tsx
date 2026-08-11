@@ -4,51 +4,19 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useTheme } from '@/lib/contexts/ThemeContext'
 import { localDateKey } from '@/lib/utils/formatting'
-
-// Fill colors — used for cell background tints, dot indicators, and borders.
-// These stay vibrant in both themes (they're used as low-opacity decorative fills).
-const NAMED_COLORS: Record<string, string> = {
-  push: '#c8f135',  // lime green (matches app accent)
-  pull: '#38bdf8',  // sky blue
-  legs: '#fb923c',  // orange
-}
-
-// Text/label colors for LIGHT mode — dark accessible variants of the fill colors
-// so the day number is legible on a white card surface.
-const NAMED_TEXT_COLORS_LIGHT: Record<string, string> = {
-  push: '#5a7a1a',  // dark olive  (fill: lime)
-  pull: '#075985',  // dark blue   (fill: sky)
-  legs: '#9a3412',  // dark sienna (fill: orange)
-}
-
-// Fallback pool for any additional day types the user adds
-const EXTRA_COLORS = ['#a78bfa', '#f472b6', '#34d399', '#fbbf24', '#f87171', '#e879f9']
-
-// Dark accessible variants for the extra-color pool (same order)
-const EXTRA_TEXT_COLORS_LIGHT = ['#5b21b6', '#9d174d', '#065f46', '#92400e', '#991b1b', '#86198f']
+import {
+  NAMED_DAY_COLORS,
+  dayTintBg,
+  dayTintBorder,
+  resolveDayColor,
+  resolveDayTextColor,
+} from '@/lib/utils/dayColors'
 
 const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
 const MONTH_NAMES = [
   'JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE',
   'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER',
 ]
-
-// Vibrant fill color used for backgrounds, borders, and dots (same in both themes).
-function resolveColor(type: string, extraTypes: string[]): string {
-  if (NAMED_COLORS[type]) return NAMED_COLORS[type]
-  const idx = extraTypes.indexOf(type)
-  return EXTRA_COLORS[idx % EXTRA_COLORS.length]
-}
-
-/** Readable text color for the day number.
- *  In dark mode: same as the fill (vibrant on dark surfaces).
- *  In light mode: darkened accessible variant (readable on white card). */
-function resolveTextColor(type: string, extraTypes: string[], isLight: boolean): string {
-  if (!isLight) return resolveColor(type, extraTypes)
-  if (NAMED_TEXT_COLORS_LIGHT[type]) return NAMED_TEXT_COLORS_LIGHT[type]
-  const idx = extraTypes.indexOf(type)
-  return EXTRA_TEXT_COLORS_LIGHT[idx % EXTRA_TEXT_COLORS_LIGHT.length]
-}
 
 export default function WorkoutCalendar() {
   const router = useRouter()
@@ -119,9 +87,9 @@ export default function WorkoutCalendar() {
 
   // Resolve colors dynamically so any extra day types get a unique color
   const allTypes = Object.values(workoutDays)
-  const extraTypes = [...new Set(allTypes.filter(t => !NAMED_COLORS[t]))]
+  const extraTypes = [...new Set(allTypes.filter(t => !NAMED_DAY_COLORS[t]))]
   // Always show all named day types; append any unrecognised ones from this month's data
-  const legendTypes = [...Object.keys(NAMED_COLORS), ...extraTypes]
+  const legendTypes = [...Object.keys(NAMED_DAY_COLORS), ...extraTypes]
 
   function handlePrev() {
     setCurrentMonth(m => new Date(m.getFullYear(), m.getMonth() - 1, 1))
@@ -152,9 +120,11 @@ export default function WorkoutCalendar() {
       }}>
         <button
           className="press"
+          data-haptic="light"
           onClick={handlePrev}
           aria-label="Previous month"
           style={{
+            position: 'relative',
             background: 'none', border: 'none', cursor: 'pointer',
             width: '44px', height: '44px',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -177,10 +147,12 @@ export default function WorkoutCalendar() {
 
         <button
           className="press"
+          data-haptic="light"
           onClick={handleNext}
           disabled={isOnCurrentMonth}
           aria-label="Next month"
           style={{
+            position: 'relative',
             background: 'none', border: 'none',
             cursor: isOnCurrentMonth ? 'default' : 'pointer',
             width: '44px', height: '44px',
@@ -224,9 +196,9 @@ export default function WorkoutCalendar() {
 
           const dateKey = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
           const workoutType = workoutDays[dateKey]
-          const dotColor = workoutType ? resolveColor(workoutType, extraTypes) : null
+          const dotColor = workoutType ? resolveDayColor(workoutType, extraTypes) : null
           const dayTextColor = workoutType
-            ? resolveTextColor(workoutType, extraTypes, isLight)
+            ? resolveDayTextColor(workoutType, extraTypes, isLight)
             : null
 
           const isToday = dateKey === todayKey
@@ -241,16 +213,15 @@ export default function WorkoutCalendar() {
 
           const isClickable = !isFuture
 
-          const bgOpacity = isLight ? '33' : '28'
-          const baseBg = dotColor ? `${dotColor}${bgOpacity}` : 'transparent'
+          const baseBg = dotColor ? dayTintBg(dotColor, isLight) : 'transparent'
           const baseBorder = isToday
             ? '1px solid var(--border-strong)'
             : dotColor
-              ? `1px solid ${dotColor}${isLight ? '88' : '55'}`
+              ? `1px solid ${dayTintBorder(dotColor, isLight)}`
               : '1px solid transparent'
 
           const hoverBg = dotColor
-            ? `${dotColor}${isLight ? '55' : '55'}`
+            ? `${dotColor}55`
             : isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.06)'
           const hoverBorder = isToday
             ? '1px solid var(--border-strong)'
@@ -355,8 +326,8 @@ export default function WorkoutCalendar() {
       {/* Legend — always shows all named types; extra types from data appended */}
       <div style={{ display: 'flex', gap: '14px', marginTop: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
         {legendTypes.map(type => {
-          const fillColor = resolveColor(type, extraTypes)
-          const labelColor = resolveTextColor(type, extraTypes, isLight)
+          const fillColor = resolveDayColor(type, extraTypes)
+          const labelColor = resolveDayTextColor(type, extraTypes, isLight)
           return (
             <div key={type} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
               <div style={{

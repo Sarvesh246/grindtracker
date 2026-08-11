@@ -105,7 +105,9 @@ export default function TopNav() {
               href={tab.href}
               className="top-nav-tab press"
               data-active={active}
+              data-haptic="light"
               style={{
+                position: 'relative',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '7px',

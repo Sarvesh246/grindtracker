@@ -147,9 +147,11 @@ export default function LeaderboardClient({ userId }: Props) {
         {myEntry && myRank && (
           <button
             data-onboard="leaderboard-share"
+            data-haptic="light"
             onClick={() => setShareTarget({ entry: myEntry, rank: myRank })}
             title="Share your rank"
             style={{
+              position: 'relative',
               background: 'none',
               border: '1px solid var(--border)',
               borderRadius: '8px',
@@ -198,8 +200,10 @@ export default function LeaderboardClient({ userId }: Props) {
             <button
               key={c.key}
               className="press"
+              data-haptic="light"
               onClick={() => setCategory(c.key)}
               style={{
+                position: 'relative',
                 padding: '7px 16px',
                 borderRadius: '9999px',
                 border: active ? 'none' : '1px solid var(--border)',

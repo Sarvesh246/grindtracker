@@ -6,7 +6,6 @@ import Button from '@/components/ui/Button'
 import { WORKOUT_TEMPLATES } from '@/lib/utils/workoutTemplates'
 import { applyWorkoutTemplate } from '@/lib/utils/applyWorkoutTemplate'
 import type { DayCategory } from '@/lib/types'
-import { haptic } from '@/lib/utils/haptics'
 import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
 
 const CATEGORIES: { value: DayCategory; label: string }[] = [
@@ -45,7 +44,6 @@ export default function WorkoutStep({
     if (locked || hasExistingProgram) return
     setBusy(true)
     setError(null)
-    haptic('light')
     try {
       const result = await applyWorkoutTemplate(supabase, userId, templateId)
       if (!result.ok) {
@@ -62,7 +60,6 @@ export default function WorkoutStep({
 
   async function handleKeepCurrent() {
     if (locked) return
-    haptic('light')
     setBusy(true)
     try {
       await onFinish()
@@ -73,7 +70,6 @@ export default function WorkoutStep({
 
   async function handleSkip() {
     if (locked) return
-    haptic('light')
     setBusy(true)
     try {
       await onFinish()
@@ -220,7 +216,6 @@ export default function WorkoutStep({
                     aria-pressed={active}
                     onClick={() => {
                       setCategory(c.value)
-                      haptic('light')
                     }}
                     style={{
                       height: '36px',
@@ -400,7 +395,6 @@ export default function WorkoutStep({
             onClick={() => {
               setMode('custom')
               setError(null)
-              haptic('light')
             }}
             style={{
               textAlign: 'left',

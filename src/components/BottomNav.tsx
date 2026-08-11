@@ -87,7 +87,9 @@ export default function BottomNav() {
             key={tab.href}
             href={tab.href}
             className="press"
+            data-haptic="light"
             style={{
+              position: 'relative',
               flex: 1,
               display: 'flex',
               flexDirection: 'column',

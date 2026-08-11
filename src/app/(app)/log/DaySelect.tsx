@@ -2,15 +2,29 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Exercise, UserRotation } from '@/lib/types'
-import { haptic } from '@/lib/utils/haptics'
+import { useTheme } from '@/lib/contexts/ThemeContext'
+import { Exercise, type DayCategory, UserRotation } from '@/lib/types'
+import {
+  NAMED_DAY_COLORS,
+  dayTintBg,
+  dayTintBorder,
+  resolveDayColor,
+  resolveDayTextColor,
+} from '@/lib/utils/dayColors'
 import { effectiveSequence, nextDay as nextDayFromRotation, orderedDayKeys } from '@/lib/utils/rotation'
 import WorkoutManager from './WorkoutManager'
 import { useTour, type TourStep } from '@/components/onboarding/Tour'
 
+/** Resolve leaderboard category for a day key (custom days via user_day_categories). */
+function categoryForDay(dayKey: string, categories: Record<string, DayCategory>): string {
+  if (categories[dayKey]) return categories[dayKey]
+  if (dayKey in NAMED_DAY_COLORS) return dayKey
+  return 'other'
+}
+
 function PushIcon() {
   return (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent-text)' }}>
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <line x1="5" y1="17" x2="5" y2="21" />
       <line x1="19" y1="17" x2="19" y2="21" />
       <rect x="3" y="14" width="18" height="3" rx="1.5" />
@@ -23,7 +37,7 @@ function PushIcon() {
 
 function PullIcon() {
   return (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent-text)' }}>
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <line x1="4" y1="4" x2="4" y2="20" />
       <line x1="20" y1="4" x2="20" y2="20" />
       <line x1="4" y1="7" x2="20" y2="7" />
@@ -37,7 +51,7 @@ function PullIcon() {
 
 function LegsIcon() {
   return (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent-text)' }}>
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <line x1="5" y1="3" x2="5" y2="21" />
       <line x1="19" y1="3" x2="19" y2="21" />
       <polyline points="5 10 8 10 8 13" />
@@ -51,7 +65,7 @@ function LegsIcon() {
 
 function DefaultDayIcon() {
   return (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent-text)' }}>
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <line x1="6" y1="12" x2="18" y2="12" />
       <rect x="2" y="9" width="4" height="6" rx="1.5" />
       <rect x="18" y="9" width="4" height="6" rx="1.5" />
@@ -69,9 +83,12 @@ export default function DaySelect() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const supabase = useMemo(() => createClient(), [])
+  const { theme } = useTheme()
+  const isLight = theme === 'light'
   const [exercises, setExercises] = useState<Exercise[]>([])
   const [rotation, setRotation] = useState<UserRotation | null>(null)
   const [flexDays, setFlexDays] = useState<Set<string>>(new Set())
+  const [dayCategories, setDayCategories] = useState<Record<string, DayCategory>>({})
   const [loading, setLoading] = useState(true)
   // Set only when the exercises fetch itself fails — an existing user must
   // never see the blank-slate "SET UP YOUR FIRST DAY" hero over a transient
@@ -112,7 +129,7 @@ export default function DaySelect() {
     setLoading(true)
     setLoadError(false)
     const { data: { user } } = await supabase.auth.getUser()
-    const [exRes, rotRes, flexRes] = await Promise.all([
+    const [exRes, rotRes, flexRes, catRes] = await Promise.all([
       supabase.from('exercises').select('*')
         .order('day_type', { ascending: true })
         .order('sort_order', { ascending: true }),
@@ -122,6 +139,9 @@ export default function DaySelect() {
       user
         ? supabase.from('user_flex_days').select('day_key').eq('user_id', user.id)
         : Promise.resolve({ data: [] as { day_key: string }[] }),
+      user
+        ? supabase.from('user_day_categories').select('day_key, category').eq('user_id', user.id)
+        : Promise.resolve({ data: [] as { day_key: string; category: DayCategory }[] }),
     ])
     if (exRes.error) {
       console.error('[grind] failed to load exercises', exRes.error)
@@ -132,6 +152,9 @@ export default function DaySelect() {
     setExercises(exRes.data ?? [])
     setRotation((rotRes.data as UserRotation | null) ?? null)
     setFlexDays(new Set((flexRes.data ?? []).map(r => r.day_key)))
+    const catMap: Record<string, DayCategory> = {}
+    for (const r of catRes.data ?? []) catMap[r.day_key] = r.category as DayCategory
+    setDayCategories(catMap)
     setLoading(false)
   }, [supabase])
 
@@ -151,6 +174,11 @@ export default function DaySelect() {
 
   // Non-binding hint: the day the rotation suggests next (flex days excluded).
   const upNext = nextDayFromRotation(effectiveSeq, rotation?.current_index ?? -1)
+
+  // Color keys for DaySelect cards = leaderboard categories (not raw day_keys),
+  // so a custom "chest" day mapped to push gets lime like the calendar's push.
+  const colorKeys = dayKeys.map(k => categoryForDay(k, dayCategories))
+  const extraTypes = [...new Set(colorKeys.filter(t => !NAMED_DAY_COLORS[t]))]
 
   // Walkthrough only applies once the user actually has days (the MANAGE button
   // and "log a past workout" link that steps 2/3 point at don't exist on the
@@ -288,6 +316,13 @@ export default function DaySelect() {
               const Icon = DAY_ICONS[key] ?? DefaultDayIcon
               const description = activeExs.slice(0, 3).map(e => e.name).join(', ') + (activeExs.length > 3 ? '…' : '')
               const isUpNext = key === upNext
+              const colorKey = categoryForDay(key, dayCategories)
+              const fillColor = resolveDayColor(colorKey, extraTypes)
+              const labelColor = resolveDayTextColor(colorKey, extraTypes, isLight)
+              // UP NEXT outline uses the day's category fill (not generic accent).
+              const idleBorder = isUpNext
+                ? `1px solid ${fillColor}`
+                : `1px solid ${dayTintBorder(fillColor, isLight)}`
               return (
                 <button
                   key={key}
@@ -295,33 +330,32 @@ export default function DaySelect() {
                   data-onboard={idx === 0 ? 'dayselect-days' : undefined}
                   data-haptic="heavy"
                   onClick={() => {
-                    // Sync — Android vibrate; iOS overlay already ticked on press.
-                    haptic('heavy')
                     router.push(`/log?day=${key}`)
                   }}
                   style={{
                     '--i': idx,
                     position: 'relative',
-                    backgroundColor: 'var(--surface)',
-                    border: isUpNext ? '1px solid var(--accent)' : '1px solid var(--border)',
+                    backgroundColor: dayTintBg(fillColor, isLight),
+                    border: idleBorder,
                     borderRadius: '12px',
                     padding: '20px',
                     textAlign: 'left',
                     cursor: 'pointer',
                     width: '100%',
+                    transition: 'border-color 150ms ease, background-color 150ms ease',
                   } as CSSProperties}
-                  onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
-                  onMouseLeave={e => (e.currentTarget.style.borderColor = isUpNext ? 'var(--accent)' : 'var(--border)')}
-                  onTouchStart={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
-                  onTouchEnd={e => (e.currentTarget.style.borderColor = isUpNext ? 'var(--accent)' : 'var(--border)')}
+                  onMouseEnter={e => (e.currentTarget.style.borderColor = fillColor)}
+                  onMouseLeave={e => (e.currentTarget.style.border = idleBorder)}
+                  onTouchStart={e => (e.currentTarget.style.borderColor = fillColor)}
+                  onTouchEnd={e => (e.currentTarget.style.border = idleBorder)}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: labelColor }}>
                       <Icon />
                       <span style={{
                         fontFamily: "'Bebas Neue', sans-serif",
                         fontSize: '28px',
-                        color: 'var(--accent-text)',
+                        color: labelColor,
                         letterSpacing: '1px',
                       }}>
                         {key.replace(/-/g, ' ').toUpperCase()}
@@ -342,7 +376,7 @@ export default function DaySelect() {
                       {isUpNext ? (
                         <span style={{
                           fontSize: '10px', fontWeight: 700, letterSpacing: '0.5px',
-                          color: 'var(--bg)', backgroundColor: 'var(--accent)',
+                          color: 'var(--on-accent)', backgroundColor: fillColor,
                           padding: '3px 8px', borderRadius: '9999px',
                           fontFamily: "'DM Sans', sans-serif",
                         }}>

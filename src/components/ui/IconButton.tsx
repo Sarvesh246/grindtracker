@@ -1,4 +1,5 @@
 import { ButtonHTMLAttributes, CSSProperties, forwardRef, ReactNode } from 'react'
+import type { HapticIntensity } from '@/lib/utils/haptics'
 
 type Size = 'sm' | 'md' | 'lg'
 
@@ -9,6 +10,8 @@ interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   children: ReactNode
   size?: Size
   variant?: 'ghost' | 'surface' | 'danger'
+  /** Opt-in: stamps `data-haptic` only — no default buzz on every IconButton. */
+  haptic?: HapticIntensity
 }
 
 function variantStyle(variant: NonNullable<IconButtonProps['variant']>): CSSProperties {
@@ -36,7 +39,16 @@ function variantStyle(variant: NonNullable<IconButtonProps['variant']>): CSSProp
 }
 
 const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(
-  { size = 'md', variant = 'ghost', children, style, className, disabled, ...rest },
+  {
+    size = 'md',
+    variant = 'ghost',
+    children,
+    style,
+    className,
+    disabled,
+    haptic: hapticIntensity,
+    ...rest
+  },
   ref,
 ) {
   return (
@@ -44,6 +56,7 @@ const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconB
       ref={ref}
       disabled={disabled}
       className={className ? `press ${className}` : 'press'}
+      data-haptic={hapticIntensity}
       style={{
         width: `${PX[size]}px`,
         height: `${PX[size]}px`,

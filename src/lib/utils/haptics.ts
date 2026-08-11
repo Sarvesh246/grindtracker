@@ -1,22 +1,26 @@
 /**
  * Web haptics for GRIND.
  *
- * iOS 26.5+ / 27: Apple closed programmatic <input switch>.click() haptics.
- * The only remaining path is a real finger tap on a switch — so we overlay a
- * transparent `<input type="checkbox" switch>` on interactive targets
- * (`data-haptic` / `attachHapticOverlay`). The finger lands on the switch
- * (one system tick), then we re-dispatch click to the host. Multi-pulse via
- * setTimeout is impossible on 26.5+; every intensity is one tick.
+ * iOS PWA (Add to Home Screen) is the primary target. On iOS 26.5+ / 27,
+ * Apple closed programmatic <input switch>.click() haptics — the only
+ * remaining path is a real finger tap on a transparent switch overlay
+ * (`data-haptic` / `attachHapticOverlay` via `setupHaptics`). Every
+ * intensity is one system tick on iOS; satisfaction comes from *which*
+ * actions tick, not vibrate pattern length.
  *
- * Android/Chrome: `navigator.vibrate` with intensity patterns (still works
- * from timers and post-await — no user-gesture requirement like iOS).
+ * Android/Chrome: `navigator.vibrate` with intensity patterns. `setupHaptics`
+ * also delegates click on `[data-haptic]` so one attr works both platforms —
+ * prefer stamping `data-haptic` and dropping redundant sync `haptic()` from
+ * the same handler (avoids double-buzz). Imperative `haptic()` remains for
+ * non-gesture moments (rest timer end, post-await PR success) — Android only.
  *
- * Do NOT gate on Reduce Motion — that preference is visual-only; system
- * haptics have their own OS toggle.
+ * Intensity ladder = Android pulse weight + shared taxonomy. Do NOT gate on
+ * Reduce Motion — that preference is visual-only; system haptics have their
+ * own OS toggle. Opt-in only — never default haptics on every Button.
  *
  * Usage:
- *   // Declarative (preferred for taps — works on iOS 27):
- *   <button data-haptic="light" onClick={...}>
+ *   // Declarative (preferred for taps — works on iOS 27 + Android):
+ *   <button data-haptic="heavy" onClick={...}>
  *   // Mount <HapticsSetup /> once in the app shell.
  *
  *   // Imperative (Android vibrate; iOS no-op on 26.5+):
@@ -74,9 +78,15 @@ function tryVibrate(pattern: number | number[]): boolean {
   }
 }
 
+function parseIntensity(raw: string | null): HapticIntensity {
+  if (raw === 'medium' || raw === 'heavy' || raw === 'success') return raw
+  return 'light'
+}
+
 /**
  * Imperative haptic. Android: intensity patterns. iOS 26.5+: no-op (use
- * overlays). Older iOS may still get nothing useful from a programmatic path.
+ * overlays). Prefer `data-haptic` for tap targets — keep this for timers /
+ * post-await celebrations only.
  */
 export function haptic(intensity: HapticIntensity = 'light'): void {
   if (typeof window === 'undefined') return
@@ -87,13 +97,13 @@ export function haptic(intensity: HapticIntensity = 'light'): void {
       tryVibrate(10)
       break
     case 'medium':
-      tryVibrate(25)
+      tryVibrate(30)
       break
     case 'heavy':
-      tryVibrate([18, 40, 40])
+      tryVibrate([28, 45, 55])
       break
     case 'success':
-      tryVibrate([10, 60, 30])
+      tryVibrate([12, 70, 35, 40, 25])
       break
   }
 }
@@ -122,7 +132,7 @@ function hostIsDisabled(host: HTMLElement): boolean {
 /**
  * Inject a transparent switch overlay covering `el` so a finger tap ticks iOS
  * system haptics, then re-dispatch click to the host so React onClick runs.
- * No-op on Android (use `haptic()` / `data-haptic` click vibrate instead).
+ * No-op on Android (delegated vibrate via `setupHaptics`).
  * Returns a detach function.
  */
 export function attachHapticOverlay(el: HTMLElement): () => void {
@@ -176,15 +186,36 @@ export function attachHapticOverlay(el: HTMLElement): () => void {
 }
 
 /**
- * Watch `root` for `[data-haptic]` hosts and inject iOS switch overlays.
- * Android is a no-op here — call `haptic()` synchronously in the handler
- * (before any await) so we don't double-buzz with an overlay listener.
+ * Watch `root` for `[data-haptic]` hosts.
+ * - iOS: inject switch overlays (MutationObserver).
+ * - Android: capture-phase click delegation → vibrate by intensity attr.
+ * Prefer `data-haptic` alone; drop redundant sync `haptic()` on the same tap.
  * Returns teardown. Mount once via `<HapticsSetup />`.
  */
 export function setupHaptics(root: ParentNode = document): () => void {
   if (typeof document === 'undefined') return () => {}
-  // Overlays are an iOS-only requirement; Android uses navigator.vibrate.
-  if (!isIosHaptics()) return () => {}
+
+  // Android / desktop Chrome: one delegated listener for all [data-haptic] taps.
+  if (!isIosHaptics()) {
+    if (!supportsVibrate()) return () => {}
+
+    const onClick = (e: Event) => {
+      const t = e.target
+      if (!(t instanceof Element)) return
+      // Ignore synthetic / non-trusted clicks if any; real finger taps are trusted.
+      if (e instanceof MouseEvent && e.isTrusted === false) return
+      const host = t.closest(`[${DATA_HAPTIC}]`)
+      if (!(host instanceof HTMLElement)) return
+      if (hostIsDisabled(host)) return
+      haptic(parseIntensity(host.getAttribute(DATA_HAPTIC)))
+    }
+
+    const observeTarget = root instanceof Document ? root.documentElement : (root as HTMLElement)
+    observeTarget.addEventListener('click', onClick, true)
+    return () => {
+      observeTarget.removeEventListener('click', onClick, true)
+    }
+  }
 
   const detachers = new Map<HTMLElement, () => void>()
 

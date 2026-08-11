@@ -373,8 +373,10 @@ export default function FeedbackModal({ onClose }: { onClose: () => void }) {
                 return (
                   <button
                     key={c.key}
+                    data-haptic="light"
                     onClick={() => setCategory(c.key)}
                     style={{
+                      position: 'relative',
                       height: '34px', padding: '0 14px',
                       borderRadius: 'var(--radius-pill)',
                       backgroundColor: active ? 'var(--accent)' : 'var(--surface-elevated)',
@@ -559,9 +561,11 @@ export default function FeedbackModal({ onClose }: { onClose: () => void }) {
             {/* Actions */}
             <div style={{ display: 'flex', gap: '10px' }}>
               <button
+                data-haptic="light"
                 onClick={onClose}
                 disabled={submitting}
                 style={{
+                  position: 'relative',
                   flex: '0 0 auto', height: 'var(--btn-md)', padding: '0 18px',
                   backgroundColor: 'var(--surface-elevated)',
                   color: 'var(--text-primary)',
@@ -574,9 +578,11 @@ export default function FeedbackModal({ onClose }: { onClose: () => void }) {
                 Cancel
               </button>
               <button
+                data-haptic="medium"
                 onClick={handleSubmit}
                 disabled={submitting || !message.trim()}
                 style={{
+                  position: 'relative',
                   flex: 1, height: 'var(--btn-md)',
                   backgroundColor: submitting || !message.trim() ? 'var(--surface-elevated)' : 'var(--accent)',
                   color: submitting || !message.trim() ? 'var(--text-disabled)' : 'var(--on-accent)',

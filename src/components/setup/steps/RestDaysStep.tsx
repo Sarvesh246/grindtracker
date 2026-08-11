@@ -3,7 +3,6 @@
 import { useState } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import Button from '@/components/ui/Button'
-import { haptic } from '@/lib/utils/haptics'
 
 const REST_DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'] // 0=Sun..6=Sat
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
@@ -32,7 +31,6 @@ export default function RestDaysStep({
       else next.add(day)
       return next
     })
-    haptic('light')
   }
 
   async function handleContinue() {

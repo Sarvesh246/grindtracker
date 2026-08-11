@@ -4,7 +4,6 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Exercise, UserStats } from '@/lib/types'
 import { checkAndAwardBadges } from '@/lib/utils/badges'
-import { haptic } from '@/lib/utils/haptics'
 import { localDateKey } from '@/lib/utils/formatting'
 import { useUnit } from '@/lib/contexts/UnitContext'
 
@@ -360,7 +359,6 @@ function LogPastContent() {
       } as UserStats,
     )
 
-    haptic('medium')
     setDone({
       xpEarned: payload.xp_earned ?? 0,
       prCount: payload.pr_count ?? 0,
@@ -610,8 +608,10 @@ function LogPastContent() {
             </span>
             <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
               <button
+                data-haptic="light"
                 onClick={() => setConfirmDelete(false)}
                 style={{
+                  position: 'relative',
                   background: 'none',
                   border: '1px solid var(--border-strong)',
                   borderRadius: '6px',
@@ -626,9 +626,11 @@ function LogPastContent() {
                 CANCEL
               </button>
               <button
+                data-haptic="heavy"
                 onClick={handleDelete}
                 disabled={deleting}
                 style={{
+                  position: 'relative',
                   background: 'none',
                   border: '1px solid rgba(239, 68, 68, 0.5)',
                   borderRadius: '6px',
@@ -663,8 +665,10 @@ function LogPastContent() {
               A {selectedDayType} workout already exists for this date. Saving will replace it.
             </span>
             <button
+              data-haptic="heavy"
               onClick={() => { setDuplicateWarning(false); handleSubmit(true) }}
               style={{
+                position: 'relative',
                 background: 'none',
                 border: '1px solid rgba(239, 68, 68, 0.5)',
                 borderRadius: '6px',
@@ -878,9 +882,11 @@ function LogPastContent() {
         {selectedDayType && exercises.length > 0 && !loadingExercises && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '4px' }}>
             <button
+              data-haptic="heavy"
               onClick={() => handleSubmit(false)}
               disabled={submitting}
               style={{
+                position: 'relative',
                 width: '100%',
                 height: '52px',
                 backgroundColor: submitting ? 'var(--text-muted)' : 'var(--accent)',

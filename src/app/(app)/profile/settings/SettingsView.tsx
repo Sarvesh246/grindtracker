@@ -82,6 +82,7 @@ function Switch({
 }) {
   return (
     <button
+      data-haptic="light"
       onClick={onClick}
       disabled={disabled}
       role="switch"
@@ -153,7 +154,9 @@ function NavRow({
     return (
       <Link
         href={href}
+        data-haptic="light"
         style={{
+          position: 'relative',
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           gap: '12px', textDecoration: 'none',
         }}
@@ -166,9 +169,11 @@ function NavRow({
   return (
     <button
       type="button"
+      data-haptic="light"
       onClick={onClick}
       disabled={disabled}
       style={{
+        position: 'relative',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         gap: '12px', width: '100%',
         background: 'transparent', border: 'none', padding: 0,
@@ -849,8 +854,10 @@ export default function SettingsView({
       <Section label="Account">
         <button
           type="button"
+          data-haptic="medium"
           onClick={handleSignOut}
           style={{
+            position: 'relative',
             width: '100%', height: '48px',
             backgroundColor: 'rgba(239, 68, 68, 0.08)',
             border: '1px solid rgba(239, 68, 68, 0.25)',
@@ -866,9 +873,11 @@ export default function SettingsView({
         </button>
         <button
           type="button"
+          data-haptic={deleteConfirm ? 'heavy' : 'light'}
           onClick={() => void handleDeleteMyData()}
           disabled={deletingData}
           style={{
+            position: 'relative',
             width: '100%', height: '48px',
             backgroundColor: 'transparent',
             border: '1px solid var(--border)',

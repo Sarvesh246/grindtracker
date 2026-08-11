@@ -301,10 +301,12 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
       {/* Accordion header */}
       <button
         className="press"
+        data-haptic="light"
         onClick={() => setOpen(o => !o)}
         aria-expanded={open}
         aria-controls="friends-panel"
         style={{
+          position: 'relative',
           width: '100%',
           display: 'flex',
           alignItems: 'center',
@@ -407,8 +409,10 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
                       </div>
                     </div>
                     <button
+                      data-haptic="medium"
                       onClick={() => sendRequest(u.id)}
                       style={{
+                        position: 'relative',
                         padding: '6px 14px',
                         backgroundColor: 'var(--accent)',
                         color: 'var(--on-accent)',
@@ -453,8 +457,10 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
                     </div>
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <button
+                        data-haptic="medium"
                         onClick={() => acceptRequest(p.friendship_id)}
                         style={{
+                          position: 'relative',
                           padding: '6px 12px',
                           backgroundColor: 'var(--accent)',
                           color: 'var(--on-accent)',
@@ -467,8 +473,10 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
                         }}
                       >Accept</button>
                       <button
+                        data-haptic="light"
                         onClick={() => declineRequest(p.friendship_id)}
                         style={{
+                          position: 'relative',
                           padding: '6px 12px',
                           backgroundColor: 'transparent',
                           color: 'var(--text-muted)',
