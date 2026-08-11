@@ -1,9 +1,10 @@
 /**
  * Brand mark for the Coach FAB / sheet header: heavy "G" monogram + AI spark.
  * Color via `currentColor`. Decorative — always `aria-hidden`.
+ * Glyph fills most of the viewBox so a 56px FAB reads as a solid brand mark.
  */
 export default function CoachFabIcon({
-  size = 32,
+  size = 48,
   className,
 }: {
   size?: number
@@ -19,23 +20,23 @@ export default function CoachFabIcon({
       aria-hidden
       className={className}
     >
-      {/* Optical center: G slightly down so mass balances with the spark. */}
+      {/* Large G — optically centered, fills ~70% of the orb. */}
       <text
-        x="28"
-        y="34"
+        x="27"
+        y="33"
         textAnchor="middle"
         dominantBaseline="middle"
         fill="currentColor"
         fontFamily="var(--font-display, 'Bebas Neue', sans-serif)"
-        fontSize="34"
+        fontSize="44"
         fontWeight="700"
-        letterSpacing="-0.5"
+        letterSpacing="-1"
       >
         G
       </text>
-      {/* 4-point star, upper-trailing (~10% inset from rim). */}
+      {/* Spark sits tight to the G’s upper-trailing corner. */}
       <path
-        d="M44 8.5 L46.2 13.8 L51.8 16 L46.2 18.2 L44 23.5 L41.8 18.2 L36.2 16 L41.8 13.8 Z"
+        d="M42.5 7 L45.4 13.6 L52.5 16.5 L45.4 19.4 L42.5 26 L39.6 19.4 L32.5 16.5 L39.6 13.6 Z"
         fill="currentColor"
       />
     </svg>

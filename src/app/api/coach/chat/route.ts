@@ -14,6 +14,7 @@ import {
   mapCoachRateLimitError,
   type CoachUnitPreference,
 } from '@/lib/coach'
+import { titleFromMessage } from '@/lib/coach/conversations'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -120,13 +121,64 @@ export async function POST(request: Request) {
     )
   }
 
+  // Resolve / create a conversation thread (migration 35). Falls back to
+  // legacy inserts without conversation_id if the table isn't applied yet.
+  let conversationId: string | null =
+    typeof body.conversationId === 'string' && body.conversationId
+      ? body.conversationId
+      : null
+  let conversationCreated = false
+
+  if (conversationId) {
+    const { data: owned } = await supabase
+      .from('coach_conversations')
+      .select('id')
+      .eq('id', conversationId)
+      .eq('user_id', user.id)
+      .maybeSingle()
+    if (!owned) conversationId = null
+  }
+
+  if (!conversationId) {
+    const { data: created, error: createErr } = await supabase
+      .from('coach_conversations')
+      .insert({
+        user_id: user.id,
+        title: titleFromMessage(message),
+      })
+      .select('id')
+      .single()
+    if (createErr || !created) {
+      // Pre-35 schema: continue without threads.
+      if (
+        !(
+          createErr?.message?.includes('coach_conversations') ||
+          createErr?.code === '42P01'
+        )
+      ) {
+        console.error('[grind] coach conversation create', createErr)
+      }
+      conversationId = null
+    } else {
+      conversationId = created.id as string
+      conversationCreated = true
+    }
+  }
+
   // Persist user turn first — trigger is authoritative if racing. Its id is
   // kept so a total model-call failure below can refund this turn instead of
   // silently burning the user's daily/burst allowance for a reply they never
   // got (see grind_coach_refund_message, docs/sql/34-coach-quota-fixes.sql).
+  const userInsert: Record<string, unknown> = {
+    user_id: user.id,
+    role: 'user',
+    content: message,
+  }
+  if (conversationId) userInsert.conversation_id = conversationId
+
   const { data: insertedMessage, error: insertUserErr } = await supabase
     .from('coach_messages')
-    .insert({ user_id: user.id, role: 'user', content: message })
+    .insert(userInsert)
     .select('id')
     .single()
   if (insertUserErr) {
@@ -148,6 +200,16 @@ export async function POST(request: Request) {
       },
       { status: 503 },
     )
+  }
+
+  if (conversationId && !conversationCreated) {
+    void supabase
+      .from('coach_conversations')
+      .update({
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', conversationId)
+      .eq('user_id', user.id)
   }
 
   const cookieStore = await cookies()
@@ -237,12 +299,25 @@ Remember: pick the best structure for THIS question (stats→bullets, how-to→n
           }
           controller.close()
           if (gotReply) {
-            const { error } = await supabase.from('coach_messages').insert({
+            const assistantInsert: Record<string, unknown> = {
               user_id: user.id,
               role: 'assistant',
               content: full.trim().slice(0, 4000),
-            })
+            }
+            if (conversationId) {
+              assistantInsert.conversation_id = conversationId
+            }
+            const { error } = await supabase
+              .from('coach_messages')
+              .insert(assistantInsert)
             if (error) console.error('[grind] coach insert assistant', error)
+            if (conversationId) {
+              void supabase
+                .from('coach_conversations')
+                .update({ updated_at: new Date().toISOString() })
+                .eq('id', conversationId)
+                .eq('user_id', user.id)
+            }
           } else {
             // The model never actually produced anything — refund the slot
             // enforce_coach_rate_limit() charged when the user turn was
@@ -260,6 +335,9 @@ Remember: pick the best structure for THIS question (stats→bullets, how-to→n
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
     })
     response.headers.set('X-Coach-Model', modelId)
+    if (conversationId) {
+      response.headers.set('X-Coach-Conversation-Id', conversationId)
+    }
     return response
   } catch (err) {
     console.error('[grind] coach generate', err)

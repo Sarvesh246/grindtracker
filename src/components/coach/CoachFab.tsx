@@ -7,6 +7,8 @@ import { useCoach, type CoachDockId } from './CoachProvider'
 
 const FAB_SIZE = 56
 const DRAG_THRESHOLD = 8
+/** Max squash/stretch while dragging — tasteful, not cartoonish. */
+const STRETCH_MAX = 0.16
 
 const DOCK_ORDER: CoachDockId[] = ['tl', 'tr', 'bl', 'br']
 
@@ -21,26 +23,36 @@ function nearestDock(x: number, y: number): CoachDockId {
   return 'br'
 }
 
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n))
+}
+
 export default function CoachFab() {
   const { open, openCoach, dock, setDock, fabRef, quota, quotaLoaded } =
     useCoach()
   const { reduceMotion } = useMotionPref()
-  const capped = quotaLoaded && quota != null && quota.dailyRemaining <= 0
+  const capped =
+    quotaLoaded &&
+    quota != null &&
+    !quota.unlimited &&
+    quota.dailyRemaining <= 0
 
   const [dragging, setDragging] = useState(false)
   const [ghost, setGhost] = useState<{ x: number; y: number } | null>(null)
+  const [stretch, setStretch] = useState({ x: 1, y: 1 })
   const pointerId = useRef<number | null>(null)
   const start = useRef<{ x: number; y: number } | null>(null)
   const moved = useRef(false)
-  const lastPos = useRef<{ x: number; y: number } | null>(null)
+  const lastPos = useRef<{ x: number; y: number; t: number } | null>(null)
 
   const onPointerDown = useCallback(
     (e: PointerEvent<HTMLButtonElement>) => {
       if (open) return
       pointerId.current = e.pointerId
       start.current = { x: e.clientX, y: e.clientY }
-      lastPos.current = { x: e.clientX, y: e.clientY }
+      lastPos.current = { x: e.clientX, y: e.clientY, t: performance.now() }
       moved.current = false
+      setStretch({ x: 1, y: 1 })
       try {
         e.currentTarget.setPointerCapture(e.pointerId)
       } catch {
@@ -60,14 +72,41 @@ export default function CoachFab() {
         moved.current = true
         setDragging(true)
       }
-      lastPos.current = { x: e.clientX, y: e.clientY }
-      // Anchor ghost so finger sits at FAB center.
+
+      const now = performance.now()
+      const prev = lastPos.current
+      lastPos.current = { x: e.clientX, y: e.clientY, t: now }
+
+      // Soft liquid stretch from velocity + travel direction (iOS-orb feel).
+      if (!reduceMotion && prev) {
+        const dt = Math.max(8, now - prev.t)
+        const vx = (e.clientX - prev.x) / dt
+        const vy = (e.clientY - prev.y) / dt
+        const travelX = clamp(dx / 140, -1, 1)
+        const travelY = clamp(dy / 140, -1, 1)
+        const sx = clamp(
+          1 + vx * 0.045 + travelX * 0.06,
+          1 - STRETCH_MAX,
+          1 + STRETCH_MAX,
+        )
+        const sy = clamp(
+          1 + vy * 0.045 + travelY * 0.06,
+          1 - STRETCH_MAX,
+          1 + STRETCH_MAX,
+        )
+        // Conserve a bit of “volume”: stretch on one axis lightly compresses the other.
+        setStretch({
+          x: clamp(sx * (2 - sy) * 0.5 + sx * 0.5, 1 - STRETCH_MAX, 1 + STRETCH_MAX),
+          y: clamp(sy * (2 - sx) * 0.5 + sy * 0.5, 1 - STRETCH_MAX, 1 + STRETCH_MAX),
+        })
+      }
+
       setGhost({
         x: e.clientX - FAB_SIZE / 2,
         y: e.clientY - FAB_SIZE / 2,
       })
     },
-    [],
+    [reduceMotion],
   )
 
   const endDrag = useCallback(
@@ -80,6 +119,7 @@ export default function CoachFab() {
       moved.current = false
       setDragging(false)
       setGhost(null)
+      setStretch({ x: 1, y: 1 })
       try {
         e.currentTarget.releasePointerCapture(e.pointerId)
       } catch {
@@ -88,18 +128,19 @@ export default function CoachFab() {
       if (wasDrag && pos) {
         const next = nearestDock(pos.x, pos.y)
         if (next !== dock) setDock(next)
-        // Snap is CSS position change; ensure valid dock id.
         if (!DOCK_ORDER.includes(next)) setDock('br')
         return
       }
-      // Tap → open
       if (!open) openCoach()
     },
     [dock, open, openCoach, setDock],
   )
 
-  // Keep the FAB mounted while open so close can restore focus, but hide it
-  // visually under the sheet/backdrop.
+  const stretchTransform =
+    dragging && !reduceMotion
+      ? `scale(${stretch.x.toFixed(3)}, ${stretch.y.toFixed(3)})`
+      : undefined
+
   return (
     <button
       ref={fabRef}
@@ -127,14 +168,20 @@ export default function CoachFab() {
                 top: ghost.y,
                 right: 'auto',
                 bottom: 'auto',
-                transform: 'none',
-                transition: reduceMotion ? 'none' : undefined,
-                zIndex: 420,
-              }
-            : {
+                transform: stretchTransform ?? 'none',
                 transition: reduceMotion
                   ? 'none'
-                  : 'left 280ms cubic-bezier(0.2, 0.9, 0.2, 1), right 280ms cubic-bezier(0.2, 0.9, 0.2, 1), top 280ms cubic-bezier(0.2, 0.9, 0.2, 1), bottom 280ms cubic-bezier(0.2, 0.9, 0.2, 1)',
+                  : dragging
+                    ? 'transform 40ms linear'
+                    : 'transform 280ms cubic-bezier(0.22, 1, 0.36, 1)',
+                zIndex: 420,
+                willChange: 'transform',
+              }
+            : {
+                transform: stretchTransform,
+                transition: reduceMotion
+                  ? 'none'
+                  : 'left 280ms cubic-bezier(0.2, 0.9, 0.2, 1), right 280ms cubic-bezier(0.2, 0.9, 0.2, 1), top 280ms cubic-bezier(0.2, 0.9, 0.2, 1), bottom 280ms cubic-bezier(0.2, 0.9, 0.2, 1), transform 280ms cubic-bezier(0.22, 1, 0.36, 1)',
               }
       }
       onPointerDown={onPointerDown}
@@ -142,7 +189,7 @@ export default function CoachFab() {
       onPointerUp={endDrag}
       onPointerCancel={endDrag}
     >
-      <CoachFabIcon size={32} />
+      <CoachFabIcon size={48} />
     </button>
   )
 }

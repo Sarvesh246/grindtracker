@@ -10,11 +10,17 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react'
-import { COACH_MAX_HISTORY_MESSAGES, COACH_MAX_MESSAGE_CHARS } from '@/lib/coach'
+import {
+  COACH_MAX_HISTORY_MESSAGES,
+  COACH_MAX_MESSAGE_CHARS,
+  type CoachConversationSummary,
+} from '@/lib/coach'
+import { titleFromMessage } from '@/lib/coach/conversations'
 import { useUnit } from '@/lib/contexts/UnitContext'
 
 export type CoachDockId = 'br' | 'bl' | 'tr' | 'tl'
-export type CoachSheetSize = 'compact' | 'expanded'
+/** compact = quick sheet; page = full-screen Coach app */
+export type CoachSheetSize = 'compact' | 'page'
 export type CoachMessage = {
   id: string
   role: 'user' | 'assistant'
@@ -41,14 +47,23 @@ type CoachContextValue = {
   quota: CoachQuotaState | null
   configured: boolean | null
   quotaLoaded: boolean
+  conversations: CoachConversationSummary[]
+  activeConversationId: string | null
+  historyOpen: boolean
   fabRef: React.RefObject<HTMLButtonElement | null>
   setDock: (dock: CoachDockId) => void
   openCoach: () => void
   closeCoach: () => void
-  toggleSize: () => void
+  expandToPage: () => void
   setSize: (size: CoachSheetSize) => void
   sendMessage: (text: string) => Promise<void>
   clearError: () => void
+  newChat: () => void
+  openHistory: () => void
+  closeHistory: () => void
+  loadConversation: (id: string) => Promise<void>
+  deleteConversation: (id: string) => Promise<void>
+  refreshConversations: () => Promise<void>
 }
 
 const DOCK_KEY = 'grind_coach_fab_dock'
@@ -108,6 +123,13 @@ export function CoachProvider({ children }: { children: ReactNode }) {
   const [quota, setQuota] = useState<CoachQuotaState | null>(null)
   const [configured, setConfigured] = useState<boolean | null>(null)
   const [quotaLoaded, setQuotaLoaded] = useState(false)
+  const [conversations, setConversations] = useState<CoachConversationSummary[]>(
+    [],
+  )
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(
+    null,
+  )
+  const [historyOpen, setHistoryOpen] = useState(false)
   const fabRef = useRef<HTMLButtonElement | null>(null)
   const openedOnce = useRef(false)
 
@@ -143,32 +165,112 @@ export function CoachProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const refreshConversations = useCallback(async () => {
+    try {
+      const res = await fetch('/api/coach/conversations')
+      if (!res.ok) return
+      const data = (await res.json()) as {
+        conversations?: CoachConversationSummary[]
+      }
+      setConversations(data.conversations ?? [])
+    } catch {
+      // History is optional until migration 35 is applied.
+    }
+  }, [])
+
   const openCoach = useCallback(() => {
     setOpen(true)
     setSize('compact')
+    setHistoryOpen(false)
     setError(null)
     if (!openedOnce.current) {
       openedOnce.current = true
       void refreshQuota()
-    } else if (!quotaLoaded) {
-      void refreshQuota()
+      void refreshConversations()
+    } else {
+      if (!quotaLoaded) void refreshQuota()
+      void refreshConversations()
     }
-  }, [quotaLoaded, refreshQuota])
+  }, [quotaLoaded, refreshQuota, refreshConversations])
 
   const closeCoach = useCallback(() => {
     setOpen(false)
     setSize('compact')
-    // Return focus to FAB after close settles.
+    setHistoryOpen(false)
     requestAnimationFrame(() => {
       fabRef.current?.focus()
     })
   }, [])
 
-  const toggleSize = useCallback(() => {
-    setSize(s => (s === 'compact' ? 'expanded' : 'compact'))
-  }, [])
+  const expandToPage = useCallback(() => {
+    setSize('page')
+    setHistoryOpen(false)
+    void refreshConversations()
+  }, [refreshConversations])
 
   const clearError = useCallback(() => setError(null), [])
+
+  const newChat = useCallback(() => {
+    if (streaming) return
+    setMessages([])
+    setActiveConversationId(null)
+    setHistoryOpen(false)
+    setError(null)
+  }, [streaming])
+
+  const openHistory = useCallback(() => {
+    setHistoryOpen(true)
+    void refreshConversations()
+  }, [refreshConversations])
+
+  const closeHistory = useCallback(() => setHistoryOpen(false), [])
+
+  const loadConversation = useCallback(
+    async (id: string) => {
+      if (streaming) return
+      setError(null)
+      try {
+        const res = await fetch(`/api/coach/conversations/${id}`)
+        if (!res.ok) {
+          setError('Could not open that chat.')
+          return
+        }
+        const data = (await res.json()) as {
+          messages?: CoachMessage[]
+          conversation?: CoachConversationSummary
+        }
+        setActiveConversationId(id)
+        setMessages(data.messages ?? [])
+        setHistoryOpen(false)
+        setSize('page')
+      } catch {
+        setError('Could not open that chat.')
+      }
+    },
+    [streaming],
+  )
+
+  const deleteConversation = useCallback(
+    async (id: string) => {
+      try {
+        const res = await fetch(`/api/coach/conversations/${id}`, {
+          method: 'DELETE',
+        })
+        if (!res.ok) {
+          setError('Could not delete that chat.')
+          return
+        }
+        setConversations(prev => prev.filter(c => c.id !== id))
+        if (activeConversationId === id) {
+          setActiveConversationId(null)
+          setMessages([])
+        }
+      } catch {
+        setError('Could not delete that chat.')
+      }
+    },
+    [activeConversationId],
+  )
 
   const sendMessage = useCallback(
     async (raw: string) => {
@@ -193,12 +295,26 @@ export function CoachProvider({ children }: { children: ReactNode }) {
         .map(m => ({ role: m.role, content: m.content }))
 
       const assistantId = uid()
+      const wasEmpty = messages.length === 0
       setMessages(prev => [
         ...prev,
         userMsg,
         { id: assistantId, role: 'assistant', content: '' },
       ])
       setStreaming(true)
+
+      // Optimistic title bump for a brand-new thread.
+      if (!activeConversationId && wasEmpty) {
+        setConversations(prev => [
+          {
+            id: 'pending',
+            title: titleFromMessage(text),
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+          ...prev.filter(c => c.id !== 'pending'),
+        ])
+      }
 
       try {
         const res = await fetch('/api/coach/chat', {
@@ -208,8 +324,29 @@ export function CoachProvider({ children }: { children: ReactNode }) {
             message: text,
             history,
             unit: unitLabel,
+            conversationId: activeConversationId,
           }),
         })
+
+        const convHeader = res.headers.get('X-Coach-Conversation-Id')
+        if (convHeader) {
+          setActiveConversationId(convHeader)
+          setConversations(prev => {
+            const existing = prev.find(c => c.id === convHeader)
+            const without = prev.filter(
+              c => c.id !== 'pending' && c.id !== convHeader,
+            )
+            return [
+              {
+                id: convHeader,
+                title: existing?.title ?? titleFromMessage(text),
+                createdAt: existing?.createdAt ?? new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              },
+              ...without,
+            ]
+          })
+        }
 
         if (!res.ok) {
           let errText = 'Coach failed to respond. Try again in a moment.'
@@ -227,7 +364,6 @@ export function CoachProvider({ children }: { children: ReactNode }) {
               errText = 'Rate limit reached. Try again later.'
             }
           }
-          // Drop empty assistant placeholder on hard failure.
           setMessages(prev =>
             prev.filter(m => !(m.id === assistantId && !m.content)),
           )
@@ -278,13 +414,19 @@ export function CoachProvider({ children }: { children: ReactNode }) {
         setError('Could not reach Coach. Check your connection.')
       } finally {
         setStreaming(false)
-        // Re-sync from the server instead of trusting an optimistic count:
-        // a failed/empty turn gets refunded server-side (see route.ts), so
-        // the true remaining count can only be known after the fact.
         void refreshQuota()
+        void refreshConversations()
       }
     },
-    [messages, quota, streaming, unitLabel, refreshQuota],
+    [
+      messages,
+      quota,
+      streaming,
+      unitLabel,
+      refreshQuota,
+      refreshConversations,
+      activeConversationId,
+    ],
   )
 
   const value = useMemo<CoachContextValue>(
@@ -298,14 +440,23 @@ export function CoachProvider({ children }: { children: ReactNode }) {
       quota,
       configured,
       quotaLoaded,
+      conversations,
+      activeConversationId,
+      historyOpen,
       fabRef,
       setDock,
       openCoach,
       closeCoach,
-      toggleSize,
+      expandToPage,
       setSize,
       sendMessage,
       clearError,
+      newChat,
+      openHistory,
+      closeHistory,
+      loadConversation,
+      deleteConversation,
+      refreshConversations,
     }),
     [
       open,
@@ -317,12 +468,21 @@ export function CoachProvider({ children }: { children: ReactNode }) {
       quota,
       configured,
       quotaLoaded,
+      conversations,
+      activeConversationId,
+      historyOpen,
       setDock,
       openCoach,
       closeCoach,
-      toggleSize,
+      expandToPage,
       sendMessage,
       clearError,
+      newChat,
+      openHistory,
+      closeHistory,
+      loadConversation,
+      deleteConversation,
+      refreshConversations,
     ],
   )
 

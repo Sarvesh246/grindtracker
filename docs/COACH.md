@@ -5,11 +5,13 @@ Server-only Gemini key; free-tier friendly with hard per-user rate limits.
 
 ## Apply SQL first
 
-Paste and run [`sql/33-coach.sql`](sql/33-coach.sql) then
-[`sql/34-coach-quota-fixes.sql`](sql/34-coach-quota-fixes.sql) in the Supabase
-SQL editor **before** calling `/api/coach/chat`. 33 creates `coach_messages` +
-RLS + rate-limit trigger; 34 adds a refund path for failed turns and the
-admin dev-unlimited toggle (both described below).
+Paste and run [`sql/33-coach.sql`](sql/33-coach.sql), then
+[`sql/34-coach-quota-fixes.sql`](sql/34-coach-quota-fixes.sql), then
+[`sql/35-coach-conversations.sql`](sql/35-coach-conversations.sql) in the
+Supabase SQL editor **before** relying on saved chats. 33 creates
+`coach_messages` + RLS + rate-limit trigger; 34 adds a refund path for failed
+turns and the admin dev-unlimited toggle; 35 adds `coach_conversations` so
+threads can be listed, reopened, and deleted.
 
 Limits (also in `src/lib/coach/constants.ts` — change both):
 
@@ -124,10 +126,13 @@ Floating coach on authenticated `(app)` routes (`src/components/coach/`):
 
 | Piece | Behavior |
 | --- | --- |
-| **FAB** | Lime 56px circle, G+spark mark; drag past 8px snaps to four corners (`br` default). Dock in `localStorage` key `grind_coach_fab_dock`. |
+| **FAB** | Lime 56px orb with a large G+spark mark; drag past 8px shows a soft liquid stretch, then snaps to four corners (`br` default). Dock in `localStorage` key `grind_coach_fab_dock`. |
 | **Visibility** | Hidden when `pathname === '/log' && searchParams.has('day')` (active workout), same as bottom nav. |
-| **Sheet** | Compact / expanded sizes; backdrop close; Escape closes; session history in memory only. Assistant replies render a light Markdown subset (paragraphs, lists, **bold**) via `CoachMessageContent` — raw `**` / bullet markers should never show. |
+| **Compact sheet** | Quick “type to orb” card; backdrop closes; expand morphs fluidly into the full Coach page. |
+| **Full page** | Dedicated chat surface (Siri-app style) with New + History. Close dismisses. Escape closes history first, then Coach. |
+| **Saved chats** | `GET/POST /api/coach/conversations`, `GET/DELETE /api/coach/conversations/[id]`. Chat `POST` accepts `conversationId` and returns `X-Coach-Conversation-Id`. |
+| **Markdown** | Assistant replies render via `CoachMessageContent` (paragraphs, lists, labels, **bold**). |
 | **API** | First open → `GET /api/coach/chat` (quota). Send → `POST` stream + `unit` from `UnitContext`; quota pill re-synced via `GET` after every turn settles. |
-| **z-index** | FAB 420 · backdrop 430 · sheet 440. |
+| **z-index** | FAB 420 · backdrop 430 · sheet/page 440. |
 
-Not a nav tab; not a `/coach` route in v1.
+Not a nav tab; the full experience is an overlay page, not a `/coach` route.

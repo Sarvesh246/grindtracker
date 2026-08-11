@@ -23,3 +23,7 @@ export {
   mapCoachRateLimitError,
   type CoachQuota,
 } from './rateLimit'
+export {
+  titleFromMessage,
+  type CoachConversationSummary,
+} from './conversations'
