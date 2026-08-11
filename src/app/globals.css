@@ -650,8 +650,8 @@ html.reduce-motion *::after {
   z-index: 100;
 }
 
-/* Desktop top-nav tab pills: hover feedback + active highlight.
-   (Background lives here, not inline, so :hover can take effect.) */
+/* Desktop top-nav tabs: quiet hover only. Active state is color/weight on the
+   icon+label — no filled pill behind the selected tab. */
 .top-nav-tab {
   background-color: transparent;
   transition: background-color 150ms ease;
@@ -661,7 +661,7 @@ html.reduce-motion *::after {
 }
 .top-nav-tab[data-active='true'],
 .top-nav-tab[data-active='true']:hover {
-  background-color: var(--accent-wash);
+  background-color: transparent;
 }
 
 /* Centered content container. Mobile = full width (unchanged). */

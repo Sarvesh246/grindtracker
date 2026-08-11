@@ -1,0 +1,9 @@
+# Not needed for the Next.js production build on Vercel.
+.cursor
+docs
+scripts
+test-results
+playwright-report
+playwright.config.*
+**/*.test.ts
+**/*.spec.ts

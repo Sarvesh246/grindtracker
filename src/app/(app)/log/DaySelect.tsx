@@ -6,8 +6,6 @@ import { useTheme } from '@/lib/contexts/ThemeContext'
 import { Exercise, type DayCategory, UserRotation } from '@/lib/types'
 import {
   NAMED_DAY_COLORS,
-  dayTintBg,
-  dayTintBorder,
   resolveDayColor,
   resolveDayTextColor,
 } from '@/lib/utils/dayColors'
@@ -319,10 +317,13 @@ export default function DaySelect() {
               const colorKey = categoryForDay(key, dayCategories)
               const fillColor = resolveDayColor(colorKey, extraTypes)
               const labelColor = resolveDayTextColor(colorKey, extraTypes, isLight)
-              // UP NEXT outline uses the day's category fill (not generic accent).
+              // Category color accents the title/icon + UP NEXT chrome only —
+              // cards stay on the normal surface so the grid isn't a rainbow.
+              // UP NEXT uses a 2px category outline so it reads clearly vs the
+              // thin neutral border on every other day.
               const idleBorder = isUpNext
-                ? `1px solid ${fillColor}`
-                : `1px solid ${dayTintBorder(fillColor, isLight)}`
+                ? `2px solid ${fillColor}`
+                : '1px solid var(--border)'
               return (
                 <button
                   key={key}
@@ -335,7 +336,7 @@ export default function DaySelect() {
                   style={{
                     '--i': idx,
                     position: 'relative',
-                    backgroundColor: dayTintBg(fillColor, isLight),
+                    backgroundColor: 'var(--surface)',
                     border: idleBorder,
                     borderRadius: '12px',
                     padding: '20px',
@@ -344,10 +345,18 @@ export default function DaySelect() {
                     width: '100%',
                     transition: 'border-color 150ms ease, background-color 150ms ease',
                   } as CSSProperties}
-                  onMouseEnter={e => (e.currentTarget.style.borderColor = fillColor)}
-                  onMouseLeave={e => (e.currentTarget.style.border = idleBorder)}
-                  onTouchStart={e => (e.currentTarget.style.borderColor = fillColor)}
-                  onTouchEnd={e => (e.currentTarget.style.border = idleBorder)}
+                  onMouseEnter={e => {
+                    if (!isUpNext) e.currentTarget.style.borderColor = fillColor
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.border = idleBorder
+                  }}
+                  onTouchStart={e => {
+                    if (!isUpNext) e.currentTarget.style.borderColor = fillColor
+                  }}
+                  onTouchEnd={e => {
+                    e.currentTarget.style.border = idleBorder
+                  }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: labelColor }}>

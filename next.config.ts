@@ -55,6 +55,30 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   // Don't advertise the framework version to scanners.
   poweredByHeader: false,
+  // On Vercel, skip the redundant `tsc` pass (~10–11s on Hobby 2-core).
+  // Runtime output is unchanged; typecheck still runs locally via
+  // `npm run typecheck` / the editor. Local `next build` still typechecks.
+  typescript: {
+    ignoreBuildErrors: process.env.VERCEL === '1',
+  },
+  // Keep serverless traces lean — faster deploy + smaller build cache.
+  // These paths are never needed at runtime for any route.
+  outputFileTracingExcludes: {
+    '/*': [
+      'docs/**',
+      'scripts/**',
+      '.cursor/**',
+      'node_modules/@playwright/**',
+      'node_modules/playwright/**',
+      'node_modules/playwright-core/**',
+      'node_modules/@esbuild/**',
+      'node_modules/tsx/**',
+      'node_modules/eslint/**',
+      'node_modules/eslint-*/**',
+      'node_modules/@eslint/**',
+      'node_modules/typescript/**',
+    ],
+  },
   async headers() {
     return [
       {
