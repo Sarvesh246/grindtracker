@@ -2194,7 +2194,9 @@ html.reduce-motion .coach-history {
   background: var(--surface-elevated);
   color: var(--text-primary);
   border: 1px solid var(--border);
-  border-radius: 12px 12px 12px 4px;
+  /* Softer top-left under the overlapping G badge. */
+  border-radius: 16px 14px 14px 6px;
+  padding-top: 12px;
 }
 .coach-bubble__pending {
   color: var(--text-muted);
