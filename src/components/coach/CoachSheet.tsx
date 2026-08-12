@@ -1725,7 +1725,7 @@ export default function CoachSheet() {
                             className="coach-msg__avatar"
                             aria-hidden
                           >
-                            <CoachFabIcon size={18} />
+                            <CoachFabIcon size={28} />
                           </span>
                           <div className="coach-msg__stack">
                             {bubble}

@@ -2030,9 +2030,9 @@ html.reduce-motion .coach-history {
   gap: 0;
   width: 100%;
   min-width: 0;
-  /* Room for the overlapping G badge on the bubble’s top-left corner. */
-  padding-top: 11px;
-  padding-left: 11px;
+  /* Seat the badge on the corner — most of it outside, a bite into the bubble. */
+  padding-top: 12px;
+  padding-left: 14px;
 }
 .coach-msg__avatar {
   position: absolute;
@@ -2055,7 +2055,10 @@ html.reduce-motion .coach-history {
     0 2px 10px rgba(0, 0, 0, 0.28);
 }
 .coach-msg__avatar svg {
+  /* Match FAB fill ratio (~48/56) so the G+spark reads as solid, not padded. */
   display: block;
+  width: 28px;
+  height: 28px;
 }
 .coach-msg__stack {
   display: flex;
@@ -2119,6 +2122,10 @@ html.reduce-motion .coach-history {
 .coach-sheet--page .coach-bubble {
   /* Page gutter padding eases separately; max-width lives on .coach-msg. */
   padding: 10px 14px;
+}
+.coach-sheet--page .coach-bubble--assistant {
+  /* Keep left clearance under the overlapping G (overrides page padding above). */
+  padding: 12px 14px 12px 24px;
 }
 /* Organic AI reply enter — Apple-soft rise (backwards only, never `both`). */
 @keyframes coach-reply-in {
@@ -2196,7 +2203,8 @@ html.reduce-motion .coach-history {
   border: 1px solid var(--border);
   /* Softer top-left under the overlapping G badge. */
   border-radius: 16px 14px 14px 6px;
-  padding-top: 12px;
+  /* Extra left pad so the first glyph clears the badge bite (~18px inward). */
+  padding: 12px 12px 12px 22px;
 }
 .coach-bubble__pending {
   color: var(--text-muted);
