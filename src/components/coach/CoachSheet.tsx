@@ -57,8 +57,33 @@ const EXPAND_RUBBER_AT = 160
 /** Gravity-ish assist while flinging the sheet off-screen (px/s²). */
 const FLING_GRAVITY = 2800
 
-/** Human-readable "when the next daily slot frees" from quota.dailyResetsAt. */
+/**
+ * Compact reset label for the header (fits beside actions).
+ * Examples: `soon`, `12m`, `3h`, `3h20m`, `Aug 12`.
+ */
 function formatQuotaReset(iso: string | null | undefined): string | null {
+  if (!iso) return null
+  const at = new Date(iso)
+  if (Number.isNaN(at.getTime())) return null
+  const ms = at.getTime() - Date.now()
+  if (ms <= 0) return 'soon'
+  const mins = Math.max(1, Math.ceil(ms / 60_000))
+  if (mins < 60) return `${mins}m`
+  const hours = Math.floor(mins / 60)
+  const rem = mins % 60
+  if (hours < 48) {
+    // Drop minutes once we're past a few hours — header is tight.
+    if (rem === 0 || hours >= 4) return `${hours}h`
+    return `${hours}h${rem}m`
+  }
+  return at.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+  })
+}
+
+/** Longer reset phrasing for banners / title tooltips. */
+function formatQuotaResetLong(iso: string | null | undefined): string | null {
   if (!iso) return null
   const at = new Date(iso)
   if (Number.isNaN(at.getTime())) return null
@@ -130,6 +155,8 @@ export default function CoachSheet() {
   const titleId = useId()
   const listRef = useRef<HTMLDivElement>(null)
   const sheetRef = useRef<HTMLDivElement>(null)
+  /** Owns translateY for pull + gesture dismiss (independent of size classes). */
+  const motionRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const stickBottom = useRef(true)
   const [draft, setDraft] = useState('')
@@ -156,11 +183,20 @@ export default function CoachSheet() {
   const settleRaf = useRef<number | null>(null)
   /** Keep drag offset through exit so the sheet doesn't jump before fade-out. */
   const [gestureDismissY, setGestureDismissY] = useState(0)
+  /**
+   * Latched for the whole gesture-dismiss → unmount window. Never derive
+   * solely from Y>0 — clearing Y for one frame used to drop
+   * `closing-from-drag` and replay coach-sheet-out from translateY(0).
+   */
+  const [gestureDismissActive, setGestureDismissActive] = useState(false)
+  const gestureDismissActiveRef = useRef(false)
   /** Backdrop opacity at gesture-dismiss commit — fade from here, not from 1. */
   const [dismissBackdropOpacity, setDismissBackdropOpacity] = useState<
     number | null
   >(null)
   const [backdropOut, setBackdropOut] = useState(false)
+  /** Opacity fade on the motion shell after drag-off (no transform keyframes). */
+  const [dragFadeOut, setDragFadeOut] = useState(false)
   /** Page sheet has no scrim until a pull-to-close fling starts. */
   const [pullDismissing, setPullDismissing] = useState(false)
 
@@ -183,29 +219,31 @@ export default function CoachSheet() {
   const dailyRemaining = quota?.dailyRemaining
   const dailyLimit = quota?.dailyLimit
   const resetRelative = formatQuotaReset(quota?.dailyResetsAt)
+  const resetLong = formatQuotaResetLong(quota?.dailyResetsAt)
   const resetClock = formatQuotaResetClock(quota?.dailyResetsAt)
   const capped =
     !quota?.unlimited && dailyRemaining != null && dailyRemaining <= 0
   const sendDisabled =
     !draft.trim() || streaming || capped || configured === false
 
+  // Header is tight beside actions — keep copy short; full detail in title.
+  // Unlimited/dev: never show N/limit (denominator is meaningless when bypassed).
   const quotaLabel = (() => {
     if (!quota) return '—'
-    const left =
-      dailyRemaining != null && dailyLimit != null
-        ? `${dailyRemaining}/${dailyLimit}`
-        : dailyRemaining != null
-          ? `${dailyRemaining} left`
-          : null
-    const resetBit = resetRelative ? ` · resets ${resetRelative}` : ''
+    const resetBit = resetRelative ? ` · ${resetRelative}` : ''
     if (quota.unlimited) {
-      return left
-        ? `Unlimited (dev) · ${left}${resetBit}`
-        : `Unlimited (dev)${resetBit}`
+      // Short "Dev · N left" — "Unlimited (dev) · N left · reset" overflowed.
+      // Once past the normal window, remaining clamps at 0; don't show "0 left".
+      if (dailyRemaining != null && dailyRemaining > 0) {
+        return `Dev · ${dailyRemaining} left`
+      }
+      return `Dev · uncapped`
     }
     if (dailyRemaining != null) {
+      // Prefer "N left" over "N/15" — fits better next to header actions.
       return `${dailyRemaining} left${resetBit}`
     }
+    if (dailyLimit != null) return `—/${dailyLimit}`
     return '…'
   })()
 
@@ -221,25 +259,44 @@ export default function CoachSheet() {
     }
   }, [])
 
-  // Clear dismiss leftovers on a fresh open (render-time sync — same pattern as
-  // visualSize). pullY is ignored while idle (see sheetTransform) so a leaked
-  // offset after gesture-dismiss can't snap the sheet down post-enter.
-  // Clear dismiss leftovers once we're idle and open again (e.g. after an
-  // interrupted close). Don't clear mid-fling — pullPhase is 'settling' then.
+  // Clear dismiss leftovers on the rising edge of `open` only — never while a
+  // fling is in progress (open is still true then, and wiping the latch
+  // re-enabled coach-sheet-out → middle flash).
+  const wasOpenRef = useRef(open)
+  if (open && !wasOpenRef.current) {
+    gestureDismissActiveRef.current = false
+    if (gestureDismissActive) setGestureDismissActive(false)
+    if (gestureDismissY !== 0) setGestureDismissY(0)
+    if (dismissBackdropOpacity != null) setDismissBackdropOpacity(null)
+    if (backdropOut) setBackdropOut(false)
+    if (pullDismissing) setPullDismissing(false)
+    if (dragFadeOut) setDragFadeOut(false)
+    if (pullPhase === 'idle' && pullY !== 0) setPullY(0)
+  }
+  wasOpenRef.current = open
+  // Idle reopen leftovers (e.g. interrupted non-gesture close).
   if (
     activelyOpen &&
     pullPhase === 'idle' &&
+    !gestureDismissActive &&
     (gestureDismissY !== 0 ||
       dismissBackdropOpacity != null ||
       backdropOut ||
-      pullDismissing)
+      pullDismissing ||
+      dragFadeOut)
   ) {
     setGestureDismissY(0)
     setDismissBackdropOpacity(null)
     setBackdropOut(false)
     setPullDismissing(false)
+    setDragFadeOut(false)
   }
-  if (activelyOpen && pullPhase === 'idle' && pullY !== 0) {
+  if (
+    activelyOpen &&
+    pullPhase === 'idle' &&
+    !gestureDismissActive &&
+    pullY !== 0
+  ) {
     setPullY(0)
   }
 
@@ -250,6 +307,14 @@ export default function CoachSheet() {
     const id = requestAnimationFrame(() => setBackdropOut(true))
     return () => cancelAnimationFrame(id)
   }, [closing, dismissBackdropOpacity, reduceMotion])
+
+  // Gesture dismiss: opacity-only fade on the motion shell — never run
+  // coach-sheet-out (its from{translateY(0)} is the middle flash).
+  useEffect(() => {
+    if (!closing || !gestureDismissActive || reduceMotion) return
+    const id = requestAnimationFrame(() => setDragFadeOut(true))
+    return () => cancelAnimationFrame(id)
+  }, [closing, gestureDismissActive, reduceMotion])
 
   // Focus after the enter spring settles so iOS keyboard + visualViewport pan
   // can't fight the open animation (or strand the composer under the keyboard).
@@ -263,21 +328,6 @@ export default function CoachSheet() {
     )
     return () => window.clearTimeout(t)
   }, [open, closing, reduceMotion])
-
-  useEffect(() => {
-    if (!open || closing) return
-    function onKey(e: globalThis.KeyboardEvent) {
-      if (e.key !== 'Escape') return
-      e.preventDefault()
-      if (historyOpen) {
-        closeHistory()
-        return
-      }
-      closeCoach()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open, closing, historyOpen, closeCoach, closeHistory])
 
   useEffect(() => {
     if (!open || closing || !listRef.current) return
@@ -340,23 +390,32 @@ export default function CoachSheet() {
   /**
    * Continue the pull motion off-screen, then close — same physical sheet,
    * not a snappy cut/fade in place. Never reset translateY to 0 before exit.
+   * Gesture dismiss owns Y on the motion shell until unmount; CSS transform
+   * exit keyframes are banned for this path (middle flash).
    */
   const flingOffAndClose = useCallback(
     (fromY: number, fromVy: number) => {
       cancelSettle()
-      const h = sheetH.current || 400
+      const h = sheetH.current || sheetRef.current?.offsetHeight || 400
+      sheetH.current = h
       const offY = Math.max(fromY + 48, h + 24)
       const dismissAt = sheetDismissThreshold(h)
       const progress = Math.min(1, Math.max(0, fromY) / dismissAt)
       setDismissBackdropOpacity(0.45 * (1 - progress * 0.85))
       setBackdropOut(false)
+      setDragFadeOut(false)
       setPullDismissing(true)
+      // Latch before closeCoach so the first closing render already has
+      // closing-from-drag / held Y — no frame of coach-sheet-out at rest.
+      gestureDismissActiveRef.current = true
+      setGestureDismissActive(true)
 
       if (reduceMotion) {
         // Jump-unmount from the finger offset — no settle-to-0 flash.
-        setGestureDismissY(Math.max(fromY, 1))
-        pullYRef.current = fromY
-        setPullY(fromY)
+        const holdY = Math.max(fromY, 1)
+        setGestureDismissY(holdY)
+        pullYRef.current = holdY
+        setPullY(holdY)
         setPullPhase('idle')
         closeCoach()
         return
@@ -382,7 +441,7 @@ export default function CoachSheet() {
           setPullPhase('idle')
           settleRaf.current = null
           closeCoach()
-          // Keep sliding a bit further during the exit fade.
+          // Keep sliding a bit further during the exit fade (Y only goes down).
           requestAnimationFrame(() => {
             const extra = holdY + Math.min(v * 0.18, 120)
             setGestureDismissY(prev => Math.max(prev, extra))
@@ -398,10 +457,51 @@ export default function CoachSheet() {
     [cancelSettle, closeCoach, reduceMotion],
   )
 
+  /**
+   * X / backdrop — cancel any in-flight settle so CSS exit doesn't fight a
+   * leftover translateY (or flash through rest on settle→0). Escape uses a
+   * history-first path separately.
+   */
+  const requestClose = useCallback(() => {
+    if (closing || gestureDismissActiveRef.current) return
+    cancelSettle()
+    const y = pullYRef.current
+    // Mid-pull / mid-settle with meaningful offset → continue as gesture dismiss
+    // so Y never snaps to 0 under coach-sheet-out.
+    if (
+      (pullPhase === 'dragging' || pullPhase === 'settling') &&
+      y > 24
+    ) {
+      flingOffAndClose(y, Math.max(velY.current, 520))
+      return
+    }
+    pullYRef.current = 0
+    setPullY(0)
+    setPullPhase('idle')
+    setPullDismissing(false)
+    setGestureDismissY(0)
+    closeCoach()
+  }, [cancelSettle, closeCoach, closing, flingOffAndClose, pullPhase])
+
+  useEffect(() => {
+    if (!open || closing) return
+    function onKey(e: globalThis.KeyboardEvent) {
+      if (e.key !== 'Escape') return
+      e.preventDefault()
+      if (historyOpen) {
+        closeHistory()
+        return
+      }
+      requestClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open, closing, historyOpen, closeHistory, requestClose])
+
   const beginPull = useCallback(
     (e: ReactPointerEvent, fromBody: boolean) => {
       // Interruptible: allow grab during settle / enter (not while closing).
-      if (closing || historyOpen) return
+      if (closing || historyOpen || gestureDismissActiveRef.current) return
       if (fromBody) {
         const el = listRef.current
         if (el && el.scrollTop > 0) return
@@ -410,11 +510,13 @@ export default function CoachSheet() {
       const t = e.target as HTMLElement | null
       if (t?.closest('button, a, textarea, input')) return
 
-      // Capture live offset before killing enter/settle motion.
+      // Capture live offset before killing enter/settle motion (motion shell
+      // owns Y during pull; fall back to sheet for enter-keyframe interrupts).
       const liveY =
-        pullPhase === 'dragging'
+        pullPhase === 'dragging' || pullPhase === 'settling'
           ? pullYRef.current
-          : readTranslateY(sheetRef.current)
+          : readTranslateY(motionRef.current) ||
+            readTranslateY(sheetRef.current)
       cancelSettle()
       setPullDismissing(false)
       setDismissBackdropOpacity(null)
@@ -507,7 +609,7 @@ export default function CoachSheet() {
 
       // Three resting ends: page (expanded), compact (mini), off-screen (closed).
       // Finger tracks 1:1 while down; release springs to the chosen end.
-      // From page: medium pulls + soft flicks → compact. Close only when clearly
+      // From page: anything in the minimize↔dismiss band → compact. Close only
       // past dismissAt OR a hard flick (soft flick alone never skips minimize).
       // From compact: further pull / soft flick closes; pull up expands.
       if (y < 0 || flickedUp) {
@@ -515,7 +617,7 @@ export default function CoachSheet() {
           shouldExpand = true
         }
       } else if (size === 'page') {
-        if (y > dismissAt || hardFlickDown) {
+        if (hardFlickDown || y > dismissAt) {
           shouldClose = true
         } else if (y > minimizeAt || flickedDown) {
           shouldCollapse = true
@@ -577,25 +679,27 @@ export default function CoachSheet() {
   const empty = messages.length === 0
   const dragging = pullPhase === 'dragging'
   const settling = pullPhase === 'settling'
-  // Gesture dismiss keeps its Y whether closing has latched or not — never
-  // fall back to resting layout mid-handoff.
-  const exitDismissY =
-    gestureDismissY > 0
-      ? Math.max(gestureDismissY, pullY)
-      : closing && pullDismissing && pullY > 0
-        ? pullY
-        : 0
-  const fromDragDismiss = exitDismissY > 0
+  // Latched for the entire dismiss→unmount window — never drop mid-exit.
+  const fromDragDismiss =
+    gestureDismissActive || gestureDismissActiveRef.current
+  const motionY = (() => {
+    if (dragging || settling || pullDismissing || fromDragDismiss) {
+      // Never let Y collapse to 0 while dismissing — that's the middle flash.
+      const y = Math.max(pullY, gestureDismissY, fromDragDismiss ? 1 : 0)
+      return y
+    }
+    return 0
+  })()
+
   const origin =
     dock === 'tl' || dock === 'bl' ? 'bottom left' : 'bottom right'
 
+  // Size morph only — Y lives on the motion shell, never on CSS exit keyframes
+  // for gesture dismiss (coach-sheet-out from{translateY(0)} = middle flash).
   const sheetTransition = (() => {
+    if (reduceMotion || dragging || settling || fromDragDismiss) return 'none'
+    if (closing) return 'none'
     const curve = 'cubic-bezier(0.22, 1, 0.36, 1)'
-    // Gesture-dismiss exit: continue translateY off-screen while opacity fades.
-    if (!reduceMotion && closing && fromDragDismiss) {
-      return `transform ${EXIT_MS}ms ${curve}`
-    }
-    if (reduceMotion || dragging || settling) return 'none'
     const parts: string[] = [
       `inset ${SIZE_MS}ms ${curve}`,
       `height ${SIZE_MS}ms ${curve}`,
@@ -617,19 +721,6 @@ export default function CoachSheet() {
       : 0
   const backdropOpacity = 0.45 * (1 - dismissProgress * 0.85)
 
-  const sheetTransform = (() => {
-    // Live pull / RAF settle / post-fling hold — always prefer the finger offset.
-    if (dragging || settling || pullDismissing) {
-      return `translate3d(0, ${pullY}px, 0)`
-    }
-    if (fromDragDismiss) {
-      return `translate3d(0, ${exitDismissY}px, 0)`
-    }
-    // Button-close exit uses CSS keyframes for translate; don't fight them.
-    if (closing) return undefined
-    return undefined
-  })()
-
   // Compact sheet always has a scrim; full page does not (except gesture-dismiss
   // from compact, which keeps the dimmed scrim through the exit).
   const showBackdrop = !isPage || fromDragDismiss || pullDismissing
@@ -645,6 +736,24 @@ export default function CoachSheet() {
           ? ({ bottom: keyboardInset + 12 } as const)
           : undefined
       : undefined
+
+  const motionStyle: CSSProperties = {
+    transform:
+      motionY !== 0 ? `translate3d(0, ${motionY}px, 0)` : undefined,
+    // Hold Y with no transform transition — a transition to identity was a
+    // second flash path when the class/Y handoff glitched for one frame.
+    transition:
+      !reduceMotion && closing && fromDragDismiss
+        ? `opacity 480ms cubic-bezier(0.22, 1, 0.36, 1)`
+        : 'none',
+    opacity:
+      closing && fromDragDismiss
+        ? reduceMotion || dragFadeOut
+          ? 0
+          : 1
+        : undefined,
+    pointerEvents: closing ? 'none' : undefined,
+  }
 
   return (
     <>
@@ -667,7 +776,7 @@ export default function CoachSheet() {
               : ''
           }`}
           aria-label="Close Coach"
-          onClick={closeCoach}
+          onClick={requestClose}
           style={
             !reduceMotion &&
             (dragging || settling || pullDismissing) &&
@@ -687,6 +796,13 @@ export default function CoachSheet() {
         />
       ) : null}
       <div
+        ref={motionRef}
+        className={`coach-sheet-motion${
+          fromDragDismiss ? ' coach-sheet-motion--drag-dismiss' : ''
+        }`}
+        style={motionStyle}
+      >
+      <div
         ref={sheetRef}
         className={`coach-sheet coach-sheet--${visualSize}${
           closing ? ' coach-sheet--closing' : ''
@@ -700,7 +816,6 @@ export default function CoachSheet() {
         style={{
           transformOrigin: origin,
           transition: sheetTransition,
-          transform: sheetTransform,
           ...sheetKeyboardStyle,
         }}
       >
@@ -811,7 +926,7 @@ export default function CoachSheet() {
               size="sm"
               variant="surface"
               haptic="light"
-              onClick={closeCoach}
+              onClick={requestClose}
               style={{ width: 32, height: 32 }}
             >
               <svg
@@ -859,8 +974,8 @@ export default function CoachSheet() {
                     <p className="coach-sheet__quota-banner-body">
                       You’ve used all {quota?.dailyLimit ?? 15} messages in the
                       current window.
-                      {resetRelative
-                        ? ` Chat with GRIND Coach again ${resetRelative}${
+                      {resetLong
+                        ? ` Chat with GRIND Coach again ${resetLong}${
                             resetClock ? ` (around ${resetClock})` : ''
                           }.`
                         : ' Chat again after the rolling 24-hour window resets.'}
@@ -923,8 +1038,8 @@ export default function CoachSheet() {
                     <p className="coach-sheet__quota-banner-body">
                       You’ve used all {quota?.dailyLimit ?? 15} messages in the
                       current window.
-                      {resetRelative
-                        ? ` Chat with GRIND Coach again ${resetRelative}${
+                      {resetLong
+                        ? ` Chat with GRIND Coach again ${resetLong}${
                             resetClock ? ` (around ${resetClock})` : ''
                           }.`
                         : ' Chat again after the rolling 24-hour window resets.'}
@@ -983,6 +1098,7 @@ export default function CoachSheet() {
             </svg>
           </button>
         </form>
+      </div>
       </div>
     </>
   )

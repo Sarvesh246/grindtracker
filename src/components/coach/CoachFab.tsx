@@ -362,11 +362,19 @@ export default function CoachFab() {
           }
         : undefined
 
+  // Liquid stretch lives on the filled morph disc — the G stays upright
+  // (counter-scale) so velocity squash never warps/rotates the glyph.
   const morphStyle =
     morphing
       ? {
           transform: `scale(${squash.sx}, ${squash.sy})`,
           borderRadius: dropletRadius(squash.sx, squash.sy),
+        }
+      : undefined
+  const glyphStyle =
+    morphing
+      ? {
+          transform: `scale(${1 / squash.sx}, ${1 / squash.sy})`,
         }
       : undefined
 
@@ -396,7 +404,9 @@ export default function CoachFab() {
     >
       <span className="coach-fab__float">
         <span className="coach-fab__morph" style={morphStyle}>
-          <CoachFabIcon size={48} />
+          <span className="coach-fab__glyph" style={glyphStyle}>
+            <CoachFabIcon size={48} />
+          </span>
         </span>
       </span>
     </button>
