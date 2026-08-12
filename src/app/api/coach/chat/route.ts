@@ -268,7 +268,7 @@ export async function POST(request: Request) {
 USER_DATA (JSON; personal facts only — trust this over memory):
 ${contextJson}
 
-Remember: pick the best structure for THIS question (stats→bullets, how-to→numbered steps, simple fact→1–2 sentences, multi-topic→### sections). Do not reuse one template for every ask.`
+Remember: pick the best structure for THIS question (stats→bullets, how-to→numbered steps, simple fact→1–2 sentences, multi-topic→### sections). Dig into the matching USER_DATA section (catalog, exercise_performance, schedule, lifetime, training_history, body_weight.summary, etc.). Do not reuse one template for every ask.`
 
   try {
     const result = streamText({
