@@ -5,6 +5,11 @@
 -- deploying the app that calls award_earned_badges() with no args and
 -- complete_session(..., p_start_hour).
 --
+-- If a previous run failed with SESSION_COMPLETION_FIELDS_FORBIDDEN, the
+-- transaction rolled back. Run rollback; if the editor is aborted, then
+-- re-run this file (the start_hour backfill now sets the same GUC
+-- complete_session uses).
+--
 -- Fixes:
 --   1. award_earned_badges signature drift + client-trusted hour/skips
 --   2. grind_safe_past_date maxed at UTC today (east-of-UTC past sessions)
@@ -73,11 +78,16 @@ end;
 $$;
 
 -- Best-effort backfill from the IANA tz already stored for streak reminders.
+-- grind_guard_session_write blocks client writes of start_hour. The SQL editor
+-- runs as postgres with current_user = session_user, so it does NOT get the
+-- "SET ROLE / security definer" bypass — use the same GUC complete_session sets.
+-- is_local=true: lasts only for this transaction, then drops on COMMIT.
 do $$
 begin
   if to_regclass('public.notification_prefs') is null then
     return;
   end if;
+  perform set_config('grind.allow_session_complete', '1', true);
   update public.sessions s
      set start_hour = extract(hour from (s.started_at at time zone np.timezone))::int
     from public.notification_prefs np

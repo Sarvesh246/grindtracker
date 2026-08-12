@@ -65,6 +65,10 @@ updated **27** alone (includes the hardening) or 27 then 28 (idempotent).
 calls `award_earned_badges()` with no args and `complete_session(..., p_start_hour)`.
 
 1. Run `docs/sql/38-schema-integrity.sql` in the Supabase SQL editor.
+   If a previous attempt failed with `SESSION_COMPLETION_FIELDS_FORBIDDEN`,
+   the transaction rolled back — run `rollback;` if the editor says it is
+   aborted, then paste the **current** 38 (the start_hour backfill now sets
+   `grind.allow_session_complete`, same as `complete_session`).
 2. Sanity checks:
    - `select proname, pg_get_function_identity_arguments(oid) from pg_proc where proname = 'award_earned_badges';` — includes a zero-arg overload
    - `select grind_safe_past_date(current_date + 1);` — returns UTC today or UTC+1, not rewritten further back
