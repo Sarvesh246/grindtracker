@@ -72,15 +72,13 @@ function CustomDot({ cx, cy, payload }: CustomDotProps) {
   if (payload.isPR) {
     return (
       <g>
-        {/* PR halo: use accent-wash so it's visible on both dark and light backgrounds */}
-        <circle cx={cx} cy={cy} r={9} fill="var(--accent)" opacity={0.2} />
-        <circle cx={cx} cy={cy} r={5} fill="var(--accent)" />
+        <circle cx={cx} cy={cy} r={9} fill="var(--chart-mark)" opacity={0.22} />
+        <circle cx={cx} cy={cy} r={5} fill="var(--chart-mark)" />
       </g>
     )
   }
 
-  {/* Regular dot: use accent-text (olive in light, lime in dark) at full opacity for visibility */}
-  return <circle cx={cx} cy={cy} r={3.5} fill="var(--accent-text)" />
+  return <circle cx={cx} cy={cy} r={3.5} fill="var(--chart-mark)" />
 }
 
 export default function ProgressChart({ data }: { data: ChartPoint[] }) {
@@ -145,10 +143,10 @@ export default function ProgressChart({ data }: { data: ChartPoint[] }) {
             <Line
               type="monotone"
               dataKey="value"
-              stroke="var(--accent-text)"
+              stroke="var(--chart-mark)"
               strokeWidth={2}
               dot={<CustomDot />}
-              activeDot={{ r: 6, fill: 'var(--accent)', stroke: 'var(--surface)', strokeWidth: 2 }}
+              activeDot={{ r: 6, fill: 'var(--chart-mark)', stroke: 'var(--surface)', strokeWidth: 2 }}
               isAnimationActive={!reduceMotion}
             />
           </LineChart>

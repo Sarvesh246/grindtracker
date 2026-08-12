@@ -322,7 +322,7 @@ export default function DaySelect() {
               const description = activeExs.slice(0, 3).map(e => e.name).join(', ') + (activeExs.length > 3 ? '…' : '')
               const isUpNext = key === upNext
               const colorKey = categoryForDay(key, dayCategories)
-              const fillColor = resolveDayColor(colorKey, extraTypes)
+              const fillColor = resolveDayColor(colorKey, extraTypes, isLight)
               const labelColor = resolveDayTextColor(colorKey, extraTypes, isLight)
               // Category color accents the title/icon + UP NEXT chrome only —
               // cards stay on the normal surface so the grid isn't a rainbow.

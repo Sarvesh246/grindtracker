@@ -290,12 +290,12 @@ export default function BodyWeightCard() {
     const pillY = labelBelow ? cy + 10 : cy - 30
     return (
       <g key={payload.date} pointerEvents="none">
-        {active && <circle cx={cx} cy={cy} r={9} fill="var(--accent)" opacity={0.25} />}
+        {active && <circle cx={cx} cy={cy} r={9} fill="var(--chart-mark)" opacity={0.22} />}
         <circle
           cx={cx}
           cy={cy}
           r={active ? 5 : 4}
-          fill="var(--accent)"
+          fill="var(--chart-mark)"
           stroke="var(--surface)"
           strokeWidth={2}
         />
@@ -468,7 +468,7 @@ export default function BodyWeightCard() {
                 <Line
                   type="monotone"
                   dataKey="weight"
-                  stroke="var(--accent-text)"
+                  stroke="var(--chart-mark)"
                   strokeWidth={2}
                   dot={renderDot}
                   // No activeDot: it paints on top of the tapped point after the

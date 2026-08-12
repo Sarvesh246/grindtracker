@@ -161,7 +161,7 @@ export default function RestTimerBar({
           }}
         >
           {paused ? (
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style={{ color: 'var(--accent)' }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style={{ color: 'var(--accent-text)' }}>
               <polygon points="6 4 20 12 6 20 6 4" />
             </svg>
           ) : (
@@ -185,7 +185,7 @@ export default function RestTimerBar({
               backgroundColor: 'var(--surface)',
               border: `1px solid ${addOpen ? 'var(--accent)' : 'var(--border)'}`,
               borderRadius: 'var(--radius-sm)',
-              color: addOpen ? 'var(--accent)' : 'var(--text-primary)',
+              color: addOpen ? 'var(--accent-text)' : 'var(--text-primary)',
               fontSize: '18px',
               fontFamily: 'var(--font-sans)',
               fontWeight: 600,

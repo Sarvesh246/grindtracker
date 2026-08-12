@@ -84,6 +84,12 @@
   /* Card depth ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ none in dark (borders carry separation), subtle in light. */
   --card-shadow: none;
 
+  /* Chart marks / medals — lime/gold on dark is fine; light overrides below. */
+  --chart-mark: #c8f135;
+  --medal-1: #ffd700;
+  --medal-2: #c0c0c0;
+  --medal-3: #cd7f32;
+
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 16px;
@@ -111,9 +117,9 @@
    color mirror vars change — every size/font/radius token is shared.
 
    Warm paper stack (no pure white): calmer than dark’s OLED black but not an
-   eye-burn whiteout. Lime FILL stays brand-bright; lime TEXT darkens to olive
-   (`--accent-text`) so it stays readable on paper. Borders + muted text sit
-   a step darker than earlier drafts for legibility.
+   eye-burn whiteout. Lime FILL softens slightly (still brand-green, less
+   fluorescent on paper); lime TEXT/chart marks use olive (`--accent-text` /
+   `--chart-mark`). Borders + muted text sit a step darker for legibility.
    --------------------------------------------------------------------------- */
 html.light {
   color-scheme: light;
@@ -125,8 +131,9 @@ html.light {
   --surface-elevated: #f7f5ef;
   --border: #d0cbc0;
   --border-strong: #b8b2a4;
-  --accent: #c8f135;
-  --accent-dim: #8faa24;
+  /* Soft brand lime — readable on paper without the neon OLED punch. */
+  --accent: #a8c428;
+  --accent-dim: #7a9420;
   --accent-deep: #5a7a1a;
   --accent-text: #4f6612;
   --accent-wash: rgba(95, 122, 22, 0.14);
@@ -140,6 +147,11 @@ html.light {
   --card-shadow:
     0 1px 2px rgba(40, 36, 28, 0.06),
     0 4px 16px rgba(40, 36, 28, 0.07);
+  /* Olive chart marks + darkened medals — neon lime/gold vanish on paper. */
+  --chart-mark: #4f6612;
+  --medal-1: #a16207;
+  --medal-2: #57534e;
+  --medal-3: #9a3412;
 }
 
 *,
@@ -184,14 +196,22 @@ body {
 /* Leaderboard share card is a dark-branded artifact (meant to look identical for
    everyone who screenshots it). Pin the dark tokens here so it ignores html.light. */
 .share-card-dark {
+  --bg: #0f0f0f;
   --surface: #1a1a1a;
   --surface-elevated: #242424;
   --border: #2e2e2e;
   --accent: #c8f135;
+  --accent-dim: #8faa24;
   --accent-text: #c8f135;
+  --accent-wash: rgba(200, 241, 53, 0.1);
   --text-primary: #f0f0f0;
   --text-secondary: #888888;
   --text-muted: #7a7a7a;
+  --card-shadow: none;
+  --chart-mark: #c8f135;
+  --medal-1: #ffd700;
+  --medal-2: #c0c0c0;
+  --medal-3: #cd7f32;
   color-scheme: dark;
 }
 

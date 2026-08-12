@@ -5,7 +5,14 @@ import { useUnit } from '@/lib/contexts/UnitContext'
 import { renderShareCardPng } from '@/lib/utils/shareCardImage'
 import { reportError } from '@/lib/utils/reportError'
 
+/* UI medals follow theme tokens; PNG share is always dark-branded hex. */
 const RANK_COLORS: Record<number, string> = {
+  1: 'var(--medal-1)',
+  2: 'var(--medal-2)',
+  3: 'var(--medal-3)',
+}
+
+const SHARE_RANK_HEX: Record<number, string> = {
   1: '#FFD700',
   2: '#C0C0C0',
   3: '#CD7F32',
@@ -64,7 +71,7 @@ export default function ShareCard({ entry, rank, category, onClose }: ShareCardP
         streak: entry.current_streak,
         workouts: entry.total_workouts,
         avatarUrl: entry.avatar_url,
-        rankColor: RANK_COLORS[rank] ?? '#c8f135',
+        rankColor: SHARE_RANK_HEX[rank] ?? '#c8f135',
       })
       const file = new File([blob], `grind-rank-${rank}.png`, { type: 'image/png' })
       if (typeof navigator !== 'undefined' && navigator.share && navigator.canShare?.({ files: [file] })) {
@@ -135,7 +142,7 @@ export default function ShareCard({ entry, rank, category, onClose }: ShareCardP
         <div style={{
           fontFamily: "'Bebas Neue', sans-serif",
           fontSize: '36px',
-          color: 'var(--accent)',
+          color: 'var(--accent-text)',
           letterSpacing: '3px',
           lineHeight: 1,
         }}>GRIND</div>
@@ -207,7 +214,7 @@ export default function ShareCard({ entry, rank, category, onClose }: ShareCardP
           justifyContent: 'center',
         }}>
           <div style={{ textAlign: 'center' }}>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '22px', color: 'var(--accent)' }}>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '22px', color: 'var(--accent-text)' }}>
               {entry.level}
             </div>
             <div style={{ fontSize: '10px', fontFamily: "'DM Sans', sans-serif", color: 'var(--text-muted)', letterSpacing: '1px' }}>
@@ -215,7 +222,7 @@ export default function ShareCard({ entry, rank, category, onClose }: ShareCardP
             </div>
           </div>
           <div style={{ textAlign: 'center' }}>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '22px', color: 'var(--accent)' }}>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '22px', color: 'var(--accent-text)' }}>
               {entry.current_streak}
             </div>
             <div style={{ fontSize: '10px', fontFamily: "'DM Sans', sans-serif", color: 'var(--text-muted)', letterSpacing: '1px' }}>
@@ -223,7 +230,7 @@ export default function ShareCard({ entry, rank, category, onClose }: ShareCardP
             </div>
           </div>
           <div style={{ textAlign: 'center' }}>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '22px', color: 'var(--accent)' }}>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '22px', color: 'var(--accent-text)' }}>
               {entry.total_workouts}
             </div>
             <div style={{ fontSize: '10px', fontFamily: "'DM Sans', sans-serif", color: 'var(--text-muted)', letterSpacing: '1px' }}>

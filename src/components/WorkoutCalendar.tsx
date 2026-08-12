@@ -206,7 +206,9 @@ export default function WorkoutCalendar() {
 
           const dateKey = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
           const workoutType = workoutDays[dateKey]
-          const dotColor = workoutType ? resolveDayColor(workoutType, extraTypes) : null
+          const dotColor = workoutType
+            ? resolveDayColor(workoutType, extraTypes, isLight)
+            : null
           const dayTextColor = workoutType
             ? resolveDayTextColor(workoutType, extraTypes, isLight)
             : null
@@ -231,12 +233,12 @@ export default function WorkoutCalendar() {
               : '1px solid transparent'
 
           const hoverBg = dotColor
-            ? `${dotColor}55`
+            ? `${dotColor}${isLight ? '33' : '55'}`
             : isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.06)'
           const hoverBorder = isToday
             ? '1px solid var(--border-strong)'
             : dotColor
-              ? `1px solid ${dotColor}cc`
+              ? `1px solid ${dotColor}${isLight ? 'aa' : 'cc'}`
               : '1px solid var(--border)'
 
           const label = workoutType
@@ -336,7 +338,7 @@ export default function WorkoutCalendar() {
       {/* Legend — always shows all named types; extra types from data appended */}
       <div style={{ display: 'flex', gap: '14px', marginTop: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
         {legendTypes.map(type => {
-          const fillColor = resolveDayColor(type, extraTypes)
+          const fillColor = resolveDayColor(type, extraTypes, isLight)
           const labelColor = resolveDayTextColor(type, extraTypes, isLight)
           return (
             <div key={type} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>

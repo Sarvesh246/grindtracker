@@ -204,8 +204,8 @@ export function ProgressMock() {
       <svg className="landing-progress-mock__chart" viewBox="0 0 280 100" preserveAspectRatio="none">
         <defs>
           <linearGradient id="landingChartFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.28" />
-            <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
+            <stop offset="0%" stopColor="var(--chart-mark)" stopOpacity="0.28" />
+            <stop offset="100%" stopColor="var(--chart-mark)" stopOpacity="0" />
           </linearGradient>
         </defs>
         <path

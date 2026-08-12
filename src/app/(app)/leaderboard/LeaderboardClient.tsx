@@ -24,9 +24,9 @@ const CATEGORIES: { key: Category; label: string }[] = [
 const FOCUS_REFETCH_MS = 60_000
 
 const RANK_COLORS: Record<number, string> = {
-  1: '#FFD700',
-  2: '#C0C0C0',
-  3: '#CD7F32',
+  1: 'var(--medal-1)',
+  2: 'var(--medal-2)',
+  3: 'var(--medal-3)',
 }
 
 function initials(name: string) {
