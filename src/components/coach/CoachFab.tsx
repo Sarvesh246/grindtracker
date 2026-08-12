@@ -12,8 +12,6 @@ import {
   FAB_SPRING_VEL_CARRY,
   FAB_SPRING_VEL_CARRY_FLICK,
   FLICK_VELOCITY_PX_S,
-  dropletRadius,
-  squashFromVelocity,
 } from './coachMotion'
 import {
   COACH_FAB_SIZE,
@@ -31,9 +29,6 @@ const DRAG_ACTIVATE_MS = 120
 const DRAG_FAST_THRESHOLD = 32
 
 const VEL_EMA = 0.78
-/** Softer squash recovery — matches global spring polish */
-const SQUASH_SPRING_K = 200
-const SQUASH_SPRING_C = 26
 /** Release glow fade (ms) — sustained hold uses --pressed, not this timer */
 const GLOW_RELEASE_MS = 450
 
@@ -52,7 +47,6 @@ export default function CoachFab() {
   const [pressed, setPressed] = useState(false)
   const [glowing, setGlowing] = useState(false)
   const [ghost, setGhost] = useState<{ x: number; y: number } | null>(null)
-  const [squash, setSquash] = useState({ sx: 1, sy: 1 })
 
   const pointerId = useRef<number | null>(null)
   const start = useRef<{ x: number; y: number } | null>(null)
@@ -62,24 +56,15 @@ export default function CoachFab() {
   const lastTs = useRef(0)
   const vel = useRef({ x: 0, y: 0 })
   const rafRef = useRef<number | null>(null)
-  const squashRaf = useRef<number | null>(null)
   const springPos = useRef({ x: 0, y: 0, vx: 0, vy: 0 })
   const springTarget = useRef({ x: 0, y: 0 })
   const pendingDock = useRef<CoachDockId | null>(null)
-  const squashRef = useRef({ sx: 1, sy: 1, vsx: 0, vsy: 0 })
   const glowTimer = useRef<number | null>(null)
 
   const cancelSpring = useCallback(() => {
     if (rafRef.current != null) {
       cancelAnimationFrame(rafRef.current)
       rafRef.current = null
-    }
-  }, [])
-
-  const cancelSquashSpring = useCallback(() => {
-    if (squashRaf.current != null) {
-      cancelAnimationFrame(squashRaf.current)
-      squashRaf.current = null
     }
   }, [])
 
@@ -93,43 +78,10 @@ export default function CoachFab() {
   useEffect(
     () => () => {
       cancelSpring()
-      cancelSquashSpring()
       clearGlowTimer()
     },
-    [cancelSpring, cancelSquashSpring, clearGlowTimer],
+    [cancelSpring, clearGlowTimer],
   )
-
-  const springSquashToRest = useCallback(() => {
-    if (reduceMotion) {
-      squashRef.current = { sx: 1, sy: 1, vsx: 0, vsy: 0 }
-      setSquash({ sx: 1, sy: 1 })
-      return
-    }
-    cancelSquashSpring()
-    const tick = () => {
-      const s = squashRef.current
-      const dt = 1 / 60
-      const ax = -SQUASH_SPRING_K * (s.sx - 1) - SQUASH_SPRING_C * s.vsx
-      const ay = -SQUASH_SPRING_K * (s.sy - 1) - SQUASH_SPRING_C * s.vsy
-      s.vsx += ax * dt
-      s.vsy += ay * dt
-      s.sx += s.vsx * dt
-      s.sy += s.vsy * dt
-      setSquash({ sx: s.sx, sy: s.sy })
-      if (
-        Math.abs(s.sx - 1) < 0.004 &&
-        Math.abs(s.sy - 1) < 0.004 &&
-        Math.hypot(s.vsx, s.vsy) < 0.08
-      ) {
-        squashRef.current = { sx: 1, sy: 1, vsx: 0, vsy: 0 }
-        setSquash({ sx: 1, sy: 1 })
-        squashRaf.current = null
-        return
-      }
-      squashRaf.current = requestAnimationFrame(tick)
-    }
-    squashRaf.current = requestAnimationFrame(tick)
-  }, [cancelSquashSpring, reduceMotion])
 
   const startSpringToDock = useCallback(
     (from: { x: number; y: number }, next: CoachDockId, flicked: boolean) => {
@@ -240,7 +192,6 @@ export default function CoachFab() {
         moved.current = true
         setDragging(true)
         // Keep --pressed glow while the finger is down through the drag.
-        cancelSquashSpring()
       }
 
       const now = performance.now()
@@ -257,17 +208,11 @@ export default function CoachFab() {
       lastTs.current = now
       lastPos.current = { x: e.clientX, y: e.clientY }
 
-      if (!reduceMotion) {
-        const next = squashFromVelocity(vel.current.x, vel.current.y)
-        squashRef.current = { ...next, vsx: 0, vsy: 0 }
-        setSquash(next)
-      }
-
       const x = e.clientX - COACH_FAB_SIZE / 2
       const y = e.clientY - COACH_FAB_SIZE / 2
       setGhost({ x, y })
     },
-    [cancelSquashSpring, reduceMotion],
+    [],
   )
 
   const endDrag = useCallback(
@@ -305,7 +250,6 @@ export default function CoachFab() {
           x: centerX - COACH_FAB_SIZE / 2,
           y: centerY - COACH_FAB_SIZE / 2,
         }
-        springSquashToRest()
         if (reduceMotion) {
           setGhost(null)
           setDock(next)
@@ -316,7 +260,6 @@ export default function CoachFab() {
       }
 
       setGhost(null)
-      springSquashToRest()
       // Tap haptic via data-haptic (iOS overlay + Android vibrate) — no extra
       // navigator.vibrate here (would double-buzz on Android).
       if (!open) openCoach()
@@ -327,15 +270,12 @@ export default function CoachFab() {
       reduceMotion,
       releaseGlow,
       setDock,
-      springSquashToRest,
       startSpringToDock,
     ],
   )
 
   // Pause idle float while pressed/dragging/settling — press should feel solid.
   const alive = !open && !dragging && !settling && !ghost && !pressed
-  const morphing =
-    !reduceMotion && (squash.sx !== 1 || squash.sy !== 1 || dragging)
 
   // Parked: CSS data-dock owns left/right/top/bottom with no position
   // transitions — settle is the RAF spring above (avoids L-shaped travel).
@@ -362,22 +302,6 @@ export default function CoachFab() {
           }
         : undefined
 
-  // Liquid stretch lives on the filled morph disc — the G stays upright
-  // (counter-scale) so velocity squash never warps/rotates the glyph.
-  const morphStyle =
-    morphing
-      ? {
-          transform: `scale(${squash.sx}, ${squash.sy})`,
-          borderRadius: dropletRadius(squash.sx, squash.sy),
-        }
-      : undefined
-  const glyphStyle =
-    morphing
-      ? {
-          transform: `scale(${1 / squash.sx}, ${1 / squash.sy})`,
-        }
-      : undefined
-
   return (
     <button
       ref={fabRef}
@@ -403,8 +327,8 @@ export default function CoachFab() {
       onPointerCancel={endDrag}
     >
       <span className="coach-fab__float">
-        <span className="coach-fab__morph" style={morphStyle}>
-          <span className="coach-fab__glyph" style={glyphStyle}>
+        <span className="coach-fab__disc">
+          <span className="coach-fab__glyph">
             <CoachFabIcon size={48} />
           </span>
         </span>

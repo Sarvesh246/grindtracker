@@ -1094,8 +1094,8 @@ html.reduce-motion *::after {
   height: 56px;
   border-radius: var(--radius-pill);
   border: none;
-  /* Fill lives on `__morph` so liquid squash can reshape the disc without
-     warping the G (glyph is counter-scaled). Shadow/glow stay on the button. */
+  /* Accent fill lives on `__disc`; shadow/glow stay on the button.
+     Orb is always a circle — no liquid squash/stretch. */
   background-color: transparent;
   color: var(--on-accent);
   display: flex;
@@ -1126,27 +1126,23 @@ html.light .coach-fab {
   justify-content: center;
   width: 100%;
   height: 100%;
+  border-radius: var(--radius-pill);
 }
-.coach-fab__morph {
+.coach-fab__disc {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 100%;
   height: 100%;
-  border-radius: inherit;
+  border-radius: var(--radius-pill);
+  overflow: hidden;
   background-color: var(--accent);
   color: inherit;
-  will-change: transform;
-  /* Liquid squash — no transition while finger-tracking; spring is RAF. */
-  transition: none;
 }
 .coach-fab__glyph {
   display: flex;
   align-items: center;
   justify-content: center;
-  /* Keep the mark upright while the disc squash/stretches. */
-  transition: none;
-  will-change: transform;
 }
 /* Idle breathe — ±4px over ~3s; paused when dragging / settling / open. */
 @keyframes coach-fab-float {
@@ -1200,7 +1196,7 @@ html.light .coach-fab--pressed {
 .coach-fab--dragging,
 .coach-fab--settling {
   cursor: grabbing;
-  /* Keep a circle at rest — liquid squash is on `__morph`, not rotation. */
+  /* Uniform scale only — disc stays circular via border-radius pill. */
   transition:
     transform 180ms ease,
     box-shadow 180ms ease,
@@ -1243,7 +1239,7 @@ html.light .coach-fab--dragging.coach-fab--pressed {
 .coach-fab--settling.press:active {
   transform: none;
 }
-/* In-app / OS reduce-motion: skip float, squash lift, glow intensity / fades. */
+/* In-app / OS reduce-motion: skip float, drag lift, glow intensity / fades. */
 html.reduce-motion .coach-fab--alive .coach-fab__float,
 html.reduce-motion .coach-fab--glow {
   animation: none !important;
@@ -1294,7 +1290,7 @@ html.reduce-motion .coach-fab.press:active:not(.coach-fab--dragging):not(.coach-
   color: var(--text-muted);
   box-shadow: none;
 }
-.coach-fab--capped .coach-fab__morph {
+.coach-fab--capped .coach-fab__disc {
   background-color: var(--surface-elevated);
   border: 1px solid var(--border);
   color: var(--text-muted);
