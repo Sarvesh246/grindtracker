@@ -25,6 +25,7 @@ import CoachFabIcon from './CoachFabIcon'
 import CoachHistory from './CoachHistory'
 import CoachMessageContent from './CoachMessageContent'
 import CoachActionCard from './CoachActionCard'
+import CoachCopyButton from './CoachCopyButton'
 import {
   RUBBER_FACTOR,
   SHEET_DISMISS_FLICK_VY,
@@ -978,9 +979,21 @@ export default function CoachSheet() {
         const el = listRef.current
         if (el && el.scrollTop > 0) return
       }
-      // Don't steal clicks from header action buttons / links.
+      // Don't steal clicks from header action buttons / links / form fields.
+      // Message bubbles stay selectable — pull-to-dismiss belongs on the
+      // grabber + empty chrome, not on chat text.
       const t = e.target as HTMLElement | null
-      if (t?.closest('button, a, textarea, input')) return
+      if (
+        t?.closest(
+          'button, a, textarea, input, select, [data-no-sheet-drag], .coach-bubble, .coach-action-card',
+        )
+      ) {
+        return
+      }
+      if (typeof window !== 'undefined') {
+        const sel = window.getSelection()?.toString()
+        if (sel && sel.length > 0) return
+      }
 
       // Capture live offset before killing enter/settle/morph motion.
       let liveY =
@@ -1641,6 +1654,7 @@ export default function CoachSheet() {
                       className={`coach-bubble coach-bubble--${m.role}${
                         m.role === 'assistant' ? ' coach-bubble--enter' : ''
                       }`}
+                      data-no-sheet-drag
                       style={
                         {
                           '--i': Math.min(i, 8),
@@ -1669,9 +1683,15 @@ export default function CoachSheet() {
                               onCancel={id => void decideProposal(id, 'cancel')}
                             />
                           ))}
+                          {m.content ? (
+                            <CoachCopyButton text={m.content} align="start" />
+                          ) : null}
                         </>
                       ) : (
-                        m.content
+                        <>
+                          <div className="coach-bubble__text">{m.content}</div>
+                          <CoachCopyButton text={m.content} align="end" />
+                        </>
                       )}
                     </li>
                   )
