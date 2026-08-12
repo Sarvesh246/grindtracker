@@ -52,8 +52,6 @@ const SIZE_MS = 640
 const ENTER_MS = 640
 const PULL_AXIS_LOCK = 8
 const VEL_EMA = 0.78
-/** 1:1 upward travel while expandable before light rubber-band. */
-const EXPAND_RUBBER_AT = 160
 /** Gravity-ish assist while flinging the sheet off-screen (px/s²). */
 const FLING_GRAVITY = 2800
 
@@ -200,10 +198,19 @@ type SheetRect = {
   height: number
 }
 
+/** Upward pull (px) from compact rest height to full-page rest height. */
+function expandSpanPx(dock: 'tl' | 'tr' | 'bl' | 'br'): number {
+  const rest = compactRestRect(dock)
+  const page = pageRestRect()
+  return Math.max(1, page.height - rest.height)
+}
+
 /**
  * Live compact→page drag preview. Grows the sheet upward from the compact
  * bottom edge so the grabber tracks the finger (translate-only looked like
- * the card sliding off-screen, and never changed height).
+ * the card sliding off-screen, and never changed height). Once the top hits
+ * the page edge, further pull expands the bottom until full page height —
+ * rubber only applies past that span.
  */
 function expandPreviewRect(
   dock: 'tl' | 'tr' | 'bl' | 'br',
@@ -212,23 +219,25 @@ function expandPreviewRect(
   const rest = compactRestRect(dock)
   const page = pageRestRect()
   const up = Math.max(0, -pullY)
-  const bottom = rest.top + rest.height
   const span = Math.max(1, page.height - rest.height)
   const p = Math.min(1, up / span)
 
-  let height = rest.height + up
-  let top = bottom - height
+  // 1:1 height growth with upward pull. Top follows until page.top, then
+  // stays pinned while the bottom expands to reach page.height.
+  let height = Math.min(page.height, rest.height + up)
+  let top = rest.top + rest.height - height
+  if (top < page.top) {
+    top = page.top
+    height = Math.min(page.height, rest.height + up)
+  }
+  if (height >= page.height) {
+    height = page.height
+    top = page.top
+  }
+
   let left = rest.left + (page.left - rest.left) * p
   let width = rest.width + (page.width - rest.width) * p
 
-  if (top < page.top) {
-    top = page.top
-    height = Math.min(page.height, bottom - page.top)
-  }
-  if (height > page.height) {
-    height = page.height
-    top = Math.min(top, page.top + page.height - height)
-  }
   if (width > page.width) {
     width = page.width
     left = page.left
@@ -243,18 +252,20 @@ function expandPreviewRect(
 }
 
 /**
- * Soft rubber at the top only. Downward travel stays 1:1 so the sheet can
- * slide past minimize and fully off-screen under the finger — no mid-drag
- * quantization.
+ * Soft rubber past extents only. Downward travel stays 1:1 so the sheet can
+ * slide past minimize and fully off-screen under the finger. While expandable,
+ * upward travel is 1:1 through `expandLimit` (compact→page span); light rubber
+ * only past full page — never before the grabber can reach the top.
  */
-function rubberY(y: number, canExpand: boolean): number {
+function rubberY(y: number, canExpand: boolean, expandLimit: number): number {
   if (y >= 0) return y
   // Already full-page — only a light upward rubber-band.
   if (!canExpand) return y * RUBBER_FACTOR
   const up = -y
-  if (up <= EXPAND_RUBBER_AT) return y
-  const extra = up - EXPAND_RUBBER_AT
-  return -(EXPAND_RUBBER_AT + extra * RUBBER_FACTOR)
+  const limit = Math.max(1, expandLimit)
+  if (up <= limit) return y
+  const extra = up - limit
+  return -(limit + extra * RUBBER_FACTOR)
 }
 
 export default function CoachSheet() {
@@ -964,11 +975,11 @@ export default function CoachSheet() {
       velY.current = velY.current * VEL_EMA + ivy * (1 - VEL_EMA)
       lastY.current = e.clientY
       lastTs.current = now
-      const next = rubberY(dy, size !== 'page')
+      const next = rubberY(dy, size !== 'page', expandSpanPx(dock))
       pullYRef.current = next
       setPullY(next)
     },
-    [size],
+    [dock, size],
   )
 
   const endPull = useCallback(
