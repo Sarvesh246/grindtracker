@@ -41,14 +41,18 @@ export default async function ProfilePage() {
   }
 
   const [
-    { data: stats },
-    { data: earnedBadges },
-    { count: totalPRs },
-    { count: totalSets },
-    { data: history },
-    { data: profile },
+    statsRes,
+    badgesRes,
+    prsRes,
+    setsRes,
+    historyRes,
+    profileRes,
   ] = await Promise.all([
-    supabase.from('user_stats').select('*').eq('user_id', user.id).maybeSingle(),
+    supabase
+      .from('user_stats')
+      .select('xp_total, level, current_streak, longest_streak, total_workouts')
+      .eq('user_id', user.id)
+      .maybeSingle(),
     supabase.from('user_badges').select('badge_id, earned_at').eq('user_id', user.id),
     supabase
       .from('session_logs')
@@ -64,33 +68,45 @@ export default async function ProfilePage() {
       .not('weight', 'is', null),
     supabase.rpc('grind_home_history', { p_lookback_days: 7 }),
     supabase.from('user_profiles').select('username, created_at').eq('id', user.id).maybeSingle(),
-  ])
+  ]).catch(err => {
+    console.error('[grind] profile page load failed', err)
+    return [null, null, null, null, null, null] as const
+  })
 
-  const earnedSet = new Set((earnedBadges ?? []).map(b => b.badge_id))
-  const historyPayload = (history ?? {}) as { days_active?: number }
+  if (statsRes?.error) console.error('[grind] profile user_stats failed', statsRes.error)
+  if (badgesRes?.error) console.error('[grind] profile user_badges failed', badgesRes.error)
+  if (prsRes?.error) console.error('[grind] profile totalPRs failed', prsRes.error)
+  if (setsRes?.error) console.error('[grind] profile totalSets failed', setsRes.error)
+  if (historyRes?.error) console.error('[grind] grind_home_history failed', historyRes.error)
+  if (profileRes?.error) console.error('[grind] profile user_profiles failed', profileRes.error)
+
+  const earnedSet = new Set((badgesRes?.data ?? []).map(b => b.badge_id))
+  const historyPayload = (historyRes?.data ?? {}) as { days_active?: number }
   // days_active is already DISTINCT local_date from the server — profile only
   // needs the count (was unbounded completed_at history before).
   const daysActive = historyPayload.days_active ?? 0
 
   const avatarUrl = user.user_metadata?.avatar_url ?? null
   const displayName = user.user_metadata?.full_name ?? user.email ?? 'Athlete'
+  const rawStats = statsRes?.data
+  const stats = {
+    xp_total: Number(rawStats?.xp_total ?? 0) || 0,
+    level: Number(rawStats?.level ?? 1) || 1,
+    current_streak: Number(rawStats?.current_streak ?? 0) || 0,
+    longest_streak: Number(rawStats?.longest_streak ?? 0) || 0,
+    total_workouts: Number(rawStats?.total_workouts ?? 0) || 0,
+  }
 
   return (
     <ProfileDashboard
       displayName={displayName}
       avatarUrl={avatarUrl}
-      username={profile?.username ?? null}
-      joinedAt={profile?.created_at ?? null}
-      stats={stats ?? {
-        xp_total: 0,
-        level: 1,
-        current_streak: 0,
-        longest_streak: 0,
-        total_workouts: 0,
-      }}
+      username={profileRes?.data?.username ?? null}
+      joinedAt={profileRes?.data?.created_at ?? null}
+      stats={stats}
       earnedBadgeIds={Array.from(earnedSet)}
-      totalPRs={totalPRs ?? 0}
-      totalSets={totalSets ?? 0}
+      totalPRs={prsRes?.count ?? 0}
+      totalSets={setsRes?.count ?? 0}
       activeDayTimestamps={[]}
       daysActive={daysActive}
     />

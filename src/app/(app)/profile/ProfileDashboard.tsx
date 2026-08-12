@@ -184,14 +184,14 @@ export default function ProfileDashboard({
     return () => document.removeEventListener('touchstart', close)
   }, [tooltipBadgeId])
 
-  const xpTotal = stats.xp_total
+  const xpTotal = Number(stats.xp_total ?? 0) || 0
   const level = getLevel(xpTotal)
   const xpInLevel = getXpInCurrentLevel(xpTotal)
   const levelSize = getXpRequiredForLevel(level)
   const xpToNext = getXpToNextLevel(xpTotal)
   const xpPercent = (xpInLevel / levelSize) * 100
-  const earnedSet = new Set(earnedBadgeIds)
-  const earnedCount = earnedBadgeIds.length
+  const earnedSet = new Set(earnedBadgeIds ?? [])
+  const earnedCount = (earnedBadgeIds ?? []).length
   // Distinct active days from server (local_date count) or legacy timestamp list.
   const distinctDays = useMemo(() => {
     if (typeof daysActive === 'number') return daysActive

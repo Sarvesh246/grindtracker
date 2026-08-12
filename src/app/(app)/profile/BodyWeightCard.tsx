@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
+import { Component, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   LineChart,
   Line,
@@ -17,6 +17,7 @@ import { demoSafeClient } from '@/lib/demoMode/demoSafeSupabase'
 import { demoBodyWeightRows } from '@/lib/demoMode/fakeData'
 import Dialog from '@/components/ui/Dialog'
 import { CACHE_KEYS, getCached, isFresh, markAppDataStale, setCached } from '@/lib/cache/appDataCache'
+import { reportError } from '@/lib/utils/reportError'
 
 interface Row {
   weight: number
@@ -34,6 +35,115 @@ interface Point {
   longDate: string
   /** Value in the active display unit — what the chart plots. */
   weight: number
+}
+
+/**
+ * Recharts v3 calls custom dots during the line draw-in with cx/cy but no
+ * payload. A function `dot={fn}` that reads `payload.date` throws, and that
+ * used to take down the whole /profile page via the app error boundary.
+ * Element form + an explicit payload guard matches ProgressChart.
+ */
+interface WeightDotProps {
+  cx?: number
+  cy?: number
+  payload?: Point
+  peeked?: string | null
+  selectedDate?: string
+  chartPoints?: Point[]
+  onDotClick?: (point: Point) => void
+  fmt?: (canonicalLbs: number) => string
+  unitLabel?: string
+}
+
+function WeightDot({
+  cx,
+  cy,
+  payload,
+  peeked,
+  selectedDate,
+  chartPoints = [],
+  onDotClick,
+  fmt,
+  unitLabel,
+}: WeightDotProps) {
+  if (cx == null || cy == null || !payload?.date) return null
+  const isPeeked = payload.date === peeked
+  const active = payload.date === selectedDate || isPeeked
+  const point = chartPoints.find(p => p.date === payload.date)
+  const isFirst = point === chartPoints[0]
+  const isLast = point === chartPoints[chartPoints.length - 1]
+  const anchor = isFirst ? 'start' : isLast ? 'end' : 'middle'
+  const label = point && fmt ? `${fmt(point.canonical)} ${unitLabel ?? ''}` : ''
+  const labelBelow = cy < 24
+  const pillWidth = label.length * 6.5 + 16
+  const pillX = anchor === 'start' ? cx : anchor === 'end' ? cx - pillWidth : cx - pillWidth / 2
+  const pillY = labelBelow ? cy + 10 : cy - 30
+  return (
+    <g
+      style={{ cursor: 'pointer' }}
+      onClick={e => {
+        e.stopPropagation()
+        if (point) onDotClick?.(point)
+      }}
+    >
+      <circle cx={cx} cy={cy} r={14} fill="transparent" />
+      {active && <circle cx={cx} cy={cy} r={9} fill="var(--chart-mark)" opacity={0.22} />}
+      <circle
+        cx={cx}
+        cy={cy}
+        r={active ? 5 : 4}
+        fill="var(--chart-mark)"
+        stroke="var(--surface)"
+        strokeWidth={2}
+      />
+      {isPeeked && (
+        <g pointerEvents="none">
+          <rect
+            x={pillX}
+            y={pillY}
+            width={pillWidth}
+            height={18}
+            rx={5}
+            fill="var(--surface-elevated)"
+            stroke="var(--border)"
+          />
+          <text
+            x={anchor === 'start' ? pillX + 8 : anchor === 'end' ? pillX + pillWidth - 8 : cx}
+            y={pillY + 13}
+            textAnchor={anchor === 'middle' ? 'middle' : anchor}
+            fontSize={10}
+            fontFamily="var(--font-mono)"
+            fill="var(--text-primary)"
+          >
+            {label}
+          </text>
+        </g>
+      )}
+    </g>
+  )
+}
+
+class ChartGuard extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false }
+
+  static getDerivedStateFromError() {
+    return { failed: true }
+  }
+
+  componentDidCatch(error: Error) {
+    reportError(error, { operation: 'body-weight-chart' })
+  }
+
+  render() {
+    if (this.state.failed) {
+      return (
+        <div style={{ color: 'var(--text-muted)', fontSize: '12px', textAlign: 'center', padding: '12px 0' }}>
+          Could not render the weight chart. Use History below to view or edit entries.
+        </div>
+      )
+    }
+    return this.props.children
+  }
 }
 
 function todayDateKey(): string {
@@ -116,24 +226,34 @@ export default function BodyWeightCard() {
       setLoading(true)
     }
 
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setLoading(false); return }
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
 
-    const since = new Date()
-    since.setDate(since.getDate() - 90)
-    const sinceKey = `${since.getFullYear()}-${String(since.getMonth() + 1).padStart(2, '0')}-${String(since.getDate()).padStart(2, '0')}`
+      const since = new Date()
+      since.setDate(since.getDate() - 90)
+      const sinceKey = `${since.getFullYear()}-${String(since.getMonth() + 1).padStart(2, '0')}-${String(since.getDate()).padStart(2, '0')}`
 
-    const { data } = await supabase
-      .from('body_weights')
-      .select('weight, recorded_at')
-      .eq('user_id', user.id)
-      .gte('recorded_at', sinceKey)
-      .order('recorded_at', { ascending: true })
+      const { data, error } = await supabase
+        .from('body_weights')
+        .select('weight, recorded_at')
+        .eq('user_id', user.id)
+        .gte('recorded_at', sinceKey)
+        .order('recorded_at', { ascending: true })
 
-    const next = (data ?? []) as Row[]
-    setCached(CACHE_KEYS.bodyWeights, next)
-    setRows(next)
-    setLoading(false)
+      if (error) {
+        reportError(error, { operation: 'body-weight-load' })
+        return
+      }
+
+      const next = (data ?? []) as Row[]
+      setCached(CACHE_KEYS.bodyWeights, next)
+      setRows(next)
+    } catch (err) {
+      reportError(err, { operation: 'body-weight-load' })
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function handleSave() {
@@ -272,70 +392,7 @@ export default function BodyWeightCard() {
     if (point) handleDotClick(point)
   }
 
-  // Transparent r=14 hit circle under each visible dot so the tap target clears
-  // ~44px. stopPropagation so a dot tap doesn't also fire LineChart.onClick
-  // (which would peek then immediately open on the same gesture).
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const renderDot = (props: any) => {
-    const { cx, cy, payload } = props
-    if (cx == null || cy == null) return <g key={payload?.date} />
-    const isPeeked = payload?.date === peeked
-    const active = payload?.date === selected?.date || isPeeked
-    const point = chartPoints.find(p => p.date === payload?.date)
-    const isFirst = point === chartPoints[0]
-    const isLast = point === chartPoints[chartPoints.length - 1]
-    const anchor = isFirst ? 'start' : isLast ? 'end' : 'middle'
-    const label = point ? `${fmt(point.canonical)} ${unitLabel}` : ''
-    const labelBelow = cy < 24
-    // Rough width from character count — good enough for a plain monospace pill.
-    const pillWidth = label.length * 6.5 + 16
-    const pillX = anchor === 'start' ? cx : anchor === 'end' ? cx - pillWidth : cx - pillWidth / 2
-    const pillY = labelBelow ? cy + 10 : cy - 30
-    return (
-      <g
-        key={payload.date}
-        style={{ cursor: 'pointer' }}
-        onClick={e => {
-          e.stopPropagation()
-          if (point) handleDotClick(point)
-        }}
-      >
-        <circle cx={cx} cy={cy} r={14} fill="transparent" />
-        {active && <circle cx={cx} cy={cy} r={9} fill="var(--chart-mark)" opacity={0.22} />}
-        <circle
-          cx={cx}
-          cy={cy}
-          r={active ? 5 : 4}
-          fill="var(--chart-mark)"
-          stroke="var(--surface)"
-          strokeWidth={2}
-        />
-        {isPeeked && (
-          <g pointerEvents="none">
-            <rect
-              x={pillX}
-              y={pillY}
-              width={pillWidth}
-              height={18}
-              rx={5}
-              fill="var(--surface-elevated)"
-              stroke="var(--border)"
-            />
-            <text
-              x={anchor === 'start' ? pillX + 8 : anchor === 'end' ? pillX + pillWidth - 8 : cx}
-              y={pillY + 13}
-              textAnchor={anchor === 'middle' ? 'middle' : anchor}
-              fontSize={10}
-              fontFamily="var(--font-mono)"
-              fill="var(--text-primary)"
-            >
-              {label}
-            </text>
-          </g>
-        )}
-      </g>
-    )
-  }
+  // Transparent r=14 hit circle lives on WeightDot so the tap target clears ~44px.
 
   return (
     <div
@@ -442,7 +499,8 @@ export default function BodyWeightCard() {
         </div>
       ) : (
         <>
-          <div style={{ height: '120px' }} aria-hidden="true">
+          <div style={{ height: '120px', width: '100%', minWidth: 0 }} aria-hidden="true">
+            <ChartGuard>
             <ResponsiveContainer width="100%" height="100%">
               <LineChart
                 data={chartPoints}
@@ -510,7 +568,16 @@ export default function BodyWeightCard() {
                   dataKey="weight"
                   stroke="var(--chart-mark)"
                   strokeWidth={2}
-                  dot={renderDot}
+                  dot={
+                    <WeightDot
+                      peeked={peeked}
+                      selectedDate={selected?.date}
+                      chartPoints={chartPoints}
+                      onDotClick={handleDotClick}
+                      fmt={fmt}
+                      unitLabel={unitLabel}
+                    />
+                  }
                   // No activeDot: it paints on top of the tapped point after the
                   // first interaction and swallows the second tap that should
                   // open the edit sheet.
@@ -519,6 +586,7 @@ export default function BodyWeightCard() {
                 />
               </LineChart>
             </ResponsiveContainer>
+            </ChartGuard>
           </div>
 
           {/* The dots are the primary edit affordance, so say so — nothing about a

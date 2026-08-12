@@ -47,7 +47,7 @@ export default function FriendProfileView({ profile }: Props) {
   const levelSize = getXpRequiredForLevel(level)
   const xpToNext = getXpToNextLevel(xpTotal)
   const xpPercent = (xpInLevel / levelSize) * 100
-  const earnedSet = new Set(profile.badge_ids)
+  const earnedSet = new Set(profile.badge_ids ?? [])
 
   const joinedLabel = new Date(profile.joined_at).toLocaleDateString('en-US', {
     month: 'long',
