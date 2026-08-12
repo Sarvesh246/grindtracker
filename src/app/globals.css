@@ -1114,6 +1114,16 @@ html.reduce-motion *::after {
   /* Float lives on the inner wrapper so grab/tap transforms stay clean. */
   overflow: visible;
 }
+/* Glow / press scale is the affordance — kill the global square focus ring
+   (button:focus-visible also forces --radius-sm, which boxed the circle). */
+.coach-fab:focus,
+.coach-fab:focus-visible,
+.coach-fab *:focus,
+.coach-fab *:focus-visible {
+  outline: none !important;
+  outline-offset: 0;
+  border-radius: var(--radius-pill) !important;
+}
 html.light .coach-fab {
   box-shadow: var(--card-shadow);
 }
@@ -1479,7 +1489,7 @@ html.light .coach-sheet {
   /* Interruptible enter: finger takes over mid-open without locking. */
   animation: none !important;
 }
-/* FLIP lock during page→compact: fixed pixel box, no CSS size jump yet. */
+/* FLIP lock during page↔compact: fixed pixel box, no CSS size jump yet. */
 .coach-sheet--morph-lock {
   animation: none !important;
   right: auto !important;

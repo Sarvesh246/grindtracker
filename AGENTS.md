@@ -9,6 +9,9 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - Do not commit `.cursor/hooks/state/continual-learning.json`; it is Cursor hook internal state, not app code.
 - Primary daily use is iOS PWA (Add to Home Screen); optimize UX feedback for that path (real-tap `data-haptic`), not Android-only vibrate.
 - Haptics should feel satisfying but tasteful: light for routine controls; heavier feel on set-complete, saves, and confirms — do not overdo.
+- Coach G orb should always stay a circle (no square morph) and must not rotate while dragging; prefer slower Apple-like fluid motion over snappy/fast transitions.
+- Coach sheet drag is two-stage (partial drag minimizes, further drag closes) and should track the finger fluidly without mid-close flashes or minimized-sheet pop-ins; backdrop blur stays until fully closed.
+- On iOS PWA, opening the coach may tint the status bar / `theme-color`, but closing it must fully restore the main app background color (no stuck olive/surface chrome).
 
 ## Learned Workspace Facts
 
@@ -20,7 +23,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - Vercel Hobby forbids sub-daily cron expressions; `vercel.json` fans out 24 once-daily UTC-hour jobs to `/api/cron/notifications` for roughly hourly coverage. Rest-end alerts must use in-page/local timers — Hobby cron is too coarse for short gym rests.
 - On Vercel only, `next.config.ts` sets `typescript.ignoreBuildErrors` when `VERCEL === '1'` to skip redundant Hobby typecheck; still run `npm run typecheck` / local `next build` for types.
 - iOS 26.5+/27 closed programmatic switch-click haptics; use `data-haptic` + mounted `HapticsSetup` overlay taps. Imperative `haptic()` still vibrates on Android but is a no-op for ticks on those iOS versions.
-- First-run onboarding is a multi-step setup wizard (`src/components/setup/`, `/setup`) gated by `user_profiles.setup_completed_at` (migration `docs/sql/32-setup-completed.sql`); proxy + `grind_profile_ok` cookie use `s1:` once setup is done; complete via `POST /api/setup/complete`, clear via `POST /api/setup/replay`.
-- "Replay Setup" in Profile settings is admin-only (`isAdmin` / `isAdminEmail`), same gate pattern as the feedback inbox — not shown to normal users.
+- First-run onboarding is a multi-step setup wizard (`src/components/setup/`, `/setup`) gated by `user_profiles.setup_completed_at` (migration `docs/sql/32-setup-completed.sql`); proxy + `grind_profile_ok` cookie use `s1:` once setup is done; complete via `POST /api/setup/complete`, clear via `POST /api/setup/replay`. "Replay Setup" in Profile settings is admin-only (`isAdmin` / `isAdminEmail`), same gate pattern as the feedback inbox.
 - Profile (`/profile`) is the stats/dashboard surface; account preferences live at `/profile/settings`, opened from the profile header gear (not an inline settings stack on the dashboard).
 - Log DaySelect day chips share calendar category colors via `src/lib/utils/dayColors.ts` as text/icon/outline accents (not full filled buttons); UP NEXT outline should read clearly vs the default state.
+- AI Coach (floating G orb + sheet under `src/components/coach/`) is Gemini-backed; default model `gemini-3.5-flash-lite` via `GEMINI_MODEL` / `COACH_DEFAULT_MODEL` (see `docs/COACH.md`); schema in `docs/sql/33-coach.sql`–`35-coach-conversations.sql`; standard users get 15 messages per rolling 24h with reset copy, admin/dev can bypass the app cap; coach “today” must use the user’s local timezone.

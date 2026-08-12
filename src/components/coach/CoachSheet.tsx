@@ -178,6 +178,21 @@ function compactRestRect(dock: 'tl' | 'tr' | 'bl' | 'br'): {
   }
 }
 
+/** Full-page sheet resting box — mirrors `.coach-sheet--page` (inset 0). */
+function pageRestRect(): {
+  top: number
+  left: number
+  width: number
+  height: number
+} {
+  return {
+    top: 0,
+    left: 0,
+    width: window.innerWidth,
+    height: window.innerHeight,
+  }
+}
+
 /**
  * Soft rubber at the top only. Downward travel stays 1:1 so the sheet can
  * slide past minimize and fully off-screen under the finger — no mid-drag
@@ -269,8 +284,8 @@ export default function CoachSheet() {
    */
   const [playEnter, setPlayEnter] = useState(true)
   /**
-   * FLIP lock for page→compact: pixel box matching the dragged frame so the
-   * size-class swap doesn't jump the sheet to the compact resting slot.
+   * FLIP lock for page↔compact: pixel box matching the dragged frame so the
+   * size-class swap doesn't jump the sheet to the target resting slot.
    */
   const [morphLock, setMorphLock] = useState<{
     top: number
@@ -278,7 +293,7 @@ export default function CoachSheet() {
     width: number
     height: number
   } | null>(null)
-  /** True while height/inset CSS is morphing toward compact rest. */
+  /** True while height/inset CSS is morphing toward page or compact rest. */
   const [sizeMorphing, setSizeMorphing] = useState(false)
   const morphTimer = useRef<number | null>(null)
 
@@ -309,18 +324,12 @@ export default function CoachSheet() {
     !draft.trim() || streaming || capped || configured === false
 
   // Header is tight beside actions — keep copy short; full detail in title.
-  // Unlimited/dev: never show N/limit (denominator is meaningless when bypassed).
+  // Unlimited/dev: label only — dailyRemaining is still computed against the
+  // standard 15 cap and is misleading once bypassed (e.g. "11 left").
   const quotaLabel = (() => {
     if (!quota) return '—'
     const resetBit = resetRelative ? ` · ${resetRelative}` : ''
-    if (quota.unlimited) {
-      // Short "Dev · N left" — "Unlimited (dev) · N left · reset" overflowed.
-      // Once past the normal window, remaining clamps at 0; don't show "0 left".
-      if (dailyRemaining != null && dailyRemaining > 0) {
-        return `Dev · ${dailyRemaining} left`
-      }
-      return `Dev · uncapped`
-    }
+    if (quota.unlimited) return 'Dev (unlimited)'
     if (dailyRemaining != null) {
       // Prefer "N left" over "N/15" — fits better next to header actions.
       return `${dailyRemaining} left${resetBit}`
@@ -330,7 +339,7 @@ export default function CoachSheet() {
   })()
 
   const quotaTitle = quota?.unlimited
-    ? 'Dev toggle is on — the app’s 15/day limit is bypassed until you hit Gemini’s own free-tier quota. Remaining count is informational.'
+    ? 'Dev toggle is on — the app’s 15/day limit is bypassed until you hit Gemini’s own free-tier quota.'
     : resetClock
       ? `Coach messages left in the rolling 24h window — next slot frees around ${resetClock}`
       : 'Coach messages left in the rolling 24h window'
@@ -497,54 +506,14 @@ export default function CoachSheet() {
   )
 
   /**
-   * Page → compact without a bottom pop-in: lock the current visual rect
-   * (includes pull translate), clear pullY, swap to compact classes, then
-   * spring the locked box to compact resting geometry — one continuous sheet.
+   * Spring a FLIP-locked pixel box to a resting rect (page or compact).
+   * Caller already set morphLock to `from` and swapped size classes.
    */
-  const morphToCompact = useCallback(
-    (fromY: number) => {
-      cancelSettle()
-      setPlayEnter(false)
-      setGestureDismissY(0)
-      setDismissBackdropOpacity(null)
-      setPullDismissing(false)
-
-      if (reduceMotion) {
-        if (morphTimer.current != null) window.clearTimeout(morphTimer.current)
-        setMorphLock(null)
-        setSizeMorphing(false)
-        pullYRef.current = 0
-        setPullY(0)
-        setPullPhase('idle')
-        setSize('compact')
-        return
-      }
-
-      const sheet = sheetRef.current
-      const rect = sheet?.getBoundingClientRect()
-      if (!rect || rect.height < 8) {
-        setSize('compact')
-        springPullToZero(fromY, 0)
-        return
-      }
-
-      if (morphTimer.current != null) window.clearTimeout(morphTimer.current)
-      pullYRef.current = 0
-      setPullY(0)
-      setPullPhase('idle')
-
-      const from = {
-        top: rect.top,
-        left: rect.left,
-        width: rect.width,
-        height: rect.height,
-      }
-      const to = compactRestRect(dock)
-      setMorphLock(from)
-      setSizeMorphing(true)
-      setSize('compact')
-
-      // Spring each edge as one critically-damped unit (same sheet constants).
+  const springMorphBox = useCallback(
+    (
+      from: { top: number; left: number; width: number; height: number },
+      to: { top: number; left: number; width: number; height: number },
+    ) => {
       let top = from.top
       let left = from.left
       let width = from.width
@@ -591,7 +560,123 @@ export default function CoachSheet() {
       }
       settleRaf.current = requestAnimationFrame(tick)
     },
-    [cancelSettle, dock, reduceMotion, setSize, springPullToZero],
+    [],
+  )
+
+  /**
+   * Page → compact without a bottom pop-in: lock the current visual rect
+   * (includes pull translate), clear pullY, swap to compact classes, then
+   * spring the locked box to compact resting geometry — one continuous sheet.
+   */
+  const morphToCompact = useCallback(
+    (fromY: number) => {
+      cancelSettle()
+      setPlayEnter(false)
+      setGestureDismissY(0)
+      setDismissBackdropOpacity(null)
+      setPullDismissing(false)
+
+      if (reduceMotion) {
+        if (morphTimer.current != null) window.clearTimeout(morphTimer.current)
+        setMorphLock(null)
+        setSizeMorphing(false)
+        pullYRef.current = 0
+        setPullY(0)
+        setPullPhase('idle')
+        setSize('compact')
+        return
+      }
+
+      const sheet = sheetRef.current
+      const rect = sheet?.getBoundingClientRect()
+      if (!rect || rect.height < 8) {
+        setSize('compact')
+        springPullToZero(fromY, 0)
+        return
+      }
+
+      if (morphTimer.current != null) window.clearTimeout(morphTimer.current)
+      pullYRef.current = 0
+      setPullY(0)
+      setPullPhase('idle')
+
+      const from = {
+        top: rect.top,
+        left: rect.left,
+        width: rect.width,
+        height: rect.height,
+      }
+      setMorphLock(from)
+      setSizeMorphing(true)
+      setSize('compact')
+      springMorphBox(from, compactRestRect(dock))
+    },
+    [
+      cancelSettle,
+      dock,
+      reduceMotion,
+      setSize,
+      springMorphBox,
+      springPullToZero,
+    ],
+  )
+
+  /**
+   * Compact → page without a remount/enter pop: same FLIP as minimize.
+   * Lock the dragged compact frame, clear pullY, swap to page classes, spring
+   * the locked box to full-page geometry — never springPullToZero across a
+   * size swap (that + page class was the expand flash).
+   */
+  const morphToPage = useCallback(
+    (fromY: number) => {
+      cancelSettle()
+      setPlayEnter(false)
+      setGestureDismissY(0)
+      setDismissBackdropOpacity(null)
+      setPullDismissing(false)
+
+      if (reduceMotion) {
+        if (morphTimer.current != null) window.clearTimeout(morphTimer.current)
+        setMorphLock(null)
+        setSizeMorphing(false)
+        pullYRef.current = 0
+        setPullY(0)
+        setPullPhase('idle')
+        expandToPage()
+        return
+      }
+
+      const sheet = sheetRef.current
+      const rect = sheet?.getBoundingClientRect()
+      if (!rect || rect.height < 8) {
+        expandToPage()
+        springPullToZero(fromY, 0)
+        return
+      }
+
+      if (morphTimer.current != null) window.clearTimeout(morphTimer.current)
+      pullYRef.current = 0
+      setPullY(0)
+      setPullPhase('idle')
+
+      const from = {
+        top: rect.top,
+        left: rect.left,
+        width: rect.width,
+        height: rect.height,
+      }
+      setMorphLock(from)
+      setSizeMorphing(true)
+      expandToPage()
+      springMorphBox(from, pageRestRect())
+    },
+    [
+      cancelSettle,
+      expandToPage,
+      reduceMotion,
+      springMorphBox,
+      springPullToZero,
+    ],
   )
 
   /**
@@ -736,12 +821,13 @@ export default function CoachSheet() {
           ? pullYRef.current
           : readTranslateY(motionRef.current) ||
             readTranslateY(sheetRef.current)
-      // Mid page→compact morph: convert locked box → pullY so the finger
-      // continues from the same visual top (compact rest + offset).
+      // Mid size morph: convert locked box → pullY so the finger continues
+      // from the same visual top (target rest + offset).
       if (sizeMorphing || morphLock) {
         const rect = sheetRef.current?.getBoundingClientRect()
         if (rect) {
-          const rest = compactRestRect(dock)
+          const rest =
+            size === 'page' ? pageRestRect() : compactRestRect(dock)
           liveY = rect.top - rest.top
         }
       }
@@ -781,6 +867,7 @@ export default function CoachSheet() {
       historyOpen,
       morphLock,
       pullPhase,
+      size,
       sizeMorphing,
     ],
   )
@@ -879,9 +966,9 @@ export default function CoachSheet() {
       setDismissBackdropOpacity(null)
       setPullDismissing(false)
       if (shouldExpand) {
-        expandToPage()
-        // Critically damped settle back to rest (interruptible via beginPull).
-        springPullToZero(y, vy)
+        // Continuous morph — same as minimize; never springPullToZero across
+        // the page class swap (that replayed a pop / enter from the wrong Y).
+        morphToPage(y)
       } else if (shouldCollapse) {
         // Continuous morph — do NOT springPullToZero (that + compact class swap
         // was the bottom pop-in).
@@ -891,9 +978,9 @@ export default function CoachSheet() {
       }
     },
     [
-      expandToPage,
       flingOffAndClose,
       morphToCompact,
+      morphToPage,
       size,
       springPullToZero,
     ],
@@ -937,8 +1024,10 @@ export default function CoachSheet() {
     gestureDismissActive || gestureDismissActiveRef.current
   const motionY = (() => {
     if (dragging || settling || pullDismissing || fromDragDismiss) {
-      // Never let Y collapse to 0 while dismissing — that's the middle flash.
-      const y = Math.max(pullY, gestureDismissY, fromDragDismiss ? 1 : 0)
+      // Allow negative Y (compact→page drag-up). Only floor at 1 on dismiss
+      // paths — Math.max(..., 0) used to kill upward tracking entirely.
+      const y = Math.max(pullY, gestureDismissY)
+      if (fromDragDismiss || pullDismissing) return Math.max(y, 1)
       return y
     }
     return 0
@@ -1182,7 +1271,7 @@ export default function CoachSheet() {
                 size="sm"
                 variant="surface"
                 haptic="light"
-                onClick={expandToPage}
+                onClick={() => morphToPage(0)}
                 style={{ width: 32, height: 32 }}
               >
                 <svg
