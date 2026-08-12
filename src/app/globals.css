@@ -1149,15 +1149,27 @@ html.reduce-motion *::after {
   /* Float lives on the inner wrapper so grab/tap transforms stay clean. */
   overflow: visible;
 }
-/* Glow / press scale is the affordance ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ kill the global square focus ring
-   (button:focus-visible also forces --radius-sm, which boxed the circle). */
-.coach-fab:focus,
-.coach-fab:focus-visible,
-.coach-fab *:focus,
-.coach-fab *:focus-visible {
+/* Glow / press scale is the affordance — kill the global square focus ring
+   (button/[tabindex]:focus-visible also forces --radius-sm, which boxes the
+   circle into a rounded square / hex). Beat `[tabindex]:focus-visible` on
+   specificity and pin every layer of the orb + iOS haptic switch overlay. */
+button.coach-fab,
+button.coach-fab:focus,
+button.coach-fab:focus-visible,
+button.coach-fab:focus-within,
+.coach-fab__float,
+.coach-fab__disc,
+.coach-fab [data-haptic-overlay],
+.coach-fab [data-haptic-overlay]:focus,
+.coach-fab [data-haptic-overlay]:focus-visible {
   outline: none !important;
-  outline-offset: 0;
+  outline-offset: 0 !important;
   border-radius: var(--radius-pill) !important;
+}
+.coach-fab [data-haptic-overlay] {
+  /* Never flash native switch chrome over the circle. */
+  opacity: 0 !important;
+  box-shadow: none !important;
 }
 html.light .coach-fab {
   /* Resting depth so the orb isn’t a flat lime disc on paper. */
@@ -1747,6 +1759,22 @@ html.reduce-motion .coach-sheet--closing {
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
+}
+/* Dense header icon buttons — no lime focus square on tap (same idea as
+   bottom-nav). Keyboard focus still gets a soft wash, not a neon ring. */
+.coach-sheet__actions button:focus,
+.coach-sheet__actions button:focus-visible,
+.coach-sheet__actions [data-haptic-overlay]:focus,
+.coach-sheet__actions [data-haptic-overlay]:focus-visible,
+.coach-history__bar button:focus,
+.coach-history__bar button:focus-visible,
+.coach-history__bar [data-haptic-overlay]:focus,
+.coach-history__bar [data-haptic-overlay]:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+.coach-sheet__actions button:focus-visible {
+  background-color: var(--accent-wash) !important;
 }
 /* Compact expand vs page history/new ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ crossfade + width ease (no icon snap). */
 .coach-sheet__actions-set {

@@ -32,6 +32,27 @@ export type HapticIntensity = 'light' | 'medium' | 'heavy' | 'success'
 const OVERLAY_ATTR = 'data-haptic-overlay'
 const DATA_HAPTIC = 'data-haptic'
 
+/**
+ * Programmatic focus that must not paint :focus-visible.
+ * iOS/Safari often treats post-tap `.focus()` as keyboard-like and applies the
+ * global lime ring (plus --radius-sm), which boxes the Coach FAB. Keyboard
+ * Tab focus is unaffected. `focusVisible` isn't in every TS DOM lib yet.
+ */
+export function focusWithoutRing(el: HTMLElement): void {
+  try {
+    el.focus({
+      preventScroll: true,
+      focusVisible: false,
+    } as FocusOptions)
+  } catch {
+    try {
+      el.focus({ preventScroll: true })
+    } catch {
+      // non-focusable hosts are fine
+    }
+  }
+}
+
 /** Same drift tolerance as the hold-to-remove gesture in FriendsAccordion and
  *  SwipeNavigator's axis deadzone — a few px of finger wobble is a tap, more
  *  than that is a drag/swipe. */
@@ -331,14 +352,12 @@ export function attachHapticOverlay(el: HTMLElement): () => void {
     if (wasDragged || hostIsDisabled(el)) return
     // One system tick already fired from the direct tap on the switch.
     // Re-dispatch so the host's React onClick / navigation still runs.
-    // Don't leave focus on <a> hosts — iOS/Safari keeps :focus-visible on the
-    // tapped nav link and paints a lasting lime square around the active tab.
-    try {
-      if (!(el instanceof HTMLAnchorElement)) {
-        el.focus({ preventScroll: true })
-      }
-    } catch {
-      /* non-focusable hosts are fine */
+    // Don't leave a lasting :focus-visible ring on tap. iOS/Safari treats
+    // programmatic focus after a switch-tick as keyboard-like, which paints
+    // the global lime outline (and --radius-sm) on FAB / coach header buttons.
+    // Keyboard users still get a ring when they Tab to the control.
+    if (!(el instanceof HTMLAnchorElement)) {
+      focusWithoutRing(el)
     }
     el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }))
     if (el instanceof HTMLAnchorElement) {

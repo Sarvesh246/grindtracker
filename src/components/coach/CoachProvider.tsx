@@ -21,6 +21,7 @@ import { parseCoachChatStreamLine, rehydrateCoachNdjson, shouldParseCoachNdjson,
 import { titleFromMessage } from '@/lib/coach/conversations'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { localDateKey } from '@/lib/utils/formatting'
+import { focusWithoutRing } from '@/lib/utils/haptics'
 import { useRouter } from 'next/navigation'
 
 export type CoachDockId = 'br' | 'bl' | 'tr' | 'tl'
@@ -232,7 +233,10 @@ export function CoachProvider({ children }: { children: ReactNode }) {
     reanchor()
     requestAnimationFrame(() => {
       reanchor()
-      fabRef.current?.focus()
+      // Return focus for a11y, but never paint :focus-visible — that global
+      // ring also forces --radius-sm, which turns the G orb into a rounded
+      // square/hex until the next blur (e.g. switching tabs).
+      if (fabRef.current) focusWithoutRing(fabRef.current)
     })
     window.setTimeout(reanchor, 250)
     window.setTimeout(reanchor, 520)
