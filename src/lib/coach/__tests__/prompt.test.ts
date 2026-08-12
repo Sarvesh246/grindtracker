@@ -83,7 +83,9 @@ describe('COACH_SYSTEM_PROMPT', () => {
   it('prefers one clear recommendation and proportional workout formatting', () => {
     assert.match(COACH_SYSTEM_PROMPT, /one clear recommendation/i)
     assert.match(COACH_SYSTEM_PROMPT, /Use 95 lb today/i)
-    assert.match(COACH_SYSTEM_PROMPT, /sets×reps/i)
+    assert.match(COACH_SYSTEM_PROMPT, /Visual hierarchy/i)
+    assert.match(COACH_SYSTEM_PROMPT, /\*\*Barbell Squat\*\*/)
+    assert.match(COACH_SYSTEM_PROMPT, /Target: \*\*70 lb\*\*/)
     assert.match(COACH_SYSTEM_PROMPT, /pipe table/i)
   })
 })

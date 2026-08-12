@@ -2087,8 +2087,36 @@ html.reduce-motion .coach-bubble--user {
   color: var(--accent-text);
 }
 .coach-md__label + .coach-md__list,
-.coach-md__label + .coach-md__p {
+.coach-md__label + .coach-md__p,
+.coach-md__label + .coach-md__stack {
   margin-top: -2px;
+}
+.coach-md__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+.coach-md__stack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.coach-md__stack + .coach-md__stack {
+  margin-top: 4px;
+}
+.coach-md__stack-body {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.coach-md__stack-body strong {
+  color: var(--text-primary);
+  font-weight: 700;
 }
 .coach-md__list {
   margin: 0;

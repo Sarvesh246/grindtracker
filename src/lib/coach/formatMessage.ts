@@ -1,7 +1,8 @@
 /**
  * Lightweight Markdown subset for Coach replies.
  * Supports paragraphs, soft line breaks, unordered/ordered lists,
- * ### section labels, GitHub-style pipe tables, **bold**, *italic*.
+ * ### section labels, **title** lines / exercise stacks, GitHub-style
+ * pipe tables, **bold**, *italic*.
  * Pure + XSS-safe when rendered as React text nodes (no HTML passthrough).
  */
 
@@ -12,7 +13,15 @@ export type CoachInline =
 
 export type CoachBlock =
   | { type: 'paragraph'; children: CoachInline[] }
+  /** ### Section — small eyebrow label. */
   | { type: 'label'; children: CoachInline[] }
+  /** Lone **Name** or leading bold line — larger skim title (exercise, PR, etc.). */
+  | { type: 'title'; children: CoachInline[] }
+  /**
+   * Workout-style block: bold name + soft-break detail lines
+   * (sets×reps / Target / Rest).
+   */
+  | { type: 'stack'; title: CoachInline[]; body: CoachInline[] }
   | { type: 'list'; ordered: boolean; items: CoachInline[][] }
   | {
       type: 'table'
@@ -21,7 +30,6 @@ export type CoachBlock =
     }
 
 export type CoachFormattedMessage = CoachBlock[]
-
 
 const UL_RE = /^\s*[-*•]\s+(.+)$/
 const OL_RE = /^\s*\d+[.)]\s+(.+)$/
@@ -129,17 +137,45 @@ function isTableSeparator(line: string): boolean {
   return /^\|?(\s*:?-+:?\s*\|)+\s*:?-+:?\s*\|?$/.test(trimmed)
 }
 
-/** True when a paragraph is only a short bold label (optional trailing colon). */
-function asBoldOnlyLabel(children: CoachInline[]): CoachInline[] | null {
+function boldTextLength(children: CoachInline[]): number {
+  return children
+    .map(c => (c.type === 'text' ? c.value : ''))
+    .join('')
+    .trim().length
+}
+
+/** Lone **Title** line → skim title (exercise name, PR callout). */
+function asTitleOnly(children: CoachInline[]): CoachInline[] | null {
   if (children.length !== 1) return null
   const only = children[0]!
   if (only.type !== 'bold') return null
-  const text = only.children
-    .map(c => (c.type === 'text' ? c.value : ''))
-    .join('')
-    .trim()
-  if (!text || text.length > 40) return null
+  const len = boldTextLength(only.children)
+  if (!len || len > 80) return null
   return only.children
+}
+
+/**
+ * **Exercise** + soft-break detail lines → stack with larger title + muted body.
+ */
+function asTitleStack(
+  children: CoachInline[],
+): { title: CoachInline[]; body: CoachInline[] } | null {
+  if (children[0]?.type !== 'bold') return null
+  const titleNode = children[0]
+  const len = boldTextLength(titleNode.children)
+  if (!len || len > 80) return null
+
+  const second = children[1]
+  if (!second || second.type !== 'text' || !second.value.startsWith('\n')) {
+    return null
+  }
+
+  const body: CoachInline[] = []
+  const after = second.value.replace(/^\n+/, '')
+  if (after) body.push({ type: 'text', value: after })
+  body.push(...children.slice(2))
+  if (!body.length) return null
+  return { title: titleNode.children, body }
 }
 
 /**
@@ -184,7 +220,6 @@ export function formatCoachMessage(raw: string): CoachFormattedMessage {
         if (matchLabelLine(cur) || matchListLine(cur)) break
         const cells = parseTableRow(cur)
         if (!cells) break
-        // Pad / trim to header width for stable columns
         const normalized = headerCells.map((_, idx) => cells[idx] ?? '')
         rows.push(normalized.map(c => parseInline(c)))
         i += 1
@@ -193,7 +228,6 @@ export function formatCoachMessage(raw: string): CoachFormattedMessage {
         blocks.push({ type: 'table', headers, rows })
         continue
       }
-      // Header+sep with no body — fall through as paragraph
       i -= 2
     }
 
@@ -219,7 +253,6 @@ export function formatCoachMessage(raw: string): CoachFormattedMessage {
       const cur = lines[i]!
       if (!cur.trim()) break
       if (matchListLine(cur) || matchLabelLine(cur)) break
-      // Don't swallow the start of a table into a paragraph
       if (
         parseTableRow(cur) &&
         i + 1 < lines.length &&
@@ -232,13 +265,17 @@ export function formatCoachMessage(raw: string): CoachFormattedMessage {
     }
     if (paraLines.length) {
       const children = parseParagraphLines(paraLines)
-      // A lone **Label** line becomes a section label for multi-topic answers.
       if (paraLines.length === 1) {
-        const boldLabel = asBoldOnlyLabel(children)
-        if (boldLabel) {
-          blocks.push({ type: 'label', children: boldLabel })
+        const title = asTitleOnly(children)
+        if (title) {
+          blocks.push({ type: 'title', children: title })
           continue
         }
+      }
+      const stack = asTitleStack(children)
+      if (stack) {
+        blocks.push({ type: 'stack', title: stack.title, body: stack.body })
+        continue
       }
       blocks.push({ type: 'paragraph', children })
     }

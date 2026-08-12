@@ -85,15 +85,43 @@ describe('formatCoachMessage', () => {
     assert.equal(blocks[4]!.type, 'paragraph')
   })
 
-  it('promotes a lone bold line to a section label', () => {
+  it('promotes a lone bold line to a skim title (not a small section label)', () => {
     const blocks = formatCoachMessage('**Breathing**\n\nExhale on the press.')
-    assert.equal(blocks[0]!.type, 'label')
-    if (blocks[0]!.type === 'label') {
+    assert.equal(blocks[0]!.type, 'title')
+    if (blocks[0]!.type === 'title') {
       assert.deepEqual(blocks[0].children, [
         { type: 'text', value: 'Breathing' },
       ])
     }
     assert.equal(blocks[1]!.type, 'paragraph')
+  })
+
+  it('stacks bold exercise name above soft-break detail lines', () => {
+    const blocks = formatCoachMessage(
+      [
+        'Next up is legs.',
+        '',
+        '**Barbell Squat**',
+        '4 × 6–8',
+        'Target: **70 lb**',
+        'Rest: 2–3 min',
+        '',
+        '**Leg Curl**',
+        '3 × 12',
+        'Target: **53 lb**',
+        'Rest: 90 sec',
+      ].join('\n'),
+    )
+    assert.equal(blocks[0]!.type, 'paragraph')
+    assert.equal(blocks[1]!.type, 'stack')
+    assert.equal(blocks[2]!.type, 'stack')
+    if (blocks[1]!.type !== 'stack') return
+    assert.deepEqual(blocks[1].title, [{ type: 'text', value: 'Barbell Squat' }])
+    assert.ok(
+      blocks[1].body.some(
+        n => n.type === 'bold' && n.children[0]?.type === 'text' && n.children[0].value === '70 lb',
+      ),
+    )
   })
 
   it('keeps blank-line paragraphs separate', () => {

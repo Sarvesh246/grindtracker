@@ -27,7 +27,8 @@ function renderInline(nodes: CoachInline[], keyPrefix: string): ReactNode[] {
 }
 
 /**
- * Renders Coach assistant text with light Markdown (bold, lists, labels, tables).
+ * Renders Coach assistant text with light Markdown
+ * (bold, lists, labels, titles, exercise stacks, tables).
  * User bubbles should stay plain `pre-wrap` text.
  */
 export default function CoachMessageContent({ content }: { content: string }) {
@@ -49,6 +50,25 @@ export default function CoachMessageContent({ content }: { content: string }) {
             <p key={i} className="coach-md__label">
               {renderInline(block.children, `h${i}`)}
             </p>
+          )
+        }
+        if (block.type === 'title') {
+          return (
+            <p key={i} className="coach-md__title">
+              {renderInline(block.children, `t${i}`)}
+            </p>
+          )
+        }
+        if (block.type === 'stack') {
+          return (
+            <div key={i} className="coach-md__stack">
+              <p className="coach-md__title">
+                {renderInline(block.title, `st${i}`)}
+              </p>
+              <p className="coach-md__stack-body">
+                {renderInline(block.body, `sb${i}`)}
+              </p>
+            </div>
           )
         }
         if (block.type === 'table') {

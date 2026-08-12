@@ -134,11 +134,12 @@ to convert when `unit_preference` is `kg`.
 Reply formatting is enforced in `COACH_SYSTEM_PROMPT` for **every** turn
 (starter chips and free-typed questions share `POST /api/coach/chat`). The
 prompt follows a **strategy, not a template**: simple questions stay short;
-structure (bullets, headings, tables, workout blocks) and personal
-`USER_DATA` are included only when they improve that ask. Progressive
-disclosure stays **inside one reply** so users are not nudged into burning
-extra daily messages. The sheet renders Markdown via `CoachMessageContent`
-(paragraphs, lists, labels, tables, **bold**).
+structure (bullets, headings, tables, workout stacks) and personal
+`USER_DATA` are included only when they improve that ask. When a workout or
+similar list is structured, exercise names render as larger skim titles and
+detail lines stay quieter (`CoachMessageContent` title/stack blocks).
+Progressive disclosure stays **inside one reply** so users are not nudged
+into burning extra daily messages.
 
 ## UI
 
@@ -151,7 +152,7 @@ Floating coach on authenticated `(app)` routes (`src/components/coach/`):
 | **Compact sheet** | Quick “type to orb” card; backdrop closes; expand morphs fluidly into the full Coach page. |
 | **Full page** | Dedicated chat surface (Siri-app style) with New + History. Close dismisses. Escape closes history first, then Coach. |
 | **Saved chats** | `GET/POST /api/coach/conversations`, `GET/DELETE /api/coach/conversations/[id]`. Chat `POST` accepts `conversationId` and returns `X-Coach-Conversation-Id`. |
-| **Markdown** | Assistant replies render via `CoachMessageContent` (paragraphs, lists, labels, pipe tables, **bold**). |
+| **Markdown** | Assistant replies render via `CoachMessageContent` (paragraphs, lists, labels, skim titles / exercise stacks, pipe tables, **bold**). |
 | **API** | First open → `GET /api/coach/chat` (quota). Send → `POST` stream + `unit` from `UnitContext`; quota pill re-synced via `GET` after every turn settles. |
 | **z-index** | FAB 420 · backdrop 430 · sheet/page 440. |
 
