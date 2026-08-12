@@ -16,6 +16,13 @@ export {
 export { buildCoachContext, type CoachContext, type CoachUnitPreference } from './buildContext'
 export { COACH_SYSTEM_PROMPT } from './prompt'
 export {
+  COACH_STRESS_CATALOG,
+  COACH_STRESS_CATEGORIES,
+  type CoachStressCase,
+  type PersonalizationNeed,
+  type PreferredFormat,
+} from './stressCatalog'
+export {
   summarizeTrainingHistory,
   type TrainingBreak,
   type TrainingHistorySummary,

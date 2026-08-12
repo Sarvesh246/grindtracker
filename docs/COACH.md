@@ -131,15 +131,27 @@ existing RPCs (`grind_badge_metrics`, `grind_home_history`,
 Weights stay **canonical lbs** in the pack; the system prompt tells the model
 to convert when `unit_preference` is `kg`.
 
-Reply formatting is enforced in `COACH_SYSTEM_PROMPT` for **every** turn
+Reply behavior is enforced in `COACH_SYSTEM_PROMPT` for **every** turn
 (starter chips and free-typed questions share `POST /api/coach/chat`). The
-prompt follows a **strategy, not a template**: simple questions stay short;
-structure (bullets, headings, tables, workout stacks) and personal
+prompt optimizes for **intent → relevance → depth → format → action →
+confidence**, not for always being structured/personalized/detailed:
+
+- Simple facts stay short with **no** forced personal history
+- Recommendations lead with **one decision** (+ brief why / fallback)
+- Workouts are immediately executable (bold exercise stacks)
+- Analysis separates **observed → interpretation (hedged) → action**
+- Exact output shapes ("3 things", yes/no, summary) are followed
+- Confidence matches evidence; safety overrides performance
+
+Structure (bullets, headings, tables, workout stacks) and personal
 `USER_DATA` are included only when they improve that ask. When a workout or
 similar list is structured, exercise names render as larger skim titles and
 detail lines stay quieter (`CoachMessageContent` title/stack blocks).
 Progressive disclosure stays **inside one reply** so users are not nudged
-into burning extra daily messages.
+into burning extra daily messages. Behavioral contracts live in
+`src/lib/coach/__tests__/prompt.test.ts`; the internal stress-test catalog
+(`src/lib/coach/stressCatalog.ts`) classifies prompts by personalization need
+and preferred format so regressions can be caught without live API calls.
 
 ## UI
 

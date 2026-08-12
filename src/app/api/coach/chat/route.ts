@@ -268,7 +268,7 @@ export async function POST(request: Request) {
 USER_DATA (JSON; personal facts only — trust this over memory):
 ${contextJson}
 
-Remember: strategy not template — simple question = simple answer. Only add structure or personal USER_DATA when it improves THIS ask. When you do structure a workout/list, bold exercise names and key numbers for skim hierarchy. Prefer one clear recommendation when they ask what to do. Answer fully in this one turn — do not ask them to message again.`
+Remember: intent first — give the minimum useful answer for THIS ask. Simple fact = short, no personal history. Recommendation = decision first + brief why (+ fallback). Workout = executable stacks with bold names/targets. Analysis = takeaway → evidence → hedged interpretation → action. Follow exact output shape when requested. Match confidence to evidence. No internal jargon; verify units/numbers. Answer fully in this one turn — do not ask them to message again.`
 
   try {
     const result = streamText({
