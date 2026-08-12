@@ -20,7 +20,6 @@ as $$
 declare
   v_user    uuid := auth.uid();
   v_updated int := 0;
-  v_date    date := grind_safe_local_date(p_local_date);
 begin
   if v_user is null then
     raise exception 'AUTH_REQUIRED' using errcode = '28000';
@@ -62,8 +61,9 @@ begin
     raise exception 'NO_MATCHING_SETS' using errcode = '22023';
   end if;
 
-  -- Recompute XP / PRs / is_pr from the corrected weights.
-  perform grind_recompute_stats(v_user, v_date);
+  -- p_local_date is accepted for call-site compatibility and ignored: streak
+  -- grouping must use "today", not the session being corrected (see 38).
+  perform grind_recompute_stats(v_user, grind_safe_local_date(null));
 
   return json_build_object(
     'updated_sets', v_updated,

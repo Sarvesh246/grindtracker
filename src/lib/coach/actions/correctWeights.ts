@@ -254,7 +254,6 @@ export async function executeCorrectWeights(
       p_exercise_id: execute.exerciseId,
       p_from_weight_lbs: execute.fromWeightLbs,
       p_to_weight_lbs: execute.toWeightLbs,
-      p_local_date: session.localDate,
     })
 
     if (error) {

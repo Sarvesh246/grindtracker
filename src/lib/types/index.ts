@@ -22,6 +22,8 @@ export interface Session {
   completed_at: string | null
   /** Authoritative streak/calendar day (YYYY-MM-DD), set server-side on complete. */
   local_date?: string | null
+  /** Local wall-clock hour (0–23) at live complete; null for past-logged sessions. */
+  start_hour?: number | null
   xp_earned: number
   note: string | null
   created_at: string

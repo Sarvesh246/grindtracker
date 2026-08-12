@@ -94,16 +94,18 @@ $$;
 create or replace function grind_safe_past_date(p_local_date date)
 returns date
 language sql
-immutable
+stable
 set search_path = public
 as $$
-  -- Past logging: not future (relative to UTC+1 slack), not older than 2 years.
+  -- Past logging: not future (UTC+1 slack, matching grind_safe_local_date),
+  -- not older than 2 years. Null defaults to UTC yesterday.
+  -- Live version also lives in 38-schema-integrity.sql (re-run 38 after this file).
   select least(
     greatest(
       coalesce(p_local_date, (now() at time zone 'utc')::date - 1),
       (now() at time zone 'utc')::date - 730
     ),
-    (now() at time zone 'utc')::date
+    (now() at time zone 'utc')::date + 1
   );
 $$;
 
@@ -841,8 +843,14 @@ begin
   end if;
 end $$;
 
+-- SUPERSEDED by 38-schema-integrity.sql. The live RPC is zero-arg and derives
+-- early_bird / night_owl / flawless from sessions.start_hour + skip rows.
+-- This copy is kept so a greenfield 20 still has *a* badge RPC; after 38 the
+-- (int, boolean) overload becomes an ignore-args wrapper. Do not change this
+-- signature to timestamptz (that was the p_start_hour drift). Re-run 38 after
+-- this file if 38 was already applied.
 create or replace function award_earned_badges(
-  p_session_started_at timestamptz default null,
+  p_start_hour int default null,
   p_had_no_skips boolean default null
 )
 returns json
@@ -859,7 +867,7 @@ declare
   v_id text;
   v_total_prs int := 0;
   v_level int := 1;
-  v_start_hour int;
+  v_start_hour int := p_start_hour;
   v_had_comeback boolean := false;
   v_has_full_split boolean := false;
   v_has_weekend boolean := false;
@@ -934,7 +942,7 @@ begin
     )
   ) into v_metrics;
 
-  -- Comeback: ≥15 calendar days between the last two distinct local_dates.
+  -- Comeback: 14+ calendar days between the last two distinct local_dates.
   select array_agg(d order by d desc) into v_dates
     from (
       select distinct local_date as d
@@ -944,7 +952,7 @@ begin
        limit 2
     ) q;
   if coalesce(array_length(v_dates, 1), 0) = 2 then
-    v_had_comeback := (v_dates[1] - v_dates[2]) >= 15;
+    v_had_comeback := (v_dates[1] - v_dates[2]) >= 14;
   end if;
 
   -- Week split / weekend warrior from this ISO week (Mon–Sun), using local_date.
@@ -994,18 +1002,6 @@ begin
      and s.local_date is not null
      and s.local_date >= v_week_start
      and s.local_date < v_week_start + 7;
-
-  if p_session_started_at is not null then
-    v_start_hour := extract(hour from p_session_started_at at time zone 'utc'
-                            + (p_session_started_at - p_session_started_at at time zone 'utc'))::int;
-    -- Use the timestamptz's local wall-clock via AT TIME ZONE of a fixed offset is wrong
-    -- for arbitrary TZs. Callers pass a wall-clock instant; extract hour in the
-    -- session timezone of the *value as stored*, which for JS Date ISO strings
-    -- is UTC. Prefer the client's hour via extract from the timestamptz cast to
-    -- timestamp without tz of the original ISO (client already encodes local).
-    -- Simpler: take hour from the timestamptz in UTC-naive form the client sent.
-    v_start_hour := extract(hour from p_session_started_at)::int;
-  end if;
 
   -- Build candidates.
   if v_stats.total_workouts >= 1 then v_candidates := array_append(v_candidates, 'first_workout'); end if;
@@ -1085,8 +1081,8 @@ begin
 end;
 $$;
 
-revoke all on function award_earned_badges(timestamptz, boolean) from public, anon;
-grant execute on function award_earned_badges(timestamptz, boolean) to authenticated;
+revoke all on function award_earned_badges(int, boolean) from public, anon;
+grant execute on function award_earned_badges(int, boolean) to authenticated;
 
 -- Deny direct client mutations on user_badges. SELECT stays for profile grids.
 revoke insert, update, delete on user_badges from authenticated;

@@ -197,11 +197,11 @@ heaviest weight), time-of-day (early bird/night owl), weekend warrior, a
 comeback badge (14+ day gap since the prior workout), flawless (a session with
 zero skipped sets), rest-day/friend/body-weight-log config badges, and a
 `completionist` meta-badge for earning every other one. `checkAndAwardBadges()`
-takes an optional `BadgeContext` (`sessionStartedAt`, `hadNoSkips`) for the
-session-local conditions — only `ActiveWorkout.handleFinish` (the live-finish
-path) passes both; `HomeDashboard`'s quick-save passes just the start time;
-`log/past` (backdated entries) passes neither, since time-of-day and
-"skipped a set" don't reliably apply to a manually-entered historical workout.
+calls `award_earned_badges()` with no client hour/skip args (migration `38`).
+Early bird / night owl / flawless are derived server-side from
+`sessions.start_hour` (set by `complete_session`, same trust model as
+`p_local_date`) and skip rows on live-completed sessions — past-logged
+workouts leave `start_hour` null so those three badges do not apply there.
 Lifetime aggregates (volume, heaviest/highest-rep set, exercise variety,
 rest-day/friend/weight-log flags) come from one RPC, `grind_badge_metrics()`
 (migration `16-badge-metrics.sql`) — not security definer, every subquery
@@ -225,7 +225,7 @@ stored that isn't recomputable — and the client has **no UPDATE privilege on
 
 | RPC | Called from |
 | --- | --- |
-| `complete_session(session_id, local_date, note)` | `ActiveWorkout.handleFinish` |
+| `complete_session(session_id, local_date, note, start_hour)` | `ActiveWorkout.handleFinish` |
 | `uncomplete_session(session_id, local_date)` | `ActiveWorkout.handleUndoFinish`, `FinishUndoBanner` |
 | `delete_session(session_id, local_date)` | `log/past` delete |
 | `refresh_stats(local_date)` | `log/past` save, `HomeDashboard` stale-streak lapse |

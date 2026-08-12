@@ -1810,6 +1810,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
           p_session_id: sessionId,
           p_local_date: localDateKey(new Date()),
           p_note: workoutNote || null,
+          p_start_hour: startedAt.getHours(),
         }),
       )
 
@@ -1976,7 +1977,6 @@ export default function ActiveWorkout({ day }: { day: string }) {
           supabase,
           user.id,
           { user_id: user.id, ...updatedStats } as UserStats,
-          { sessionStartedAt: startedAt, hadNoSkips: skippedSets() === 0 && checkedSets() > 0 },
         )
       } catch {
         newBadges = []

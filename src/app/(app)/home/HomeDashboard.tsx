@@ -346,6 +346,7 @@ export default function HomeDashboard({
         p_session_id: activeSession.id,
         p_local_date: localDateKey(new Date()),
         p_note: null,
+        p_start_hour: new Date(activeSession.started_at).getHours(),
       })
       if (error || !data) throw error ?? new Error('Save failed')
       const result = data as CompleteSessionResult
@@ -394,7 +395,6 @@ export default function HomeDashboard({
             total_workouts: result.total_workouts,
             updated_at: new Date().toISOString(),
           } as UserStats,
-          { sessionStartedAt: new Date(activeSession.started_at) },
         )
       } catch { /* non-critical */ }
 

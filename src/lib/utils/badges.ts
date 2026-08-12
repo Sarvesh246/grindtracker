@@ -73,17 +73,12 @@ export function formatBadgeDescription(
   return `Log a set at ${fmtWeight(badge.weightLbs)} ${unitLabel} or more`
 }
 
-export interface BadgeContext {
-  /** Local start time of the just-finished session — powers early_bird/night_owl. */
-  sessionStartedAt?: Date
-  /** True when the just-finished session had zero skipped sets. Powers `flawless`. */
-  hadNoSkips?: boolean
-}
-
 /**
- * Server-side badge evaluation + insert (docs/sql/20-production-hardening.sql).
+ * Server-side badge evaluation + insert (docs/sql/38-schema-integrity.sql).
  * Clients no longer have INSERT privilege on `user_badges` — any UI-side insert
- * was a self-grant vector. The RPC re-checks every condition from live data.
+ * was a self-grant vector. The RPC re-checks every condition from live data,
+ * including early_bird / night_owl / flawless (from `sessions.start_hour` and
+ * skip rows). Do not send a client hour or skip flag.
  *
  * `userId` / `stats` are retained for call-site compatibility; the server ignores
  * client-supplied stats for award decisions.
@@ -92,17 +87,8 @@ export async function checkAndAwardBadges(
   supabase: SupabaseClient,
   _userId: string,
   _stats: UserStats,
-  context: BadgeContext = {},
 ): Promise<string[]> {
-  const startHour =
-    context.sessionStartedAt !== undefined
-      ? context.sessionStartedAt.getHours()
-      : null
-
-  const { data, error } = await supabase.rpc('award_earned_badges', {
-    p_start_hour: startHour,
-    p_had_no_skips: context.hadNoSkips ?? null,
-  })
+  const { data, error } = await supabase.rpc('award_earned_badges')
 
   if (error) {
     console.error('[grind] award_earned_badges failed', error)

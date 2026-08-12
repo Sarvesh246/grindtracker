@@ -50,6 +50,7 @@ is fully linked to migration history.
 | [35-coach-conversations.sql](sql/35-coach-conversations.sql) | 35 | Saved Coach chats (`coach_conversations` + message link) |
 | [36-coach-actions.sql](sql/36-coach-actions.sql) | 36 | Coach action proposals (confirm-before-apply mutations) |
 | [37-coach-correct-weights.sql](sql/37-coach-correct-weights.sql) | 37 | In-place Coach weight corrections (preserve skips + RPE) |
+| [38-schema-integrity.sql](sql/38-schema-integrity.sql) | 38 | **Paste this in Supabase.** Badge RPC no longer trusts client hour/skips; past-date UTC+1 slack; Coach recompute uses today; delete-my-data clears Coach; comeback = 14+ days |
 
 See also [PUSH.md](PUSH.md) for VAPID keys, Vercel env, and cron setup.
 See [COACH.md](COACH.md) for Gemini env, rate limits, `/api/coach/chat`, and
@@ -57,6 +58,17 @@ confirm-before-apply Coach actions (`docs/sql/36-coach-actions.sql`).
 
 **If you already applied an older 27:** run **28** next. Fresh installs can apply the
 updated **27** alone (includes the hardening) or 27 then 28 (idempotent).
+
+## Deploying 38
+
+`38-schema-integrity.sql` must be applied **before** (or with) the app that
+calls `award_earned_badges()` with no args and `complete_session(..., p_start_hour)`.
+
+1. Run `docs/sql/38-schema-integrity.sql` in the Supabase SQL editor.
+2. Sanity checks:
+   - `select proname, pg_get_function_identity_arguments(oid) from pg_proc where proname = 'award_earned_badges';` — includes a zero-arg overload
+   - `select grind_safe_past_date(current_date + 1);` — returns UTC today or UTC+1, not rewritten further back
+3. Deploy the app.
 
 ## Deploying 20
 
@@ -77,7 +89,7 @@ updated **27** alone (includes the hardening) or 27 then 28 (idempotent).
 - Transactional `upsert_past_session` (no client delete-then-insert of logs)
 - Partial unique indexes: one open session per day_type; one completed per local_date+day_type
 - `start_or_resume_session` atomic open-session create
-- `award_earned_badges` server-side; revoke client INSERT/UPDATE/DELETE on `user_badges`
+- `award_earned_badges` server-side; revoke client INSERT/UPDATE/DELETE on `user_badges` (live signature is zero-arg as of **38**)
 - 10-minute window for `uncomplete_session` enforced in Postgres
 - `grind_dates_connected` self-only
 - `get_exercise_bests` + `grind_home_history` aggregate helpers
