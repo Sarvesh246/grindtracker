@@ -1689,6 +1689,11 @@ html.reduce-motion .coach-sheet--closing {
   margin: 0 auto;
   border-top-color: var(--border);
 }
+/* Keyboard open: visible frame already ends above the keyboard — drop the
+   home-indicator pad so the composer isn't double-spaced off the bottom. */
+.coach-sheet--page.coach-sheet--keyboard .coach-sheet__composer {
+  padding-bottom: 10px;
+}
 
 /* History drawer — slides under the header inside the full page. */
 .coach-history {

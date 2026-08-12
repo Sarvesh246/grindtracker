@@ -19,7 +19,7 @@ import {
   useTheme,
 } from '@/lib/contexts/ThemeContext'
 import { useExitingValue } from '@/lib/hooks/useExitingValue'
-import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
+import { useKeyboardMetrics } from '@/lib/hooks/useKeyboardInset'
 import IconButton from '@/components/ui/IconButton'
 import CoachFabIcon from './CoachFabIcon'
 import CoachHistory from './CoachHistory'
@@ -290,7 +290,12 @@ export default function CoachSheet() {
   } = useCoach()
   const { reduceMotion } = useMotionPref()
   const { theme } = useTheme()
-  const keyboardInset = useKeyboardInset()
+  const {
+    inset: keyboardInset,
+    offsetTop: vvOffsetTop,
+    visibleHeight: vvHeight,
+    open: keyboardOpen,
+  } = useKeyboardMetrics()
   const titleId = useId()
   const listRef = useRef<HTMLDivElement>(null)
   const sheetRef = useRef<HTMLDivElement>(null)
@@ -496,11 +501,12 @@ export default function CoachSheet() {
 
   // Focus after the enter spring settles so iOS keyboard + visualViewport pan
   // can't fight the open animation (or strand the composer under the keyboard).
+  // preventScroll keeps the page sheet top-pinned (we shrink height instead).
   useEffect(() => {
     if (!open || closing) return
     const t = window.setTimeout(
       () => {
-        inputRef.current?.focus()
+        inputRef.current?.focus({ preventScroll: true })
       },
       reduceMotion ? 0 : ENTER_MS,
     )
@@ -511,7 +517,7 @@ export default function CoachSheet() {
     if (!open || closing || !listRef.current) return
     if (!stickBottom.current) return
     listRef.current.scrollTop = listRef.current.scrollHeight
-  }, [messages, streaming, open, closing, size])
+  }, [messages, streaming, open, closing, size, keyboardOpen, vvHeight])
 
   // Lock body scroll while the full Coach page is open (iOS PWA).
   useEffect(() => {
@@ -523,10 +529,33 @@ export default function CoachSheet() {
       // Heal any residual visual-viewport pan from the focused composer when
       // the page sheet unmounts (close, or collapse back to compact).
       try {
-        window.scrollTo(window.scrollX, window.scrollY)
+        window.scrollTo(0, 0)
       } catch {
         // ignore
       }
+    }
+  }, [open, closing, isPage])
+
+  // Prefer a top-pinned shrink over iOS's "pan the whole page to the input".
+  // When VV still pans, page mode sizes to the visible frame (see sheetKeyboardStyle).
+  useEffect(() => {
+    if (!open || closing || !isPage) return
+    const vv = window.visualViewport
+    if (!vv) return
+    const lockPan = () => {
+      if (vv.offsetTop === 0 && window.scrollY === 0) return
+      try {
+        window.scrollTo(0, 0)
+      } catch {
+        // ignore
+      }
+    }
+    lockPan()
+    vv.addEventListener('scroll', lockPan)
+    vv.addEventListener('resize', lockPan)
+    return () => {
+      vv.removeEventListener('scroll', lockPan)
+      vv.removeEventListener('resize', lockPan)
     }
   }, [open, closing, isPage])
 
@@ -1135,11 +1164,16 @@ export default function CoachSheet() {
   // Size morph only — Y lives on the motion shell, never on CSS exit keyframes
   // for gesture dismiss (coach-sheet-out from{translateY(0)} = middle flash).
   // During page→compact FLIP, keep transitions on after the lock releases.
+  // Stable page mode uses a short ease so keyboard open/dismiss tracks VV —
+  // not the slow morph spring.
   const sheetTransition = (() => {
     if (reduceMotion || dragging || settling || fromDragDismiss) return 'none'
     if (boxLock) return 'none'
     if (closing) return 'none'
     const curve = 'cubic-bezier(0.22, 1, 0.36, 1)'
+    if (isPage && !sizeMorphing) {
+      return 'height 180ms ease, top 180ms ease, bottom 180ms ease'
+    }
     const parts: string[] = [
       `inset ${SIZE_MS}ms ${curve}`,
       `height ${SIZE_MS}ms ${curve}`,
@@ -1173,17 +1207,30 @@ export default function CoachSheet() {
   // Fade only on full close — never unmount on size change.
   const showBackdrop = mounted
 
-  // Lift fixed sheet above the iOS keyboard so autofocus can't bury the composer.
-  // Top-docked desktop cards use `top`/`bottom:auto` — don't override bottom there.
+  // Page mode: shrink the sheet into the visual viewport (top stays on-screen,
+  // flex column compresses, composer sits above the keyboard). Do NOT translate
+  // the whole page sheet up — that hid the header when iOS panned VV.
+  // Compact: keep lifting via `bottom` (small card, not a full-page shrink).
   const topDocked = dock === 'tl' || dock === 'tr'
-  const sheetKeyboardStyle =
-    !closing && keyboardInset > 0 && !boxLock
-      ? isPage
-        ? ({ paddingBottom: keyboardInset } as const)
-        : !topDocked
-          ? ({ bottom: keyboardInset + 12 } as const)
-          : undefined
-      : undefined
+  const pageKeyboardActive =
+    isPage && !closing && !boxLock && keyboardOpen && vvHeight > 0
+  const sheetKeyboardStyle: CSSProperties | undefined = (() => {
+    if (closing || boxLock) return undefined
+    if (pageKeyboardActive) {
+      return {
+        top: vvOffsetTop,
+        height: vvHeight,
+        bottom: 'auto',
+        maxHeight: 'none',
+        // Drop layout paddingBottom — height already matches the visible frame.
+        paddingBottom: 0,
+      }
+    }
+    if (!isPage && !topDocked && keyboardInset > 0) {
+      return { bottom: keyboardInset + 12 }
+    }
+    return undefined
+  })()
 
   const morphLockStyle: CSSProperties | undefined = boxLock
     ? {
@@ -1274,7 +1321,9 @@ export default function CoachSheet() {
           fromDragDismiss ? ' coach-sheet--closing-from-drag' : ''
         }${
           dragging || settling ? ' coach-sheet--pulling' : ''
-        }${boxLock ? ' coach-sheet--morph-lock' : ''}`}
+        }${boxLock ? ' coach-sheet--morph-lock' : ''}${
+          pageKeyboardActive ? ' coach-sheet--keyboard' : ''
+        }`}
         data-dock={dock}
         role="dialog"
         aria-modal="true"
@@ -1282,7 +1331,7 @@ export default function CoachSheet() {
         style={{
           transformOrigin: origin,
           transition: sheetTransition,
-          // Keyboard bottom must not win over FLIP / expand-preview box.
+          // Keyboard frame must not win over FLIP / expand-preview box.
           ...sheetKeyboardStyle,
           ...morphLockStyle,
         }}
