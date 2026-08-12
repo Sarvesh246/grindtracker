@@ -6,6 +6,7 @@ import {
   useId,
   useRef,
   useState,
+  type CSSProperties,
   type FormEvent,
   type KeyboardEvent,
   type PointerEvent as ReactPointerEvent,
@@ -19,6 +20,14 @@ import IconButton from '@/components/ui/IconButton'
 import CoachFabIcon from './CoachFabIcon'
 import CoachHistory from './CoachHistory'
 import CoachMessageContent from './CoachMessageContent'
+import {
+  RUBBER_FACTOR,
+  SHEET_SETTLE_POS,
+  SHEET_SETTLE_VEL,
+  SHEET_SPRING_C,
+  SHEET_SPRING_K,
+  readTranslateY,
+} from './coachMotion'
 import { useCoach } from './CoachProvider'
 
 const CHIPS = [
@@ -31,9 +40,9 @@ const CHIPS = [
 /** Matches `.coach-sheet--closing` / backdrop fade duration */
 const EXIT_MS = 480
 const SIZE_MS = 500
-const SETTLE_MS = 420
 const ENTER_MS = 520
 const PULL_AXIS_LOCK = 8
+/** Gentle flick → collapse; harder flick (≥ this × 1.25 from page) → close */
 const FLICK_VY = 900
 const VEL_EMA = 0.78
 /** 1:1 upward travel while expandable before light rubber-band. */
@@ -44,16 +53,16 @@ const DISMISS_RUBBER_AT = 240
 function rubberY(y: number, canExpand: boolean): number {
   if (y < 0) {
     // Already full-page — only a light upward rubber-band.
-    if (!canExpand) return y * 0.28
+    if (!canExpand) return y * RUBBER_FACTOR
     const up = -y
     if (up <= EXPAND_RUBBER_AT) return y
     const extra = up - EXPAND_RUBBER_AT
-    return -(EXPAND_RUBBER_AT + extra * 0.35)
+    return -(EXPAND_RUBBER_AT + extra * RUBBER_FACTOR)
   }
   // Soft resistance past ~240px so dismiss still reaches threshold.
   if (y <= DISMISS_RUBBER_AT) return y
   const extra = y - DISMISS_RUBBER_AT
-  return DISMISS_RUBBER_AT + extra * 0.35
+  return DISMISS_RUBBER_AT + extra * RUBBER_FACTOR
 }
 
 export default function CoachSheet() {
@@ -101,7 +110,7 @@ export default function CoachSheet() {
   const velY = useRef(0)
   const pullYRef = useRef(0)
   const sheetH = useRef(0)
-  const settleTimer = useRef<number | null>(null)
+  const settleRaf = useRef<number | null>(null)
   /** Keep drag offset through exit so the sheet doesn't jump before fade-out. */
   const [gestureDismissY, setGestureDismissY] = useState(0)
   /** Backdrop opacity at gesture-dismiss commit — fade from here, not from 1. */
@@ -123,6 +132,13 @@ export default function CoachSheet() {
     !quota?.unlimited && dailyRemaining != null && dailyRemaining <= 0
   const sendDisabled =
     !draft.trim() || streaming || capped || configured === false
+
+  const cancelSettle = useCallback(() => {
+    if (settleRaf.current != null) {
+      cancelAnimationFrame(settleRaf.current)
+      settleRaf.current = null
+    }
+  }, [])
 
   // Clear dismiss leftovers on a fresh open (render-time sync — same pattern as
   // visualSize). pullY is ignored while idle (see sheetTransform) so a leaked
@@ -212,16 +228,45 @@ export default function CoachSheet() {
     wasPageOpen.current = pageOpen
   }, [isPage, open, closing])
 
-  useEffect(
-    () => () => {
-      if (settleTimer.current != null) window.clearTimeout(settleTimer.current)
+  useEffect(() => () => cancelSettle(), [cancelSettle])
+
+  const springPullToZero = useCallback(
+    (fromY: number, fromVy: number) => {
+      cancelSettle()
+      if (reduceMotion || Math.abs(fromY) < 0.5) {
+        pullYRef.current = 0
+        setPullY(0)
+        setPullPhase('idle')
+        return
+      }
+      setPullPhase('settling')
+      let y = fromY
+      let v = fromVy * 0.25
+      const tick = () => {
+        const dt = 1 / 60
+        const a = -SHEET_SPRING_K * y - SHEET_SPRING_C * v
+        v += a * dt
+        y += v * dt
+        pullYRef.current = y
+        setPullY(y)
+        if (Math.abs(y) < SHEET_SETTLE_POS && Math.abs(v) < SHEET_SETTLE_VEL) {
+          pullYRef.current = 0
+          setPullY(0)
+          setPullPhase('idle')
+          settleRaf.current = null
+          return
+        }
+        settleRaf.current = requestAnimationFrame(tick)
+      }
+      settleRaf.current = requestAnimationFrame(tick)
     },
-    [],
+    [cancelSettle, reduceMotion],
   )
 
   const beginPull = useCallback(
     (e: ReactPointerEvent, fromBody: boolean) => {
-      if (closing || pullPhase === 'settling' || historyOpen) return
+      // Interruptible: allow grab during settle / enter (not while closing).
+      if (closing || historyOpen) return
       if (fromBody) {
         const el = listRef.current
         if (el && el.scrollTop > 0) return
@@ -230,13 +275,23 @@ export default function CoachSheet() {
       const t = e.target as HTMLElement | null
       if (t?.closest('button, a, textarea, input')) return
 
+      // Capture live offset before killing enter/settle motion.
+      const liveY =
+        pullPhase === 'dragging'
+          ? pullYRef.current
+          : readTranslateY(sheetRef.current)
+      cancelSettle()
+
       pointerId.current = e.pointerId
-      pullStart.current = { x: e.clientX, y: e.clientY }
+      // Map finger so dy continues from the interrupted visual offset.
+      pullStart.current = { x: e.clientX, y: e.clientY - liveY }
       axis.current = null
       lastY.current = e.clientY
       lastTs.current = performance.now()
       velY.current = 0
-      pullYRef.current = 0
+      pullYRef.current = liveY
+      setPullY(liveY)
+      if (liveY !== 0) setPullPhase('dragging')
       sheetH.current = sheetRef.current?.offsetHeight ?? 400
       try {
         ;(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId)
@@ -244,7 +299,7 @@ export default function CoachSheet() {
         // ignore
       }
     },
-    [closing, historyOpen, pullPhase],
+    [cancelSettle, closing, historyOpen, pullPhase],
   )
 
   const onPullMove = useCallback(
@@ -307,6 +362,7 @@ export default function CoachSheet() {
       const expandThreshold = Math.max(56, Math.min(120, h * 0.2))
       const flickedDown = vy > FLICK_VY
       const flickedUp = vy < -FLICK_VY
+      const hardFlickDown = vy > FLICK_VY * 1.25
 
       let shouldClose = false
       let shouldCollapse = false
@@ -319,7 +375,7 @@ export default function CoachSheet() {
           shouldExpand = true
         }
       } else if (size === 'page') {
-        if (y > closeThreshold || vy > FLICK_VY * 1.25) {
+        if (y > closeThreshold || hardFlickDown) {
           shouldClose = true
         } else if (y > collapseThreshold || flickedDown) {
           shouldCollapse = true
@@ -350,24 +406,10 @@ export default function CoachSheet() {
         setSize('compact')
       }
 
-      // Spring settle transform back to 0
-      setPullPhase(reduceMotion ? 'idle' : 'settling')
-      pullYRef.current = 0
-      setPullY(0)
-      if (settleTimer.current != null) window.clearTimeout(settleTimer.current)
-      if (reduceMotion) {
-        settleTimer.current = null
-      } else {
-        settleTimer.current = window.setTimeout(
-          () => {
-            setPullPhase('idle')
-            settleTimer.current = null
-          },
-          SETTLE_MS,
-        )
-      }
+      // Critically damped settle back to rest (interruptible via beginPull).
+      springPullToZero(y, vy)
     },
-    [closeCoach, expandToPage, reduceMotion, setSize, size],
+    [closeCoach, expandToPage, setSize, size, springPullToZero],
   )
 
   if (!mounted) return null
@@ -402,12 +444,13 @@ export default function CoachSheet() {
 
   const empty = messages.length === 0
   const dragging = pullPhase === 'dragging'
+  const settling = pullPhase === 'settling'
   const exitDismissY = closing ? gestureDismissY : 0
   const origin =
     dock === 'tl' || dock === 'bl' ? 'bottom left' : 'bottom right'
 
   const sheetTransition = (() => {
-    if (reduceMotion || dragging) return 'none'
+    if (reduceMotion || dragging || settling) return 'none'
     const curve = 'cubic-bezier(0.22, 1, 0.36, 1)'
     const parts: string[] = [
       `inset ${SIZE_MS}ms ${curve}`,
@@ -420,9 +463,6 @@ export default function CoachSheet() {
       `top ${SIZE_MS}ms ${curve}`,
       `bottom ${SIZE_MS}ms ${curve}`,
     ]
-    if (pullPhase === 'settling') {
-      parts.push(`transform ${SETTLE_MS}ms ${curve}`)
-    }
     return parts.join(', ')
   })()
 
@@ -438,10 +478,10 @@ export default function CoachSheet() {
     }
     // Button-close exit uses CSS keyframes for translate; don't fight them.
     if (closing) return undefined
-    // Only apply pull offset while a gesture is live. Idle leftovers (e.g. after
-    // gesture-dismiss) must not survive into the next open's enter keyframe.
-    if (dragging && pullY) return `translate3d(0, ${pullY}px, 0)`
-    if (pullPhase === 'settling') return 'translate3d(0, 0, 0)'
+    // Live pull / RAF settle — 1:1 while dragging, spring while settling.
+    if (dragging || settling) {
+      return `translate3d(0, ${pullY}px, 0)`
+    }
     return undefined
   })()
 
@@ -681,13 +721,20 @@ export default function CoachSheet() {
               </div>
             ) : (
               <ul className="coach-sheet__messages">
-                {messages.map(m => {
+                {messages.map((m, i) => {
                   const waiting =
                     m.role === 'assistant' && !m.content && streaming
                   return (
                     <li
                       key={m.id}
-                      className={`coach-bubble coach-bubble--${m.role}`}
+                      className={`coach-bubble coach-bubble--${m.role}${
+                        m.role === 'assistant' ? ' coach-bubble--enter' : ''
+                      }`}
+                      style={
+                        {
+                          '--i': Math.min(i, 8),
+                        } as CSSProperties
+                      }
                     >
                       {waiting ? (
                         <span

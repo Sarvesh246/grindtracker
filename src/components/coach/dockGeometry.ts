@@ -86,12 +86,13 @@ export function dockPixelPosition(dock: CoachDockId): DockPoint {
   }
 }
 
+const DOCKS: CoachDockId[] = ['tl', 'tr', 'bl', 'br']
+
 /** Nearest corner dock to a viewport point (typically pointer / FAB center). */
 export function nearestDock(x: number, y: number): CoachDockId {
-  const docks: CoachDockId[] = ['tl', 'tr', 'bl', 'br']
   let best: CoachDockId = 'br'
   let bestDist = Infinity
-  for (const dock of docks) {
+  for (const dock of DOCKS) {
     const p = dockPixelPosition(dock)
     // Compare to FAB center so edges feel balanced.
     const cx = p.x + COACH_FAB_SIZE / 2
@@ -103,4 +104,49 @@ export function nearestDock(x: number, y: number): CoachDockId {
     }
   }
   return best
+}
+
+/**
+ * Furthest safe corner in the flick direction — maximizes projection of
+ * (dockCenter − releasePoint) onto velocity. Falls back to nearest if the
+ * flick doesn't point toward any dock.
+ */
+export function furthestDockInDirection(
+  x: number,
+  y: number,
+  vx: number,
+  vy: number,
+): CoachDockId {
+  let best: CoachDockId = 'br'
+  let bestScore = -Infinity
+  for (const dock of DOCKS) {
+    const p = dockPixelPosition(dock)
+    const cx = p.x + COACH_FAB_SIZE / 2
+    const cy = p.y + COACH_FAB_SIZE / 2
+    const score = (cx - x) * vx + (cy - y) * vy
+    if (score > bestScore) {
+      bestScore = score
+      best = dock
+    }
+  }
+  if (bestScore <= 0) return nearestDock(x, y)
+  return best
+}
+
+/**
+ * Release → dock: flick (|v| ≥ threshold) picks furthest corner in that
+ * direction; otherwise nearest safe corner.
+ */
+export function dockFromRelease(
+  x: number,
+  y: number,
+  vx: number,
+  vy: number,
+  flickThresholdPxS: number,
+): CoachDockId {
+  const speed = Math.hypot(vx, vy)
+  if (speed >= flickThresholdPxS) {
+    return furthestDockInDirection(x, y, vx, vy)
+  }
+  return nearestDock(x, y)
 }
