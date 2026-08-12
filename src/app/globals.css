@@ -2123,6 +2123,41 @@ ol.coach-md__list,
 .coach-md em {
   font-style: italic;
 }
+.coach-md__table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.coach-md__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.coach-md__th,
+.coach-md__td {
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.coach-md__th {
+  font-weight: 700;
+  color: var(--text-secondary);
+  background: var(--surface-elevated);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.coach-md__td {
+  color: var(--text-primary);
+}
+.coach-md__table tr:last-child .coach-md__td {
+  border-bottom: none;
+}
 .coach-sheet__error {
   margin: 10px 0 0;
   font-size: 13px;

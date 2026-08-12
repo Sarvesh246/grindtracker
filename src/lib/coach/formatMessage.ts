@@ -1,7 +1,7 @@
 /**
  * Lightweight Markdown subset for Coach replies.
  * Supports paragraphs, soft line breaks, unordered/ordered lists,
- * ### section labels, **bold**, *italic*.
+ * ### section labels, GitHub-style pipe tables, **bold**, *italic*.
  * Pure + XSS-safe when rendered as React text nodes (no HTML passthrough).
  */
 
@@ -14,8 +14,14 @@ export type CoachBlock =
   | { type: 'paragraph'; children: CoachInline[] }
   | { type: 'label'; children: CoachInline[] }
   | { type: 'list'; ordered: boolean; items: CoachInline[][] }
+  | {
+      type: 'table'
+      headers: CoachInline[][]
+      rows: CoachInline[][][]
+    }
 
 export type CoachFormattedMessage = CoachBlock[]
+
 
 const UL_RE = /^\s*[-*•]\s+(.+)$/
 const OL_RE = /^\s*\d+[.)]\s+(.+)$/
@@ -104,6 +110,25 @@ function matchLabelLine(line: string): string | null {
   return hit ? hit[1]!.trim() : null
 }
 
+/** GFM pipe row cells, or null if not a data row. */
+function parseTableRow(line: string): string[] | null {
+  const trimmed = line.trim()
+  if (!trimmed.includes('|')) return null
+  if (isTableSeparator(trimmed)) return null
+
+  let body = trimmed
+  if (body.startsWith('|')) body = body.slice(1)
+  if (body.endsWith('|')) body = body.slice(0, -1)
+  const cells = body.split('|').map(c => c.trim())
+  if (cells.length < 2) return null
+  return cells
+}
+
+function isTableSeparator(line: string): boolean {
+  const trimmed = line.trim()
+  return /^\|?(\s*:?-+:?\s*\|)+\s*:?-+:?\s*\|?$/.test(trimmed)
+}
+
 /** True when a paragraph is only a short bold label (optional trailing colon). */
 function asBoldOnlyLabel(children: CoachInline[]): CoachInline[] | null {
   if (children.length !== 1) return null
@@ -143,6 +168,35 @@ export function formatCoachMessage(raw: string): CoachFormattedMessage {
       continue
     }
 
+    // Pipe table: header + separator + ≥1 body row
+    const headerCells = parseTableRow(line)
+    if (
+      headerCells &&
+      i + 1 < lines.length &&
+      isTableSeparator(lines[i + 1]!)
+    ) {
+      const headers = headerCells.map(c => parseInline(c))
+      const rows: CoachInline[][][] = []
+      i += 2
+      while (i < lines.length) {
+        const cur = lines[i]!
+        if (!cur.trim()) break
+        if (matchLabelLine(cur) || matchListLine(cur)) break
+        const cells = parseTableRow(cur)
+        if (!cells) break
+        // Pad / trim to header width for stable columns
+        const normalized = headerCells.map((_, idx) => cells[idx] ?? '')
+        rows.push(normalized.map(c => parseInline(c)))
+        i += 1
+      }
+      if (rows.length) {
+        blocks.push({ type: 'table', headers, rows })
+        continue
+      }
+      // Header+sep with no body — fall through as paragraph
+      i -= 2
+    }
+
     const listHit = matchListLine(line)
     if (listHit) {
       const ordered = listHit.ordered
@@ -165,6 +219,14 @@ export function formatCoachMessage(raw: string): CoachFormattedMessage {
       const cur = lines[i]!
       if (!cur.trim()) break
       if (matchListLine(cur) || matchLabelLine(cur)) break
+      // Don't swallow the start of a table into a paragraph
+      if (
+        parseTableRow(cur) &&
+        i + 1 < lines.length &&
+        isTableSeparator(lines[i + 1]!)
+      ) {
+        break
+      }
       paraLines.push(cur.trimEnd())
       i += 1
     }

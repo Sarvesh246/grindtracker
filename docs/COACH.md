@@ -133,12 +133,14 @@ to convert when `unit_preference` is `kg`.
 
 Reply formatting is enforced in `COACH_SYSTEM_PROMPT` for **every** turn
 (starter chips and free-typed questions share `POST /api/coach/chat`). The
-prompt picks a structure by intent — stats/PRs use `- ` bullets, how-tos use
-numbered steps, simple facts stay 1–2 sentences, explanation/timeline answers
-must pair general knowledge with `training_history` when present, multi-topic
-answers may use `###` labels — and routes the model to the right USER_DATA
-section (catalog, bests, schedule, lifetime, etc.). The sheet renders that
-Markdown via `CoachMessageContent`.
+prompt adapts structure to intent — simple facts stay short, workouts are
+executable set/rep/target blocks, how-tos use numbered steps, comparisons may
+use pipe tables, analysis leads with takeaway then findings — and routes the
+model to the right USER_DATA section (catalog, bests, schedule, lifetime,
+`training_history`, etc.). Progressive disclosure stays **inside one reply**
+so users are not nudged into burning extra daily messages. The sheet renders
+that Markdown via `CoachMessageContent` (paragraphs, lists, labels, tables,
+**bold**).
 
 ## UI
 
@@ -151,7 +153,7 @@ Floating coach on authenticated `(app)` routes (`src/components/coach/`):
 | **Compact sheet** | Quick “type to orb” card; backdrop closes; expand morphs fluidly into the full Coach page. |
 | **Full page** | Dedicated chat surface (Siri-app style) with New + History. Close dismisses. Escape closes history first, then Coach. |
 | **Saved chats** | `GET/POST /api/coach/conversations`, `GET/DELETE /api/coach/conversations/[id]`. Chat `POST` accepts `conversationId` and returns `X-Coach-Conversation-Id`. |
-| **Markdown** | Assistant replies render via `CoachMessageContent` (paragraphs, lists, labels, **bold**). |
+| **Markdown** | Assistant replies render via `CoachMessageContent` (paragraphs, lists, labels, pipe tables, **bold**). |
 | **API** | First open → `GET /api/coach/chat` (quota). Send → `POST` stream + `unit` from `UnitContext`; quota pill re-synced via `GET` after every turn settles. |
 | **z-index** | FAB 420 · backdrop 430 · sheet/page 440. |
 

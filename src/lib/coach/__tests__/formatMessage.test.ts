@@ -101,4 +101,26 @@ describe('formatCoachMessage', () => {
     assert.equal(blocks.length, 2)
     assert.ok(blocks.every(b => b.type === 'paragraph'))
   })
+
+  it('parses GitHub-style pipe tables', () => {
+    const blocks = formatCoachMessage(
+      [
+        'Volume is up.',
+        '',
+        '| Lift | Last | Best |',
+        '| --- | --- | --- |',
+        '| Bench | **185** | 195 |',
+        '| Squat | 225 | 245 |',
+        '',
+        'Keep the same weights next session.',
+      ].join('\n'),
+    )
+    assert.equal(blocks[0]!.type, 'paragraph')
+    assert.equal(blocks[1]!.type, 'table')
+    if (blocks[1]!.type !== 'table') return
+    assert.equal(blocks[1].headers.length, 3)
+    assert.equal(blocks[1].rows.length, 2)
+    assert.equal(blocks[1].rows[0]![1]![0]!.type, 'bold')
+    assert.equal(blocks[2]!.type, 'paragraph')
+  })
 })

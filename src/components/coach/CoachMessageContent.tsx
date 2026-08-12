@@ -27,7 +27,7 @@ function renderInline(nodes: CoachInline[], keyPrefix: string): ReactNode[] {
 }
 
 /**
- * Renders Coach assistant text with light Markdown (bold, lists, labels).
+ * Renders Coach assistant text with light Markdown (bold, lists, labels, tables).
  * User bubbles should stay plain `pre-wrap` text.
  */
 export default function CoachMessageContent({ content }: { content: string }) {
@@ -49,6 +49,34 @@ export default function CoachMessageContent({ content }: { content: string }) {
             <p key={i} className="coach-md__label">
               {renderInline(block.children, `h${i}`)}
             </p>
+          )
+        }
+        if (block.type === 'table') {
+          return (
+            <div key={i} className="coach-md__table-wrap">
+              <table className="coach-md__table">
+                <thead>
+                  <tr>
+                    {block.headers.map((cell, j) => (
+                      <th key={j} className="coach-md__th">
+                        {renderInline(cell, `th${i}-${j}`)}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {block.rows.map((row, r) => (
+                    <tr key={r}>
+                      {row.map((cell, c) => (
+                        <td key={c} className="coach-md__td">
+                          {renderInline(cell, `td${i}-${r}-${c}`)}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )
         }
         const ListTag = block.ordered ? 'ol' : 'ul'
