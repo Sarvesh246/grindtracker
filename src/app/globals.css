@@ -2263,6 +2263,7 @@ ol.coach-md__list,
 }
 
 .landing-header__brand {
+  flex-shrink: 0;
   font-family: var(--font-display);
   font-size: 30px;
   letter-spacing: 1.5px;
@@ -2274,13 +2275,15 @@ ol.coach-md__list,
 .landing-header__actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  min-width: 0;
 }
 
 .landing-header__login {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
   min-height: 40px;
   min-width: 40px;
   font-size: 13px;
@@ -2289,6 +2292,7 @@ ol.coach-md__list,
   text-decoration: none;
   padding: 6px 10px;
   border-radius: var(--radius-sm);
+  white-space: nowrap;
 }
 
 .landing-header__login:hover {
@@ -2466,7 +2470,7 @@ ol.coach-md__list,
     font-size: 34px;
   }
   .landing-header__actions {
-    gap: 10px;
+    gap: 12px;
   }
   .landing-header__login {
     font-size: 14px;
@@ -3204,8 +3208,20 @@ ol.coach-md__list,
   border-radius: var(--radius-sm);
 }
 
+/*
+ * Mobile sticky header only has room for auth CTAs (Log in + Get started).
+ * "How to install" lives in the install section + footer; restore it at the
+ * desktop breakpoint where the bar has horizontal space.
+ */
 .landing-header__install {
+  display: none;
   flex-shrink: 0;
+}
+
+@media (min-width: 900px) {
+  .landing-header__install {
+    display: inline-flex;
+  }
 }
 
 .landing-install__actions {
