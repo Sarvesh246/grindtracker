@@ -261,6 +261,14 @@ select:focus-visible,
   border: 0 !important;
 }
 
+/* Coach FAB press/drag: BottomNav (and its iOS switch overlays) must not
+   receive hits under the finger. Overlays set pointer-events:auto explicitly,
+   so disabling only the nav parent is not enough — children would still tick. */
+body.coach-fab-dragging .bottom-nav,
+body.coach-fab-dragging .bottom-nav [data-haptic-overlay] {
+  pointer-events: none !important;
+}
+
 /* Workout Manager modal — bottom sheet on mobile, centered dialog on desktop */
 .wm-backdrop {
   position: fixed;
@@ -1211,6 +1219,11 @@ html.light .coach-fab--pressed {
     transform 180ms ease,
     box-shadow 180ms ease,
     opacity 180ms ease;
+}
+/* Mid-drag: any leftover haptic overlay must not eat the gesture or tick. */
+.coach-fab--dragging [data-haptic-overlay],
+.coach-fab--settling [data-haptic-overlay] {
+  pointer-events: none !important;
 }
 .coach-fab--dragging {
   transform: scale(1.08);

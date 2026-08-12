@@ -6,8 +6,10 @@ import { hapticAttrs, setupHaptics, setupTapDragGuard, type HapticIntensity } fr
 /**
  * Mount once in the authenticated app shell. Wires `[data-haptic]`:
  * iOS switch overlays (MutationObserver) + Android delegated click vibrate.
- * Also installs the tap/drag guard so swiping (page-nav swipe, scroll, or a
- * finger sliding off a button) never also activates whatever it passed over.
+ * Overlays forward pans past ~10px to the nearest scroll parent so a swipe
+ * that starts on a button still scrolls (WebKit switch would otherwise eat
+ * it). Also installs the tap/drag guard so that swipe never activates the
+ * control it started on.
  */
 export default function HapticsSetup() {
   useEffect(() => setupHaptics(), [])

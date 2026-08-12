@@ -79,6 +79,7 @@ export default function CoachFab() {
     () => () => {
       cancelSpring()
       clearGlowTimer()
+      document.body.classList.remove('coach-fab-dragging')
     },
     [cancelSpring, clearGlowTimer],
   )
@@ -151,6 +152,13 @@ export default function CoachFab() {
     }, GLOW_RELEASE_MS)
   }, [clearGlowTimer, reduceMotion])
 
+  const setFabGesture = useCallback((active: boolean) => {
+    // Sync body class so BottomNav (and its iOS haptic overlays) stop receiving
+    // hits under the finger — setPointerCapture alone does not prevent that on
+    // iOS PWA. Also gates Android delegated vibrate in setupHaptics.
+    document.body.classList.toggle('coach-fab-dragging', active)
+  }, [])
+
   const onPointerDown = useCallback(
     (e: PointerEvent<HTMLButtonElement>) => {
       if (open || settling) return
@@ -164,6 +172,8 @@ export default function CoachFab() {
       lastTs.current = now
       vel.current = { x: 0, y: 0 }
       moved.current = false
+      // Pressed-for-drag: suppress nav haptics immediately (before threshold).
+      setFabGesture(true)
       // Sustained press/glow immediately — not a flash that dies mid-hold.
       setPressed(true)
       setGlowing(false)
@@ -173,7 +183,7 @@ export default function CoachFab() {
         // ignore
       }
     },
-    [cancelSpring, clearGlowTimer, open, settling],
+    [cancelSpring, clearGlowTimer, open, setFabGesture, settling],
   )
 
   const onPointerMove = useCallback(
@@ -191,6 +201,18 @@ export default function CoachFab() {
         if (held < DRAG_ACTIVATE_MS && dist < DRAG_FAST_THRESHOLD) return
         moved.current = true
         setDragging(true)
+        // Drop haptic host sync so MutationObserver detaches the iOS switch
+        // before touchend — otherwise release still ticks even when drag
+        // cancelled the click. Also disable/remove the overlay immediately;
+        // the observer is a microtask and a fast release can beat it.
+        const host = e.currentTarget
+        host.removeAttribute('data-haptic')
+        const overlay = host.querySelector('[data-haptic-overlay]')
+        if (overlay instanceof HTMLInputElement) {
+          overlay.disabled = true
+          overlay.style.pointerEvents = 'none'
+          overlay.remove()
+        }
         // Keep --pressed glow while the finger is down through the drag.
       }
 
@@ -225,6 +247,7 @@ export default function CoachFab() {
       moved.current = false
       setDragging(false)
       setPressed(false)
+      setFabGesture(false)
       try {
         e.currentTarget.releasePointerCapture(e.pointerId)
       } catch {
@@ -270,6 +293,7 @@ export default function CoachFab() {
       reduceMotion,
       releaseGlow,
       setDock,
+      setFabGesture,
       startSpringToDock,
     ],
   )
