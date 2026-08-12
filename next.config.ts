@@ -55,6 +55,16 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   // Don't advertise the framework version to scanners.
   poweredByHeader: false,
+  // Next 15+ defaults dynamic client-router staleTime to 0, so every tab
+  // switch refetches the RSC payload and flashes `loading.tsx`. Keep visited
+  // (and fully-prefetched) tabs for 5 minutes; RouteCacheSync + markAppDataStale
+  // silently refresh a tab when a workout/catalog mutation landed since then.
+  experimental: {
+    staleTimes: {
+      dynamic: 300,
+      static: 300,
+    },
+  },
   // On Vercel, skip the redundant `tsc` pass (~10–11s on Hobby 2-core).
   // Runtime output is unchanged; typecheck still runs locally via
   // `npm run typecheck` / the editor. Local `next build` still typechecks.

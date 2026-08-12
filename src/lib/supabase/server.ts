@@ -1,7 +1,9 @@
+import { cache } from 'react'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import type { User } from '@supabase/supabase-js'
 
-export async function createClient() {
+export const createClient = cache(async () => {
   const cookieStore = await cookies()
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -21,4 +23,11 @@ export async function createClient() {
       },
     }
   )
-}
+})
+
+/** Per-request memo of `auth.getUser()` — layout + page both need it. */
+export const getAuthUser = cache(async (): Promise<User | null> => {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  return user
+})

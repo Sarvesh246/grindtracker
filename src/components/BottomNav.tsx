@@ -86,6 +86,7 @@ export default function BottomNav() {
           <Link
             key={tab.href}
             href={tab.href}
+            prefetch={true}
             className="press"
             data-haptic="light"
             onClick={(e) => {

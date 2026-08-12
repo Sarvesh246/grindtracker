@@ -4,12 +4,13 @@ import BottomNav from '@/components/BottomNav'
 import TopNav from '@/components/TopNav'
 import SwipeNavigator from '@/components/SwipeNavigator'
 import HapticsSetup from '@/components/HapticsSetup'
+import RouteCacheSync from '@/components/RouteCacheSync'
 import CoachRoot from '@/components/coach/CoachRoot'
 import { UnitProvider } from '@/lib/contexts/UnitContext'
 import { ToastProvider } from '@/lib/contexts/ToastContext'
 import { OnboardingProvider, type OnboardingState } from '@/lib/contexts/OnboardingContext'
 import { DemoModeProvider } from '@/lib/contexts/DemoModeContext'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, getAuthUser } from '@/lib/supabase/server'
 import { isAdminEmail } from '@/lib/utils/admin'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -22,7 +23,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // auth proxy, so a user is expected; fall back to an anonymous bucket
   // (never persisted) rather than crashing if one isn't resolved.
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthUser()
   const onboardingUserId = user?.id ?? 'anon'
 
   // Demo Mode is developer-only display trickery (see DemoModeContext) — the
@@ -53,6 +54,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <OnboardingProvider userId={onboardingUserId} initialState={onboardingInitial}>
     <ToastProvider>
     <HapticsSetup />
+    <RouteCacheSync />
     {/* Coach FAB + sheet: portal-friendly fixed UI above app chrome; hidden on
         active workout via CoachRoot (same /log?day= gate as BottomNav). */}
     <CoachRoot />

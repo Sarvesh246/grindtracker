@@ -3,6 +3,7 @@ import { useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { compressForUpload } from '@/lib/utils/imageCompression'
 import type { ProgressPhoto, ProgressPhotoGroup } from '@/lib/types'
+import { markAppDataStale } from '@/lib/cache/appDataCache'
 
 const BUCKET = 'progress-photos'
 const MAX_BYTES = 8 * 1024 * 1024 // mirrors the bucket's file_size_limit
@@ -261,6 +262,7 @@ export function useProgressPhotos() {
       await cleanup()
       throw insertError
     }
+    markAppDataStale()
     return (inserted ?? []) as ProgressPhoto[]
   }
 
@@ -272,6 +274,7 @@ export function useProgressPhotos() {
     }
     const { error } = await supabase.from('progress_photos').delete().eq('id', photo.id)
     if (error) throw error
+    markAppDataStale()
   }
 
   async function deleteGroup(group: ProgressPhotoGroup, photos: ProgressPhoto[]): Promise<void> {
@@ -285,6 +288,7 @@ export function useProgressPhotos() {
     }
     const { error } = await supabase.from('progress_photo_groups').delete().eq('id', group.id)
     if (error) throw error
+    markAppDataStale()
   }
 
   return {

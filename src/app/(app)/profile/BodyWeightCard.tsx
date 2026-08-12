@@ -16,6 +16,7 @@ import { useDemoMode } from '@/lib/contexts/DemoModeContext'
 import { demoSafeClient } from '@/lib/demoMode/demoSafeSupabase'
 import { demoBodyWeightRows } from '@/lib/demoMode/fakeData'
 import Dialog from '@/components/ui/Dialog'
+import { CACHE_KEYS, getCached, isFresh, markAppDataStale, setCached } from '@/lib/cache/appDataCache'
 
 interface Row {
   weight: number
@@ -100,12 +101,19 @@ export default function BodyWeightCard() {
   }, [unitLabel, fmt])
 
   async function load() {
-    setLoading(true)
-
     if (demoMode) {
       setRows(demoBodyWeightRows())
       setLoading(false)
       return
+    }
+
+    const cached = getCached<Row[]>(CACHE_KEYS.bodyWeights)
+    if (cached) {
+      setRows(cached)
+      setLoading(false)
+      if (isFresh(CACHE_KEYS.bodyWeights)) return
+    } else {
+      setLoading(true)
     }
 
     const { data: { user } } = await supabase.auth.getUser()
@@ -122,7 +130,9 @@ export default function BodyWeightCard() {
       .gte('recorded_at', sinceKey)
       .order('recorded_at', { ascending: true })
 
-    setRows((data ?? []) as Row[])
+    const next = (data ?? []) as Row[]
+    setCached(CACHE_KEYS.bodyWeights, next)
+    setRows(next)
     setLoading(false)
   }
 
@@ -143,6 +153,7 @@ export default function BodyWeightCard() {
       toast.show('Could not save weight. Try again.', 'error')
       return
     }
+    markAppDataStale()
     await load()
     setDraft('')
     setSaving(false)
@@ -205,6 +216,7 @@ export default function BodyWeightCard() {
       toast.show('Could not update weight. Try again.', 'error')
       return
     }
+    markAppDataStale()
     await load()
     setBusy(null)
     setSelected(null)
@@ -230,6 +242,7 @@ export default function BodyWeightCard() {
       toast.show('Could not delete entry. Try again.', 'error')
       return
     }
+    markAppDataStale()
     await load()
     setBusy(null)
     setSelected(null)

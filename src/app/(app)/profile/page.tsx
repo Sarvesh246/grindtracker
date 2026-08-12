@@ -1,5 +1,5 @@
 import { cookies } from 'next/headers'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, getAuthUser } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import ProfileDashboard from './ProfileDashboard'
 import { isAdminEmail } from '@/lib/utils/admin'
@@ -16,7 +16,7 @@ import {
 export default async function ProfilePage() {
   const supabase = await createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthUser()
   if (!user) redirect('/login')
 
   const demoModePref = (await cookies()).get('grind_demo_mode_pref')?.value

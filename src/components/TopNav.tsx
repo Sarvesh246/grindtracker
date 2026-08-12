@@ -103,6 +103,7 @@ export default function TopNav() {
             <Link
               key={tab.href}
               href={tab.href}
+              prefetch={true}
               className="top-nav-tab press"
               data-active={active}
               data-haptic="light"

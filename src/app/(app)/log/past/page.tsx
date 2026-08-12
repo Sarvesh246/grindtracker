@@ -8,6 +8,7 @@ import { Exercise, UserStats } from '@/lib/types'
 import { checkAndAwardBadges } from '@/lib/utils/badges'
 import { localDateKey } from '@/lib/utils/formatting'
 import { useUnit } from '@/lib/contexts/UnitContext'
+import { markAppDataStale } from '@/lib/cache/appDataCache'
 
 function parseDefaultReps(repsTarget: string): string {
   return repsTarget.split('-')[0].trim()
@@ -368,6 +369,7 @@ function LogPastContent() {
       isEdit: !!sessionIdForEdit || editExisting,
       isDelete: false,
     })
+    markAppDataStale()
     setSubmitting(false)
   }
 
@@ -395,6 +397,7 @@ function LogPastContent() {
     }
 
     setDone({ xpEarned: session.xp_earned, prCount: 0, isEdit: false, isDelete: true })
+    markAppDataStale()
     setDeleting(false)
   }
 

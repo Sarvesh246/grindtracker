@@ -38,6 +38,7 @@ import { useExitingValue } from '@/lib/hooks/useExitingValue'
 import RestTimerBar from '@/components/RestTimerBar'
 import PlateCalculator from '@/components/PlateCalculator'
 import CompletionModal from './CompletionModal'
+import { markAppDataStale } from '@/lib/cache/appDataCache'
 import { useFeatureTooltip } from '@/components/onboarding/useFeatureTooltip'
 import { onboardTarget } from '@/components/onboarding/anchor'
 import { useOnboarding } from '@/lib/contexts/OnboardingContext'
@@ -645,6 +646,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
     setStartedAt(sessionStart)
     setElapsed(Math.floor((Date.now() - sessionStart.getTime()) / 1000))
     setLoading(false)
+    markAppDataStale()
   }, [day, supabase, router])
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -1707,6 +1709,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
 
     setSessionId(null)
     setDiscarding(false)
+    markAppDataStale()
     router.replace('/log')
   }
 
@@ -1741,6 +1744,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       .eq('user_id', user.id)
 
     localStorage.removeItem('grind_finish_undo')
+    markAppDataStale()
     setCompletionData(null)
     return true
   }
@@ -1996,6 +2000,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         currentStreak: result.current_streak,
         isNewBestStreak: result.current_streak > 1 && result.current_streak === result.longest_streak,
       })
+      markAppDataStale()
     } catch (err) {
       // The workout is untouched (or safely resumable) — tell the user and let
       // them try again. Reuse the top toast so the message is impossible to

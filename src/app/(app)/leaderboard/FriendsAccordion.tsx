@@ -5,6 +5,7 @@ import { UserProfile } from '@/lib/types'
 import { useToast } from '@/lib/contexts/ToastContext'
 import { useDemoMode } from '@/lib/contexts/DemoModeContext'
 import { DEMO_FRIENDS, DEMO_PENDING_INCOMING, DEMO_SENT } from '@/lib/demoMode/fakeData'
+import { CACHE_KEYS, getCached, isFresh, markAppDataStale, setCached } from '@/lib/cache/appDataCache'
 
 // Pin the projection instead of `select('*')`. Every column here is safe to
 // show to another user; selecting explicitly means a column added to
@@ -36,6 +37,13 @@ interface PendingRow {
 interface SentRow {
   friendship_id: string
   profile: UserProfile
+}
+
+type FriendsCache = {
+  friends: FriendRow[]
+  pending: PendingRow[]
+  sent: SentRow[]
+  ids: string[]
 }
 
 interface Props {
@@ -78,6 +86,15 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
       return
     }
 
+    const cached = getCached<FriendsCache>(CACHE_KEYS.friends)
+    if (cached) {
+      setFriends(cached.friends)
+      setPending(cached.pending)
+      setSent(cached.sent)
+      onFriendsChange(cached.ids)
+      if (isFresh(CACHE_KEYS.friends)) return
+    }
+
     const { data } = await supabase
       .from('friendships')
       .select('id, requester_id, addressee_id, status')
@@ -100,6 +117,8 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
     ]
 
     if (allIds.length === 0) {
+      const empty: FriendsCache = { friends: [], pending: [], sent: [], ids: [] }
+      setCached(CACHE_KEYS.friends, empty)
       setFriends([])
       setPending([])
       setSent([])
@@ -140,10 +159,17 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
       })
       .filter((x): x is SentRow => x !== null)
 
+    const payload: FriendsCache = {
+      friends: friendRows,
+      pending: pendingRows,
+      sent: sentRows,
+      ids: friendRows.map(f => f.profile.id),
+    }
+    setCached(CACHE_KEYS.friends, payload)
     setFriends(friendRows)
     setPending(pendingRows)
     setSent(sentRows)
-    onFriendsChange(friendRows.map(f => f.profile.id))
+    onFriendsChange(payload.ids)
   }, [userId, supabase, onFriendsChange, demoMode])
 
   // Initial + dependency-driven load of the friendship graph from Supabase.
@@ -206,6 +232,7 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
     setActionError(null)
     setQuery('')
     setSearchResults([])
+    markAppDataStale()
     loadFriendsData()
     toast.show('Request sent')
   }
@@ -225,6 +252,7 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
     }
 
     setActionError(null)
+    markAppDataStale()
     loadFriendsData()
     toast.show('Friend added')
   }
@@ -232,12 +260,14 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
   async function declineRequest(friendshipId: string) {
     if (demoMode) return
     await supabase.from('friendships').delete().eq('id', friendshipId)
+    markAppDataStale()
     loadFriendsData()
   }
 
   async function cancelRequest(friendshipId: string) {
     if (demoMode) return
     await supabase.from('friendships').delete().eq('id', friendshipId)
+    markAppDataStale()
     loadFriendsData()
   }
 
@@ -245,6 +275,7 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
     if (demoMode) return
     await supabase.from('friendships').delete().eq('id', friendshipId)
     setHoldingId(null)
+    markAppDataStale()
     loadFriendsData()
   }
 

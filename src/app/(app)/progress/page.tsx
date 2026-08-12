@@ -9,6 +9,8 @@ import ProgressChart from './ProgressChart'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { useTour, type TourStep } from '@/components/onboarding/Tour'
 import Card from '@/components/ui/Card'
+import { CACHE_KEYS, getUiState, setUiState } from '@/lib/cache/appDataCache'
+import { useCachedQuery } from '@/lib/cache/useCachedQuery'
 
 export type Metric = 'weight' | 'volume' | 'e1rm' | 'best'
 
@@ -69,17 +71,35 @@ function epley(weight: number, reps: number): number {
   return weight * (1 + reps / 30)
 }
 
+type ProgressSelection = {
+  selectedId: string | null
+  selectedDay: string | null
+  metric: Metric
+}
+
+type PhotoSummary = {
+  count: number
+  latestDate: string | null
+  thumb: string | null
+}
+
+function sortExercises(data: Exercise[]): Exercise[] {
+  return [...data].sort((a, b) => {
+    const dayDiff = (DAY_ORDER[a.day_type] ?? 0) - (DAY_ORDER[b.day_type] ?? 0)
+    if (dayDiff !== 0) return dayDiff
+    return a.sort_order - b.sort_order
+  })
+}
+
 export default function ProgressPage() {
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
   const { demoMode } = useDemoMode()
   const { unitLabel, toDisplay } = useUnit()
 
-  const [exercises, setExercises] = useState<Exercise[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [selectedDay, setSelectedDay] = useState<string | null>(null)
   const [metric, setMetric] = useState<Metric>('weight')
-  const [rawLogs, setRawLogs] = useState<RawLog[]>([])
   const [chartData, setChartData] = useState<ChartPoint[]>([])
   const [stats, setStats] = useState<ExerciseStats>({
     bestWeight: null,
@@ -88,34 +108,32 @@ export default function ProgressPage() {
     prCount: 0,
   })
   const [recentSessions, setRecentSessions] = useState<RecentSession[]>([])
-  const [loadingExercises, setLoadingExercises] = useState(true)
-  const [loadingChart, setLoadingChart] = useState(false)
 
-  const [photoCount, setPhotoCount] = useState<number | null>(null)
-  const [latestPhotoDate, setLatestPhotoDate] = useState<string | null>(null)
-  const [latestPhotoThumb, setLatestPhotoThumb] = useState<string | null>(null)
+  const { data: exercises = [], loading: loadingExercises } = useCachedQuery<Exercise[]>(
+    CACHE_KEYS.exercises,
+    async () => {
+      const { data } = await supabase
+        .from('exercises')
+        .select('*')
+        .order('day_type', { ascending: true })
+        .order('sort_order', { ascending: true })
+      return sortExercises((data ?? []) as Exercise[])
+    },
+  )
 
-  // Deferred, off the (user_id, taken_date desc) index — zero-photo users
-  // (the common case early on) pay just the one cheap count query below and
-  // never touch storage.
-  useEffect(() => {
-    async function loadPhotoSummary() {
+  const { data: photoSummary } = useCachedQuery<PhotoSummary>(
+    demoMode ? 'progress:photos:demo' : CACHE_KEYS.progressPhotos,
+    async () => {
       // Demo Mode shows nothing here at all — real progress photos never
       // touch the screen, and there's no plausible fake photo to show instead.
-      if (demoMode) {
-        setPhotoCount(0)
-        setLatestPhotoDate(null)
-        setLatestPhotoThumb(null)
-        return
-      }
+      if (demoMode) return { count: 0, latestDate: null, thumb: null }
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
+      if (!user) return { count: 0, latestDate: null, thumb: null }
       const { count } = await supabase
         .from('progress_photo_groups')
         .select('id', { count: 'exact', head: true })
         .eq('user_id', user.id)
-      setPhotoCount(count ?? 0)
-      if (!count) return
+      if (!count) return { count: 0, latestDate: null, thumb: null }
 
       const { data: latest } = await supabase
         .from('progress_photo_groups')
@@ -124,8 +142,7 @@ export default function ProgressPage() {
         .order('taken_date', { ascending: false })
         .limit(1)
         .maybeSingle()
-      if (!latest) return
-      setLatestPhotoDate(latest.taken_date)
+      if (!latest) return { count, latestDate: null, thumb: null }
 
       const { data: photo } = await supabase
         .from('progress_photos')
@@ -134,49 +151,30 @@ export default function ProgressPage() {
         .order('sort_order', { ascending: true })
         .limit(1)
         .maybeSingle()
-      if (!photo) return
+      if (!photo) return { count, latestDate: latest.taken_date, thumb: null }
 
       const { data: signed } = await supabase.storage
         .from('progress-photos')
         .createSignedUrl(photo.storage_path, 3600)
-      if (signed?.signedUrl) setLatestPhotoThumb(signed.signedUrl)
-    }
-    loadPhotoSummary()
-  }, [supabase, demoMode])
-
-  useEffect(() => {
-    async function loadExercises() {
-      const { data } = await supabase
-        .from('exercises')
-        .select('*')
-        .order('day_type', { ascending: true })
-        .order('sort_order', { ascending: true })
-
-      if (data && data.length > 0) {
-        const sorted = [...data].sort((a, b) => {
-          const dayDiff = (DAY_ORDER[a.day_type] ?? 0) - (DAY_ORDER[b.day_type] ?? 0)
-          if (dayDiff !== 0) return dayDiff
-          return a.sort_order - b.sort_order
-        })
-        setExercises(sorted)
-        setSelectedId(sorted[0].id)
-        setSelectedDay(sorted[0].day_type)
+      return {
+        count,
+        latestDate: latest.taken_date,
+        thumb: signed?.signedUrl ?? null,
       }
-      setLoadingExercises(false)
-    }
-    loadExercises()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    },
+  )
+  const photoCount = photoSummary?.count ?? null
+  const latestPhotoDate = photoSummary?.latestDate ?? null
+  const latestPhotoThumb = photoSummary?.thumb ?? null
 
-  const loadRawLogs = useCallback(async (exerciseId: string) => {
-    setLoadingChart(true)
-
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setLoadingChart(false); return }
-
-    const { data: logs } = await supabase
-      .from('session_logs')
-      .select(`
+  const { data: rawLogs = [], loading: loadingChart } = useCachedQuery<RawLog[]>(
+    selectedId ? CACHE_KEYS.progressLogs(selectedId) : null,
+    async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return []
+      const { data: logs } = await supabase
+        .from('session_logs')
+        .select(`
         weight,
         reps,
         is_pr,
@@ -188,31 +186,55 @@ export default function ProgressPage() {
           user_id
         )
       `)
-      .eq('exercise_id', exerciseId)
-      .eq('is_warmup', false)
-      .eq('sessions.user_id', user.id)
-      .not('sessions.completed_at', 'is', null)
-      // Newest-first with a cap, then reversed below for the chart.
-      //
-      // This was an unbounded fetch of every set ever logged for the exercise.
-      // A daily lifter on a 5x5 program generates ~1,300 rows a year, so after a
-      // few years the chart payload grows without limit for the heaviest — i.e.
-      // most engaged — users. MAX_CHART_LOGS covers several years of history at
-      // full resolution and bounds the worst case.
-      .order('local_date', { ascending: false, foreignTable: 'sessions' })
-      .limit(MAX_CHART_LOGS)
+        .eq('exercise_id', selectedId!)
+        .eq('is_warmup', false)
+        .eq('sessions.user_id', user.id)
+        .not('sessions.completed_at', 'is', null)
+        // Newest-first with a cap, then reversed below for the chart.
+        //
+        // This was an unbounded fetch of every set ever logged for the exercise.
+        // A daily lifter on a 5x5 program generates ~1,300 rows a year, so after a
+        // few years the chart payload grows without limit for the heaviest — i.e.
+        // most engaged — users. MAX_CHART_LOGS covers several years of history at
+        // full resolution and bounds the worst case.
+        .order('local_date', { ascending: false, foreignTable: 'sessions' })
+        .limit(MAX_CHART_LOGS)
 
-    // Restore ascending (oldest → newest) order the chart expects; the query
-    // sorts descending so that the LIMIT keeps the most recent history.
-    setRawLogs(((logs ?? []) as RawLog[]).slice().reverse())
-    setLoadingChart(false)
-  }, [supabase])
+      // Restore ascending (oldest → newest) order the chart expects; the query
+      // sorts descending so that the LIMIT keeps the most recent history.
+      return ((logs ?? []) as RawLog[]).slice().reverse()
+    },
+  )
+
+  useEffect(() => {
+    if (exercises.length === 0) return
+    if (selectedId && exercises.some(e => e.id === selectedId)) {
+      if (!selectedDay) {
+        // Restore the day pill to match a cached exercise selection.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setSelectedDay(exercises.find(e => e.id === selectedId)?.day_type ?? null)
+      }
+      return
+    }
+    const saved = getUiState<ProgressSelection>(CACHE_KEYS.progressSelection)
+    if (saved?.selectedId && exercises.some(e => e.id === saved.selectedId)) {
+      setSelectedId(saved.selectedId)
+      setSelectedDay(saved.selectedDay ?? exercises.find(e => e.id === saved.selectedId)?.day_type ?? null)
+      if (saved.metric) setMetric(saved.metric)
+      return
+    }
+    setSelectedId(exercises[0].id)
+    setSelectedDay(exercises[0].day_type)
+  }, [exercises, selectedId, selectedDay])
 
   useEffect(() => {
     if (!selectedId) return
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadRawLogs(selectedId)
-  }, [selectedId, loadRawLogs])
+    setUiState<ProgressSelection>(CACHE_KEYS.progressSelection, {
+      selectedId,
+      selectedDay,
+      metric,
+    })
+  }, [selectedId, selectedDay, metric])
 
   const recomputeForMetric = useCallback((logs: RawLog[], m: Metric, ul: string) => {
     interface SessionAgg {

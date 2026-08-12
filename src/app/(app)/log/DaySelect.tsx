@@ -12,6 +12,8 @@ import {
 import { effectiveSequence, nextDay as nextDayFromRotation, orderedDayKeys } from '@/lib/utils/rotation'
 import WorkoutManager from './WorkoutManager'
 import { useTour, type TourStep } from '@/components/onboarding/Tour'
+import { CACHE_KEYS, markAppDataStale } from '@/lib/cache/appDataCache'
+import { useCachedQuery } from '@/lib/cache/useCachedQuery'
 
 /** Resolve leaderboard category for a day key (custom days via user_day_categories). */
 function categoryForDay(dayKey: string, categories: Record<string, DayCategory>): string {
@@ -77,21 +79,19 @@ const DAY_ICONS: Record<string, React.FC> = {
   legs: LegsIcon,
 }
 
+type LogCatalog = {
+  exercises: Exercise[]
+  rotation: UserRotation | null
+  flexDays: string[]
+  dayCategories: Record<string, DayCategory>
+}
+
 export default function DaySelect() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const supabase = useMemo(() => createClient(), [])
   const { theme } = useTheme()
   const isLight = theme === 'light'
-  const [exercises, setExercises] = useState<Exercise[]>([])
-  const [rotation, setRotation] = useState<UserRotation | null>(null)
-  const [flexDays, setFlexDays] = useState<Set<string>>(new Set())
-  const [dayCategories, setDayCategories] = useState<Record<string, DayCategory>>({})
-  const [loading, setLoading] = useState(true)
-  // Set only when the exercises fetch itself fails — an existing user must
-  // never see the blank-slate "SET UP YOUR FIRST DAY" hero over a transient
-  // network/RLS blip; that reads as their days having vanished.
-  const [loadError, setLoadError] = useState(false)
   const [showManager, setShowManager] = useState(false)
   // When true, the manager opens straight into the "new day" form — used by the
   // blank-slate hero and the `?new=1` deep link from Home, so "create a day" is
@@ -123,41 +123,48 @@ export default function DaySelect() {
     }
   }, [searchParams, router, openCreateDay])
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    setLoadError(false)
-    const { data: { user } } = await supabase.auth.getUser()
-    const [exRes, rotRes, flexRes, catRes] = await Promise.all([
-      supabase.from('exercises').select('*')
-        .order('day_type', { ascending: true })
-        .order('sort_order', { ascending: true }),
-      user
-        ? supabase.from('user_rotation').select('*').eq('user_id', user.id).maybeSingle()
-        : Promise.resolve({ data: null }),
-      user
-        ? supabase.from('user_flex_days').select('day_key').eq('user_id', user.id)
-        : Promise.resolve({ data: [] as { day_key: string }[] }),
-      user
-        ? supabase.from('user_day_categories').select('day_key, category').eq('user_id', user.id)
-        : Promise.resolve({ data: [] as { day_key: string; category: DayCategory }[] }),
-    ])
-    if (exRes.error) {
-      console.error('[grind] failed to load exercises', exRes.error)
-      setLoadError(true)
-      setLoading(false)
-      return
-    }
-    setExercises(exRes.data ?? [])
-    setRotation((rotRes.data as UserRotation | null) ?? null)
-    setFlexDays(new Set((flexRes.data ?? []).map(r => r.day_key)))
-    const catMap: Record<string, DayCategory> = {}
-    for (const r of catRes.data ?? []) catMap[r.day_key] = r.category as DayCategory
-    setDayCategories(catMap)
-    setLoading(false)
-  }, [supabase])
+  const { data: catalog, loading, error, refetch } = useCachedQuery<LogCatalog>(
+    CACHE_KEYS.logCatalog,
+    async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      const [exRes, rotRes, flexRes, catRes] = await Promise.all([
+        supabase.from('exercises').select('*')
+          .order('day_type', { ascending: true })
+          .order('sort_order', { ascending: true }),
+        user
+          ? supabase.from('user_rotation').select('*').eq('user_id', user.id).maybeSingle()
+          : Promise.resolve({ data: null }),
+        user
+          ? supabase.from('user_flex_days').select('day_key').eq('user_id', user.id)
+          : Promise.resolve({ data: [] as { day_key: string }[] }),
+        user
+          ? supabase.from('user_day_categories').select('day_key, category').eq('user_id', user.id)
+          : Promise.resolve({ data: [] as { day_key: string; category: DayCategory }[] }),
+      ])
+      if (exRes.error) {
+        console.error('[grind] failed to load exercises', exRes.error)
+        throw new Error(exRes.error.message)
+      }
+      const catMap: Record<string, DayCategory> = {}
+      for (const r of catRes.data ?? []) catMap[r.day_key] = r.category as DayCategory
+      return {
+        exercises: exRes.data ?? [],
+        rotation: (rotRes.data as UserRotation | null) ?? null,
+        flexDays: (flexRes.data ?? []).map(r => r.day_key),
+        dayCategories: catMap,
+      }
+    },
+  )
+  const exercises = catalog?.exercises ?? []
+  const rotation = catalog?.rotation ?? null
+  const flexDays = useMemo(() => new Set(catalog?.flexDays ?? []), [catalog])
+  const dayCategories = catalog?.dayCategories ?? {}
+  // Set only when the exercises fetch itself fails — an existing user must
+  // never see the blank-slate "SET UP YOUR FIRST DAY" hero over a transient
+  // network/RLS blip; that reads as their days having vanished.
+  const loadError = !!error && !catalog
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { load() }, [load])
+  const load = useCallback(() => refetch(), [refetch])
 
   const grouped: Record<string, Exercise[]> = {}
   for (const ex of exercises) {
@@ -439,7 +446,10 @@ export default function DaySelect() {
       {showManager && (
         <WorkoutManager
           onClose={closeManager}
-          onChanged={() => load()}
+          onChanged={() => {
+            markAppDataStale()
+            void load()
+          }}
           initialNewDay={managerNewDay}
         />
       )}

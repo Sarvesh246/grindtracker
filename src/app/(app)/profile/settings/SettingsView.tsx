@@ -11,6 +11,7 @@ import ThemeToggle from '@/components/ThemeToggle'
 import { useMotionPref } from '@/lib/contexts/MotionContext'
 import { useDemoMode } from '@/lib/contexts/DemoModeContext'
 import FeedbackModal from '@/components/FeedbackModal'
+import { markAppDataStale } from '@/lib/cache/appDataCache'
 import {
   downloadJson,
   downloadText,
@@ -342,6 +343,7 @@ export default function SettingsView({
       toast.show("Couldn't save rest day", 'error')
     } else {
       toast.show(wasActive ? 'Rest day removed' : 'Rest day saved')
+      markAppDataStale()
     }
   }
 

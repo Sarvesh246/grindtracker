@@ -1,5 +1,5 @@
 import { cookies } from 'next/headers'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, getAuthUser } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import HomeDashboard from './HomeDashboard'
 import type { UserRotation } from '@/lib/types'
@@ -17,7 +17,7 @@ import {
 export default async function HomePage() {
   const supabase = await createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthUser()
   if (!user) redirect('/login')
 
   // Parallelize independent dashboard reads. History uses bounded SQL aggregates

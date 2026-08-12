@@ -17,6 +17,7 @@ import { useUnit } from '@/lib/contexts/UnitContext'
 import { useToast } from '@/lib/contexts/ToastContext'
 import { useTour, type TourStep } from '@/components/onboarding/Tour'
 import FlameIcon from '@/components/FlameIcon'
+import { markAppDataStale } from '@/lib/cache/appDataCache'
 
 // "This week"/"this month" start in the VIEWER's local timezone — computed here
 // (client) rather than on the server, whose clock/timezone is very often not
@@ -239,6 +240,7 @@ export default function HomeDashboard({
       await supabase.rpc('refresh_stats', { p_local_date: todayKey })
       restDismissStore.dismiss(restBannerSig)
       toast.show('Streak saved')
+      markAppDataStale('/home')
       router.refresh()
     } catch {
       flashToast("Couldn't save. Try again.")
@@ -251,6 +253,7 @@ export default function HomeDashboard({
     restDismissStore.dismiss(restBannerSig)
     correctedStaleStreak.current = true
     setStreakOverride(0)
+    markAppDataStale('/home')
     supabase.rpc('refresh_stats', { p_local_date: todayKey }).then(({ error }) => {
       if (error) console.error('[grind] refresh_stats failed (decline rest banner)', error)
     })
@@ -381,6 +384,7 @@ export default function HomeDashboard({
       } catch { /* non-critical */ }
 
       flashToast(result.xp_earned ? `Workout saved · +${result.xp_earned} XP` : 'Workout saved')
+      markAppDataStale('/home')
       router.refresh()
     } catch {
       flashToast('Could not save workout. Check your connection and try again.')
@@ -400,6 +404,7 @@ export default function HomeDashboard({
       clearQueuedOpsForSession(activeSession.id)
       setExitConfirm(false)
       flashToast('Workout discarded')
+      markAppDataStale('/home')
       router.refresh()
     } catch {
       flashToast('Could not discard. Try again.')
@@ -445,6 +450,7 @@ export default function HomeDashboard({
       )
       if (error) throw error
       flashToast(`Skipped ${dayLabel(skipped)}`)
+      markAppDataStale('/home')
       router.refresh()
     } catch {
       flashToast('Could not skip. Check your connection and try again.')

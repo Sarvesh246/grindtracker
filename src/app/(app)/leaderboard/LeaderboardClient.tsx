@@ -9,6 +9,7 @@ import { useUnit } from '@/lib/contexts/UnitContext'
 import { useDemoMode } from '@/lib/contexts/DemoModeContext'
 import { buildDemoLeaderboard } from '@/lib/demoMode/fakeData'
 import { useTour, type TourStep } from '@/components/onboarding/Tour'
+import { CACHE_KEYS, getCached, isFresh, setCached } from '@/lib/cache/appDataCache'
 
 type Category = 'push' | 'pull' | 'legs' | 'overall'
 
@@ -56,9 +57,8 @@ export default function LeaderboardClient({ userId }: Props) {
   // Timestamp of the last completed fetch, for the focus throttle below.
   const lastFetchAtRef = useRef(0)
 
-  const fetchLeaderboard = useCallback(async (cat: Category, fIds: string[]) => {
+  const fetchLeaderboard = useCallback(async (cat: Category, fIds: string[], force = false) => {
     const reqId = ++requestIdRef.current
-    lastFetchAtRef.current = Date.now()
 
     if (demoMode) {
       setLoading(false)
@@ -66,8 +66,21 @@ export default function LeaderboardClient({ userId }: Props) {
       return
     }
 
-    setLoading(true)
-    const userIds = [userId, ...fIds]
+    const cachedIds = getCached<{ ids: string[] }>(CACHE_KEYS.friends)?.ids
+    const ids = fIds.length > 0 ? fIds : (cachedIds ?? [])
+    const key = CACHE_KEYS.leaderboard(cat, [...ids].sort().join(','))
+    const cached = getCached<LeaderboardEntry[]>(key)
+    if (cached) {
+      setEntries(cached)
+      setLoading(false)
+      if (isFresh(key) && !force) return
+    } else {
+      setEntries([])
+      setLoading(true)
+    }
+
+    lastFetchAtRef.current = Date.now()
+    const userIds = [userId, ...ids]
     const { data, error } = await supabase.rpc('get_leaderboard', {
       p_day_type: cat,
       p_user_ids: userIds,
@@ -76,11 +89,13 @@ export default function LeaderboardClient({ userId }: Props) {
     setLoading(false)
     if (error) {
       console.error('[grind] get_leaderboard failed', error)
-      setEntries([])
+      if (!cached) setEntries([])
       return
     }
     if (data) {
-      setEntries(data as LeaderboardEntry[])
+      const rows = data as LeaderboardEntry[]
+      setCached(key, rows)
+      setEntries(rows)
     }
   }, [userId, supabase, demoMode])
 
@@ -103,7 +118,7 @@ export default function LeaderboardClient({ userId }: Props) {
       const now = Date.now()
       if (now - lastFetchAtRef.current < FOCUS_REFETCH_MS) return
       lastFetchAtRef.current = now
-      fetchLeaderboard(category, friendIds)
+      fetchLeaderboard(category, friendIds, true)
     }
     window.addEventListener('focus', handler)
     return () => window.removeEventListener('focus', handler)
@@ -242,7 +257,7 @@ export default function LeaderboardClient({ userId }: Props) {
       </div>
 
       {/* Loading */}
-      {loading && (
+      {loading && entries.length === 0 && (
         <div style={{
           textAlign: 'center',
           padding: '40px 0',
@@ -278,7 +293,7 @@ export default function LeaderboardClient({ userId }: Props) {
       )}
 
       {/* Leaderboard rows */}
-      {!loading && entries.length > 0 && (
+      {entries.length > 0 && (
         // Keyed on the category so the ranking re-deals itself when you switch
         // tabs — the whole order changes, so a hard cut loses the connection
         // between the tab you tapped and the list that answered.
