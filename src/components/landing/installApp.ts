@@ -3,7 +3,7 @@
  *
  * Reality check:
  * - iOS Safari has NO public API to open “Add to Home Screen” directly.
- *   Do NOT use `navigator.share()` as a stand-in — Web Share is a different
+ *   NEVER call `navigator.share()` for Install — Web Share is a different
  *   sheet and typically does NOT include “Add to Home Screen”. Scroll to
  *   #install and show Safari toolbar Share → Add to Home Screen / Dock steps.
  * - Android Chrome may fire `beforeinstallprompt`; when captured we call
@@ -80,6 +80,12 @@ export type InstallAttemptResult = 'standalone' | 'prompted' | 'scrolled'
 export async function tryInstallApp(): Promise<InstallAttemptResult> {
   ensureInstallListeners()
   if (isStandalonePwa()) return 'standalone'
+
+  // iPhone / iPad: no install API and no Web Share stand-in — instructions only.
+  if (isAppleMobileDevice()) {
+    scrollToInstallSection()
+    return 'scrolled'
+  }
 
   if (deferredPrompt) {
     const event = deferredPrompt

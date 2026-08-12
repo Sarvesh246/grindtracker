@@ -8,6 +8,7 @@ import {
   hasNativeInstallPrompt,
   isAppleMobileDevice,
   isStandalonePwa,
+  scrollToInstallSection,
   tryInstallApp,
 } from './installApp'
 
@@ -17,7 +18,7 @@ export { isStandalonePwa } from './installApp'
  * Secondary Install control for header / footer / install section.
  * Hides when already running as a standalone PWA.
  * Android: `beforeinstallprompt` → `prompt()` when available.
- * Otherwise: scroll to #install (never Web Share — that isn’t A2HS).
+ * Otherwise (incl. all iOS): scroll to #install — never Web Share.
  */
 export function InstallShortcut({
   className,
@@ -30,7 +31,7 @@ export function InstallShortcut({
   compact?: boolean
 }) {
   const [standalone, setStandalone] = useState(false)
-  const [resolvedLabel, setResolvedLabel] = useState(label ?? 'Install')
+  const [resolvedLabel, setResolvedLabel] = useState(label ?? 'How to install')
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
@@ -38,12 +39,25 @@ export function InstallShortcut({
     // Client-only display-mode / UA checks; SSR shows a generic control then may refine.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setStandalone(isStandalonePwa())
-    if (label != null) {
-      setResolvedLabel(label)
-    } else if (isAppleMobileDevice()) {
-      setResolvedLabel('How to install')
-    } else {
-      setResolvedLabel('Install')
+
+    function syncLabel() {
+      if (label != null) {
+        setResolvedLabel(label)
+        return
+      }
+      if (hasNativeInstallPrompt() && !isAppleMobileDevice()) {
+        setResolvedLabel('Install app')
+      } else {
+        // iOS and browsers without BIP: this only scrolls to instructions.
+        setResolvedLabel('How to install')
+      }
+    }
+    syncLabel()
+    window.addEventListener('beforeinstallprompt', syncLabel)
+    window.addEventListener('appinstalled', syncLabel)
+    return () => {
+      window.removeEventListener('beforeinstallprompt', syncLabel)
+      window.removeEventListener('appinstalled', syncLabel)
     }
   }, [label])
 
@@ -54,6 +68,11 @@ export function InstallShortcut({
     if (busy) return
     setBusy(true)
     try {
+      // Belt-and-suspenders: Apple never hits BIP / share — scroll only.
+      if (isAppleMobileDevice()) {
+        scrollToInstallSection()
+        return
+      }
       await tryInstallApp()
     } finally {
       setBusy(false)
@@ -112,10 +131,10 @@ export default function InstallSection() {
             once it lives on your Home Screen.
           </p>
           <p className="landing-install__note">
-            On iPhone and iPad there is no way for a website button to open Safari’s Add to Home
-            Screen sheet. Use the <strong>Share</strong> icon in Safari’s toolbar (not a button on
-            this page), then choose <strong>Add to Home Screen</strong> or{' '}
-            <strong>Add to Dock</strong>.
+            <strong>How to install</strong> on this page only scrolls here — it cannot open Safari’s
+            Share menu or Add to Home Screen. You must use the <strong>Share</strong> icon in{' '}
+            <strong>Safari’s own browser chrome</strong> (on iPhone: bottom center of the screen),
+            then choose <strong>Add to Home Screen</strong> or <strong>Add to Dock</strong>.
           </p>
           {showNativeInstall ? (
             <div className="landing-install__actions">
@@ -126,7 +145,8 @@ export default function InstallSection() {
             <li>
               <span className="landing-install__step-n">1</span>
               <span>
-                In <strong>Safari</strong>, tap <strong>Share</strong> in the browser toolbar
+                In <strong>Safari</strong>, tap the <strong>Share</strong> icon in the browser
+                toolbar
                 <span className="landing-install__share" aria-hidden="true">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
                     <path
@@ -144,14 +164,15 @@ export default function InstallSection() {
                     />
                   </svg>
                 </span>
-                — the box with the upward arrow, not GRIND’s Install button
+                — on iPhone that’s the box with the upward arrow at the{' '}
+                <strong>bottom center</strong> of Safari, not a button on this page
               </span>
             </li>
             <li>
               <span className="landing-install__step-n">2</span>
               <span>
-                Choose <strong>Add to Home Screen</strong> or <strong>Add to Dock</strong> (wording
-                varies by iOS version)
+                In that Safari menu, choose <strong>Add to Home Screen</strong> or{' '}
+                <strong>Add to Dock</strong> (wording varies by iOS version)
               </span>
             </li>
             <li>
