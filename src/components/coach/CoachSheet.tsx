@@ -193,6 +193,55 @@ function pageRestRect(): {
   }
 }
 
+type SheetRect = {
+  top: number
+  left: number
+  width: number
+  height: number
+}
+
+/**
+ * Live compact→page drag preview. Grows the sheet upward from the compact
+ * bottom edge so the grabber tracks the finger (translate-only looked like
+ * the card sliding off-screen, and never changed height).
+ */
+function expandPreviewRect(
+  dock: 'tl' | 'tr' | 'bl' | 'br',
+  pullY: number,
+): SheetRect {
+  const rest = compactRestRect(dock)
+  const page = pageRestRect()
+  const up = Math.max(0, -pullY)
+  const bottom = rest.top + rest.height
+  const span = Math.max(1, page.height - rest.height)
+  const p = Math.min(1, up / span)
+
+  let height = rest.height + up
+  let top = bottom - height
+  let left = rest.left + (page.left - rest.left) * p
+  let width = rest.width + (page.width - rest.width) * p
+
+  if (top < page.top) {
+    top = page.top
+    height = Math.min(page.height, bottom - page.top)
+  }
+  if (height > page.height) {
+    height = page.height
+    top = Math.min(top, page.top + page.height - height)
+  }
+  if (width > page.width) {
+    width = page.width
+    left = page.left
+  } else {
+    left = Math.min(
+      Math.max(left, page.left),
+      page.left + page.width - width,
+    )
+  }
+
+  return { top, left, width, height }
+}
+
 /**
  * Soft rubber at the top only. Downward travel stays 1:1 so the sheet can
  * slide past minimize and fully off-screen under the finger — no mid-drag
@@ -623,9 +672,10 @@ export default function CoachSheet() {
 
   /**
    * Compact → page without a remount/enter pop: same FLIP as minimize.
-   * Lock the dragged compact frame, clear pullY, swap to page classes, spring
-   * the locked box to full-page geometry — never springPullToZero across a
-   * size swap (that + page class was the expand flash).
+   * Lock the dragged expand-preview frame (or current layout), clear pullY,
+   * swap to page classes, spring the locked box to full-page geometry —
+   * never springPullToZero across a size swap (that + page class was the
+   * expand flash).
    */
   const morphToPage = useCallback(
     (fromY: number) => {
@@ -646,9 +696,25 @@ export default function CoachSheet() {
         return
       }
 
+      // Prefer the same geometry the finger was driving (expand preview).
+      // getBoundingClientRect alone was wrong when motionY was clamped to 0
+      // and height never grew — FLIP then sprang from the resting compact
+      // card and felt like a snap-to-top after release.
       const sheet = sheetRef.current
       const rect = sheet?.getBoundingClientRect()
-      if (!rect || rect.height < 8) {
+      const from: SheetRect =
+        fromY < 0
+          ? expandPreviewRect(dock, fromY)
+          : rect && rect.height >= 8
+            ? {
+                top: rect.top,
+                left: rect.left,
+                width: rect.width,
+                height: rect.height,
+              }
+            : compactRestRect(dock)
+
+      if (from.height < 8) {
         expandToPage()
         springPullToZero(fromY, 0)
         return
@@ -659,12 +725,6 @@ export default function CoachSheet() {
       setPullY(0)
       setPullPhase('idle')
 
-      const from = {
-        top: rect.top,
-        left: rect.left,
-        width: rect.width,
-        height: rect.height,
-      }
       setMorphLock(from)
       setSizeMorphing(true)
       expandToPage()
@@ -672,6 +732,7 @@ export default function CoachSheet() {
     },
     [
       cancelSettle,
+      dock,
       expandToPage,
       reduceMotion,
       springMorphBox,
@@ -821,8 +882,8 @@ export default function CoachSheet() {
           ? pullYRef.current
           : readTranslateY(motionRef.current) ||
             readTranslateY(sheetRef.current)
-      // Mid size morph: convert locked box → pullY so the finger continues
-      // from the same visual top (target rest + offset).
+      // Mid size morph / expand-preview box: convert visual top → pullY so
+      // the finger continues from the same frame (not resting compact).
       if (sizeMorphing || morphLock) {
         const rect = sheetRef.current?.getBoundingClientRect()
         if (rect) {
@@ -830,6 +891,13 @@ export default function CoachSheet() {
             size === 'page' ? pageRestRect() : compactRestRect(dock)
           liveY = rect.top - rest.top
         }
+      } else if (
+        size !== 'page' &&
+        (pullPhase === 'dragging' || pullPhase === 'settling') &&
+        pullYRef.current < 0
+      ) {
+        // Expand preview uses absolute geometry (motionY=0) — keep pullY.
+        liveY = pullYRef.current
       }
       cancelSettle()
       // Interrupt an in-flight page→compact morph — finger takes over.
@@ -1022,15 +1090,32 @@ export default function CoachSheet() {
   // Latched for the entire dismiss→unmount window — never drop mid-exit.
   const fromDragDismiss =
     gestureDismissActive || gestureDismissActiveRef.current
+
+  /**
+   * Compact drag-up: absolute growing box (height + top), not translateY.
+   * Prior “fix” used Math.max(pullY, gestureDismissY) — gestureDismissY is 0
+   * while idle, so every negative pullY became 0 and the sheet never moved
+   * until release (then snapped via morphToPage).
+   */
+  const expandPreview =
+    !isPage &&
+    !morphLock &&
+    (dragging || settling) &&
+    pullY < 0
+      ? expandPreviewRect(dock, pullY)
+      : null
+  const boxLock: SheetRect | null = morphLock ?? expandPreview
+
   const motionY = (() => {
-    if (dragging || settling || pullDismissing || fromDragDismiss) {
-      // Allow negative Y (compact→page drag-up). Only floor at 1 on dismiss
-      // paths — Math.max(..., 0) used to kill upward tracking entirely.
-      const y = Math.max(pullY, gestureDismissY)
-      if (fromDragDismiss || pullDismissing) return Math.max(y, 1)
-      return y
+    if (!(dragging || settling || pullDismissing || fromDragDismiss)) return 0
+    if (fromDragDismiss || pullDismissing) {
+      // Dismiss only travels down — never allow a negative hold to flash.
+      return Math.max(pullY, gestureDismissY, 1)
     }
-    return 0
+    // Expand preview owns geometry; translating would double-move the grabber.
+    if (expandPreview) return 0
+    // Page rubber-band (and compact dismiss) — pullY may be negative.
+    return pullY
   })()
 
   const origin =
@@ -1041,7 +1126,7 @@ export default function CoachSheet() {
   // During page→compact FLIP, keep transitions on after the lock releases.
   const sheetTransition = (() => {
     if (reduceMotion || dragging || settling || fromDragDismiss) return 'none'
-    if (morphLock) return 'none'
+    if (boxLock) return 'none'
     if (closing) return 'none'
     const curve = 'cubic-bezier(0.22, 1, 0.36, 1)'
     const parts: string[] = [
@@ -1081,7 +1166,7 @@ export default function CoachSheet() {
   // Top-docked desktop cards use `top`/`bottom:auto` — don't override bottom there.
   const topDocked = dock === 'tl' || dock === 'tr'
   const sheetKeyboardStyle =
-    !closing && keyboardInset > 0
+    !closing && keyboardInset > 0 && !boxLock
       ? isPage
         ? ({ paddingBottom: keyboardInset } as const)
         : !topDocked
@@ -1089,12 +1174,12 @@ export default function CoachSheet() {
           : undefined
       : undefined
 
-  const morphLockStyle: CSSProperties | undefined = morphLock
+  const morphLockStyle: CSSProperties | undefined = boxLock
     ? {
-        top: morphLock.top,
-        left: morphLock.left,
-        width: morphLock.width,
-        height: morphLock.height,
+        top: boxLock.top,
+        left: boxLock.left,
+        width: boxLock.width,
+        height: boxLock.height,
         right: 'auto',
         bottom: 'auto',
         maxHeight: 'none',
@@ -1171,14 +1256,14 @@ export default function CoachSheet() {
       <div
         ref={sheetRef}
         className={`coach-sheet coach-sheet--${visualSize}${
-          playEnter && !closing && !reduceMotion && !morphLock
+          playEnter && !closing && !reduceMotion && !boxLock
             ? ' coach-sheet--enter'
             : ''
         }${closing ? ' coach-sheet--closing' : ''}${
           fromDragDismiss ? ' coach-sheet--closing-from-drag' : ''
         }${
           dragging || settling ? ' coach-sheet--pulling' : ''
-        }${morphLock ? ' coach-sheet--morph-lock' : ''}`}
+        }${boxLock ? ' coach-sheet--morph-lock' : ''}`}
         data-dock={dock}
         role="dialog"
         aria-modal="true"
@@ -1186,8 +1271,9 @@ export default function CoachSheet() {
         style={{
           transformOrigin: origin,
           transition: sheetTransition,
-          ...morphLockStyle,
+          // Keyboard bottom must not win over FLIP / expand-preview box.
           ...sheetKeyboardStyle,
+          ...morphLockStyle,
         }}
       >
         <header
