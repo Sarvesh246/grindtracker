@@ -134,7 +134,8 @@ export async function previewCreateDay(
             ? ` +${validated.exercises.length - 4} more`
             : ''),
       ],
-      riskNote: 'Adds exercises to your catalog. Does not start a session.',
+      riskNote:
+        'Adds exercises to your catalog, then opens Log so you can pick the day. Does not start a session — ask Coach to start it if you want to train now.',
       steps: validated.exercises.map(
         e =>
           `${e.name} · ${e.sets_target} × ${e.reps_target}${

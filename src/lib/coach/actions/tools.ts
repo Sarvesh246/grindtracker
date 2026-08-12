@@ -71,7 +71,7 @@ export function buildCoachProposalTools(ctx: CoachToolContext) {
 
     propose_start_workout: tool({
       description:
-        'Propose starting (or resuming) a workout day for the user. Preview only — Confirm opens Active Workout.',
+        'Propose starting (or resuming) a workout day. ONLY when the user explicitly asks to start/begin/train now (or after create_day, only if they separately ask to start it). Preview only — Confirm opens Active Workout. Do NOT call this just because you created a day.',
       inputSchema: z.object({
         dayType: z
           .string()
@@ -101,7 +101,7 @@ export function buildCoachProposalTools(ctx: CoachToolContext) {
 
     propose_create_day: tool({
       description:
-        'Propose creating a new workout day in the user catalog from a planned exercise list. Preview only — Confirm inserts exercises.',
+        'Propose creating a new workout day in the user catalog from a planned exercise list. Preview only — Confirm inserts exercises and opens the Log day picker. Does NOT start a session. Never also call propose_start_workout in the same turn unless the user explicitly asked to start training after creating the day.',
       inputSchema: z.object({
         dayKey: z.string().min(1).describe('New day name, e.g. "upper" or "push 2"'),
         category: z

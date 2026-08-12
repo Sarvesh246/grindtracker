@@ -232,6 +232,10 @@ describe('COACH_SYSTEM_PROMPT', () => {
     assert.match(COACH_SYSTEM_PROMPT, /Never claim a change is applied/i)
     assert.match(
       COACH_SYSTEM_PROMPT,
+      /must NOT start a workout/i,
+    )
+    assert.match(
+      COACH_SYSTEM_PROMPT,
       /splitting across quota-burning turns/i,
     )
   })

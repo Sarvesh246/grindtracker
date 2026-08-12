@@ -160,7 +160,7 @@ before relying on this.
 | --- | --- | --- |
 | Correct past weights | `propose_correct_weights` | `upsert_past_session` per matched session |
 | Start today’s workout | `propose_start_workout` | `start_or_resume_session` → `/log?day=…` |
-| Create a new day | `propose_create_day` | `exercises` insert (+ optional category) |
+| Create a new day | `propose_create_day` | `exercises` insert (+ optional category) → `/log` day picker (does **not** auto-start; use `propose_start_workout` only if they ask) |
 
 Flow:
 

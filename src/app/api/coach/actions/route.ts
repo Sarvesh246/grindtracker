@@ -266,12 +266,14 @@ export async function POST(request: Request) {
           { status: 500 },
         )
       }
-      message = `Created “${payload.execute.dayKey}” with ${result.inserted} exercise${result.inserted === 1 ? '' : 's'}.`
+      message = `Created “${payload.execute.dayKey}” with ${result.inserted} exercise${result.inserted === 1 ? '' : 's'}. Pick it from Log when you want to train — it won’t start automatically.`
       details = {
         inserted: result.inserted,
         dayKey: payload.execute.dayKey,
       }
-      href = `/log?day=${encodeURIComponent(payload.execute.dayKey)}`
+      // Day select only — never /log?day=… (that opens ActiveWorkout).
+      // Starting requires an explicit propose_start_workout confirm.
+      href = '/log'
     }
 
     await updateCoachProposalStatus(supabase, {
