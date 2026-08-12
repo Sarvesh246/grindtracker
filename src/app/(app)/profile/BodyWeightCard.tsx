@@ -185,19 +185,6 @@ export default function BodyWeightCard() {
     }
   }
 
-  /**
-   * Prefer the chart-level click (nearest point under the pointer) over per-dot
-   * SVG handlers. Recharts' default activeDot + Tooltip HTML sit on top of custom
-   * dots after the first tap and swallow the second — that was the "spam the
-   * dot" failure mode.
-   */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function handleChartClick(state: any) {
-    const payload = state?.activePayload?.[0]?.payload as Point | undefined
-    if (!payload?.date) return
-    handleDotClick(payload)
-  }
-
   async function handleUpdate() {
     if (!selected) return
     const w = parseFloat(editDraft)
@@ -270,8 +257,24 @@ export default function BodyWeightCard() {
 
   const pointsNewestFirst = [...chartPoints].reverse()
 
-  // Dots are visual-only — taps go through LineChart.onClick (nearest point).
-  // pointerEvents="none" so the dots never sit above the chart hit layer.
+  /**
+   * Recharts v3 chart onClick no longer exposes `activePayload` (v2 API) — only
+   * `activeIndex` / `activeTooltipIndex`. Resolve the nearest point from that.
+   * Per-dot handlers (below) are the primary path; this covers taps on the line
+   * / gutters between dots.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function handleChartClick(state: any) {
+    const raw = state?.activeIndex ?? state?.activeTooltipIndex
+    const idx = typeof raw === 'string' ? Number(raw) : raw
+    if (idx == null || !Number.isFinite(idx)) return
+    const point = chartPoints[idx as number]
+    if (point) handleDotClick(point)
+  }
+
+  // Transparent r=14 hit circle under each visible dot so the tap target clears
+  // ~44px. stopPropagation so a dot tap doesn't also fire LineChart.onClick
+  // (which would peek then immediately open on the same gesture).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const renderDot = (props: any) => {
     const { cx, cy, payload } = props
@@ -289,7 +292,15 @@ export default function BodyWeightCard() {
     const pillX = anchor === 'start' ? cx : anchor === 'end' ? cx - pillWidth : cx - pillWidth / 2
     const pillY = labelBelow ? cy + 10 : cy - 30
     return (
-      <g key={payload.date} pointerEvents="none">
+      <g
+        key={payload.date}
+        style={{ cursor: 'pointer' }}
+        onClick={e => {
+          e.stopPropagation()
+          if (point) handleDotClick(point)
+        }}
+      >
+        <circle cx={cx} cy={cy} r={14} fill="transparent" />
         {active && <circle cx={cx} cy={cy} r={9} fill="var(--chart-mark)" opacity={0.22} />}
         <circle
           cx={cx}
@@ -300,7 +311,7 @@ export default function BodyWeightCard() {
           strokeWidth={2}
         />
         {isPeeked && (
-          <g>
+          <g pointerEvents="none">
             <rect
               x={pillX}
               y={pillY}
@@ -456,14 +467,43 @@ export default function BodyWeightCard() {
                   domain={['dataMin - 2', 'dataMax + 2']}
                   tickFormatter={(v: number) => String(Math.round(v))}
                 />
-                {/* Invisible Tooltip keeps Recharts' nearest-point index wired up
-                    for onClick.activePayload; pointer-events none so it can never
-                    steal the second tap (that was half of the spam-the-dot bug).
-                    Value display is the custom peek pill on the dot, not this. */}
+                {/* Hover tooltip (desktop). pointer-events:none so the floating
+                    HTML never steals the second tap that opens the edit sheet.
+                    Mobile / touch uses the peek pill on the dot instead. */}
                 <Tooltip
-                  content={() => null}
-                  cursor={false}
-                  wrapperStyle={{ display: 'none', pointerEvents: 'none' }}
+                  trigger="hover"
+                  cursor={{ stroke: 'var(--border-strong)', strokeWidth: 1 }}
+                  wrapperStyle={{ pointerEvents: 'none', outline: 'none' }}
+                  content={({ active, payload }) => {
+                    if (!active || !payload?.length) return null
+                    const point = payload[0]?.payload as Point | undefined
+                    if (!point) return null
+                    return (
+                      <div
+                        style={{
+                          backgroundColor: 'var(--surface-elevated)',
+                          border: '1px solid var(--border)',
+                          borderRadius: '8px',
+                          padding: '8px 12px',
+                          fontFamily: 'var(--font-sans)',
+                          boxShadow: 'var(--card-shadow)',
+                        }}
+                      >
+                        <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '2px' }}>
+                          {point.displayDate}
+                        </div>
+                        <div
+                          style={{
+                            fontFamily: 'var(--font-mono)',
+                            fontSize: '14px',
+                            color: 'var(--text-primary)',
+                          }}
+                        >
+                          {fmt(point.canonical)} {unitLabel}
+                        </div>
+                      </div>
+                    )
+                  }}
                 />
                 <Line
                   type="monotone"
