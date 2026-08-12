@@ -2023,6 +2023,36 @@ html.reduce-motion .coach-history {
   align-self: flex-start;
   align-items: flex-start;
 }
+.coach-msg__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+.coach-msg__avatar {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin-top: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--on-accent);
+  overflow: hidden;
+}
+.coach-msg__avatar svg {
+  display: block;
+}
+.coach-msg__stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
 .coach-msg__copy-row {
   display: flex;
 }

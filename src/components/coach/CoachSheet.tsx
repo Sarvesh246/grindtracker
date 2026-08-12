@@ -1648,6 +1648,52 @@ export default function CoachSheet() {
                 {messages.map((m, i) => {
                   const waiting =
                     m.role === 'assistant' && !m.content && streaming
+                  const bubble = (
+                    <div
+                      className={`coach-bubble coach-bubble--${m.role}${
+                        m.role === 'assistant' ? ' coach-bubble--enter' : ''
+                      }`}
+                    >
+                      {waiting ? (
+                        <span
+                          className="coach-bubble__pending"
+                          aria-label="Thinking"
+                        >
+                          …
+                        </span>
+                      ) : m.role === 'assistant' ? (
+                        <>
+                          {m.content ? (
+                            <CoachMessageContent content={m.content} />
+                          ) : null}
+                          {m.proposals?.map(p => (
+                            <CoachActionCard
+                              key={p.id}
+                              proposal={p}
+                              run={m.actionRuns?.[p.id] ?? null}
+                              busy={streaming}
+                              onConfirm={id =>
+                                void decideProposal(id, 'confirm')
+                              }
+                              onCancel={id =>
+                                void decideProposal(id, 'cancel')
+                              }
+                            />
+                          ))}
+                        </>
+                      ) : (
+                        <div className="coach-bubble__text">{m.content}</div>
+                      )}
+                    </div>
+                  )
+                  const copy =
+                    !waiting && m.content ? (
+                      <CoachCopyButton
+                        text={m.content}
+                        align={m.role === 'user' ? 'end' : 'start'}
+                      />
+                    ) : null
+
                   return (
                     <li
                       key={m.id}
@@ -1659,48 +1705,25 @@ export default function CoachSheet() {
                         } as CSSProperties
                       }
                     >
-                      <div
-                        className={`coach-bubble coach-bubble--${m.role}${
-                          m.role === 'assistant' ? ' coach-bubble--enter' : ''
-                        }`}
-                      >
-                        {waiting ? (
+                      {m.role === 'assistant' ? (
+                        <div className="coach-msg__row">
                           <span
-                            className="coach-bubble__pending"
-                            aria-label="Thinking"
+                            className="coach-msg__avatar"
+                            aria-hidden
                           >
-                            …
+                            <CoachFabIcon size={15} />
                           </span>
-                        ) : m.role === 'assistant' ? (
-                          <>
-                            {m.content ? (
-                              <CoachMessageContent content={m.content} />
-                            ) : null}
-                            {m.proposals?.map(p => (
-                              <CoachActionCard
-                                key={p.id}
-                                proposal={p}
-                                run={m.actionRuns?.[p.id] ?? null}
-                                busy={streaming}
-                                onConfirm={id =>
-                                  void decideProposal(id, 'confirm')
-                                }
-                                onCancel={id =>
-                                  void decideProposal(id, 'cancel')
-                                }
-                              />
-                            ))}
-                          </>
-                        ) : (
-                          <div className="coach-bubble__text">{m.content}</div>
-                        )}
-                      </div>
-                      {!waiting && m.content ? (
-                        <CoachCopyButton
-                          text={m.content}
-                          align={m.role === 'user' ? 'end' : 'start'}
-                        />
-                      ) : null}
+                          <div className="coach-msg__stack">
+                            {bubble}
+                            {copy}
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          {bubble}
+                          {copy}
+                        </>
+                      )}
                     </li>
                   )
                 })}
