@@ -4,11 +4,13 @@ import { ThemeProvider, type Theme } from '@/lib/contexts/ThemeContext'
 import { MotionProvider, type MotionPref } from '@/lib/contexts/MotionContext'
 import ServiceWorkerRegister from '@/components/ServiceWorkerRegister'
 import Analytics from '@/components/Analytics'
+import HapticsSetup from '@/components/HapticsSetup'
 import './globals.css'
 
 export const metadata: Metadata = {
   title: 'GRIND',
-  description: 'Track your gym progress',
+  description:
+    'Free gym tracker PWA for serious lifters. Log sets fast, keep rest-day-aware streaks, earn XP & badges, and climb a private friends leaderboard.',
   manifest: '/manifest.json',
   icons: {
     icon: [{ url: '/icon-192.png', sizes: '192x192', type: 'image/png' }],
@@ -80,8 +82,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang="en" className={htmlClass}>
       <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         {/* Next.js appleWebApp.capable only emits the non-prefixed
             `mobile-web-app-capable` meta tag. The apple-prefixed version is
             still required on iOS for proper standalone mode behaviour. */}
@@ -96,6 +96,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         ))}
       </head>
       <body>
+        <HapticsSetup />
         <ServiceWorkerRegister />
         <Analytics />
         <ThemeProvider initialTheme={theme}>

@@ -163,8 +163,8 @@ export default function CompletionModal({
 
         {data.leveledUp && (
           <div style={{
-            backgroundColor: 'rgba(200, 241, 53, 0.08)',
-            border: '1px solid rgba(200, 241, 53, 0.25)',
+            backgroundColor: 'var(--accent-wash)',
+            border: '1px solid var(--accent-border)',
             borderRadius: '12px',
             padding: '14px',
             textAlign: 'center',

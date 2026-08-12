@@ -40,6 +40,7 @@ export default function IdentityStep({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const checkGenRef = useRef(0)
   const keyboardInset = useKeyboardInset()
 
   const selfUsername = existingProfile?.username?.toLowerCase() ?? null
@@ -61,12 +62,14 @@ export default function IdentityStep({
     }
 
     setChecking(true)
+    const gen = ++checkGenRef.current
     debounceRef.current = setTimeout(async () => {
       const { data } = await supabase
         .from('user_profiles')
         .select('id')
         .eq('username', trimmed)
         .maybeSingle()
+      if (gen !== checkGenRef.current) return
       setChecking(false)
       setAvailable(!data || data.id === user.id)
     }, 400)
@@ -162,7 +165,7 @@ export default function IdentityStep({
   function statusColor() {
     if (!trimmed || !formatOk) return 'var(--text-muted)'
     if (checking) return 'var(--text-muted)'
-    return available ? '#4ade80' : 'var(--danger)'
+    return available ? 'var(--accent-text)' : 'var(--danger)'
   }
 
   function statusText() {
@@ -306,7 +309,7 @@ export default function IdentityStep({
             role="alert"
             style={{
               padding: '12px 16px',
-              backgroundColor: 'rgba(239,68,68,0.1)',
+              backgroundColor: 'var(--danger-bg)',
               border: '1px solid var(--danger)',
               borderRadius: '8px',
               color: 'var(--danger)',

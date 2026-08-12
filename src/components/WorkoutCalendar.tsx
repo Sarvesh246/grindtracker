@@ -110,7 +110,7 @@ export default function WorkoutCalendar() {
   }
 
   function navigateTo(dateKey: string) {
-    if (dateKey === todayKey) router.push('/log')
+    if (dateKey === todayKey && !workoutDays[dateKey]) router.push('/log')
     else router.push(`/log/past?date=${dateKey}`)
   }
 

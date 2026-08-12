@@ -110,8 +110,13 @@ export async function flushQueuedOps(
             .eq('exercise_id', op.exerciseId)
             .eq('set_number', op.setNumber)
     if (!error) {
-      removeQueuedOp(op.sessionId, op.exerciseId, op.setNumber)
-      synced.push({ exerciseId: op.exerciseId, setNumber: op.setNumber })
+      const latest = readQueue().find(q => sameSlot(q, op))
+      // A newer edit may have replaced this slot while the upsert was in flight.
+      // Only drop the queue entry if it is still the op we just synced.
+      if (!latest || latest.queuedAt === op.queuedAt) {
+        removeQueuedOp(op.sessionId, op.exerciseId, op.setNumber)
+        synced.push({ exerciseId: op.exerciseId, setNumber: op.setNumber })
+      }
     }
   }
   return synced

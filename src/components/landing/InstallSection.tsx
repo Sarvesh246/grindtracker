@@ -3,6 +3,7 @@
 import { useEffect, useState, type MouseEvent } from 'react'
 import Link from 'next/link'
 import GoogleSignInButton from '@/components/GoogleSignInButton'
+import LandingRise from './LandingRise'
 import {
   ensureInstallListeners,
   hasNativeInstallPrompt,
@@ -99,12 +100,14 @@ export function InstallShortcut({
 export default function InstallSection() {
   const [standalone, setStandalone] = useState(false)
   const [showNativeInstall, setShowNativeInstall] = useState(false)
+  const [appleDevice, setAppleDevice] = useState(true)
 
   useEffect(() => {
     ensureInstallListeners()
     // Client-only display-mode check; SSR always shows the section.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setStandalone(isStandalonePwa())
+    setAppleDevice(isAppleMobileDevice())
 
     const syncPrompt = () => setShowNativeInstall(hasNativeInstallPrompt())
     syncPrompt()
@@ -121,72 +124,108 @@ export default function InstallSection() {
   return (
     <section className="landing-section landing-install" id="install">
       <div className="landing-section__inner landing-section__inner--split">
-        <div className="landing-section__copy landing-rise">
+        <LandingRise className="landing-section__copy">
           <p className="landing-eyebrow">Install</p>
           <h2 className="landing-h2" id="install-heading">
             Add GRIND to your Home Screen
           </h2>
           <p className="landing-lead">
-            The full gym experience is a PWA — no App Store. On iPhone it feels like a native app
-            once it lives on your Home Screen.
+            The full gym experience is a PWA — no App Store. On your phone it feels like a native app
+            once it lives on the Home Screen.
           </p>
-          <p className="landing-install__note">
-            <strong>How to install</strong> on this page only scrolls here — it cannot open Safari’s
-            Share menu or Add to Home Screen. You must use the <strong>Share</strong> icon in{' '}
-            <strong>Safari’s own browser chrome</strong> (on iPhone: bottom center of the screen),
-            then choose <strong>Add to Home Screen</strong> or <strong>Add to Dock</strong>.
-          </p>
-          {showNativeInstall ? (
+          {appleDevice ? (
+            <>
+              <p className="landing-install__note">
+                <strong>How to install</strong> on this page only scrolls here — it cannot open Safari’s
+                Share menu or Add to Home Screen. You must use the <strong>Share</strong> icon in{' '}
+                <strong>Safari’s own browser chrome</strong> (on iPhone: bottom center of the screen),
+                then choose <strong>Add to Home Screen</strong> or <strong>Add to Dock</strong>.
+              </p>
+              <ol className="landing-install__steps">
+                <li>
+                  <span className="landing-install__step-n">1</span>
+                  <span>
+                    In <strong>Safari</strong>, tap the <strong>Share</strong> icon in the browser
+                    toolbar
+                    <span className="landing-install__share" aria-hidden="true">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                        <path
+                          d="M12 3v12M8 7l4-4 4 4"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                        <path
+                          d="M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                    </span>
+                    — on iPhone that’s the box with the upward arrow at the{' '}
+                    <strong>bottom center</strong> of Safari, not a button on this page
+                  </span>
+                </li>
+                <li>
+                  <span className="landing-install__step-n">2</span>
+                  <span>
+                    In that Safari menu, choose <strong>Add to Home Screen</strong> or{' '}
+                    <strong>Add to Dock</strong> (wording varies by iOS version)
+                  </span>
+                </li>
+                <li>
+                  <span className="landing-install__step-n">3</span>
+                  <span>
+                    Open <strong>GRIND</strong> from your Home Screen — full screen, offline-ready
+                  </span>
+                </li>
+              </ol>
+            </>
+          ) : (
+            <>
+              <p className="landing-install__note">
+                On Chrome or Edge, use the browser’s <strong>Install app</strong> prompt when it
+                appears, or open the menu and choose <strong>Install app</strong> /{' '}
+                <strong>Add to Home Screen</strong>.
+              </p>
+              {showNativeInstall ? (
+                <div className="landing-install__actions">
+                  <InstallShortcut label="Install app" />
+                </div>
+              ) : null}
+              <ol className="landing-install__steps">
+                <li>
+                  <span className="landing-install__step-n">1</span>
+                  <span>
+                    Tap <strong>Install</strong> when this page offers it, or open the browser menu
+                    (⋮) and choose <strong>Install app</strong>
+                  </span>
+                </li>
+                <li>
+                  <span className="landing-install__step-n">2</span>
+                  <span>Confirm the install — GRIND appears on your Home Screen like a native app</span>
+                </li>
+                <li>
+                  <span className="landing-install__step-n">3</span>
+                  <span>
+                    Open <strong>GRIND</strong> from the icon — full screen, offline-ready
+                  </span>
+                </li>
+              </ol>
+              <p className="landing-install__android">
+                On iPhone, open this page in <strong>Safari</strong> and use Share →{' '}
+                <strong>Add to Home Screen</strong>.
+              </p>
+            </>
+          )}
+          {appleDevice && showNativeInstall ? (
             <div className="landing-install__actions">
               <InstallShortcut label="Install app" />
             </div>
           ) : null}
-          <ol className="landing-install__steps">
-            <li>
-              <span className="landing-install__step-n">1</span>
-              <span>
-                In <strong>Safari</strong>, tap the <strong>Share</strong> icon in the browser
-                toolbar
-                <span className="landing-install__share" aria-hidden="true">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                    <path
-                      d="M12 3v12M8 7l4-4 4 4"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                    <path
-                      d="M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                </span>
-                — on iPhone that’s the box with the upward arrow at the{' '}
-                <strong>bottom center</strong> of Safari, not a button on this page
-              </span>
-            </li>
-            <li>
-              <span className="landing-install__step-n">2</span>
-              <span>
-                In that Safari menu, choose <strong>Add to Home Screen</strong> or{' '}
-                <strong>Add to Dock</strong> (wording varies by iOS version)
-              </span>
-            </li>
-            <li>
-              <span className="landing-install__step-n">3</span>
-              <span>
-                Open <strong>GRIND</strong> from your Home Screen — full screen, offline-ready
-              </span>
-            </li>
-          </ol>
-          <p className="landing-install__android">
-            On Android Chrome: use <strong>Install</strong> when the browser offers it, or menu →{' '}
-            <strong>Install app</strong> / Add to Home Screen.
-          </p>
-        </div>
+        </LandingRise>
       </div>
     </section>
   )
@@ -195,7 +234,7 @@ export default function InstallSection() {
 export function FinalCta() {
   return (
     <section className="landing-section landing-final" id="start">
-      <div className="landing-section__inner landing-final__inner landing-rise">
+      <LandingRise className="landing-section__inner landing-final__inner">
         <h2 className="landing-h2 landing-final__title">Free to start. Built for serious lifters.</h2>
         <p className="landing-lead landing-final__lead">
           Log sets in seconds, keep your streak honest, and watch the scoreboard climb — no paywall
@@ -204,10 +243,10 @@ export function FinalCta() {
         <div className="landing-final__actions">
           <GoogleSignInButton variant="google" fullWidth style={{ maxWidth: '320px' }} />
           <Link href="/login" className="landing-final__login press" data-haptic="light">
-            Already grinding? Log in
+            Already have an account? Log in
           </Link>
         </div>
-      </div>
+      </LandingRise>
     </section>
   )
 }

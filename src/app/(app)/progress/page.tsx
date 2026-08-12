@@ -386,7 +386,7 @@ export default function ProgressPage() {
   if (loadingExercises) {
     return (
       <div style={{ padding: '24px 16px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif", fontSize: '14px' }}>
-        Loading...
+        Loading…
       </div>
     )
   }
@@ -520,7 +520,7 @@ export default function ProgressPage() {
                 padding: '0 14px',
                 borderRadius: 'var(--radius-pill, 9999px)',
                 border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
-                backgroundColor: active ? 'rgba(200, 241, 53, 0.12)' : 'var(--surface)',
+                backgroundColor: active ? 'var(--accent-wash)' : 'var(--surface)',
                 color: active ? 'var(--accent-text)' : 'var(--text-secondary)',
                 fontFamily: 'var(--font-sans)',
                 fontSize: '11px',
@@ -676,7 +676,7 @@ export default function ProgressPage() {
           justifyContent: 'center',
         }}>
           {loadingChart ? (
-            <div style={{ color: 'var(--text-muted)', fontSize: '14px', textAlign: 'center' }}>Loading...</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: '14px', textAlign: 'center' }}>Loading…</div>
           ) : chartData.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '32px 16px' }}>
               <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px' }}>
@@ -749,8 +749,8 @@ export default function ProgressPage() {
                       fontSize: '10px',
                       fontFamily: "'Bebas Neue', sans-serif",
                       color: 'var(--accent-text)',
-                      backgroundColor: 'rgba(200, 241, 53, 0.1)',
-                      border: '1px solid rgba(200, 241, 53, 0.3)',
+                      backgroundColor: 'var(--accent-wash)',
+                      border: '1px solid var(--accent-border)',
                       borderRadius: '9999px',
                       padding: '2px 8px',
                       letterSpacing: '0.5px',

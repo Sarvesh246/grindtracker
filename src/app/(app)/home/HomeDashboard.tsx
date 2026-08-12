@@ -185,7 +185,22 @@ export default function HomeDashboard({
   // streak if it ISN'T fully covered by rest days (recurring or one-off
   // confirmed — see CLAUDE.md → Rest days); a plain adjacent-day gap has no
   // days strictly between the endpoints, so uncoveredDates is empty either way.
-  const todayKey = useMemo(() => localDateKey(new Date()), [])
+  const [todayKey, setTodayKey] = useState(() => localDateKey())
+  useEffect(() => {
+    const sync = () => {
+      const next = localDateKey()
+      setTodayKey(prev => (prev === next ? prev : next))
+    }
+    const onVis = () => {
+      if (document.visibilityState === 'visible') sync()
+    }
+    document.addEventListener('visibilitychange', onVis)
+    window.addEventListener('focus', sync)
+    return () => {
+      document.removeEventListener('visibilitychange', onVis)
+      window.removeEventListener('focus', sync)
+    }
+  }, [])
   const lastWorkoutKey = stats?.last_workout_date ?? null
   const gapUncoveredDates = useMemo(
     () => lastWorkoutKey ? uncoveredDatesBetween(lastWorkoutKey, todayKey, recurringRestSet, restDateSet) : [],
@@ -243,7 +258,7 @@ export default function HomeDashboard({
       markAppDataStale('/home')
       router.refresh()
     } catch {
-      flashToast("Couldn't save. Try again.")
+      flashToast('Could not save. Try again.')
     } finally {
       setRestBannerBusy(false)
     }
@@ -515,7 +530,7 @@ export default function HomeDashboard({
       ]
     : [
         { target: 'home-level', title: 'Your level', body: 'This is your level. Every completed workout and PR earns XP toward the next one.' },
-        { target: 'home-streak', title: 'Your streak', body: 'Keep your streak alive by training on consecutive days — miss a day and it resets.' },
+        { target: 'home-streak', title: 'Your streak', body: 'Train on consecutive days to keep it going. Rest days you configure don’t break the streak.' },
         { target: 'home-cta', title: 'Start a workout', body: 'Tap here to jump into your suggested next workout. GRIND rotates through your days automatically.' },
         { target: 'home-stats', title: 'Your stats', body: 'Track your volume at a glance.' },
         { target: 'home-calendar', title: 'Workout history', body: "See every day you've trained, and revisit or edit past sessions." },
@@ -1240,6 +1255,8 @@ export default function HomeDashboard({
                   )}
                 </span>
                 <button
+                  data-haptic="light"
+                  className="press"
                   onClick={() => {
                     const date =
                       (lastSession as { local_date?: string | null }).local_date

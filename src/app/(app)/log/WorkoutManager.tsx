@@ -623,7 +623,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
                                 style={{
                                   display: 'flex', alignItems: 'center', gap: '4px',
                                   marginTop: '4px', fontSize: '11px',
-                                  color: '#F59E0B', fontFamily: "'DM Sans', sans-serif",
+                                  color: 'var(--warning)', fontFamily: "'DM Sans', sans-serif",
                                 }}
                                 onClick={e => { e.stopPropagation(); setCategoryError(''); setScreen({ id: 'category-picker', dayKey: key }) }}
                               >
@@ -635,11 +635,14 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
                             )}
                           </button>
                           <button
+                            data-haptic="light"
+                            className="press"
                             onClick={() => setScreen({ id: 'day', dayKey: key })}
+                            aria-label={`Open ${key.replace(/-/g, ' ')} day`}
                             style={{
                               background: 'none', border: 'none', cursor: 'pointer',
-                              padding: '8px', opacity: 0.5,
-                              display: 'flex', alignItems: 'center',
+                              padding: '8px', minWidth: '44px', minHeight: '44px', opacity: 0.5,
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
                             }}
                             onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
                             onMouseLeave={e => (e.currentTarget.style.opacity = '0.5')}
@@ -649,11 +652,14 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
                             </svg>
                           </button>
                           <button
+                            data-haptic="light"
+                            className="press"
                             onClick={() => { setDeleteError(''); setDeleteTarget({ type: 'day', key, label: key.replace(/-/g, ' ').toUpperCase() }) }}
+                            aria-label={`Delete ${key.replace(/-/g, ' ')} day`}
                             style={{
                               background: 'none', border: 'none', cursor: 'pointer',
-                              padding: '8px', opacity: 0.4,
-                              display: 'flex', alignItems: 'center',
+                              padding: '8px', minWidth: '44px', minHeight: '44px', opacity: 0.4,
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
                             }}
                             onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
                             onMouseLeave={e => (e.currentTarget.style.opacity = '0.4')}
@@ -713,7 +719,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
                       <span style={{
                         marginLeft: 'auto', fontSize: '10px', fontWeight: 700,
                         color: 'var(--accent-text)', letterSpacing: '0.5px',
-                        backgroundColor: 'rgba(200,241,53,0.12)',
+                        backgroundColor: 'var(--accent-wash)',
                         padding: '2px 7px', borderRadius: '9999px',
                       }}>
                         CUSTOM
@@ -1239,7 +1245,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
                       <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '2px' }}>
                         Leaderboard category
                       </div>
-                      <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '12px', color: dayCategories[dayKey] ? 'var(--text-muted)' : '#F59E0B' }}>
+                      <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '12px', color: dayCategories[dayKey] ? 'var(--text-muted)' : 'var(--warning)' }}>
                         {dayCategories[dayKey]
                           ? `Counts toward ${dayCategories[dayKey]!.toUpperCase()}`
                           : 'Not set — tap to choose (optional)'}

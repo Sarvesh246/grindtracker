@@ -69,20 +69,24 @@ export async function updateCoachProposalStatus(
     proposalId: string
     status: CoachActionStatus
     result?: Record<string, unknown> | null
+    /** When set, the update only applies if the row is still this status. */
+    expectedStatus?: CoachActionStatus
   },
 ): Promise<boolean> {
   const patch: Record<string, unknown> = { status: args.status }
   if (args.result !== undefined) patch.result = args.result
-  const { error } = await supabase
+  let query = supabase
     .from('coach_action_proposals')
     .update(patch)
     .eq('id', args.proposalId)
     .eq('user_id', args.userId)
+  if (args.expectedStatus) query = query.eq('status', args.expectedStatus)
+  const { data, error } = await query.select('id').maybeSingle()
   if (error) {
     console.error('[grind] coach proposal update', error)
     return false
   }
-  return true
+  return data != null
 }
 
 export function toProposalView(row: {

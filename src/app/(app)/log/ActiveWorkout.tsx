@@ -2940,8 +2940,10 @@ function ExerciseCard({
               onMouseLeave={e => (e.currentTarget.style.opacity = '0.5')}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-secondary)' }}>
-                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                <polyline points="17 1 21 5 17 9"/>
+                <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+                <polyline points="7 23 3 19 7 15"/>
+                <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
               </svg>
             </button>
           </div>
@@ -3343,7 +3345,7 @@ function ExerciseSwapModal({ currentExerciseId, day, allExercises, currentExerci
                           style={{
                             position: 'relative',
                             width: '100%', textAlign: 'left',
-                            background: isCurrent ? 'rgba(200, 241, 53, 0.05)' : 'none',
+                            background: isCurrent ? 'var(--accent-wash)' : 'none',
                             border: 'none',
                             borderBottom: '1px solid var(--border)',
                             padding: '14px 16px',
@@ -3368,8 +3370,8 @@ function ExerciseSwapModal({ currentExerciseId, day, allExercises, currentExerci
                           {isCurrent && (
                             <span style={{
                               fontSize: '10px', color: 'var(--accent-text)',
-                              backgroundColor: 'rgba(200, 241, 53, 0.1)',
-                              border: '1px solid rgba(200, 241, 53, 0.25)',
+                              backgroundColor: 'var(--accent-wash)',
+                              border: '1px solid var(--accent-border)',
                               borderRadius: '9999px', padding: '2px 8px',
                               fontFamily: "'DM Sans', sans-serif", fontWeight: 600,
                               flexShrink: 0,
@@ -3710,7 +3712,7 @@ function SetRow({
       style={{
         opacity: logEntry.skipped ? 0.55 : logEntry.checked && !inEdit ? 0.75 : 1,
         transition: 'opacity 150ms ease',
-        backgroundColor: inEdit ? 'rgba(200,241,53,0.05)' : 'transparent',
+        backgroundColor: inEdit ? 'var(--accent-wash)' : 'transparent',
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px' }}>
@@ -3780,7 +3782,7 @@ function SetRow({
               width: '28px', height: '28px',
               borderRadius: '999px',
               border: `1px solid ${logEntry.isWarmup ? 'var(--accent-dim)' : 'var(--border)'}`,
-              backgroundColor: logEntry.isWarmup ? 'rgba(143, 170, 36, 0.18)' : 'transparent',
+              backgroundColor: logEntry.isWarmup ? 'color-mix(in srgb, var(--accent-dim) 18%, transparent)' : 'transparent',
               color: logEntry.isWarmup ? 'var(--accent-dim)' : 'var(--text-muted)',
               fontFamily: "'DM Sans', sans-serif",
               fontSize: '11px',
@@ -3862,6 +3864,7 @@ function SetRow({
               pointerEvents: logEntry.skipped ? 'none' : 'auto',
             }}
           />
+          <div style={{ position: 'relative', width: '56px', flexShrink: 0 }}>
           <input
             ref={repsRef}
             type="number"
@@ -3906,20 +3909,26 @@ function SetRow({
               pointerEvents: logEntry.skipped ? 'none' : 'auto',
             }}
           />
+          {logEntry.isPR && (
+            <span data-onboard="aw-pr" style={{
+              position: 'absolute',
+              top: '-8px',
+              right: '-8px',
+              fontSize: '10px', fontFamily: "'Bebas Neue', sans-serif",
+              color: 'var(--accent-text)',
+              backgroundColor: 'var(--accent-wash)',
+              border: '1px solid var(--accent-border)',
+              borderRadius: '9999px', padding: '2px 7px',
+              letterSpacing: '0.5px',
+              lineHeight: 1.2,
+              pointerEvents: 'none',
+              zIndex: 1,
+            }}>
+              PR
+            </span>
+          )}
+          </div>
         </div>
-
-        {logEntry.isPR && (
-          <span data-onboard="aw-pr" style={{
-            fontSize: '10px', fontFamily: "'Bebas Neue', sans-serif",
-            color: 'var(--accent-text)',
-            backgroundColor: 'rgba(200, 241, 53, 0.1)',
-            border: '1px solid rgba(200, 241, 53, 0.3)',
-            borderRadius: '9999px', padding: '2px 7px',
-            letterSpacing: '0.5px',
-          }}>
-            PR
-          </span>
-        )}
 
         {/* Bonus sets (added via + ADD SET) get a Delete button that removes the
             slot entirely — skipping doesn't make sense for a set that isn't part
@@ -4036,7 +4045,7 @@ function SetRow({
             backgroundColor: inEdit
               ? 'var(--accent)'
               : logEntry.checked
-                ? 'rgba(200, 241, 53, 0.12)'
+                ? 'var(--accent-wash)'
                 : 'transparent',
             cursor: logEntry.skipped || (inEdit && !saveArmed) ? 'default' : 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center',

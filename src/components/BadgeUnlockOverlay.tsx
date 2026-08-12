@@ -50,7 +50,7 @@ export default function BadgeUnlockOverlay({
         position: 'fixed',
         inset: 0,
         zIndex: 320,
-        backgroundColor: 'rgba(6,6,6,0.96)',
+        backgroundColor: 'color-mix(in srgb, var(--bg) 96%, #000)',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',

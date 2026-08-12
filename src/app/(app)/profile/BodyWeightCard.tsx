@@ -726,7 +726,7 @@ export default function BodyWeightCard() {
                       cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.6 : 1,
                     }}
                   >
-                    {busy === 'deleting' ? 'DELETING...' : 'DELETE'}
+                    {busy === 'deleting' ? 'DELETING…' : 'DELETE'}
                   </button>
                   <button
                     type="button"

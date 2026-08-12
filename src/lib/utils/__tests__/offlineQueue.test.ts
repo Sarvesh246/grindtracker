@@ -1,6 +1,6 @@
 import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { queueOp, getQueuedOps, removeQueuedOp, type QueuedOp } from '../offlineQueue'
+import { queueOp, getQueuedOps, removeQueuedOp, flushQueuedOps, type QueuedOp } from '../offlineQueue'
 
 // Minimal localStorage for Node tests
 const store = new Map<string, string>()
@@ -52,5 +52,24 @@ describe('offlineQueue', () => {
     queueOp(upsert({ sessionId: 's1', exerciseId: 'e1', setNumber: 1 }))
     removeQueuedOp('s1', 'e1', 1)
     assert.equal(getQueuedOps('s1').length, 0)
+  })
+
+  it('flush does not drop a newer op queued during sync', async () => {
+    queueOp(upsert({ sessionId: 's1', exerciseId: 'e1', setNumber: 1, weight: 100, queuedAt: 1 }))
+    const supabase = {
+      from() {
+        return {
+          upsert: async () => {
+            queueOp(upsert({ sessionId: 's1', exerciseId: 'e1', setNumber: 1, weight: 120, queuedAt: 2 }))
+            return { error: null }
+          },
+        }
+      },
+    }
+    const synced = await flushQueuedOps('s1', supabase as never)
+    assert.equal(synced.length, 0)
+    const ops = getQueuedOps('s1')
+    assert.equal(ops.length, 1)
+    assert.equal(ops[0].kind === 'upsert' ? ops[0].weight : null, 120)
   })
 })

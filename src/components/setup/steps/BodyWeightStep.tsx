@@ -105,6 +105,7 @@ export default function BodyWeightStep({
               setError(null)
             }}
             placeholder="0"
+            aria-label={`Body weight in ${unitLabel}`}
             style={{
               flex: 1,
               padding: '16px 18px',

@@ -4,7 +4,6 @@ import { useMemo } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
 import SetupWizard, { type SetupWizardInitial } from '@/components/setup/SetupWizard'
-import HapticsSetup from '@/components/HapticsSetup'
 
 /**
  * Client bridge: server page loads initial data; wizard needs the browser
@@ -18,10 +17,5 @@ export default function SetupClient({
   initial: SetupWizardInitial
 }) {
   const supabase = useMemo(() => createClient(), [])
-  return (
-    <>
-      <HapticsSetup />
-      <SetupWizard supabase={supabase} user={user} initial={initial} />
-    </>
-  )
+  return <SetupWizard supabase={supabase} user={user} initial={initial} />
 }

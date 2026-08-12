@@ -60,7 +60,10 @@ export function ensureInstallListeners(): void {
 export function scrollToInstallSection(): void {
   const el = document.getElementById('install')
   if (!el) return
-  el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  const reduced =
+    document.documentElement.classList.contains('reduce-motion') ||
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  el.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' })
   const heading =
     el.querySelector<HTMLElement>('#install-heading') ??
     el.querySelector<HTMLElement>('h2')

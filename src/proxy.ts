@@ -75,7 +75,16 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   if (!userId && !isPublicPath(pathname)) {
+    // API callers need JSON, not a login HTML redirect (which fetch treats as
+    // a 200 and then fails to parse).
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
     return NextResponse.redirect(new URL('/login', request.url))
+  }
+
+  if (userId && pathname === '/login') {
+    return NextResponse.redirect(new URL('/home', request.url))
   }
 
   if (userId && !isSetupPath(pathname) && !isPublicPath(pathname)) {

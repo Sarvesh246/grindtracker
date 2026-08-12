@@ -12,6 +12,7 @@ import {
 } from './FeatureDemos'
 import InstallSection, { FinalCta, LandingFooter } from './InstallSection'
 import MobileInstallPill from './MobileInstallPill'
+import LandingRise from './LandingRise'
 import GoogleSignInButton from '@/components/GoogleSignInButton'
 
 function Section({
@@ -36,11 +37,11 @@ function Section({
           reverse ? ' landing-section__inner--reverse' : ''
         }`}
       >
-        <div className="landing-section__copy landing-rise">
+        <LandingRise className="landing-section__copy">
           <p className="landing-eyebrow">{eyebrow}</p>
           <h2 className="landing-h2">{title}</h2>
           <p className="landing-lead">{lead}</p>
-        </div>
+        </LandingRise>
         <div className="landing-section__demo">{demo}</div>
       </div>
     </section>
@@ -63,7 +64,7 @@ export default function LandingPage() {
               <h1 className="landing-hero__brand">GRIND</h1>
               <p className="landing-hero__tagline">Track. Progress. Dominate.</p>
               <p className="landing-hero__support">
-                The gym tracker that logs fast, keeps streaks honest, and turns every session into XP.
+                Log sets in seconds, keep rest-day-aware streaks, and turn every session into XP — free to start.
               </p>
               <div className="landing-hero__ctas">
                 <GoogleSignInButton
@@ -75,6 +76,7 @@ export default function LandingPage() {
                   Log in
                 </Link>
               </div>
+              <p className="landing-hero__auth-hint">Continues with Google · no App Store required</p>
             </div>
             <div className="landing-hero__demo">
               <HeroDemo />

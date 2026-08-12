@@ -575,7 +575,7 @@ export default function ProfileDashboard({
             cursor: 'pointer',
             transition: 'border-color 150ms ease, border-radius 260ms ease',
           }}
-          onMouseEnter={e => (e.currentTarget.style.borderColor = 'rgba(200,241,53,0.5)')}
+          onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--accent-border-strong)')}
           onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}
         >
           <div style={{
@@ -621,7 +621,7 @@ export default function ProfileDashboard({
                 className="press"
                 style={{
                   backgroundColor: 'var(--surface)',
-                  border: `1px solid ${earned ? 'rgba(200, 241, 53, 0.4)' : 'var(--border)'}`,
+                  border: `1px solid ${earned ? 'var(--accent-border)' : 'var(--border)'}`,
                   borderRadius: '12px',
                   padding: '14px 8px',
                   textAlign: 'center',
@@ -643,7 +643,7 @@ export default function ProfileDashboard({
                 {earned && (
                   <div style={{
                     position: 'absolute', inset: 0,
-                    backgroundColor: 'rgba(200, 241, 53, 0.04)',
+                    backgroundColor: 'var(--accent-wash)',
                     pointerEvents: 'none',
                     borderRadius: '12px',
                   }} />

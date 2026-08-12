@@ -43,7 +43,7 @@ export default function MobileInstallPill() {
   const [visible, setVisible] = useState(false)
   const [closing, setClosing] = useState(false)
   const [nearInstall, setNearInstall] = useState(false)
-  const [label, setLabel] = useState('Share → Add to Home Screen')
+  const [label, setLabel] = useState('Install GRIND')
   const [nativeInstall, setNativeInstall] = useState(false)
 
   useEffect(() => {
@@ -58,7 +58,13 @@ export default function MobileInstallPill() {
     function syncCopy() {
       const canPrompt = hasNativeInstallPrompt() && !isAppleMobileDevice()
       setNativeInstall(canPrompt)
-      setLabel(canPrompt ? 'Install GRIND app' : 'Share → Add to Home Screen')
+      setLabel(
+        canPrompt
+          ? 'Install GRIND app'
+          : isAppleMobileDevice()
+            ? 'Share → Add to Home Screen'
+            : 'Install GRIND',
+      )
     }
     syncCopy()
     window.addEventListener('beforeinstallprompt', syncCopy)
@@ -118,8 +124,6 @@ export default function MobileInstallPill() {
       className={`landing-install-pill${hidden ? ' landing-install-pill--hidden' : ''}${
         closing ? ' landing-install-pill--closing' : ''
       }`}
-      role="status"
-      aria-live="polite"
     >
       <button
         type="button"

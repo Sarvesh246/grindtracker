@@ -82,8 +82,8 @@ export default function HeroDemo() {
               </span>
             </div>
             {/*
-              Same-size LBS/REPS boxes as other rows; PR stacks below the reps
-              box (all breakpoints) so it never crowds the “8”.
+              Same-size LBS/REPS boxes as other rows; PR overlays the reps
+              box so inputs never shrink.
             */}
             <div className="landing-hero-set landing-hero-set--active">
               <span className="landing-hero-set__label">SET 3</span>

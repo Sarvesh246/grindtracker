@@ -20,7 +20,7 @@ type PreviewInput = {
 }
 
 function toCanonicalLbs(value: number, unit: 'lb' | 'kg'): number {
-  if (unit === 'kg') return value * 2.2046
+  if (unit === 'kg') return value * 2.20462
   return value
 }
 

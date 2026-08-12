@@ -1,7 +1,7 @@
 // Minimal offline-shell + Web Push service worker. Not a full precache/workbox
 // setup — just enough that a dead spot in the gym shows a branded retry screen,
 // already-fetched JS/CSS keep working, and lock-screen rest/streak pushes land.
-const CACHE_NAME = 'grind-shell-v4'
+const CACHE_NAME = 'grind-shell-v5'
 const PRECACHE_URLS = ['/offline.html', '/manifest.json', '/icon-192.png', '/icon-512.png']
 
 /** In-SW rest timers so rest-end can fire while the page is alive but cron hasn't. */
@@ -117,9 +117,17 @@ self.addEventListener('push', event => {
   event.waitUntil(showGrindNotification(data))
 })
 
+function safeAppPath(url) {
+  if (typeof url !== 'string') return '/home'
+  const trimmed = url.trim()
+  if (!trimmed.startsWith('/') || trimmed.startsWith('//')) return '/home'
+  if (trimmed.includes('\\') || trimmed.includes('://')) return '/home'
+  return trimmed
+}
+
 self.addEventListener('notificationclick', event => {
   event.notification.close()
-  const url = (event.notification.data && event.notification.data.url) || '/home'
+  const url = safeAppPath((event.notification.data && event.notification.data.url) || '/home')
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async clients => {
       for (const client of clients) {

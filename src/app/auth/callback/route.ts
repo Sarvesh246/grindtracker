@@ -34,5 +34,7 @@ export async function GET(request: Request) {
   // Always redirect to a path on THIS origin. `origin` is derived from the
   // request URL rather than a caller-supplied `next` param, so there is no
   // open-redirect surface here — keep it that way if a return path is ever added.
-  return NextResponse.redirect(`${origin}/`)
+  // Send signed-in users into the app. Incomplete setup is bounced to
+  // /setup by proxy; already-complete users skip the marketing landing hop.
+  return NextResponse.redirect(`${origin}/home`)
 }

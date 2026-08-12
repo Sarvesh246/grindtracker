@@ -356,7 +356,7 @@ export default function RestTimerBar({
                   minWidth: '52px',
                   borderRadius: 'var(--radius-pill, 9999px)',
                   border: `1px solid ${selected ? 'var(--accent)' : 'var(--border)'}`,
-                  backgroundColor: selected ? 'rgba(200,241,53,0.12)' : 'transparent',
+                  backgroundColor: selected ? 'var(--accent-wash)' : 'transparent',
                   color: selected ? 'var(--accent-text)' : 'var(--text-secondary)',
                   fontSize: '12px',
                   fontFamily: 'var(--font-mono)',

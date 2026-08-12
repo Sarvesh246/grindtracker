@@ -42,7 +42,7 @@ export function mapCoachRateLimitError(message: string | undefined): {
     return {
       status: 429,
       code: 'daily',
-      error: `Daily coach limit reached (${COACH_DAILY_LIMIT} messages per day). Try again tomorrow.`,
+      error: `Coach limit reached (${COACH_DAILY_LIMIT} messages in 24 hours). Try again when the window resets.`,
     }
   }
   return null

@@ -17,7 +17,7 @@ function parseDefaultReps(repsTarget: string): string {
 function getYesterdayString(): string {
   const d = new Date()
   d.setDate(d.getDate() - 1)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return localDateKey(d)
 }
 
 type SetInput = { weight: string; reps: string }
@@ -33,8 +33,9 @@ function LogPastContent() {
   const { unitLabel, fromDisplay, fmt } = useUnit()
 
   const yesterday = getYesterdayString()
+  const today = localDateKey()
   const paramDate = searchParams.get('date')
-  const initialDate = paramDate && paramDate <= yesterday ? paramDate : yesterday
+  const initialDate = paramDate && paramDate <= today ? paramDate : yesterday
 
   const [selectedDate, setSelectedDate] = useState(initialDate)
   const [dayTypes, setDayTypes] = useState<string[]>([])
@@ -75,7 +76,7 @@ function LogPastContent() {
   // useState(initialDate) won't reinitialize when the URL param changes.
   // This effect re-syncs selectedDate whenever the ?date= param changes.
   useEffect(() => {
-    const target = paramDate && paramDate <= yesterday ? paramDate : yesterday
+    const target = paramDate && paramDate <= today ? paramDate : yesterday
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setSelectedDate(target)
     // Re-sync only when the URL param changes; `yesterday` is recomputed each
@@ -480,7 +481,7 @@ function LogPastContent() {
           letterSpacing: '1px',
           margin: 0,
         }}>
-          {isEditing ? 'EDIT WORKOUT' : 'LOG PAST WORKOUT'}
+          {isEditing ? 'EDIT WORKOUT' : selectedDate === today ? 'LOG WORKOUT' : 'LOG PAST WORKOUT'}
         </h1>
       </div>
 
@@ -497,7 +498,7 @@ function LogPastContent() {
             <input
               type="date"
               value={selectedDate}
-              max={yesterday}
+              max={today}
               onChange={e => {
                 setSelectedDate(e.target.value)
                 setDuplicateWarning(false)
@@ -521,7 +522,7 @@ function LogPastContent() {
               DAY TYPE
             </div>
             {checkingDate ? (
-              <div style={{ fontSize: '13px', color: 'var(--text-muted)', padding: '8px 0' }}>Checking date...</div>
+              <div style={{ fontSize: '13px', color: 'var(--text-muted)', padding: '8px 0' }}>Checking date…</div>
             ) : dayTypes.length === 0 ? (
               <div style={{ fontSize: '13px', color: 'var(--text-muted)', padding: '8px 0' }}>No workout days yet.</div>
             ) : (
@@ -562,8 +563,8 @@ function LogPastContent() {
         {/* Edit mode banner */}
         {isEditing && !confirmDelete && (
           <div style={{
-            backgroundColor: 'rgba(200, 241, 53, 0.08)',
-            border: '1px solid rgba(200, 241, 53, 0.25)',
+            backgroundColor: 'var(--accent-wash)',
+            border: '1px solid var(--accent-border)',
             borderRadius: '10px',
             padding: '10px 14px',
             fontSize: '13px',
@@ -600,8 +601,8 @@ function LogPastContent() {
         {/* Delete confirmation */}
         {isEditing && confirmDelete && (
           <div style={{
-            backgroundColor: 'rgba(239, 68, 68, 0.08)',
-            border: '1px solid rgba(239, 68, 68, 0.3)',
+            backgroundColor: 'var(--danger-bg)',
+            border: '1px solid color-mix(in srgb, var(--danger) 35%, transparent)',
             borderRadius: '10px',
             padding: '12px 14px',
             display: 'flex',
@@ -609,7 +610,7 @@ function LogPastContent() {
             justifyContent: 'space-between',
             gap: '10px',
           }}>
-            <span style={{ fontSize: '13px', color: '#f87171', lineHeight: 1.4 }}>
+            <span style={{ fontSize: '13px', color: 'var(--danger)', lineHeight: 1.4 }}>
               Delete this workout? This will remove {existingSession?.xp_earned ?? 0} XP.
             </span>
             <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
@@ -649,7 +650,7 @@ function LogPastContent() {
                   opacity: deleting ? 0.5 : 1,
                 }}
               >
-                {deleting ? 'DELETING...' : 'DELETE'}
+                {deleting ? 'DELETING…' : 'DELETE'}
               </button>
             </div>
           </div>
@@ -667,7 +668,7 @@ function LogPastContent() {
             justifyContent: 'space-between',
             gap: '12px',
           }}>
-            <span style={{ fontSize: '13px', color: '#f87171', lineHeight: 1.4 }}>
+            <span style={{ fontSize: '13px', color: 'var(--danger)', lineHeight: 1.4 }}>
               A {selectedDayType} workout already exists for this date. Saving will replace it.
             </span>
             <button
@@ -679,7 +680,7 @@ function LogPastContent() {
                 border: '1px solid rgba(239, 68, 68, 0.5)',
                 borderRadius: '6px',
                 padding: '6px 10px',
-                color: '#f87171',
+                color: 'var(--danger)',
                 fontSize: '11px',
                 fontFamily: "'Bebas Neue', sans-serif",
                 letterSpacing: '0.5px',
@@ -910,7 +911,7 @@ function LogPastContent() {
               onTouchStart={e => { if (!submitting) e.currentTarget.style.opacity = '0.85' }}
               onTouchEnd={e => { if (!submitting) e.currentTarget.style.opacity = '1' }}
             >
-              {submitting ? (isEditing ? 'UPDATING...' : 'LOGGING...') : (isEditing ? 'UPDATE WORKOUT' : 'LOG WORKOUT')}
+              {submitting ? (isEditing ? 'UPDATING…' : 'LOGGING…') : (isEditing ? 'UPDATE WORKOUT' : 'LOG WORKOUT')}
             </button>
 
             {isEditing && !confirmDelete && (

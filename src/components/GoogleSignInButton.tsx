@@ -43,9 +43,9 @@ function GoogleGlyph() {
 function variantStyle(variant: Variant, loading: boolean): CSSProperties {
   if (variant === 'google') {
     return {
-      backgroundColor: loading ? '#cccccc' : '#ffffff',
-      color: 'var(--on-accent)',
-      border: 'none',
+      backgroundColor: loading ? 'var(--surface-elevated)' : '#ffffff',
+      color: '#1f1f1f',
+      border: '1px solid var(--border)',
       fontWeight: 700,
     }
   }
@@ -134,7 +134,7 @@ export default function GoogleSignInButton({
       {children ?? (
         <>
           {variant === 'google' && !loading ? <GoogleGlyph /> : null}
-          {loading ? 'Redirecting...' : (label ?? defaultLabel)}
+          {loading ? 'Redirecting…' : (label ?? defaultLabel)}
         </>
       )}
     </button>

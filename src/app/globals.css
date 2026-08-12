@@ -71,6 +71,9 @@
   --accent-text: #c8f135;
   /* Faint accent-tinted panel background (active tabs, highlighted rows). */
   --accent-wash: rgba(200, 241, 53, 0.1);
+  --accent-border: color-mix(in srgb, var(--accent) 35%, transparent);
+  --accent-border-strong: color-mix(in srgb, var(--accent) 50%, transparent);
+  --warning: #f59e0b;
   /* Text/icon color ON TOP OF a lime accent fill. Always #0f0f0f regardless of
      theme ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ the lime fill itself is unchanged, so text on it is always dark. */
   --on-accent: #0f0f0f;
@@ -137,6 +140,9 @@ html.light {
   --accent-deep: #5a7a1a;
   --accent-text: #4f6612;
   --accent-wash: rgba(95, 122, 22, 0.14);
+  --accent-border: color-mix(in srgb, var(--accent) 40%, transparent);
+  --accent-border-strong: color-mix(in srgb, var(--accent) 55%, transparent);
+  --warning: #b45309;
   --text-primary: #171614;
   --text-secondary: #45423c;
   --text-muted: #656158;
@@ -204,6 +210,8 @@ body {
   --accent-dim: #8faa24;
   --accent-text: #c8f135;
   --accent-wash: rgba(200, 241, 53, 0.1);
+  --accent-border: rgba(200, 241, 53, 0.35);
+  --accent-border-strong: rgba(200, 241, 53, 0.5);
   --text-primary: #f0f0f0;
   --text-secondary: #888888;
   --text-muted: #7a7a7a;
@@ -598,8 +606,8 @@ body.coach-fab-dragging .bottom-nav [data-haptic-overlay] {
 }
 .setup-welcome-grid {
   background-image:
-    linear-gradient(rgba(200, 241, 53, 0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(200, 241, 53, 0.04) 1px, transparent 1px);
+    linear-gradient(color-mix(in srgb, var(--accent) 8%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 8%, transparent) 1px, transparent 1px);
   background-size: 48px 48px;
   mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, black 20%, transparent 75%);
 }
@@ -2760,10 +2768,17 @@ ol.coach-md__list,
   height: min(92vh, 1080px);
   background:
     /* Mobile: soft wash behind the stacked phone (lower-center) */
-    radial-gradient(ellipse 68% 46% at 50% 52%, rgba(200, 241, 53, 0.13), transparent 55%),
-    radial-gradient(ellipse 50% 36% at 10% 6%, rgba(200, 241, 53, 0.05), transparent 50%),
+    radial-gradient(ellipse 68% 46% at 50% 52%, color-mix(in srgb, var(--accent) 13%, transparent), transparent 55%),
+    radial-gradient(ellipse 50% 36% at 10% 6%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 50%),
     linear-gradient(180deg, #141414 0%, var(--bg) 72%);
   z-index: 0;
+}
+
+html.light .landing-atmosphere {
+  background:
+    radial-gradient(ellipse 68% 46% at 50% 52%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 55%),
+    radial-gradient(ellipse 50% 36% at 10% 6%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 50%),
+    linear-gradient(180deg, color-mix(in srgb, var(--bg) 88%, var(--accent)) 0%, var(--bg) 72%);
 }
 
 .landing > :not(.landing-atmosphere) {
@@ -2834,9 +2849,14 @@ ol.coach-md__list,
   gap: 8px;
 }
 
-/* Soft one-shot section entrance - not continuous scroll spam */
-.landing-rise {
-  animation: rise-in 420ms ease backwards;
+/* Soft one-shot section entrance — `.landing-rise--pending` is added on mount
+   (LandingRise) so no-JS still shows copy; `--seen` plays the animation. */
+.landing-rise.landing-rise--pending {
+  opacity: 0;
+  transform: translateY(8px);
+}
+.landing-rise.landing-rise--seen {
+  animation: rise-in 520ms ease backwards;
 }
 
 /* Hero */
@@ -2891,6 +2911,13 @@ ol.coach-md__list,
   font-size: 16px;
   line-height: 1.5;
   color: var(--text-secondary);
+}
+
+.landing-hero__auth-hint {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  letter-spacing: 0.2px;
 }
 
 .landing-hero__ctas {
@@ -2982,9 +3009,16 @@ ol.coach-md__list,
   /* Halo centered on phone top in the demo column (~70% of viewport) */
   .landing-atmosphere {
     background:
-      radial-gradient(ellipse 46% 44% at 70% 26%, rgba(200, 241, 53, 0.16), transparent 56%),
-      radial-gradient(ellipse 50% 36% at 10% 6%, rgba(200, 241, 53, 0.05), transparent 50%),
+      radial-gradient(ellipse 46% 44% at 70% 26%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 56%),
+      radial-gradient(ellipse 50% 36% at 10% 6%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 50%),
       linear-gradient(180deg, #141414 0%, var(--bg) 72%);
+  }
+
+  html.light .landing-atmosphere {
+    background:
+      radial-gradient(ellipse 46% 44% at 70% 26%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 56%),
+      radial-gradient(ellipse 50% 36% at 10% 6%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 50%),
+      linear-gradient(180deg, color-mix(in srgb, var(--bg) 88%, var(--accent)) 0%, var(--bg) 72%);
   }
 
   .landing-header {
@@ -3200,13 +3234,12 @@ ol.coach-md__list,
 
 /*
  * Set rows: equal LBS/REPS boxes (same grid tracks as non-PR rows).
- * PR sits below the reps box on every breakpoint Ã¢ÂÂ never a corner overlay
- * (too cramped inside the phone mock at any size).
+ * PR overlays the reps box so inputs never shrink.
  */
 .landing-hero-set {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr) minmax(0, 1fr) 28px;
-  align-items: start;
+  align-items: center;
   gap: 6px;
   padding: 6px 2px;
   border-radius: 8px;
@@ -3225,8 +3258,7 @@ ol.coach-md__list,
   color: var(--text-muted);
   letter-spacing: 0.2px;
   white-space: nowrap;
-  /* Optically center with the 32px input when PR hangs below the reps cell */
-  padding-top: 10px;
+  padding-top: 0;
 }
 
 .landing-hero-set__box {
@@ -3253,24 +3285,24 @@ ol.coach-md__list,
   border-color: var(--border-strong);
 }
 
-/* Reps cell: box on top, PR chip stacked below (all viewports) */
+/* Reps cell: PR chip overlays the top-right of the box */
 .landing-hero-set__reps-wrap {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
+  position: relative;
+  display: block;
   min-width: 0;
 }
 
 .landing-hero-set__pr {
-  position: static;
+  position: absolute;
+  top: -7px;
+  right: -6px;
   display: none;
   flex-shrink: 0;
   font-size: 9px;
   font-family: var(--font-display);
   color: var(--accent-text);
-  background: rgba(200, 241, 53, 0.14);
-  border: 1px solid rgba(200, 241, 53, 0.4);
+  background: var(--accent-wash);
+  border: 1px solid var(--accent-border);
   border-radius: 9999px;
   padding: 2px 6px;
   letter-spacing: 0.5px;
@@ -3279,6 +3311,7 @@ ol.coach-md__list,
   transform: scale(0.85);
   white-space: nowrap;
   pointer-events: none;
+  z-index: 1;
 }
 
 .landing-hero-set--active .landing-hero-set__pr {
@@ -3306,7 +3339,7 @@ ol.coach-md__list,
   opacity: 1;
   transform: scale(1);
   border-color: var(--accent);
-  background: rgba(200, 241, 53, 0.12);
+  background: var(--accent-wash);
   color: var(--accent-text);
 }
 
@@ -3337,7 +3370,7 @@ ol.coach-md__list,
     opacity: 1;
     transform: scale(1);
     border-color: var(--accent);
-    background: rgba(200, 241, 53, 0.12);
+    background: var(--accent-wash);
     color: var(--accent-text);
   }
   26% { transform: scale(1.15); }
@@ -3932,7 +3965,7 @@ ol.coach-md__list,
 /* Final CTA */
 .landing-final {
   background:
-    radial-gradient(ellipse 70% 80% at 50% 100%, rgba(200, 241, 53, 0.1), transparent 60%),
+    radial-gradient(ellipse 70% 80% at 50% 100%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 60%),
     var(--bg);
 }
 
@@ -4115,7 +4148,7 @@ ol.coach-md__list,
   }
   .landing-hero-set__label {
     font-size: 12px;
-    padding-top: 12px;
+    padding-top: 0;
   }
   .landing-hero-set__box {
     height: 38px;
@@ -4326,7 +4359,7 @@ ol.coach-md__list,
     transform: none !important;
     animation: none !important;
     border-color: var(--accent) !important;
-    background: rgba(200, 241, 53, 0.12) !important;
+    background: var(--accent-wash) !important;
     color: var(--accent-text) !important;
   }
   .landing-hero-set--active .landing-hero-set__pr {
@@ -4338,8 +4371,11 @@ ol.coach-md__list,
     transform: scaleX(0.54) !important;
     animation: none !important;
   }
-  .landing-rise {
+  .landing-rise,
+  .landing-rise.landing-rise--pending {
     animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
   }
   .landing-hero__scroll-icon {
     animation: none !important;
@@ -4353,7 +4389,7 @@ html.reduce-motion .landing-hero-set--active .landing-hero-set__check--anim {
   transform: none !important;
   animation: none !important;
   border-color: var(--accent) !important;
-  background: rgba(200, 241, 53, 0.12) !important;
+  background: var(--accent-wash) !important;
   color: var(--accent-text) !important;
 }
 html.reduce-motion .landing-hero-set--active .landing-hero-set__pr {
@@ -4365,8 +4401,11 @@ html.reduce-motion .landing-streak-demo__fill {
   transform: scaleX(0.54) !important;
   animation: none !important;
 }
-html.reduce-motion .landing-rise {
+html.reduce-motion .landing-rise,
+html.reduce-motion .landing-rise.landing-rise--pending {
   animation: none !important;
+  opacity: 1 !important;
+  transform: none !important;
 }
 html.reduce-motion .landing-hero__scroll-icon {
   animation: none !important;

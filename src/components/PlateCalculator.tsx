@@ -192,7 +192,7 @@ export default function PlateCalculator({ initialTarget, onClose, onApply }: Pro
                       minWidth: '46px',
                       borderRadius: 'var(--radius-sm)',
                       border: `1px solid ${selected ? 'var(--accent)' : 'var(--border)'}`,
-                      backgroundColor: selected ? 'rgba(200,241,53,0.1)' : 'var(--surface-elevated)',
+                      backgroundColor: selected ? 'var(--accent-wash)' : 'var(--surface-elevated)',
                       color: selected ? 'var(--accent-text)' : 'var(--text-secondary)',
                       fontFamily: 'var(--font-mono)',
                       fontSize: '13px',

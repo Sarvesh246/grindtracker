@@ -3,7 +3,6 @@ import { cookies } from 'next/headers'
 import BottomNav from '@/components/BottomNav'
 import TopNav from '@/components/TopNav'
 import SwipeNavigator from '@/components/SwipeNavigator'
-import HapticsSetup from '@/components/HapticsSetup'
 import RouteCacheSync from '@/components/RouteCacheSync'
 import CoachRoot from '@/components/coach/CoachRoot'
 import { UnitProvider } from '@/lib/contexts/UnitContext'
@@ -53,7 +52,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <DemoModeProvider initialDemoMode={initialDemoMode}>
     <OnboardingProvider userId={onboardingUserId} initialState={onboardingInitial}>
     <ToastProvider>
-    <HapticsSetup />
     <RouteCacheSync />
     {/* Coach FAB + sheet: portal-friendly fixed UI above app chrome; hidden on
         active workout via CoachRoot (same /log?day= gate as BottomNav). */}

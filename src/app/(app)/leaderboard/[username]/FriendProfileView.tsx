@@ -268,7 +268,15 @@ export default function FriendProfileView({ profile }: Props) {
       {/* Badges */}
       <div style={{ marginBottom: '24px' }}>
         <button
-          onClick={() => setBadgesOpen(v => !v)}
+          type="button"
+          className="press"
+          data-haptic="light"
+          aria-expanded={badgesOpen}
+          aria-controls="friend-badge-grid"
+          onClick={() => {
+            if (badgesOpen) setTooltipBadgeId(null)
+            setBadgesOpen(v => !v)
+          }}
           style={{
             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
             width: '100%',
@@ -277,6 +285,7 @@ export default function FriendProfileView({ profile }: Props) {
             borderRadius: badgesOpen ? '12px 12px 0 0' : '12px',
             padding: '14px 16px',
             cursor: 'pointer',
+            transition: 'border-color 150ms ease, border-radius 260ms ease',
           }}
         >
           <div style={{
@@ -296,8 +305,13 @@ export default function FriendProfileView({ profile }: Props) {
           </div>
         </button>
 
-        {badgesOpen && (
-          <div className="badge-grid" style={{
+        <div className="drawer" data-open={badgesOpen}>
+        <div style={{ overflow: tooltipBadgeId ? 'visible' : undefined }}>
+        <div
+          id="friend-badge-grid"
+          className="badge-grid"
+          inert={!badgesOpen}
+          style={{
             backgroundColor: 'var(--surface)',
             border: '1px solid var(--border)',
             borderTop: 'none',
@@ -310,9 +324,10 @@ export default function FriendProfileView({ profile }: Props) {
               return (
                 <div
                   key={badge.id}
+                  className="press"
                   style={{
                     backgroundColor: 'var(--surface)',
-                    border: `1px solid ${earned ? 'rgba(200, 241, 53, 0.4)' : 'var(--border)'}`,
+                    border: `1px solid ${earned ? 'var(--accent-border)' : 'var(--border)'}`,
                     borderRadius: '12px',
                     padding: '14px 8px',
                     textAlign: 'center',
@@ -333,7 +348,7 @@ export default function FriendProfileView({ profile }: Props) {
                   {earned && (
                     <div style={{
                       position: 'absolute', inset: 0,
-                      backgroundColor: 'rgba(200, 241, 53, 0.04)',
+                      backgroundColor: 'var(--accent-wash)',
                       pointerEvents: 'none',
                       borderRadius: '12px',
                     }} />
@@ -396,13 +411,14 @@ export default function FriendProfileView({ profile }: Props) {
               )
             })}
           </div>
-        )}
+        </div>
+        </div>
       </div>
 
       {/* GRINDing since — the one deliberately branded line on an otherwise
           neutral read-only page; "GRINDing" in the neon accent, everything
           else muted. Same line (and copy) as ProfileDashboard's own footer. */}
-      <div style={{ textAlign: 'center', fontSize: '13px', color: 'var(--text-muted)' }}>
+      <div style={{ textAlign: 'center', fontSize: '13px', color: 'var(--text-muted)', marginTop: '20px' }}>
         <span style={{ color: 'var(--accent-text)', fontWeight: 700 }}>GRINDing</span> since {joinedLabel}
       </div>
     </div>

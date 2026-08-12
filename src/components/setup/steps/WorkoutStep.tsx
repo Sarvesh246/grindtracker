@@ -34,6 +34,7 @@ export default function WorkoutStep({
   const [mode, setMode] = useState<Mode>('choose')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [applied, setApplied] = useState(hasExistingProgram)
   const [dayName, setDayName] = useState('')
   const [category, setCategory] = useState<DayCategory>('push')
   const keyboardInset = useKeyboardInset()
@@ -41,7 +42,7 @@ export default function WorkoutStep({
   const locked = busy || finishing
 
   async function handleTemplate(templateId: string) {
-    if (locked || hasExistingProgram) return
+    if (locked || applied) return
     setBusy(true)
     setError(null)
     try {
@@ -50,6 +51,7 @@ export default function WorkoutStep({
         setError(result.error)
         return
       }
+      setApplied(true)
       await onFinish()
     } catch {
       setError('Could not set up your template. Check your connection and try again.')
@@ -300,7 +302,7 @@ export default function WorkoutStep({
             fontFamily: "'DM Sans', sans-serif",
           }}
         >
-          {hasExistingProgram
+          {applied
             ? 'You already have a program. Keep it, or finish without changes.'
             : 'Start from a template, build a day, or set this up later.'}
         </p>
@@ -317,7 +319,7 @@ export default function WorkoutStep({
           paddingBottom: '8px',
         }}
       >
-        {hasExistingProgram && (
+        {applied && (
           <button
             type="button"
             data-haptic="light"
@@ -350,7 +352,7 @@ export default function WorkoutStep({
           </button>
         )}
 
-        {!hasExistingProgram &&
+        {!applied &&
           WORKOUT_TEMPLATES.map(t => (
             <button
               key={t.id}
@@ -386,7 +388,7 @@ export default function WorkoutStep({
             </button>
           ))}
 
-        {!hasExistingProgram && (
+        {!applied && (
           <button
             type="button"
             data-haptic="light"

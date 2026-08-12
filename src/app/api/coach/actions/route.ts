@@ -89,11 +89,18 @@ export async function POST(request: Request) {
   }
 
   const payload = row.payload as CoachActionPayload
-  await updateCoachProposalStatus(supabase, {
+  const claimed = await updateCoachProposalStatus(supabase, {
     userId: user.id,
     proposalId,
     status: 'confirmed',
+    expectedStatus: 'pending',
   })
+  if (!claimed) {
+    return NextResponse.json(
+      { error: 'Proposal is already confirmed or cancelled', status: 'conflict' },
+      { status: 409 },
+    )
+  }
 
   // Multi-session weight fixes stream progress; everything else is JSON.
   const longRunning =

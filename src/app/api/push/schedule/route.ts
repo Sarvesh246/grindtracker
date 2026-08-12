@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import type { ScheduleAction } from '@/lib/push/types'
+import { safeAppPath } from '@/lib/push/safeUrl'
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -92,12 +93,18 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Invalid dedupeKey' }, { status: 400 })
       }
 
+      const rawPayload = action.payload ?? {}
+      const payload = {
+        ...rawPayload,
+        url: safeAppPath(rawPayload.url, '/log'),
+      }
+
       const { error } = await supabase.from('scheduled_notifications').upsert(
         {
           user_id: user.id,
           kind: action.kind,
           fire_at: new Date(fireAt).toISOString(),
-          payload: action.payload ?? {},
+          payload,
           dedupe_key: dedupeKey,
           cancelled_at: null,
           sent_at: null,
