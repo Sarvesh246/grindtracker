@@ -16,7 +16,6 @@ import {
   type CoachConversationSummary,
 } from '@/lib/coach'
 import { titleFromMessage } from '@/lib/coach/conversations'
-import { refreshThemeColor } from '@/lib/contexts/ThemeContext'
 import { useUnit } from '@/lib/contexts/UnitContext'
 
 export type CoachDockId = 'br' | 'bl' | 'tr' | 'tl'
@@ -214,20 +213,16 @@ export function CoachProvider({ children }: { children: ReactNode }) {
         // ignore
       }
     }
-    // Status-bar / theme-color can stick on --surface after the page sheet
-    // covered the safe-area band; re-assert immediately and again after exit.
-    refreshThemeColor()
+    // theme-color restore is owned by CoachSheet's useThemeColor cleanup
+    // (pushes --surface while the page sheet is open; pops + force-writes
+    // --bg on close/unmount). Only heal the visual-viewport pan here.
     reanchor()
     requestAnimationFrame(() => {
       reanchor()
-      refreshThemeColor()
       fabRef.current?.focus()
     })
     window.setTimeout(reanchor, 250)
-    window.setTimeout(() => {
-      reanchor()
-      refreshThemeColor()
-    }, 520)
+    window.setTimeout(reanchor, 520)
   }, [])
 
   const expandToPage = useCallback(() => {

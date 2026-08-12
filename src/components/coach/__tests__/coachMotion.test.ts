@@ -1,11 +1,16 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  FLICK_AXIS_DOMINANCE,
   FLICK_VELOCITY_PX_S,
   RUBBER_FACTOR,
   clamp,
+  dockFromFlick,
   squashFromVelocity,
 } from '../coachMotion'
+
+const VW = 390
+const VH = 844
 
 describe('coachMotion squashFromVelocity', () => {
   it('returns 1:1 when nearly still', () => {
@@ -30,9 +35,43 @@ describe('coachMotion squashFromVelocity', () => {
   })
 })
 
+describe('coachMotion dockFromFlick', () => {
+  it('TR + leftward velocity docks to tl (preserves top half)', () => {
+    // Top-right release, mostly-horizontal flick left (small accidental down).
+    const next = dockFromFlick(340, 80, -900, 80, VW, VH)
+    assert.equal(next, 'tl')
+  })
+
+  it('TL + rightward velocity docks to tr', () => {
+    const next = dockFromFlick(50, 80, 900, -40, VW, VH)
+    assert.equal(next, 'tr')
+  })
+
+  it('BR + upward velocity docks to tr (preserves right half)', () => {
+    const next = dockFromFlick(340, 700, 60, -900, VW, VH)
+    assert.equal(next, 'tr')
+  })
+
+  it('BL + downward velocity docks to bl when already bottom-left', () => {
+    const next = dockFromFlick(50, 700, 40, 900, VW, VH)
+    assert.equal(next, 'bl')
+  })
+
+  it('clear diagonal uses both axes (TR → bl)', () => {
+    const next = dockFromFlick(340, 80, -800, 800, VW, VH)
+    assert.equal(next, 'bl')
+  })
+
+  it('clear diagonal uses both axes (BL → tr)', () => {
+    const next = dockFromFlick(50, 700, 800, -800, VW, VH)
+    assert.equal(next, 'tr')
+  })
+})
+
 describe('coachMotion constants', () => {
-  it('exposes ~500 px/s flick threshold and ~0.2 rubber', () => {
-    assert.equal(FLICK_VELOCITY_PX_S, 500)
+  it('exposes softer flick threshold and ~0.2 rubber', () => {
+    assert.equal(FLICK_VELOCITY_PX_S, 580)
+    assert.equal(FLICK_AXIS_DOMINANCE, 1.55)
     assert.equal(RUBBER_FACTOR, 0.2)
   })
 

@@ -1149,17 +1149,12 @@ html.light .coach-fab {
 .coach-fab--alive .coach-fab__float {
   animation: coach-fab-float 3s ease-in-out infinite;
 }
-/* Tap glow — sharp accent bloom that pops then fades (≤400ms). */
+/* Tap glow — release fade only (hold uses --pressed sustained glow). */
 @keyframes coach-fab-glow {
   0% {
     box-shadow:
-      0 0 0 0 color-mix(in srgb, var(--accent) 70%, transparent),
-      0 8px 24px rgba(0, 0, 0, 0.45);
-  }
-  35% {
-    box-shadow:
-      0 0 0 10px color-mix(in srgb, var(--accent) 0%, transparent),
-      0 0 28px 8px color-mix(in srgb, var(--accent) 55%, transparent),
+      0 0 0 6px color-mix(in srgb, var(--accent) 45%, transparent),
+      0 0 36px 14px color-mix(in srgb, var(--accent) 55%, transparent),
       0 10px 28px rgba(0, 0, 0, 0.5);
   }
   100% {
@@ -1167,10 +1162,27 @@ html.light .coach-fab {
   }
 }
 .coach-fab--glow {
-  animation: coach-fab-glow 380ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: coach-fab-glow 450ms cubic-bezier(0.22, 1, 0.36, 1);
 }
-/* Special G tap: deeper press than shared `.press` (0.96 → 0.9). */
-.coach-fab.press:active:not(.coach-fab--dragging):not(.coach-fab--settling) {
+/* Sustained press/hold — scale + accent glow for the whole pointer-down. */
+.coach-fab--pressed {
+  transform: scale(0.94);
+  box-shadow:
+    0 0 0 8px color-mix(in srgb, var(--accent) 40%, transparent),
+    0 0 40px 16px color-mix(in srgb, var(--accent) 50%, transparent),
+    0 10px 28px rgba(0, 0, 0, 0.5);
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease;
+}
+html.light .coach-fab--pressed {
+  box-shadow:
+    0 0 0 8px color-mix(in srgb, var(--accent) 35%, transparent),
+    0 0 36px 14px color-mix(in srgb, var(--accent) 40%, transparent),
+    var(--card-shadow);
+}
+/* Special G tap: deeper press than shared `.press` (0.96 → 0.9) — pressed class owns hold. */
+.coach-fab.press:active:not(.coach-fab--dragging):not(.coach-fab--settling):not(.coach-fab--pressed) {
   transform: scale(0.9);
 }
 .coach-fab--dragging,
@@ -1178,9 +1190,9 @@ html.light .coach-fab {
   cursor: grabbing;
   /* Keep a circle at rest — liquid squash is on `__morph`, not rotation. */
   transition:
-    transform 150ms ease,
-    box-shadow 150ms ease,
-    opacity 150ms ease;
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    opacity 180ms ease;
 }
 .coach-fab--dragging {
   transform: scale(1.1);
@@ -1207,6 +1219,11 @@ html.reduce-motion .coach-fab--alive .coach-fab__float,
 html.reduce-motion .coach-fab--glow {
   animation: none !important;
 }
+html.reduce-motion .coach-fab--pressed {
+  transform: none;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  transition: none;
+}
 html.reduce-motion .coach-fab--dragging,
 html.reduce-motion .coach-fab--dragging.press:active,
 html.reduce-motion .coach-fab.press:active:not(.coach-fab--dragging):not(.coach-fab--settling) {
@@ -1216,6 +1233,11 @@ html.reduce-motion .coach-fab.press:active:not(.coach-fab--dragging):not(.coach-
   .coach-fab--alive .coach-fab__float,
   .coach-fab--glow {
     animation: none !important;
+  }
+  .coach-fab--pressed {
+    transform: none;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+    transition: none;
   }
   .coach-fab--dragging,
   .coach-fab--dragging.press:active,
@@ -1320,10 +1342,10 @@ html.reduce-motion .coach-fab.press:active:not(.coach-fab--dragging):not(.coach-
   background: rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
-  animation: coach-backdrop-in 420ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation: coach-backdrop-in 520ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
 .coach-backdrop--closing {
-  animation: coach-backdrop-out 420ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation: coach-backdrop-out 480ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
   pointer-events: none;
 }
 /* Gesture dismiss already dimmed the scrim — don't restart from opacity 1. */
@@ -1341,7 +1363,7 @@ html.reduce-motion .coach-fab.press:active:not(.coach-fab--dragging):not(.coach-
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
   color: var(--text-primary);
   font-family: var(--font-sans);
-  animation: coach-sheet-in 520ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation: coach-sheet-in 640ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
   /* Mobile compact defaults — quick “type to orb” card */
   left: 12px;
   right: 12px;
@@ -1356,12 +1378,12 @@ html.light .coach-sheet {
   box-shadow: var(--card-shadow), 0 12px 40px rgba(0, 0, 0, 0.12);
 }
 .coach-sheet--closing {
-  animation: coach-sheet-out 480ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation: coach-sheet-out 560ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
   pointer-events: none;
 }
 /* Gesture dismiss already has translateY — only fade so it doesn't jump. */
 .coach-sheet--closing.coach-sheet--closing-from-drag {
-  animation: coach-sheet-fade-out 420ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation: coach-sheet-fade-out 480ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 .coach-sheet--pulling {
   touch-action: none;
@@ -1408,10 +1430,10 @@ html.light .coach-sheet {
     );
 }
 .coach-sheet.coach-sheet--page.coach-sheet--closing {
-  animation: coach-sheet-out 480ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation: coach-sheet-out 560ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 .coach-sheet.coach-sheet--page.coach-sheet--closing.coach-sheet--closing-from-drag {
-  animation: coach-sheet-fade-out 420ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation: coach-sheet-fade-out 480ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
 @media (min-width: 768px) {
@@ -1767,7 +1789,7 @@ html.reduce-motion .coach-history {
   line-height: 1.45;
   word-break: break-word;
 }
-/* Organic AI bubble enter — opacity / y / scale spring-feel (ease-out ≤400ms).
+/* Organic AI bubble enter — opacity / y / scale spring-feel.
    fill-mode: backwards only — never `both` (containing-block rule). */
 @keyframes coach-bubble-in {
   from {
@@ -1780,8 +1802,8 @@ html.reduce-motion .coach-history {
   }
 }
 .coach-bubble--enter {
-  animation: coach-bubble-in 340ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
-  animation-delay: calc(var(--i, 0) * 28ms);
+  animation: coach-bubble-in 420ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation-delay: calc(var(--i, 0) * 32ms);
 }
 .coach-bubble--user {
   align-self: flex-end;
@@ -1789,7 +1811,7 @@ html.reduce-motion .coach-history {
   color: var(--on-accent);
   border-radius: 12px 12px 4px 12px;
   white-space: pre-wrap;
-  animation: coach-bubble-in 280ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation: coach-bubble-in 360ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
 .coach-bubble--assistant {
   align-self: flex-start;

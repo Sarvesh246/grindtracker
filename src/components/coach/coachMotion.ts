@@ -1,19 +1,28 @@
 /**
  * Coach motion helpers — RAF springs + CSS (no Framer Motion / motion dep).
- * Tuned for Apple-like feel: high-stiffness docks, critically damped sheet
- * settles, velocity squash without rotating the G glyph.
+ * Tuned for Apple-like feel: soft docks, critically damped sheet settles,
+ * velocity squash without rotating the G glyph.
  */
 
-/** Flick threshold (px/s) — above this, dock by flick direction */
-export const FLICK_VELOCITY_PX_S = 500
+import type { CoachDockId } from './CoachProvider'
 
-/** FAB settle spring — high stiffness, moderate damping (shoot then catch) */
-export const FAB_SPRING_K = 380
-export const FAB_SPRING_C = 34
-export const FAB_SPRING_VEL_CARRY = 0.55
-export const FAB_SPRING_VEL_CARRY_FLICK = 0.72
-export const FAB_SETTLE_POS = 0.4
-export const FAB_SETTLE_VEL = 12
+/** Flick threshold (px/s) — intentional flicks; high enough to ignore jitter */
+export const FLICK_VELOCITY_PX_S = 580
+
+/**
+ * Axis dominance for flick docking. When |primary| ≥ |secondary| × this,
+ * treat as single-axis and preserve the release point's other half
+ * (TR + leftward → tl, not bl).
+ */
+export const FLICK_AXIS_DOMINANCE = 1.55
+
+/** FAB settle spring — softer / longer (Apple-smooth, not snappy) */
+export const FAB_SPRING_K = 200
+export const FAB_SPRING_C = 28
+export const FAB_SPRING_VEL_CARRY = 0.5
+export const FAB_SPRING_VEL_CARRY_FLICK = 0.68
+export const FAB_SETTLE_POS = 0.45
+export const FAB_SETTLE_VEL = 10
 
 /** Liquid squash from drag velocity (axis-aligned; no glyph rotation) */
 export const SQUASH_VEL_REF = 1400
@@ -21,12 +30,12 @@ export const SQUASH_STRETCH = 1.18
 export const SQUASH_COMPRESS = 0.82
 
 /** Critically damped-ish sheet pull settle (ζ ≈ 1): c ≈ 2√k */
-export const SHEET_SPRING_K = 240
-export const SHEET_SPRING_C = 31
+export const SHEET_SPRING_K = 145
+export const SHEET_SPRING_C = 24
 export const SHEET_SETTLE_POS = 0.5
-export const SHEET_SETTLE_VEL = 8
+export const SHEET_SETTLE_VEL = 6
 
-/** Soft rubber past extents (~0.2 feel) */
+/** Soft rubber past extents (~0.2 feel) — used at top / extremes only */
 export const RUBBER_FACTOR = 0.2
 
 export function clamp(n: number, lo: number, hi: number): number {
@@ -55,6 +64,46 @@ export function dropletRadius(sx: number, sy: number): string {
   const rx = clamp(50 / sx, 38, 62)
   const ry = clamp(50 / sy, 38, 62)
   return `${ry}% / ${rx}%`
+}
+
+/**
+ * Flick → dock with axis preference.
+ * Mostly-horizontal: keep the release point's vertical half.
+ * Mostly-vertical: keep the release point's horizontal half.
+ * Both axes strong: pick the true diagonal from velocity signs.
+ */
+export function dockFromFlick(
+  x: number,
+  y: number,
+  vx: number,
+  vy: number,
+  viewportW: number,
+  viewportH: number,
+): CoachDockId {
+  const ax = Math.abs(vx)
+  const ay = Math.abs(vy)
+  const onRight = x >= viewportW / 2
+  const onBottom = y >= viewportH / 2
+
+  const horizDominant = ax >= ay * FLICK_AXIS_DOMINANCE
+  const vertDominant = ay >= ax * FLICK_AXIS_DOMINANCE
+
+  let preferLeft: boolean
+  let preferBottom: boolean
+
+  if (horizDominant) {
+    preferLeft = vx < 0
+    preferBottom = onBottom
+  } else if (vertDominant) {
+    preferBottom = vy > 0
+    preferLeft = !onRight
+  } else {
+    preferLeft = vx < 0
+    preferBottom = vy > 0
+  }
+
+  if (preferBottom) return preferLeft ? 'bl' : 'br'
+  return preferLeft ? 'tl' : 'tr'
 }
 
 /** Read live translateY from a transitioning/animating element (for interrupt). */

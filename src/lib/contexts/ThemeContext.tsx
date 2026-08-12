@@ -1,14 +1,28 @@
 'use client'
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 
 export type Theme = 'dark' | 'light'
 
 const PREF_KEY = 'grind_theme_pref'
 
 // Mobile browser chrome color, kept in sync with --bg per theme.
-const THEME_COLOR: Record<Theme, string> = {
+export const THEME_COLOR: Record<Theme, string> = {
   dark: '#0f0f0f',
   light: '#ecebe7',
+}
+
+/** Coach page sheet / elevated chrome — matches CSS `--surface`. */
+export const SURFACE_THEME_COLOR: Record<Theme, string> = {
+  dark: '#1a1a1a',
+  light: '#ffffff',
 }
 
 interface ThemeContextValue {
@@ -23,6 +37,12 @@ const ThemeContext = createContext<ThemeContextValue>({
   toggleTheme: () => {},
   setTheme: () => {},
 })
+
+type ThemeColorEntry = { id: number; color: string }
+
+let themeColorSeq = 0
+let themeColorStack: ThemeColorEntry[] = []
+let themeColorFlushTimer: ReturnType<typeof setTimeout> | null = null
 
 function readCookieTheme(): Theme | null {
   if (typeof document === 'undefined') return null
@@ -46,33 +66,156 @@ function persistTheme(theme: Theme) {
   }
 }
 
-/** Apply the theme to <html> and the browser chrome meta. Safe to call client-side only. */
-function applyTheme(theme: Theme) {
-  document.documentElement.classList.toggle('light', theme === 'light')
-  const meta = document.querySelector('meta[name="theme-color"]')
-  if (meta) meta.setAttribute('content', THEME_COLOR[theme])
+function readDomTheme(): Theme {
+  return document.documentElement.classList.contains('light') ? 'light' : 'dark'
+}
+
+function effectiveThemeColor(theme: Theme): string {
+  const top = themeColorStack[themeColorStack.length - 1]
+  return top?.color ?? THEME_COLOR[theme]
 }
 
 /**
- * Re-assert theme-color after a full-bleed overlay (Coach page sheet) so iOS
- * standalone chrome / status-bar sampling doesn't stay stuck on --surface.
- * Safe to call from any client close path; no-ops when meta is missing.
+ * Write theme-color meta. When `force` is set (restore after a full-bleed
+ * overlay), bounce through a sibling color and replace the meta node — iOS
+ * standalone often ignores a no-op attribute write after sampling overlay
+ * pixels under the status bar.
+ */
+function writeThemeColorMeta(color: string, force = false) {
+  if (typeof document === 'undefined') return
+
+  const ensureMeta = (): HTMLMetaElement => {
+    let meta = document.querySelector(
+      'meta[name="theme-color"]',
+    ) as HTMLMetaElement | null
+    if (!meta) {
+      meta = document.createElement('meta')
+      meta.setAttribute('name', 'theme-color')
+      document.head.appendChild(meta)
+    }
+    return meta
+  }
+
+  if (!force) {
+    ensureMeta().setAttribute('content', color)
+    return
+  }
+
+  const theme = readDomTheme()
+  // Far enough from both --bg and --surface that WebKit can't treat it as a
+  // no-op relative to the stuck olive/gray sample.
+  const bounce = theme === 'light' ? '#d0d0d0' : '#000000'
+
+  const metas = document.querySelectorAll('meta[name="theme-color"]')
+  if (metas.length === 0) {
+    const meta = ensureMeta()
+    meta.setAttribute('content', bounce)
+  } else {
+    metas.forEach(meta => meta.setAttribute('content', bounce))
+  }
+
+  const paint = () => {
+    // Replace the node — attribute-only tweaks are flaky in iOS PWAs.
+    document.querySelectorAll('meta[name="theme-color"]').forEach(m => m.remove())
+    const fresh = document.createElement('meta')
+    fresh.setAttribute('name', 'theme-color')
+    fresh.setAttribute('content', color)
+    document.head.appendChild(fresh)
+  }
+
+  requestAnimationFrame(() => {
+    paint()
+    // Second paint after layout — sheet exit / safe-area may still be settling.
+    requestAnimationFrame(paint)
+  })
+}
+
+function flushThemeColor(opts?: { force?: boolean }) {
+  if (typeof document === 'undefined') return
+  writeThemeColorMeta(effectiveThemeColor(readDomTheme()), opts?.force === true)
+}
+
+/** Apply the theme to <html> and the browser chrome meta. Safe to call client-side only. */
+function applyTheme(theme: Theme) {
+  document.documentElement.classList.toggle('light', theme === 'light')
+  flushThemeColor()
+}
+
+/**
+ * Re-assert the effective theme-color (stack top, else theme default).
+ * Prefer `useThemeColor` for overlays; this remains for one-shot heal paths.
  */
 export function refreshThemeColor() {
-  if (typeof document === 'undefined') return
-  const theme: Theme = document.documentElement.classList.contains('light')
-    ? 'light'
-    : 'dark'
-  const color = THEME_COLOR[theme]
-  const metas = document.querySelectorAll('meta[name="theme-color"]')
-  if (metas.length === 0) return
-  // WebKit sometimes ignores a no-op write after sampling overlay content —
-  // flip to a sibling near-black/near-white then restore on the next frame.
-  const nudge = theme === 'light' ? '#eeeeee' : '#101010'
-  metas.forEach(meta => meta.setAttribute('content', nudge))
-  requestAnimationFrame(() => {
-    metas.forEach(meta => meta.setAttribute('content', color))
-  })
+  flushThemeColor({ force: true })
+  if (themeColorFlushTimer != null) clearTimeout(themeColorFlushTimer)
+  // Exit animations (~560ms) can leave sampled pixels until the sheet unmounts.
+  themeColorFlushTimer = setTimeout(() => {
+    themeColorFlushTimer = null
+    flushThemeColor({ force: true })
+  }, 580)
+}
+
+function pushThemeColor(color: string): number {
+  const id = ++themeColorSeq
+  themeColorStack.push({ id, color })
+  flushThemeColor()
+  return id
+}
+
+function popThemeColor(id: number) {
+  const before = themeColorStack.length
+  themeColorStack = themeColorStack.filter(e => e.id !== id)
+  if (themeColorStack.length === before) return
+  // Restoring default (or a lower overlay) after Coach — force iOS re-sample.
+  flushThemeColor({ force: true })
+  if (themeColorFlushTimer != null) clearTimeout(themeColorFlushTimer)
+  themeColorFlushTimer = setTimeout(() => {
+    themeColorFlushTimer = null
+    flushThemeColor({ force: true })
+  }, 580)
+}
+
+/**
+ * Push an override onto the theme-color stack while `color` is non-null.
+ * Cleanup pops that entry and force-restores the previous/default color —
+ * use for full-bleed overlays (Coach page sheet) so unmount always heals
+ * the iOS PWA status bar. Pass `null` to release early (e.g. on close start).
+ */
+export function useThemeColor(color: string | null) {
+  const idRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (color == null) {
+      if (idRef.current != null) {
+        popThemeColor(idRef.current)
+        idRef.current = null
+      }
+      return
+    }
+
+    if (idRef.current != null) {
+      // Update in place when the override color changes (theme toggle).
+      const entry = themeColorStack.find(e => e.id === idRef.current)
+      if (entry && entry.color !== color) {
+        entry.color = color
+        flushThemeColor()
+      }
+      return () => {
+        if (idRef.current != null) {
+          popThemeColor(idRef.current)
+          idRef.current = null
+        }
+      }
+    }
+
+    idRef.current = pushThemeColor(color)
+    return () => {
+      if (idRef.current != null) {
+        popThemeColor(idRef.current)
+        idRef.current = null
+      }
+    }
+  }, [color])
 }
 
 export function ThemeProvider({

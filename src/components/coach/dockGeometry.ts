@@ -1,4 +1,5 @@
 import type { CoachDockId } from './CoachProvider'
+import { dockFromFlick } from './coachMotion'
 
 /** Matches `.coach-fab` width/height in globals.css */
 export const COACH_FAB_SIZE = 56
@@ -134,8 +135,8 @@ export function furthestDockInDirection(
 }
 
 /**
- * Release → dock: flick (|v| ≥ threshold) picks furthest corner in that
- * direction; otherwise nearest safe corner.
+ * Release → dock: flick (|v| ≥ threshold) uses axis-aware dockFromFlick
+ * (preserves the non-dominant half); otherwise nearest safe corner.
  */
 export function dockFromRelease(
   x: number,
@@ -146,7 +147,9 @@ export function dockFromRelease(
 ): CoachDockId {
   const speed = Math.hypot(vx, vy)
   if (speed >= flickThresholdPxS) {
-    return furthestDockInDirection(x, y, vx, vy)
+    const w = typeof window !== 'undefined' ? window.innerWidth : 390
+    const h = typeof window !== 'undefined' ? window.innerHeight : 844
+    return dockFromFlick(x, y, vx, vy, w, h)
   }
   return nearestDock(x, y)
 }

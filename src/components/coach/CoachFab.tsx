@@ -31,9 +31,11 @@ const DRAG_ACTIVATE_MS = 120
 const DRAG_FAST_THRESHOLD = 32
 
 const VEL_EMA = 0.78
-const SQUASH_SPRING_K = 420
-const SQUASH_SPRING_C = 28
-const GLOW_MS = 380
+/** Softer squash recovery — matches global spring polish */
+const SQUASH_SPRING_K = 200
+const SQUASH_SPRING_C = 26
+/** Release glow fade (ms) — sustained hold uses --pressed, not this timer */
+const GLOW_RELEASE_MS = 450
 
 export default function CoachFab() {
   const { open, openCoach, dock, setDock, fabRef, quota, quotaLoaded } =
@@ -47,6 +49,7 @@ export default function CoachFab() {
 
   const [dragging, setDragging] = useState(false)
   const [settling, setSettling] = useState(false)
+  const [pressed, setPressed] = useState(false)
   const [glowing, setGlowing] = useState(false)
   const [ghost, setGhost] = useState<{ x: number; y: number } | null>(null)
   const [squash, setSquash] = useState({ sx: 1, sy: 1 })
@@ -80,13 +83,20 @@ export default function CoachFab() {
     }
   }, [])
 
+  const clearGlowTimer = useCallback(() => {
+    if (glowTimer.current != null) {
+      window.clearTimeout(glowTimer.current)
+      glowTimer.current = null
+    }
+  }, [])
+
   useEffect(
     () => () => {
       cancelSpring()
       cancelSquashSpring()
-      if (glowTimer.current != null) window.clearTimeout(glowTimer.current)
+      clearGlowTimer()
     },
-    [cancelSpring, cancelSquashSpring],
+    [cancelSpring, cancelSquashSpring, clearGlowTimer],
   )
 
   const springSquashToRest = useCallback(() => {
@@ -175,20 +185,25 @@ export default function CoachFab() {
     [cancelSpring, setDock],
   )
 
-  const pulseGlow = useCallback(() => {
-    if (reduceMotion) return
+  /** Release glow: ease out slowly after a tap (not used while held). */
+  const releaseGlow = useCallback(() => {
+    if (reduceMotion) {
+      setGlowing(false)
+      return
+    }
     setGlowing(true)
-    if (glowTimer.current != null) window.clearTimeout(glowTimer.current)
+    clearGlowTimer()
     glowTimer.current = window.setTimeout(() => {
       setGlowing(false)
       glowTimer.current = null
-    }, GLOW_MS)
-  }, [reduceMotion])
+    }, GLOW_RELEASE_MS)
+  }, [clearGlowTimer, reduceMotion])
 
   const onPointerDown = useCallback(
     (e: PointerEvent<HTMLButtonElement>) => {
       if (open || settling) return
       cancelSpring()
+      clearGlowTimer()
       pointerId.current = e.pointerId
       start.current = { x: e.clientX, y: e.clientY }
       const now = performance.now()
@@ -197,14 +212,16 @@ export default function CoachFab() {
       lastTs.current = now
       vel.current = { x: 0, y: 0 }
       moved.current = false
-      pulseGlow()
+      // Sustained press/glow immediately — not a flash that dies mid-hold.
+      setPressed(true)
+      setGlowing(false)
       try {
         e.currentTarget.setPointerCapture(e.pointerId)
       } catch {
         // ignore
       }
     },
-    [cancelSpring, open, pulseGlow, settling],
+    [cancelSpring, clearGlowTimer, open, settling],
   )
 
   const onPointerMove = useCallback(
@@ -222,6 +239,7 @@ export default function CoachFab() {
         if (held < DRAG_ACTIVATE_MS && dist < DRAG_FAST_THRESHOLD) return
         moved.current = true
         setDragging(true)
+        setPressed(false)
         setGlowing(false)
         cancelSquashSpring()
       }
@@ -262,6 +280,7 @@ export default function CoachFab() {
       start.current = null
       moved.current = false
       setDragging(false)
+      setPressed(false)
       try {
         e.currentTarget.releasePointerCapture(e.pointerId)
       } catch {
@@ -296,6 +315,8 @@ export default function CoachFab() {
 
       setGhost(null)
       springSquashToRest()
+      // Satisfying tap release: glow eases out while scale springs back.
+      releaseGlow()
       // Tap haptic via data-haptic (iOS overlay + Android vibrate) — no extra
       // navigator.vibrate here (would double-buzz on Android).
       if (!open) openCoach()
@@ -304,13 +325,15 @@ export default function CoachFab() {
       open,
       openCoach,
       reduceMotion,
+      releaseGlow,
       setDock,
       springSquashToRest,
       startSpringToDock,
     ],
   )
 
-  const alive = !open && !dragging && !settling && !ghost
+  // Pause idle float while pressed/dragging/settling — press should feel solid.
+  const alive = !open && !dragging && !settling && !ghost && !pressed
   const morphing =
     !reduceMotion && (squash.sx !== 1 || squash.sy !== 1 || dragging)
 
@@ -329,7 +352,7 @@ export default function CoachFab() {
           // (scale/shadow) on `.coach-fab--dragging` smooth.
           transition: reduceMotion
             ? 'none'
-            : 'box-shadow 150ms ease, opacity 150ms ease',
+            : 'box-shadow 180ms ease, opacity 180ms ease',
           zIndex: 420,
         }
       : open
@@ -353,9 +376,11 @@ export default function CoachFab() {
       type="button"
       className={`coach-fab press${dragging ? ' coach-fab--dragging' : ''}${
         settling ? ' coach-fab--settling' : ''
-      }${alive ? ' coach-fab--alive' : ''}${
-        glowing && !dragging ? ' coach-fab--glow' : ''
-      }${capped ? ' coach-fab--capped' : ''}`}
+      }${pressed && !dragging ? ' coach-fab--pressed' : ''}${
+        alive ? ' coach-fab--alive' : ''
+      }${glowing && !dragging && !pressed ? ' coach-fab--glow' : ''}${
+        capped ? ' coach-fab--capped' : ''
+      }`}
       data-dock={dock}
       data-haptic={dragging || settling || open ? undefined : 'light'}
       aria-label="Open Coach"
