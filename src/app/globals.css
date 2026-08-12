@@ -2068,6 +2068,11 @@ ol.coach-md__list,
   flex-shrink: 0;
   background: var(--surface);
 }
+/* Compact card already clears the home indicator via `bottom: 12px + safe-area`.
+   Don't pad the composer again — that left a dead band under the input. */
+.coach-sheet:not(.coach-sheet--page) .coach-sheet__composer {
+  padding-bottom: 10px;
+}
 .coach-sheet__input {
   flex: 1;
   min-width: 0;

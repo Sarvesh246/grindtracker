@@ -292,6 +292,7 @@ export default function CoachSheet() {
   const { theme } = useTheme()
   const {
     inset: keyboardInset,
+    occluded: keyboardOccluded,
     offsetTop: vvOffsetTop,
     visibleHeight: vvHeight,
     open: keyboardOpen,
@@ -304,6 +305,8 @@ export default function CoachSheet() {
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const stickBottom = useRef(true)
   const [draft, setDraft] = useState('')
+  /** Composer focus — used to re-stick the list when the keyboard animates in. */
+  const [composerFocused, setComposerFocused] = useState(false)
 
   const exit = useExitingValue(open ? true : null, EXIT_MS)
   const mounted = exit.data != null
@@ -499,14 +502,16 @@ export default function CoachSheet() {
     [],
   )
 
-  // Focus after the enter spring settles so iOS keyboard + visualViewport pan
-  // can't fight the open animation (or strand the composer under the keyboard).
-  // preventScroll keeps the page sheet top-pinned (we shrink height instead).
+  // Focus after the enter spring settles so the open spring isn't fighting the
+  // keyboard. Avoid preventScroll here: on iOS PWA it often opens the keyboard
+  // as an overlay without updating visualViewport, so the page sheet never
+  // shrinks and the composer stays buried. We size the sheet to the VV frame
+  // instead (see sheetKeyboardStyle) so the header stays visible.
   useEffect(() => {
     if (!open || closing) return
     const t = window.setTimeout(
       () => {
-        inputRef.current?.focus({ preventScroll: true })
+        inputRef.current?.focus()
       },
       reduceMotion ? 0 : ENTER_MS,
     )
@@ -517,7 +522,24 @@ export default function CoachSheet() {
     if (!open || closing || !listRef.current) return
     if (!stickBottom.current) return
     listRef.current.scrollTop = listRef.current.scrollHeight
-  }, [messages, streaming, open, closing, size, keyboardOpen, vvHeight])
+  }, [
+    messages,
+    streaming,
+    open,
+    closing,
+    size,
+    keyboardOpen,
+    vvHeight,
+    composerFocused,
+  ])
+
+  // When the keyboard opens, pin the transcript to the latest message so the
+  // shrinking body doesn't leave the last turn under the composer.
+  useEffect(() => {
+    if (!keyboardOpen || !listRef.current) return
+    stickBottom.current = true
+    listRef.current.scrollTop = listRef.current.scrollHeight
+  }, [keyboardOpen, vvHeight])
 
   // Lock body scroll while the full Coach page is open (iOS PWA).
   useEffect(() => {
@@ -533,29 +555,6 @@ export default function CoachSheet() {
       } catch {
         // ignore
       }
-    }
-  }, [open, closing, isPage])
-
-  // Prefer a top-pinned shrink over iOS's "pan the whole page to the input".
-  // When VV still pans, page mode sizes to the visible frame (see sheetKeyboardStyle).
-  useEffect(() => {
-    if (!open || closing || !isPage) return
-    const vv = window.visualViewport
-    if (!vv) return
-    const lockPan = () => {
-      if (vv.offsetTop === 0 && window.scrollY === 0) return
-      try {
-        window.scrollTo(0, 0)
-      } catch {
-        // ignore
-      }
-    }
-    lockPan()
-    vv.addEventListener('scroll', lockPan)
-    vv.addEventListener('resize', lockPan)
-    return () => {
-      vv.removeEventListener('scroll', lockPan)
-      vv.removeEventListener('resize', lockPan)
     }
   }, [open, closing, isPage])
 
@@ -1172,7 +1171,7 @@ export default function CoachSheet() {
     if (closing) return 'none'
     const curve = 'cubic-bezier(0.22, 1, 0.36, 1)'
     if (isPage && !sizeMorphing) {
-      return 'height 180ms ease, top 180ms ease, bottom 180ms ease'
+      return 'height 180ms ease, top 180ms ease, bottom 180ms ease, padding-bottom 180ms ease'
     }
     const parts: string[] = [
       `inset ${SIZE_MS}ms ${curve}`,
@@ -1207,22 +1206,33 @@ export default function CoachSheet() {
   // Fade only on full close — never unmount on size change.
   const showBackdrop = mounted
 
-  // Page mode: shrink the sheet into the visual viewport (top stays on-screen,
+  // Page mode: shrink the sheet into the visible frame (top stays on-screen,
   // flex column compresses, composer sits above the keyboard). Do NOT translate
   // the whole page sheet up — that hid the header when iOS panned VV.
   // Compact: keep lifting via `bottom` (small card, not a full-page shrink).
   const topDocked = dock === 'tl' || dock === 'tr'
   const pageKeyboardActive =
-    isPage && !closing && !boxLock && keyboardOpen && vvHeight > 0
+    isPage && !closing && !boxLock && keyboardOpen && keyboardOccluded > 0
   const sheetKeyboardStyle: CSSProperties | undefined = (() => {
     if (closing || boxLock) return undefined
     if (pageKeyboardActive) {
+      // Unpanned (common autofocus path): pin top and inset bottom by the
+      // occluded band so we don't depend on vv.height alone (innerHeight can
+      // briefly match VV on iOS PWA). When iOS pans, pin to the VV frame.
+      if (vvOffsetTop < 8) {
+        return {
+          top: 0,
+          bottom: keyboardOccluded,
+          height: 'auto',
+          maxHeight: 'none',
+          paddingBottom: 0,
+        }
+      }
       return {
         top: vvOffsetTop,
-        height: vvHeight,
+        height: vvHeight > 0 ? vvHeight : undefined,
         bottom: 'auto',
         maxHeight: 'none',
-        // Drop layout paddingBottom — height already matches the visible frame.
         paddingBottom: 0,
       }
     }
@@ -1591,6 +1601,11 @@ export default function CoachSheet() {
             aria-label="Message to Coach"
             onChange={e => setDraft(e.target.value)}
             onKeyDown={onKeyDown}
+            onFocus={() => {
+              setComposerFocused(true)
+              stickBottom.current = true
+            }}
+            onBlur={() => setComposerFocused(false)}
           />
           <button
             type="submit"
