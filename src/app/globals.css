@@ -9,7 +9,7 @@
 
 /* ---------------------------------------------------------------------------
    Design tokens (Tailwind v4 CSS-first config).
-   Every color/size in the app should reference one of these ÃÂ¢ÃÂÃÂ no hex literals
+   Every color/size in the app should reference one of these ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ no hex literals
    in component code. Mirror values exist as CSS vars below so inline styles
    and arbitrary values can consume them too.
    --------------------------------------------------------------------------- */
@@ -72,7 +72,7 @@
   /* Faint accent-tinted panel background (active tabs, highlighted rows). */
   --accent-wash: rgba(200, 241, 53, 0.1);
   /* Text/icon color ON TOP OF a lime accent fill. Always #0f0f0f regardless of
-     theme ÃÂ¢ÃÂÃÂ the lime fill itself is unchanged, so text on it is always dark. */
+     theme ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ the lime fill itself is unchanged, so text on it is always dark. */
   --on-accent: #0f0f0f;
   --text-primary: #f0f0f0;
   --text-secondary: #888888;
@@ -81,7 +81,7 @@
   --danger: #ef4444;
   --danger-bg: rgba(239, 68, 68, 0.08);
   --danger-bg-hover: rgba(239, 68, 68, 0.14);
-  /* Card depth ÃÂ¢ÃÂÃÂ none in dark (borders carry separation), subtle in light. */
+  /* Card depth ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ none in dark (borders carry separation), subtle in light. */
   --card-shadow: none;
 
   --radius-sm: 8px;
@@ -108,7 +108,7 @@
 /* ---------------------------------------------------------------------------
    Light theme. Activated by `class="light"` on <html> (set server-side from the
    grind_theme_pref cookie, then toggled client-side by ThemeContext). Only the
-   color mirror vars change ÃÂ¢ÃÂÃÂ every size/font/radius token is shared. Warm neutral
+   color mirror vars change ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ every size/font/radius token is shared. Warm neutral
    surfaces (not pure white) keep the look calm and on-brand; the lime accent fill
    is unchanged, while lime TEXT darkens to olive so it stays readable on white.
    --------------------------------------------------------------------------- */
@@ -144,10 +144,10 @@ html.light {
   -webkit-tap-highlight-color: transparent;
   /* `manipulation` (pan-x pan-y, no double-tap-zoom) used to be the default
      here, but pan-x is exactly what lets iOS/WKWebView treat a left-edge drag
-     as its own "swipe back" gesture ÃÂ¢ÃÂÃÂ which fights SwipeNavigator below and,
+     as its own "swipe back" gesture ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ which fights SwipeNavigator below and,
      in a standalone PWA with no browser chrome to go "back" to, just looks
      broken. Dropping pan-x kills that system gesture app-wide while keeping
-     vertical scroll, pinch-zoom (WCAG ÃÂ¢ÃÂÃÂ see layout.tsx), and the same
+     vertical scroll, pinch-zoom (WCAG ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ see layout.tsx), and the same
      no-double-tap-delay benefit (any non-'auto' value suppresses it, not
      just 'manipulation'). Any element that genuinely needs native horizontal
      scroll (tab rows, timelines) opts back in locally with `touchAction:
@@ -168,7 +168,7 @@ body {
   -moz-osx-font-smoothing: grayscale;
   /* The app is a fixed, non-scrolling shell (.app-shell): only .app-main
      scrolls. Locking body scroll is what makes the fixed bottom bars rock
-     solid in an iOS standalone PWA ÃÂ¢ÃÂÃÂ a scrolling <body> is what let them
+     solid in an iOS standalone PWA ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ a scrolling <body> is what let them
      strand mid-screen (home nav) and detach after keyboard dismissal. */
   overflow: hidden;
   overscroll-behavior: none;
@@ -231,7 +231,7 @@ select:focus-visible,
   border: 0;
 }
 
-/* Bottom nav ÃÂ¢ÃÂÃÂ a normal flow flex child at the bottom of the .app-shell column,
+/* Bottom nav ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ a normal flow flex child at the bottom of the .app-shell column,
    NOT position:fixed. As a flow element in a non-scrolling shell it is pinned to
    the bottom edge by layout and can never strand mid-screen. */
 .bottom-nav {
@@ -242,12 +242,12 @@ select:focus-visible,
   align-items: stretch;
   z-index: 100;
   /* Fills through the home-indicator safe area to the true bottom; min 8px when
-     there's no inset. (env is real now that the app declares standalone ÃÂ¢ÃÂÃÂ see
+     there's no inset. (env is real now that the app declares standalone ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ see
      layout.tsx apple-mobile-web-app-capable.) */
   padding-bottom: max(8px, env(safe-area-inset-bottom));
 }
 
-/* Active tab is color only ÃÂ¢ÃÂÃÂ never keep a focus/haptic square around it. */
+/* Active tab is color only ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ never keep a focus/haptic square around it. */
 .bottom-nav a:focus,
 .bottom-nav a:focus-visible {
   outline: none !important;
@@ -263,13 +263,13 @@ select:focus-visible,
 
 /* Coach FAB press/drag: BottomNav (and its iOS switch overlays) must not
    receive hits under the finger. Overlays set pointer-events:auto explicitly,
-   so disabling only the nav parent is not enough ÃÂ¢ÃÂÃÂ children would still tick. */
+   so disabling only the nav parent is not enough ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ children would still tick. */
 body.coach-fab-dragging .bottom-nav,
 body.coach-fab-dragging .bottom-nav [data-haptic-overlay] {
   pointer-events: none !important;
 }
 
-/* Workout Manager modal ÃÂ¢ÃÂÃÂ bottom sheet on mobile, centered dialog on desktop */
+/* Workout Manager modal ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ bottom sheet on mobile, centered dialog on desktop */
 .wm-backdrop {
   position: fixed;
   inset: 0;
@@ -382,7 +382,7 @@ body.coach-fab-dragging .bottom-nav [data-haptic-overlay] {
   }
 }
 
-/* Exit variants ÃÂ¢ÃÂÃÂ reverse of the entrances above, played while a toast is
+/* Exit variants ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ reverse of the entrances above, played while a toast is
    being removed instead of just vanishing when its owning state clears. */
 @keyframes toast-out {
   from {
@@ -406,7 +406,7 @@ body.coach-fab-dragging .bottom-nav [data-haptic-overlay] {
 }
 
 /* ---------------------------------------------------------------------------
-   Onboarding (coach marks / tours / contextual tooltips). Subtle 150ÃÂ¢ÃÂÃÂ200ms
+   Onboarding (coach marks / tours / contextual tooltips). Subtle 150ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ200ms
    ease entrances matching the rest of the app. The dim mask fades in on its
    own; floating bubbles scale up slightly; the mobile bottom-sheet rises.
    --------------------------------------------------------------------------- */
@@ -439,7 +439,7 @@ body.coach-fab-dragging .bottom-nav [data-haptic-overlay] {
   to { transform: translateY(0); }
 }
 
-/* Small inline popovers (rest-timer adjust grid, default-rest row) ÃÂ¢ÃÂÃÂ quick
+/* Small inline popovers (rest-timer adjust grid, default-rest row) ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ quick
    fade + settle so they don't just snap into existence. */
 @keyframes popover-in {
   from { opacity: 0; transform: translateY(4px) scale(0.98); }
@@ -485,7 +485,7 @@ body.coach-fab-dragging .bottom-nav [data-haptic-overlay] {
 
 /* Collapsible drawer (badges, body-weight history, friends, set notes).
    `grid-template-rows: 0fr -> 1fr` animates to the content's natural height
-   without hardcoding a max-height ÃÂ¢ÃÂÃÂ a 35-tile badge grid and a 90-row weight
+   without hardcoding a max-height ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ a 35-tile badge grid and a 90-row weight
    list are nowhere near the same size. The inner wrapper does the clipping.
 
    Named `drawer`, NOT `collapse`: Tailwind ships a `.collapse` utility
@@ -499,14 +499,14 @@ body.coach-fab-dragging .bottom-nav [data-haptic-overlay] {
 }
 .drawer[data-open='true'] { grid-template-rows: 1fr; }
 /* The direct child must carry NO padding: 0fr zeroes its content height only,
-   so padding survives the collapse and ÃÂ¢ÃÂÃÂ because overflow clips at the padding
-   box ÃÂ¢ÃÂÃÂ leaves a visible sliver of the panel behind. Pad an inner wrapper. */
+   so padding survives the collapse and ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ because overflow clips at the padding
+   box ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ leaves a visible sliver of the panel behind. Pad an inner wrapper. */
 .drawer > * {
   overflow: hidden;
   min-height: 0;
 }
 
-/* Keyed content swap ÃÂ¢ÃÂÃÂ a panel whose contents change wholesale (chart series,
+/* Keyed content swap ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ a panel whose contents change wholesale (chart series,
    calendar month, leaderboard category). Remount it with a changing React key
    so the animation actually replays. */
 @keyframes swap-in {
@@ -531,7 +531,7 @@ body.coach-fab-dragging .bottom-nav [data-haptic-overlay] {
    doesn't trail.
 
    Fade only, no rise: this one is aimed at the dashboard columns, which set
-   `overflow: hidden` to keep wide children from widening the layout ÃÂ¢ÃÂÃÂ a child
+   `overflow: hidden` to keep wide children from widening the layout ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ a child
    translated down would be clipped against the column's bottom edge on the
    way in. */
 @keyframes fade-in {
@@ -545,12 +545,12 @@ body.coach-fab-dragging .bottom-nav [data-haptic-overlay] {
 .stagger-auto > *:nth-child(5) { animation-delay: 160ms; }
 .stagger-auto > *:nth-child(n + 6) { animation-delay: 200ms; }
 
-/* Route-level entrance. Opacity only ÃÂ¢ÃÂÃÂ a transform here would make every page
+/* Route-level entrance. Opacity only ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ a transform here would make every page
    a containing block for the fixed nav and workout bars. */
 .page { animation: fade-in 200ms ease; }
 
 /* First-run setup wizard. Direction-aware slide + soft fade + slight scale.
-   fill-mode: backwards (not both) ÃÂ¢ÃÂÃÂ same containing-block rule as swap-in. */
+   fill-mode: backwards (not both) ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ same containing-block rule as swap-in. */
 @keyframes setup-enter-forward {
   from { opacity: 0; transform: translateX(16px) scale(0.985); }
   to { opacity: 1; transform: translateX(0) scale(1); }
@@ -578,7 +578,7 @@ body.coach-fab-dragging .bottom-nav [data-haptic-overlay] {
 }
 
 /* ---------------------------------------------------------------------------
-   Reduced motion ÃÂ¢ÃÂÃÂ respect user preference. Zero out transitions and
+   Reduced motion ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ respect user preference. Zero out transitions and
    keyframe animations rather than disabling functionality. Two independent
    triggers land on the same rule: the OS-level media query, and the app's own
    "Reduce Motion" setting (MotionContext, `html.reduce-motion`) for anyone who
@@ -611,16 +611,16 @@ html.reduce-motion *::after {
 /* ---------------------------------------------------------------------------
    Responsive desktop layout. Mobile-first: the rules below only engage at
    >=768px. Navigation switches from the fixed bottom bar to a fixed top bar
-   via pure CSS display toggles ÃÂ¢ÃÂÃÂ both bars are always rendered, so there's no
+   via pure CSS display toggles ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ both bars are always rendered, so there's no
    JS width detection and no hydration/resize jank at the breakpoint.
    --------------------------------------------------------------------------- */
 
 /* The app shell: a fixed, full-viewport, non-scrolling flex column. Because the
    shell itself never scrolls, the bottom nav (a flow child below) is pinned to
-   the bottom edge by layout ÃÂ¢ÃÂÃÂ it cannot strand mid-screen ÃÂ¢ÃÂÃÂ and the body can
+   the bottom edge by layout ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ it cannot strand mid-screen ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ and the body can
    never be left panned after the iOS keyboard dismisses. This single structural
    choice is what makes all the bottom bars permanently stable in a standalone
-   PWA. (No `transform`/`filter`/`will-change:transform` here or on .app-main ÃÂ¢ÃÂÃÂ
+   PWA. (No `transform`/`filter`/`will-change:transform` here or on .app-main ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ
    those would create a containing block and re-trap position:fixed bars.) */
 .app-shell {
   position: fixed;
@@ -673,7 +673,7 @@ html.reduce-motion *::after {
 }
 
 /* Desktop top-nav tabs: quiet hover only. Active state is color/weight on the
-   icon+label ÃÂ¢ÃÂÃÂ no filled pill behind the selected tab. */
+   icon+label ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ no filled pill behind the selected tab. */
 .top-nav-tab {
   background-color: transparent;
   transition: background-color 150ms ease;
@@ -701,7 +701,7 @@ html.reduce-motion *::after {
   overflow-x: hidden;
 }
 
-/* Responsive grids ÃÂ¢ÃÂÃÂ mobile column counts match the current inline values. */
+/* Responsive grids ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ mobile column counts match the current inline values. */
 /* Cards keep their own marginBottom for vertical rhythm; the grid only adds a
    horizontal gap between the two columns on desktop (row-gap stays 0). */
 .home-grid {
@@ -740,7 +740,7 @@ html.reduce-motion *::after {
 .lw-notes {
   border-top: 1px solid var(--border);
 }
-/* On mobile, an empty notes panel would just be clutter ÃÂ¢ÃÂÃÂ hide the placeholder. */
+/* On mobile, an empty notes panel would just be clutter ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ hide the placeholder. */
 .lw-notes--empty {
   display: none;
 }
@@ -761,7 +761,7 @@ html.reduce-motion *::after {
 }
 
 /* Active-workout fixed bars: full-width on mobile, pinned to the viewport bottom.
-   No keyboard tracking ÃÂ¢ÃÂÃÂ the keyboard just appears on top of the bar. No
+   No keyboard tracking ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ the keyboard just appears on top of the bar. No
    compositor hack needed either: content scrolls inside .app-main, not <body>,
    so the viewport-fixed bar is never repaint-shifted by scrolling. */
 .wo-fixed-bar {
@@ -769,7 +769,7 @@ html.reduce-motion *::after {
   right: 0;
 }
 
-/* ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Active-workout desktop layout ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
+/* ÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂ Active-workout desktop layout ÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂ
    Mobile base rules below MUST equal the prior inline values so the phone UI
    is byte-identical. The sidebar/grid desktop layout lives in the >=1024 block
    further down. */
@@ -784,23 +784,23 @@ html.reduce-motion *::after {
   display: block;
 }
 
-/* Desktop-only sidebar rail ÃÂ¢ÃÂÃÂ hidden on mobile. */
+/* Desktop-only sidebar rail ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ hidden on mobile. */
 .wo-sidebar {
   display: none;
 }
 
-/* Mobile sticky header ÃÂ¢ÃÂÃÂ visible on mobile, hidden on desktop (sidebar
+/* Mobile sticky header ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ visible on mobile, hidden on desktop (sidebar
    replaces it). No inline `display` on the element, so this class wins. */
 .wo-mobile-header {
   display: block;
 }
 
-/* Exercise list inner wrapper ÃÂ¢ÃÂÃÂ no constraint on mobile. */
+/* Exercise list inner wrapper ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ no constraint on mobile. */
 .wo-main-inner {
   width: 100%;
 }
 
-/* Finish bar inner layout ÃÂ¢ÃÂÃÂ mobile = stacked (button, then summary below). */
+/* Finish bar inner layout ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ mobile = stacked (button, then summary below). */
 .wo-finish-inner {
   display: block;
 }
@@ -859,7 +859,7 @@ html.reduce-motion *::after {
     max-width: 640px;
   }
 
-  /* The top nav carries the brand ÃÂ¢ÃÂÃÂ hide the in-page wordmark on home. */
+  /* The top nav carries the brand ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ hide the in-page wordmark on home. */
   .home-brand {
     display: none;
   }
@@ -951,7 +951,7 @@ html.reduce-motion *::after {
   }
 }
 
-/* ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Active-workout desktop sidebar layout (>=1024px) ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
+/* ÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂ Active-workout desktop sidebar layout (>=1024px) ÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂ
    Below 1024 the workout keeps the centered 640px single column (unchanged). */
 @media (min-width: 1024px) {
   .page--workout {
@@ -981,7 +981,7 @@ html.reduce-motion *::after {
     box-shadow: var(--card-shadow);
   }
 
-  /* The mobile header is redundant on desktop ÃÂ¢ÃÂÃÂ the sidebar carries title,
+  /* The mobile header is redundant on desktop ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ the sidebar carries title,
      timer and progress. */
   .wo-mobile-header {
     display: none;
@@ -1026,13 +1026,13 @@ html.reduce-motion *::after {
   background-color: var(--surface-elevated);
 }
 
-/* ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Landscape phones ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
+/* ÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂ Landscape phones ÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂ
    A rotated phone can be nearly as wide as a small desktop window (up to
-   ~930px) but only ~320ÃÂ¢ÃÂÃÂ430px tall ÃÂ¢ÃÂÃÂ a real desktop browser window in that
+   ~930px) but only ~320ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ430px tall ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ a real desktop browser window in that
    width range is essentially never that short, so max-height is a safe signal
    for "rotated phone" that won't misfire on an actual narrow desktop window.
-   Without this, pages that treat "wide viewport" as "desktop" ÃÂ¢ÃÂÃÂ page--workout
-   in particular, capped at 640px until the 1024px sidebar layout kicks in ÃÂ¢ÃÂÃÂ
+   Without this, pages that treat "wide viewport" as "desktop" ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ page--workout
+   in particular, capped at 640px until the 1024px sidebar layout kicks in ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ
    leave a big chunk of the extra width as unused side margin that portrait
    mode never had. Guarded to max-width:1023px so an actual landscape TABLET
    (which clears 1024px width and already gets the fuller sidebar/grid layouts,
@@ -1050,10 +1050,10 @@ html.reduce-motion *::after {
   }
 }
 
-/* ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Feedback inbox (developer-only, /admin/feedback) ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
+/* ÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂ Feedback inbox (developer-only, /admin/feedback) ÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂ
    Two panes side by side once there's room; below 900px exactly one pane is
-   visible at a time (list, or detail after tapping a row) ÃÂ¢ÃÂÃÂ the same
-   listÃÂ¢ÃÂÃÂdetail push a mail app uses on a phone. The wrapper carries
+   visible at a time (list, or detail after tapping a row) ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ the same
+   listÃÂÃÂ¢ÃÂÃÂÃÂÃÂdetail push a mail app uses on a phone. The wrapper carries
    data-detail-open so the swap is pure CSS with no width detection in JS. */
 .inbox-layout {
   display: grid;
@@ -1092,7 +1092,7 @@ html.reduce-motion *::after {
 
 /* ---------------------------------------------------------------------------
    Coach FAB + chat sheet
-   z-index: FAB 420 ÃÂÃÂ· backdrop 430 ÃÂÃÂ· sheet 440 (above nav 100, below wm 500)
+   z-index: FAB 420 ÃÂÃÂÃÂÃÂ· backdrop 430 ÃÂÃÂÃÂÃÂ· sheet 440 (above nav 100, below wm 500)
    --------------------------------------------------------------------------- */
 
 .coach-fab {
@@ -1103,7 +1103,7 @@ html.reduce-motion *::after {
   border-radius: var(--radius-pill);
   border: none;
   /* Accent fill lives on `__disc`; shadow/glow stay on the button.
-     Orb is always a circle ÃÂ¢ÃÂÃÂ no liquid squash/stretch. */
+     Orb is always a circle ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ no liquid squash/stretch. */
   background-color: transparent;
   color: var(--on-accent);
   display: flex;
@@ -1122,7 +1122,7 @@ html.reduce-motion *::after {
   /* Float lives on the inner wrapper so grab/tap transforms stay clean. */
   overflow: visible;
 }
-/* Glow / press scale is the affordance ÃÂ¢ÃÂÃÂ kill the global square focus ring
+/* Glow / press scale is the affordance ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ kill the global square focus ring
    (button:focus-visible also forces --radius-sm, which boxed the circle). */
 .coach-fab:focus,
 .coach-fab:focus-visible,
@@ -1162,7 +1162,7 @@ html.light .coach-fab {
   align-items: center;
   justify-content: center;
 }
-/* Idle breathe ÃÂ¢ÃÂÃÂ ÃÂÃÂ±4px over ~3s; paused when dragging / settling / open. */
+/* Idle breathe ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ ÃÂÃÂÃÂÃÂ±4px over ~3s; paused when dragging / settling / open. */
 @keyframes coach-fab-float {
   0%,
   100% {
@@ -1175,7 +1175,7 @@ html.light .coach-fab {
 .coach-fab--alive .coach-fab__float {
   animation: coach-fab-float 3s ease-in-out infinite;
 }
-/* Tap/drag glow ÃÂ¢ÃÂÃÂ release fade only (hold uses --pressed sustained glow). */
+/* Tap/drag glow ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ release fade only (hold uses --pressed sustained glow). */
 @keyframes coach-fab-glow {
   0% {
     box-shadow:
@@ -1190,7 +1190,7 @@ html.light .coach-fab {
 .coach-fab--glow {
   animation: coach-fab-glow 450ms cubic-bezier(0.22, 1, 0.36, 1);
 }
-/* Sustained press/hold ÃÂ¢ÃÂÃÂ scale + accent glow for the whole pointer-down. */
+/* Sustained press/hold ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ scale + accent glow for the whole pointer-down. */
 .coach-fab--pressed {
   transform: scale(0.94);
   box-shadow:
@@ -1207,14 +1207,14 @@ html.light .coach-fab--pressed {
     0 0 36px 14px color-mix(in srgb, var(--accent) 40%, transparent),
     var(--card-shadow);
 }
-/* Special G tap: deeper press than shared `.press` (0.96 ÃÂ¢ÃÂÃÂ 0.9) ÃÂ¢ÃÂÃÂ pressed class owns hold. */
+/* Special G tap: deeper press than shared `.press` (0.96 ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ 0.9) ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ pressed class owns hold. */
 .coach-fab.press:active:not(.coach-fab--dragging):not(.coach-fab--settling):not(.coach-fab--pressed) {
   transform: scale(0.9);
 }
 .coach-fab--dragging,
 .coach-fab--settling {
   cursor: grabbing;
-  /* Uniform scale only ÃÂ¢ÃÂÃÂ disc stays circular via border-radius pill. */
+  /* Uniform scale only ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ disc stays circular via border-radius pill. */
   transition:
     transform 180ms ease,
     box-shadow 180ms ease,
@@ -1322,7 +1322,7 @@ html.reduce-motion .coach-fab.press:active:not(.coach-fab--dragging):not(.coach-
   animation: none;
 }
 
-/* Dock anchors ÃÂ¢ÃÂÃÂ positions only; drag ghost overrides via inline style */
+/* Dock anchors ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ positions only; drag ghost overrides via inline style */
 .coach-fab[data-dock='br'] {
   right: 16px;
   left: auto;
@@ -1353,14 +1353,14 @@ html.reduce-motion .coach-fab.press:active:not(.coach-fab--dragging):not(.coach-
   .coach-fab[data-dock='tl'] {
     top: calc(var(--nav-h) + env(safe-area-inset-top) + 16px);
   }
-  /* Desktop has no bottom nav strip ÃÂ¢ÃÂÃÂ lift the bottom docks slightly less. */
+  /* Desktop has no bottom nav strip ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ lift the bottom docks slightly less. */
   .coach-fab[data-dock='br'],
   .coach-fab[data-dock='bl'] {
     bottom: calc(16px + env(safe-area-inset-bottom));
   }
 }
 
-/* Coach-scoped enter/exit ÃÂ¢ÃÂÃÂ longer than shared `sheet-up` so other sheets stay snappy. */
+/* Coach-scoped enter/exit ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ longer than shared `sheet-up` so other sheets stay snappy. */
 @keyframes coach-sheet-in {
   from {
     opacity: 0;
@@ -1405,7 +1405,7 @@ html.reduce-motion .coach-fab.press:active:not(.coach-fab--dragging):not(.coach-
   background: rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
-  /* Enter is opt-in via --enter so pageÃÂ¢ÃÂÃÂcompact never remounts/replays it. */
+  /* Enter is opt-in via --enter so pageÃÂÃÂ¢ÃÂÃÂÃÂÃÂcompact never remounts/replays it. */
 }
 .coach-backdrop.coach-backdrop--enter {
   animation: coach-backdrop-in 520ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
@@ -1414,7 +1414,7 @@ html.reduce-motion .coach-fab.press:active:not(.coach-fab--dragging):not(.coach-
   animation: coach-backdrop-out 480ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
   pointer-events: none;
 }
-/* Gesture dismiss already dimmed the scrim ÃÂ¢ÃÂÃÂ don't restart from opacity 1. */
+/* Gesture dismiss already dimmed the scrim ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ don't restart from opacity 1. */
 .coach-backdrop--closing.coach-backdrop--closing-from-drag {
   animation: none;
 }
@@ -1454,7 +1454,7 @@ html.reduce-motion .coach-backdrop--closing {
 .coach-sheet-motion > .coach-sheet {
   pointer-events: auto;
 }
-/* Fixed descendants become relative to this transformed ancestor ÃÂ¢ÃÂÃÂ expected. */
+/* Fixed descendants become relative to this transformed ancestor ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ expected. */
 .coach-sheet-motion--drag-dismiss {
   will-change: transform, opacity;
 }
@@ -1469,9 +1469,9 @@ html.reduce-motion .coach-backdrop--closing {
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
   color: var(--text-primary);
   font-family: var(--font-sans);
-  /* Enter is opt-in (--enter) so pageÃÂ¢ÃÂÃÂcompact class swaps never replay
-     coach-sheet-in (that was the minimize ÃÂ¢ÃÂÃÂpop from bottomÃÂ¢ÃÂÃÂ). */
-  /* Mobile compact defaults ÃÂ¢ÃÂÃÂ quick ÃÂ¢ÃÂÃÂtype to orbÃÂ¢ÃÂÃÂ card */
+  /* Enter is opt-in (--enter) so pageÃÂÃÂ¢ÃÂÃÂÃÂÃÂcompact class swaps never replay
+     coach-sheet-in (that was the minimize ÃÂÃÂ¢ÃÂÃÂÃÂÃÂpop from bottomÃÂÃÂ¢ÃÂÃÂÃÂÃÂ). */
+  /* Mobile compact defaults ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ quick ÃÂÃÂ¢ÃÂÃÂÃÂÃÂtype to orbÃÂÃÂ¢ÃÂÃÂÃÂÃÂ card */
   left: 12px;
   right: 12px;
   bottom: calc(12px + env(safe-area-inset-bottom));
@@ -1502,30 +1502,30 @@ html.light .coach-sheet {
   /* Interruptible enter: finger takes over mid-open without locking. */
   animation: none !important;
 }
-/* FLIP lock during pageÃÂ¢ÃÂÃÂcompact: fixed pixel box, no CSS size jump yet. */
+/* FLIP lock during pageÃÂÃÂ¢ÃÂÃÂÃÂÃÂcompact: fixed pixel box, no CSS size jump yet. */
 .coach-sheet--morph-lock {
   animation: none !important;
   right: auto !important;
   bottom: auto !important;
   max-height: none !important;
 }
-/* CompactÃÂ¢ÃÂÃÂpage: keep card chrome (radius/border/shadow) while FLIP owns the
+/* CompactÃÂÃÂ¢ÃÂÃÂÃÂÃÂpage: keep card chrome (radius/border/shadow) while FLIP owns the
    rect and size is still compact. Mid-late morph applies --page so padding /
    radius can ease overlapping the height spring. */
 .coach-sheet--morph-lock:not(.coach-sheet--page) {
   border-radius: var(--radius-lg);
 }
 
-/* Full Coach page ÃÂ¢ÃÂÃÂ morphs from the compact sheet (Siri-app style). */
+/* Full Coach page ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ morphs from the compact sheet (Siri-app style). */
 .coach-sheet.coach-sheet--page {
   left: 0;
   right: 0;
   top: 0;
   bottom: 0;
   width: 100%;
-  /* Never 100dvh ÃÂ¢ÃÂÃÂ standalone iOS has burned us with dvh full-bleed overlays
+  /* Never 100dvh ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ standalone iOS has burned us with dvh full-bleed overlays
      leaving a persistent viewport gap after dismiss (same class of bug as the
-     old app-shell 100dvh ÃÂ¢ÃÂÃÂ 100% fix). 100% stays animatable for the compactÃÂ¢ÃÂÃÂ
+     old app-shell 100dvh ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ 100% fix). 100% stays animatable for the compactÃÂÃÂ¢ÃÂÃÂÃÂÃÂ
      page morph (height:auto would jump). */
   height: 100%;
   max-height: none;
@@ -1534,7 +1534,7 @@ html.light .coach-sheet {
   box-shadow: none;
   /* Clear the Dynamic Island / status bar while open. The padding band is
      painted solid --bg (theme-color / app-shell), not --surface, so chrome
-     matches the rest of the app. Do not push --surface into theme-color ÃÂ¢ÃÂÃÂ
+     matches the rest of the app. Do not push --surface into theme-color ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ
      that left iOS PWAs stuck on olive/gray after dismiss. Accent wash stays
      BELOW the safe-area band so status-bar sampling can't pick it up. */
   padding-top: env(safe-area-inset-top);
@@ -1556,8 +1556,8 @@ html.light .coach-sheet {
   animation: coach-sheet-out 560ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 .coach-sheet.coach-sheet--page.coach-sheet--closing.coach-sheet--closing-from-drag {
-  /* Keep !important ÃÂ¢ÃÂÃÂ page.closing alone is equal specificity to a 3-class
-     rule and used to win the cascade for one paint ÃÂ¢ÃÂÃÂ middle flash. */
+  /* Keep !important ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ page.closing alone is equal specificity to a 3-class
+     rule and used to win the cascade for one paint ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ middle flash. */
   animation: none !important;
 }
 html.reduce-motion .coach-sheet.coach-sheet--enter,
@@ -1593,7 +1593,7 @@ html.reduce-motion .coach-sheet--closing {
     bottom: auto;
   }
   .coach-sheet.coach-sheet--page {
-    /* Dedicated page even on desktop ÃÂ¢ÃÂÃÂ centered column feel via body padding. */
+    /* Dedicated page even on desktop ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ centered column feel via body padding. */
     max-width: none;
   }
 }
@@ -1693,7 +1693,7 @@ html.reduce-motion .coach-sheet--closing {
   gap: 6px;
   flex-shrink: 0;
 }
-/* Compact expand vs page history/new ÃÂ¢ÃÂÃÂ crossfade + width ease (no icon snap). */
+/* Compact expand vs page history/new ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ crossfade + width ease (no icon snap). */
 .coach-sheet__actions-set {
   display: flex;
   align-items: center;
@@ -1735,8 +1735,8 @@ html.reduce-motion .coach-sheet__quota {
   overflow-y: auto;
   padding: 12px 12px 8px;
   overscroll-behavior: contain;
-  /* Always cap the reading column ÃÂ¢ÃÂÃÂ never `none`ÃÂ¢ÃÂÃÂ720 (can't interpolate).
-     During compactÃÂ¢ÃÂÃÂpage FLIP the sheet width springs, so wrap tracks that
+  /* Always cap the reading column ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ never `none`ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ720 (can't interpolate).
+     During compactÃÂÃÂ¢ÃÂÃÂÃÂÃÂpage FLIP the sheet width springs, so wrap tracks that
      continuously; --page only eases the gutter padding. */
   max-width: 720px;
   width: 100%;
@@ -1750,7 +1750,7 @@ html.reduce-motion .coach-sheet__quota {
 .coach-sheet--page .coach-sheet__composer {
   border-top-color: var(--border);
 }
-/* Keyboard open: visible frame already ends above the keyboard ÃÂ¢ÃÂÃÂ drop the
+/* Keyboard open: visible frame already ends above the keyboard ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ drop the
    home-indicator pad so the composer isn't double-spaced off the bottom. */
 .coach-sheet--page.coach-sheet--keyboard .coach-sheet__composer {
   padding-bottom: 10px;
@@ -1768,7 +1768,7 @@ html.reduce-motion .coach-bubble {
   }
 }
 
-/* History drawer ÃÂ¢ÃÂÃÂ slides under the header inside the full page. */
+/* History drawer ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ slides under the header inside the full page. */
 .coach-history {
   position: absolute;
   inset: 0;
@@ -1778,7 +1778,7 @@ html.reduce-motion .coach-bubble {
   background: color-mix(in srgb, var(--surface) 94%, transparent);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  /* backwards only ÃÂ¢ÃÂÃÂ `both` keeps a finished transform and breaks hit-testing
+  /* backwards only ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ `both` keeps a finished transform and breaks hit-testing
      / containing blocks for nested controls (same rule as other coach motion). */
   animation: coach-history-in 220ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
@@ -2018,13 +2018,13 @@ html.reduce-motion .coach-history {
     padding 520ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 .coach-sheet--page .coach-bubble {
-  /* Same relative cap ÃÂ¢ÃÂÃÂ absolute line length grows with the column during
+  /* Same relative cap ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ absolute line length grows with the column during
      expand; page gutter padding eases separately on the body. */
   max-width: 88%;
   padding: 10px 14px;
 }
-/* Organic AI bubble enter ÃÂ¢ÃÂÃÂ opacity / y / scale spring-feel.
-   fill-mode: backwards only ÃÂ¢ÃÂÃÂ never `both` (containing-block rule). */
+/* Organic AI bubble enter ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ opacity / y / scale spring-feel.
+   fill-mode: backwards only ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ never `both` (containing-block rule). */
 @keyframes coach-bubble-in {
   from {
     opacity: 0;
@@ -2097,7 +2097,7 @@ html.reduce-motion .coach-bubble--user {
   flex-direction: column;
   gap: 6px;
 }
-/* Parent message list sets list-style: none (inherited) ÃÂ¢ÃÂÃÂ restore markers. */
+/* Parent message list sets list-style: none (inherited) ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ restore markers. */
 ul.coach-md__list {
   list-style: disc;
 }
@@ -2138,7 +2138,7 @@ ol.coach-md__list,
   border-top: 1px solid var(--border);
   flex-shrink: 0;
   background: var(--surface);
-  /* Same always-on 720 column as body ÃÂ¢ÃÂÃÂ wrap tracks FLIP, not --page snap. */
+  /* Same always-on 720 column as body ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ wrap tracks FLIP, not --page snap. */
   max-width: 720px;
   width: 100%;
   margin: 0 auto;
@@ -2153,7 +2153,7 @@ ol.coach-md__list,
   padding-right: 16px;
 }
 /* Compact card already clears the home indicator via `bottom: 12px + safe-area`.
-   Don't pad the composer again ÃÂ¢ÃÂÃÂ that left a dead band under the input. */
+   Don't pad the composer again ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ that left a dead band under the input. */
 .coach-sheet:not(.coach-sheet--page) .coach-sheet__composer {
   padding-bottom: 10px;
 }
@@ -2217,7 +2217,7 @@ ol.coach-md__list,
   font-family: var(--font-sans);
 }
 
-/* Non-sticky scroll target for brand #top Ã¢ÂÂ must sit at scrollTop 0. */
+/* Non-sticky scroll target for brand #top ÃÂ¢ÃÂÃÂ must sit at scrollTop 0. */
 .landing-top-anchor {
   position: absolute;
   top: 0;
@@ -2395,7 +2395,7 @@ ol.coach-md__list,
   min-height: 0;
 }
 
-/* Scroll-down cue — centered bottom of hero, soft lime, ~44px target */
+/* Scroll-down cue â centered bottom of hero, soft lime, ~44px target */
 .landing-hero__scroll {
   position: absolute;
   left: 50%;
@@ -2444,36 +2444,44 @@ ol.coach-md__list,
 
 @media (min-width: 900px) {
   .landing-hero {
-    padding: 28px 36px 56px;
+    padding: 28px 40px 56px;
   }
+  /*
+   * Restore the original two-column split (copy ~48% / demo ~44%).
+   * The density pass used flex: 1 1 0 + min-width: 0 on copy while the demo
+   * kept width: 100% from the stacked mobile rule — that starved the text
+   * column into a one-word-per-line tower. Override width and use % flex
+   * bases so support copy wraps at a normal paragraph width.
+   */
   .landing-hero__layout {
     flex-direction: row;
     align-items: center;
-    justify-content: center;
-    gap: 28px;
-    max-width: 1180px;
+    justify-content: space-between;
+    gap: 48px;
+    max-width: 1140px;
     margin: 0 auto;
     width: 100%;
   }
   .landing-hero__copy {
     text-align: left;
-    flex: 1 1 0;
-    max-width: 38rem;
-    min-width: 0;
+    flex: 1 1 48%;
+    width: auto;
+    max-width: 30rem;
+    min-width: min(100%, 18rem);
   }
   .landing-hero__brand {
-    font-size: clamp(96px, 9.5vw, 136px);
+    font-size: clamp(88px, 8.5vw, 124px);
     letter-spacing: 4px;
   }
   .landing-hero__tagline {
     margin-top: 14px;
-    font-size: clamp(28px, 2.8vw, 40px);
+    font-size: clamp(26px, 2.5vw, 36px);
     letter-spacing: 2.5px;
   }
   .landing-hero__support {
     margin: 16px 0 0;
-    max-width: 34rem;
-    font-size: 17px;
+    max-width: 26rem;
+    font-size: 16px;
     line-height: 1.55;
   }
   .landing-hero__ctas {
@@ -2488,16 +2496,17 @@ ol.coach-md__list,
     font-size: 16px;
   }
   .landing-hero__demo {
-    flex: 0 0 auto;
-    justify-content: center;
+    flex: 1 1 44%;
+    width: auto;
+    justify-content: flex-end;
   }
   .landing-hero-phone {
-    height: min(620px, 70svh, calc(34vw * 19.5 / 9));
-    max-width: min(292px, 25vw);
+    height: min(580px, 68svh, calc(30vw * 19.5 / 9));
+    max-width: min(272px, 26vw);
   }
 }
 
-/* Phone mockup â ~19.5:9 tall handset with island + home indicator */
+/* Phone mockup Ã¢ÂÂ ~19.5:9 tall handset with island + home indicator */
 .landing-hero-phone {
   height: min(540px, 56svh, calc(68vw * 19.5 / 9));
   width: auto;
@@ -2527,7 +2536,7 @@ ol.coach-md__list,
   height: 22px;
   margin: 0 auto 6px;
   border-radius: 999px;
-  /* Near-black island on gray surface — must read clearly as a cutout */
+  /* Near-black island on gray surface â must read clearly as a cutout */
   background: #050505;
   box-shadow:
     0 0 0 1px rgba(0, 0, 0, 0.55),
@@ -2597,7 +2606,7 @@ ol.coach-md__list,
 
 .landing-hero-phone__col-labels {
   display: grid;
-  /* Match set rows: label | lbs | reps | check — PR is overlaid, not a column */
+  /* Match set rows: label | lbs | reps | check — PR stacks below reps, not a column */
   grid-template-columns: 34px minmax(0, 1fr) minmax(0, 1fr) 28px;
   gap: 6px;
   padding: 0 2px 6px;
@@ -2621,15 +2630,14 @@ ol.coach-md__list,
 }
 
 /*
- * Set rows mirror ActiveWorkout SetRow:
- * flex siblings with equal weight/reps boxes; PR sits on the top-right
- * corner of the reps box (absolute) so it never shrinks the inputs the
- * way a 5th grid track did.
+ * Set rows: equal LBS/REPS boxes (same grid tracks as non-PR rows).
+ * PR sits below the reps box on every breakpoint — never a corner overlay
+ * (too cramped inside the phone mock at any size).
  */
 .landing-hero-set {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr) minmax(0, 1fr) 28px;
-  align-items: center;
+  align-items: start;
   gap: 6px;
   padding: 6px 2px;
   border-radius: 8px;
@@ -2648,6 +2656,8 @@ ol.coach-md__list,
   color: var(--text-muted);
   letter-spacing: 0.2px;
   white-space: nowrap;
+  /* Optically center with the 32px input when PR hangs below the reps cell */
+  padding-top: 10px;
 }
 
 .landing-hero-set__box {
@@ -2674,20 +2684,19 @@ ol.coach-md__list,
   border-color: var(--border-strong);
 }
 
-/* Reps cell + PR corner overlay (outside the box — never inside beside “8”) */
+/* Reps cell: box on top, PR chip stacked below (all viewports) */
 .landing-hero-set__reps-wrap {
-  position: relative;
-  display: block;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
   min-width: 0;
-  overflow: visible;
 }
 
 .landing-hero-set__pr {
-  position: absolute;
-  top: 0;
-  right: 0;
-  z-index: 2;
+  position: static;
   display: none;
+  flex-shrink: 0;
   font-size: 9px;
   font-family: var(--font-display);
   color: var(--accent-text);
@@ -2698,8 +2707,6 @@ ol.coach-md__list,
   letter-spacing: 0.5px;
   line-height: 1.2;
   opacity: 0;
-  /* Separate translate from transform so the pop animation can scale */
-  translate: 55% -55%;
   transform: scale(0.85);
   white-space: nowrap;
   pointer-events: none;
@@ -2713,6 +2720,7 @@ ol.coach-md__list,
 .landing-hero-set__check {
   width: 28px;
   height: 28px;
+  margin-top: 2px;
   border-radius: 9999px;
   border: 2px solid var(--border-strong);
   background: transparent;
@@ -2739,7 +2747,7 @@ ol.coach-md__list,
   color: var(--text-muted);
 }
 
-/* Demo loop: check → PR pill — only while landing-demo--active */
+/* Demo loop: check â PR pill â only while landing-demo--active */
 .landing-demo--active .landing-hero-set--active .landing-hero-set__check--anim {
   animation: landing-check-pop 3.6s ease infinite;
 }
@@ -3125,7 +3133,7 @@ ol.coach-md__list,
   color: var(--text-secondary);
 }
 
-/* Install shortcut â secondary, not competing with Get started */
+/* Install shortcut Ã¢ÂÂ secondary, not competing with Get started */
 .landing-install-btn {
   display: inline-flex;
   align-items: center;
@@ -3163,6 +3171,13 @@ ol.coach-md__list,
 
 .landing-install__actions {
   margin-top: 20px;
+}
+
+.landing-install__note {
+  margin: 16px 0 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-secondary);
 }
 
 /* Install / A2HS */
@@ -3255,7 +3270,7 @@ ol.coach-md__list,
   color: var(--accent-text);
 }
 
-/* Footer â compact site chrome, not a sticky CTA bar clone */
+/* Footer Ã¢ÂÂ compact site chrome, not a sticky CTA bar clone */
 .landing-footer {
   border-top: 1px solid var(--border);
   padding: 36px 20px calc(32px + env(safe-area-inset-bottom));

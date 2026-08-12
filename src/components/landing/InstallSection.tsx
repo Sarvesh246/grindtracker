@@ -5,6 +5,8 @@ import Link from 'next/link'
 import GoogleSignInButton from '@/components/GoogleSignInButton'
 import {
   ensureInstallListeners,
+  hasNativeInstallPrompt,
+  isAppleMobileDevice,
   isStandalonePwa,
   tryInstallApp,
 } from './installApp'
@@ -12,14 +14,14 @@ import {
 export { isStandalonePwa } from './installApp'
 
 /**
- * Secondary Install control for header / install section / footer.
+ * Secondary Install control for header / footer / install section.
  * Hides when already running as a standalone PWA.
- * Tries Android `beforeinstallprompt`, then Web Share (iOS Share sheet),
- * then scrolls to #install instructions — see installApp.ts.
+ * Android: `beforeinstallprompt` → `prompt()` when available.
+ * Otherwise: scroll to #install (never Web Share — that isn’t A2HS).
  */
 export function InstallShortcut({
   className,
-  label = 'Install',
+  label,
   compact,
 }: {
   className?: string
@@ -28,14 +30,22 @@ export function InstallShortcut({
   compact?: boolean
 }) {
   const [standalone, setStandalone] = useState(false)
+  const [resolvedLabel, setResolvedLabel] = useState(label ?? 'Install')
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
     ensureInstallListeners()
-    // Client-only display-mode check; SSR renders the control then may hide.
+    // Client-only display-mode / UA checks; SSR shows a generic control then may refine.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setStandalone(isStandalonePwa())
-  }, [])
+    if (label != null) {
+      setResolvedLabel(label)
+    } else if (isAppleMobileDevice()) {
+      setResolvedLabel('How to install')
+    } else {
+      setResolvedLabel('Install')
+    }
+  }, [label])
 
   if (standalone) return null
 
@@ -58,23 +68,33 @@ export function InstallShortcut({
       aria-busy={busy || undefined}
       onClick={onInstallClick}
     >
-      {label}
+      {resolvedLabel}
     </a>
   )
 }
 
 /**
- * iOS Add to Home Screen guidance. Collapses when already running as a
+ * Add to Home Screen guidance. Collapses when already running as a
  * standalone PWA (installed users shouldn't see install steps).
  */
 export default function InstallSection() {
   const [standalone, setStandalone] = useState(false)
+  const [showNativeInstall, setShowNativeInstall] = useState(false)
 
   useEffect(() => {
     ensureInstallListeners()
     // Client-only display-mode check; SSR always shows the section.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setStandalone(isStandalonePwa())
+
+    const syncPrompt = () => setShowNativeInstall(hasNativeInstallPrompt())
+    syncPrompt()
+    window.addEventListener('beforeinstallprompt', syncPrompt)
+    window.addEventListener('appinstalled', syncPrompt)
+    return () => {
+      window.removeEventListener('beforeinstallprompt', syncPrompt)
+      window.removeEventListener('appinstalled', syncPrompt)
+    }
   }, [])
 
   if (standalone) return null
@@ -84,19 +104,29 @@ export default function InstallSection() {
       <div className="landing-section__inner landing-section__inner--split">
         <div className="landing-section__copy landing-rise">
           <p className="landing-eyebrow">Install</p>
-          <h2 className="landing-h2">Add GRIND to your Home Screen</h2>
+          <h2 className="landing-h2" id="install-heading">
+            Add GRIND to your Home Screen
+          </h2>
           <p className="landing-lead">
             The full gym experience is a PWA — no App Store. On iPhone it feels like a native app
             once it lives on your Home Screen.
           </p>
-          <div className="landing-install__actions">
-            <InstallShortcut label="Add to Home Screen" />
-          </div>
+          <p className="landing-install__note">
+            On iPhone and iPad there is no way for a website button to open Safari’s Add to Home
+            Screen sheet. Use the <strong>Share</strong> icon in Safari’s toolbar (not a button on
+            this page), then choose <strong>Add to Home Screen</strong> or{' '}
+            <strong>Add to Dock</strong>.
+          </p>
+          {showNativeInstall ? (
+            <div className="landing-install__actions">
+              <InstallShortcut label="Install app" />
+            </div>
+          ) : null}
           <ol className="landing-install__steps">
             <li>
               <span className="landing-install__step-n">1</span>
               <span>
-                Tap <strong>Share</strong> in Safari
+                In <strong>Safari</strong>, tap <strong>Share</strong> in the browser toolbar
                 <span className="landing-install__share" aria-hidden="true">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
                     <path
@@ -114,12 +144,14 @@ export default function InstallSection() {
                     />
                   </svg>
                 </span>
+                — the box with the upward arrow, not GRIND’s Install button
               </span>
             </li>
             <li>
               <span className="landing-install__step-n">2</span>
               <span>
-                Choose <strong>Add to Home Screen</strong>
+                Choose <strong>Add to Home Screen</strong> or <strong>Add to Dock</strong> (wording
+                varies by iOS version)
               </span>
             </li>
             <li>
@@ -130,7 +162,8 @@ export default function InstallSection() {
             </li>
           </ol>
           <p className="landing-install__android">
-            On Android Chrome: menu → <strong>Install app</strong> or Add to Home Screen.
+            On Android Chrome: use <strong>Install</strong> when the browser offers it, or menu →{' '}
+            <strong>Install app</strong> / Add to Home Screen.
           </p>
         </div>
       </div>
@@ -180,7 +213,7 @@ export function LandingFooter() {
           <a href="#start" className="landing-footer__link press" data-haptic="light">
             Get started
           </a>
-          <InstallShortcut className="landing-footer__install" label="Add to Home Screen" />
+          <InstallShortcut className="landing-footer__install" label="How to install" />
         </nav>
         <p className="landing-footer__legal">© {year} GRIND · Free to start</p>
       </div>

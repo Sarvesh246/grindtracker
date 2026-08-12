@@ -82,9 +82,8 @@ export default function HeroDemo() {
               </span>
             </div>
             {/*
-              PR mirrors ActiveWorkout intent: same-size weight/reps boxes;
-              the PR pill overlays the top-right corner of the reps box
-              (absolute + translate) so it never steals grid track width.
+              Same-size LBS/REPS boxes as other rows; PR stacks below the reps
+              box (all breakpoints) so it never crowds the “8”.
             */}
             <div className="landing-hero-set landing-hero-set--active">
               <span className="landing-hero-set__label">SET 3</span>
