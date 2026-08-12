@@ -2024,24 +2024,35 @@ html.reduce-motion .coach-history {
   align-items: flex-start;
 }
 .coach-msg__row {
+  position: relative;
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: 0;
   width: 100%;
   min-width: 0;
+  /* Room for the overlapping G badge on the bubble’s top-left corner. */
+  padding-top: 11px;
+  padding-left: 11px;
 }
 .coach-msg__avatar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 2;
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
-  margin-top: 2px;
+  width: 32px;
+  height: 32px;
   border-radius: var(--radius-pill);
   background: var(--accent);
   color: var(--on-accent);
   overflow: hidden;
+  /* Surface ring punches through the bubble so the badge feels attached. */
+  box-shadow:
+    0 0 0 3px var(--surface),
+    0 2px 10px rgba(0, 0, 0, 0.28);
 }
 .coach-msg__avatar svg {
   display: block;
