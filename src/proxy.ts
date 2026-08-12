@@ -20,6 +20,9 @@ import {
 /** Paths that never need an auth decision. */
 function isPublicPath(pathname: string): boolean {
   return (
+    // Exact `/` only — marketing landing. Deep links still require auth so
+    // unauthenticated hits to /home, /log, etc. redirect straight to /login.
+    pathname === '/' ||
     pathname.startsWith('/login') ||
     pathname.startsWith('/auth') ||
     // Cron authenticates via CRON_SECRET bearer, not the user session.
