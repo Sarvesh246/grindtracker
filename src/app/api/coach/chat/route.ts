@@ -275,7 +275,7 @@ Remember: pick the best structure for THIS question (simple→short, workout→e
       model: google(modelId),
       system,
       messages: [...history, { role: 'user', content: message }],
-      maxOutputTokens: 1024,
+      maxOutputTokens: 1536,
       temperature: 0.4,
       // Keep thinking minimal / off. Do NOT hardcode thinkingBudget: 0 —
       // Gemini 3.x Flash-Lite (incl. gemini-3.5-flash-lite and
