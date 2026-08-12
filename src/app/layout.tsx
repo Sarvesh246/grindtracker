@@ -49,7 +49,7 @@ export async function generateViewport(): Promise<Viewport> {
     // so iOS will not auto-zoom on focus; bottom bars stay layout-safe without
     // locking scale.
     viewportFit: 'cover',
-    themeColor: theme === 'light' ? '#ecebe7' : '#0f0f0f',
+    themeColor: theme === 'light' ? '#ddd9d0' : '#0f0f0f',
   }
 }
 

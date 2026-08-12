@@ -108,31 +108,38 @@
 /* ---------------------------------------------------------------------------
    Light theme. Activated by `class="light"` on <html> (set server-side from the
    grind_theme_pref cookie, then toggled client-side by ThemeContext). Only the
-   color mirror vars change ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ every size/font/radius token is shared. Warm neutral
-   surfaces (not pure white) keep the look calm and on-brand; the lime accent fill
-   is unchanged, while lime TEXT darkens to olive so it stays readable on white.
+   color mirror vars change — every size/font/radius token is shared.
+
+   Warm paper stack (no pure white): calmer than dark’s OLED black but not an
+   eye-burn whiteout. Lime FILL stays brand-bright; lime TEXT darkens to olive
+   (`--accent-text`) so it stays readable on paper. Borders + muted text sit
+   a step darker than earlier drafts for legibility.
    --------------------------------------------------------------------------- */
 html.light {
   color-scheme: light;
 
-  --bg: #ecebe7;
-  --surface: #ffffff;
-  --surface-elevated: #f4f3ef;
-  --border: #e0ded7;
-  --border-strong: #cbc8bf;
+  /* Warm paper stack — no pure white, less glare than the prior near-white
+     surfaces while staying clearly “light” vs dark. */
+  --bg: #ddd9d0;
+  --surface: #efece5;
+  --surface-elevated: #f7f5ef;
+  --border: #d0cbc0;
+  --border-strong: #b8b2a4;
   --accent: #c8f135;
   --accent-dim: #8faa24;
   --accent-deep: #5a7a1a;
-  --accent-text: #5f7a16;
-  --accent-wash: rgba(143, 170, 36, 0.16);
-  --text-primary: #1a1a1a;
-  --text-secondary: #5c5c5c;
-  --text-muted: #87847b;
-  --text-disabled: #b5b2a9;
+  --accent-text: #4f6612;
+  --accent-wash: rgba(95, 122, 22, 0.14);
+  --text-primary: #171614;
+  --text-secondary: #45423c;
+  --text-muted: #656158;
+  --text-disabled: #989388;
   --danger: #dc2626;
   --danger-bg: rgba(220, 38, 38, 0.08);
   --danger-bg-hover: rgba(220, 38, 38, 0.14);
-  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 2px 8px rgba(0, 0, 0, 0.04);
+  --card-shadow:
+    0 1px 2px rgba(40, 36, 28, 0.06),
+    0 4px 16px rgba(40, 36, 28, 0.07);
 }
 
 *,
@@ -1133,7 +1140,10 @@ html.reduce-motion *::after {
   border-radius: var(--radius-pill) !important;
 }
 html.light .coach-fab {
-  box-shadow: var(--card-shadow);
+  /* Resting depth so the orb isn’t a flat lime disc on paper. */
+  box-shadow:
+    0 2px 6px rgba(40, 36, 28, 0.14),
+    0 8px 22px rgba(40, 36, 28, 0.12);
 }
 .coach-fab:active {
   cursor: grabbing;
@@ -1162,7 +1172,7 @@ html.light .coach-fab {
   align-items: center;
   justify-content: center;
 }
-/* Idle breathe ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±4px over ~3s; paused when dragging / settling / open. */
+/* Idle breathe — ±4px over ~3s; paused when dragging / settling / open. */
 @keyframes coach-fab-float {
   0%,
   100% {
@@ -1175,7 +1185,7 @@ html.light .coach-fab {
 .coach-fab--alive .coach-fab__float {
   animation: coach-fab-float 3s ease-in-out infinite;
 }
-/* Tap/drag glow ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ release fade only (hold uses --pressed sustained glow). */
+/* Tap/drag glow — release fade only (hold uses --pressed sustained glow). */
 @keyframes coach-fab-glow {
   0% {
     box-shadow:
@@ -1187,10 +1197,29 @@ html.light .coach-fab {
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
   }
 }
+/* Light: accent rings alone wash out on paper — add dark shadow rings. */
+@keyframes coach-fab-glow-light {
+  0% {
+    box-shadow:
+      0 0 0 5px color-mix(in srgb, var(--accent) 70%, transparent),
+      0 0 0 12px color-mix(in srgb, var(--accent) 35%, transparent),
+      0 0 28px 8px color-mix(in srgb, var(--accent) 40%, transparent),
+      0 6px 18px rgba(40, 36, 28, 0.28),
+      0 14px 36px rgba(40, 36, 28, 0.18);
+  }
+  100% {
+    box-shadow:
+      0 2px 6px rgba(40, 36, 28, 0.14),
+      0 8px 22px rgba(40, 36, 28, 0.12);
+  }
+}
 .coach-fab--glow {
   animation: coach-fab-glow 450ms cubic-bezier(0.22, 1, 0.36, 1);
 }
-/* Sustained press/hold ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ scale + accent glow for the whole pointer-down. */
+html.light .coach-fab--glow {
+  animation-name: coach-fab-glow-light;
+}
+/* Sustained press/hold — scale + accent glow for the whole pointer-down. */
 .coach-fab--pressed {
   transform: scale(0.94);
   box-shadow:
@@ -1203,9 +1232,11 @@ html.light .coach-fab {
 }
 html.light .coach-fab--pressed {
   box-shadow:
-    0 0 0 8px color-mix(in srgb, var(--accent) 35%, transparent),
-    0 0 36px 14px color-mix(in srgb, var(--accent) 40%, transparent),
-    var(--card-shadow);
+    0 0 0 5px color-mix(in srgb, var(--accent) 70%, transparent),
+    0 0 0 12px color-mix(in srgb, var(--accent) 35%, transparent),
+    0 0 28px 8px color-mix(in srgb, var(--accent) 40%, transparent),
+    0 6px 18px rgba(40, 36, 28, 0.28),
+    0 14px 36px rgba(40, 36, 28, 0.18);
 }
 /* Special G tap: deeper press than shared `.press` (0.96 ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ 0.9) ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ pressed class owns hold. */
 .coach-fab.press:active:not(.coach-fab--dragging):not(.coach-fab--settling):not(.coach-fab--pressed) {
@@ -1239,13 +1270,17 @@ html.light .coach-fab--pressed {
     0 20px 44px rgba(0, 0, 0, 0.58);
 }
 html.light .coach-fab--dragging {
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.24);
+  box-shadow:
+    0 4px 12px rgba(40, 36, 28, 0.18),
+    0 18px 40px rgba(40, 36, 28, 0.2);
 }
 html.light .coach-fab--dragging.coach-fab--pressed {
   box-shadow:
-    0 0 0 8px color-mix(in srgb, var(--accent) 35%, transparent),
-    0 0 36px 14px color-mix(in srgb, var(--accent) 40%, transparent),
-    0 18px 40px rgba(0, 0, 0, 0.24);
+    0 0 0 5px color-mix(in srgb, var(--accent) 70%, transparent),
+    0 0 0 12px color-mix(in srgb, var(--accent) 35%, transparent),
+    0 0 28px 8px color-mix(in srgb, var(--accent) 40%, transparent),
+    0 8px 22px rgba(40, 36, 28, 0.28),
+    0 18px 40px rgba(40, 36, 28, 0.2);
 }
 .coach-fab--settling {
   transform: scale(1);

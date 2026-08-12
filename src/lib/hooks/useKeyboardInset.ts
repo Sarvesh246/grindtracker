@@ -35,12 +35,29 @@ const IDLE: KeyboardMetrics = {
 }
 
 const OPEN_THRESHOLD = 60
+/** Pinch-zoom: treat VV scale drift as zoom, never as a keyboard. */
+const ZOOM_SCALE_EPS = 0.02
 
 /** Soft spring toward VV targets — iOS fires resize in coarse steps. */
 const KB_SPRING_K = 180
 const KB_SPRING_C = 26
 const KB_SETTLE_POS = 0.4
 const KB_SETTLE_VEL = 8
+
+/** True when visualViewport reports pinch-zoom (not Ctrl+/- CSS zoom). */
+export function isVisualViewportZoomed(scale: number | undefined | null): boolean {
+  return Math.abs((scale ?? 1) - 1) > ZOOM_SCALE_EPS
+}
+
+export function isEditableElement(el: EventTarget | null): boolean {
+  if (!el || typeof HTMLElement === 'undefined') return false
+  if (!(el instanceof HTMLElement)) return false
+  return (
+    el.tagName === 'INPUT' ||
+    el.tagName === 'TEXTAREA' ||
+    el.isContentEditable
+  )
+}
 
 /**
  * visualViewport keyboard / occlusion metrics.
@@ -53,7 +70,11 @@ const KB_SETTLE_VEL = 8
  * Quirks handled here:
  * - Some iOS PWA paths briefly shrink `window.innerHeight` with the keyboard,
  *   which makes `innerHeight - vv.height ≈ 0`. We keep a closed-keyboard
- *   baseline and compare VV height against that.
+ *   baseline and compare VV height against that — but ONLY while an editable
+ *   is focused. Browser zoom (Ctrl+/-) also shrinks CSS viewport height and
+ *   used to leave a ratcheted baseline stuck "open" until refresh.
+ * - Pinch-zoom (`visualViewport.scale ≠ 1`) is forced closed and ignored for
+ *   baseline updates.
  * - Autofocus / focus often updates VV a beat late — we remeasure on a short
  *   schedule after `focusin`.
  * - VV resize often jumps in discrete steps; inset/occluded/visibleHeight/
@@ -79,8 +100,10 @@ export function useKeyboardMetrics(): KeyboardMetrics {
       return
     }
 
-    // Largest layout height seen while the keyboard looks closed. Comparing
-    // VV against this stays correct when iOS also shrinks `innerHeight`.
+    // Largest layout height seen while an editable is focused and the keyboard
+    // looks closed. Comparing VV against this stays correct when iOS also
+    // shrinks `innerHeight`. Recalibrated whenever nothing is focused so
+    // browser zoom cannot leave a stale tall baseline stuck open.
     let baseline = Math.max(window.innerHeight, Math.round(vv.height))
     const focusTimers: number[] = []
 
@@ -195,14 +218,44 @@ export function useKeyboardMetrics(): KeyboardMetrics {
       if (raf == null) raf = requestAnimationFrame(tick)
     }
 
+    const closedTarget = (
+      visibleHeight: number,
+      offsetTop: number,
+    ): KeyboardMetrics => ({
+      inset: 0,
+      occluded: 0,
+      offsetTop,
+      visibleHeight,
+      open: false,
+    })
+
     const update = () => {
       const offsetTop = Math.round(vv.offsetTop)
       const visibleHeight = Math.round(vv.height)
       const layoutH = window.innerHeight
       const layoutOcc = layoutH - visibleHeight
+      const editableFocused = isEditableElement(document.activeElement)
+
+      // Pinch-zoom shrinks VV height like a keyboard — never treat it as one.
+      if (isVisualViewportZoomed(vv.scale)) {
+        target = closedTarget(visibleHeight, offsetTop)
+        kickSpring()
+        return
+      }
+
+      // No focused field: recalibrate baseline and force closed. Browser zoom
+      // (Ctrl+/-) changes CSS viewport size without focusing an input; a
+      // ratcheted baseline would otherwise stick `open` until refresh.
+      if (!editableFocused) {
+        baseline = Math.max(layoutH, visibleHeight)
+        target = closedTarget(visibleHeight, offsetTop)
+        kickSpring()
+        return
+      }
 
       // Grow baseline only when nothing looks like a keyboard (no occlusion,
-      // no VV pan). Shrinking never lowers the baseline mid-session.
+      // no VV pan). Shrinking never lowers the baseline mid-session while
+      // focused — iOS may shrink innerHeight with the keyboard.
       if (layoutOcc < OPEN_THRESHOLD && offsetTop < OPEN_THRESHOLD) {
         baseline = Math.max(baseline, layoutH, visibleHeight)
       } else if (baseline < layoutH) {
@@ -231,15 +284,7 @@ export function useKeyboardMetrics(): KeyboardMetrics {
     // iOS often fires focus before VV resize settles (autofocus / tap). A few
     // delayed samples catch the keyboard animation without fighting pan lock.
     const onFocusIn = (e: FocusEvent) => {
-      const t = e.target
-      if (
-        !(t instanceof HTMLElement) ||
-        (t.tagName !== 'INPUT' &&
-          t.tagName !== 'TEXTAREA' &&
-          !t.isContentEditable)
-      ) {
-        return
-      }
+      if (!isEditableElement(e.target)) return
       clearFocusTimers()
       update()
       requestAnimationFrame(update)

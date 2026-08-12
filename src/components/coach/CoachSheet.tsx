@@ -1316,7 +1316,7 @@ export default function CoachSheet() {
   // Compact: keep lifting via `bottom` (small card, not a full-page shrink).
   const topDocked = dock === 'tl' || dock === 'tr'
   const pageKeyboardActive =
-    isPage && !closing && !boxLock && keyboardOpen
+    isPage && !closing && !boxLock && keyboardOpen && composerFocused
   const sheetKeyboardStyle: CSSProperties | undefined = (() => {
     if (closing || boxLock) return undefined
     if (pageKeyboardActive) {
@@ -1340,7 +1340,7 @@ export default function CoachSheet() {
         paddingBottom: 0,
       }
     }
-    if (!isPage && !topDocked && keyboardInset > 0) {
+    if (!isPage && !topDocked && composerFocused && keyboardInset > 0) {
       return { bottom: keyboardInset + 12 }
     }
     return undefined

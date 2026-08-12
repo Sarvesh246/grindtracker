@@ -16,13 +16,13 @@ const PREF_KEY = 'grind_theme_pref'
 // Mobile browser chrome color, kept in sync with --bg per theme.
 export const THEME_COLOR: Record<Theme, string> = {
   dark: '#0f0f0f',
-  light: '#ecebe7',
+  light: '#ddd9d0',
 }
 
 /** Coach page sheet / elevated chrome — matches CSS `--surface`. */
 export const SURFACE_THEME_COLOR: Record<Theme, string> = {
   dark: '#1a1a1a',
-  light: '#ffffff',
+  light: '#efece5',
 }
 
 interface ThemeContextValue {
