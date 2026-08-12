@@ -11,6 +11,7 @@ import {
   FriendsMock,
 } from './FeatureDemos'
 import InstallSection, { FinalCta, LandingFooter } from './InstallSection'
+import MobileInstallPill from './MobileInstallPill'
 import GoogleSignInButton from '@/components/GoogleSignInButton'
 
 function Section({
@@ -129,6 +130,7 @@ export default function LandingPage() {
       </main>
 
       <LandingFooter />
+      <MobileInstallPill />
     </div>
   )
 }

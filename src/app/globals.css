@@ -3224,6 +3224,126 @@ ol.coach-md__list,
   }
 }
 
+/* Mobile A2HS tip — replaces the header Install control on small screens */
+.landing-install-pill {
+  position: fixed;
+  left: 50%;
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  max-width: calc(100vw - 28px);
+  padding: 4px 4px 4px 6px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--surface-elevated) 92%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.38);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transform: translateX(-50%);
+  animation: landing-install-pill-in 280ms ease backwards;
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.landing-install-pill--hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 10px);
+}
+
+.landing-install-pill--closing {
+  animation: none;
+}
+
+.landing-install-pill__action {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 4px 10px 4px 8px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.landing-install-pill__icon {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-pill);
+  background: var(--accent-wash);
+  color: var(--accent-text);
+}
+
+.landing-install-pill__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.landing-install-pill__eyebrow {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-text);
+  line-height: 1.1;
+}
+
+.landing-install-pill__text {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.landing-install-pill__dismiss {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.landing-install-pill__dismiss:hover {
+  color: var(--text-primary);
+}
+
+@keyframes landing-install-pill-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 12px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+@media (min-width: 900px) {
+  .landing-install-pill {
+    display: none;
+  }
+}
+
 .landing-install__actions {
   margin-top: 20px;
 }
