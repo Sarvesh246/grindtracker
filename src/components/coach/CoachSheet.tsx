@@ -95,6 +95,13 @@ export default function CoachSheet() {
     document.body.style.overflow = 'hidden'
     return () => {
       document.body.style.overflow = prev
+      // Heal any residual visual-viewport pan from the focused composer when
+      // the page sheet unmounts (close, or collapse back to compact).
+      try {
+        window.scrollTo(window.scrollX, window.scrollY)
+      } catch {
+        // ignore
+      }
     }
   }, [open, isPage])
 

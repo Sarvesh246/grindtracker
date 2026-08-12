@@ -194,12 +194,32 @@ export function CoachProvider({ children }: { children: ReactNode }) {
   }, [quotaLoaded, refreshQuota, refreshConversations])
 
   const closeCoach = useCallback(() => {
+    // Blur the composer before unmount so iOS doesn't leave the layout
+    // viewport panned after the focused field disappears (standalone PWA).
+    const active = document.activeElement
+    if (active instanceof HTMLElement) active.blur()
+
     setOpen(false)
     setSize('compact')
     setHistoryOpen(false)
+
+    // Same-position scrollTo is a no-op for the page but forces WebKit to
+    // clamp a leftover visual-viewport pan and re-anchor fixed layers — the
+    // same heal used after keyboard dismiss in ActiveWorkout.
+    const reanchor = () => {
+      try {
+        window.scrollTo(window.scrollX, window.scrollY)
+      } catch {
+        // ignore
+      }
+    }
+    reanchor()
     requestAnimationFrame(() => {
+      reanchor()
       fabRef.current?.focus()
     })
+    window.setTimeout(reanchor, 250)
+    window.setTimeout(reanchor, 600)
   }, [])
 
   const expandToPage = useCallback(() => {
