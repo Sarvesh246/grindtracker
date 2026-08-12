@@ -26,11 +26,16 @@ import CoachHistory from './CoachHistory'
 import CoachMessageContent from './CoachMessageContent'
 import {
   RUBBER_FACTOR,
+  SHEET_DISMISS_FLICK_VY,
+  SHEET_FLICK_VY,
   SHEET_SETTLE_POS,
   SHEET_SETTLE_VEL,
   SHEET_SPRING_C,
   SHEET_SPRING_K,
   readTranslateY,
+  sheetDismissThreshold,
+  sheetExpandThreshold,
+  sheetMinimizeThreshold,
 } from './coachMotion'
 import { useCoach } from './CoachProvider'
 
@@ -46,8 +51,6 @@ const EXIT_MS = 560
 const SIZE_MS = 640
 const ENTER_MS = 640
 const PULL_AXIS_LOCK = 8
-/** Gentle flick → collapse; harder flick (≥ this × 1.25 from page) → close */
-const FLICK_VY = 900
 const VEL_EMA = 0.78
 /** 1:1 upward travel while expandable before light rubber-band. */
 const EXPAND_RUBBER_AT = 160
@@ -101,7 +104,10 @@ export default function CoachSheet() {
 
   const exit = useExitingValue(open ? true : null, EXIT_MS)
   const mounted = exit.data != null
-  const closing = exit.closing
+  // useExitingValue flips `closing` in an effect — one frame too late for
+  // gesture dismiss, where clearing pullY before this flag lands snaps the
+  // sheet back to translateY(0) (middle flash). Derive synchronously.
+  const closing = mounted && !open
   const activelyOpen = open && !closing
 
   type PullPhase = 'idle' | 'dragging' | 'settling'
@@ -270,22 +276,24 @@ export default function CoachSheet() {
 
   /**
    * Continue the pull motion off-screen, then close — same physical sheet,
-   * not a snappy cut/fade in place.
+   * not a snappy cut/fade in place. Never reset translateY to 0 before exit.
    */
   const flingOffAndClose = useCallback(
     (fromY: number, fromVy: number) => {
       cancelSettle()
       const h = sheetH.current || 400
       const offY = Math.max(fromY + 48, h + 24)
-      const progress = Math.min(1, Math.max(0, fromY) / Math.max(110, h * 0.32))
+      const dismissAt = sheetDismissThreshold(h)
+      const progress = Math.min(1, Math.max(0, fromY) / dismissAt)
       setDismissBackdropOpacity(0.45 * (1 - progress * 0.85))
       setBackdropOut(false)
       setPullDismissing(true)
 
       if (reduceMotion) {
-        setGestureDismissY(fromY)
-        pullYRef.current = 0
-        setPullY(0)
+        // Jump-unmount from the finger offset — no settle-to-0 flash.
+        setGestureDismissY(Math.max(fromY, 1))
+        pullYRef.current = fromY
+        setPullY(fromY)
         setPullPhase('idle')
         closeCoach()
         return
@@ -302,17 +310,21 @@ export default function CoachSheet() {
         pullYRef.current = y
         setPullY(y)
         if (y >= offY) {
-          setGestureDismissY(y)
-          pullYRef.current = 0
-          setPullY(0)
+          // Hold the off-screen offset through closeCoach → exit. Clearing
+          // pullY here used to flash the sheet at rest for one frame.
+          const holdY = y
+          setGestureDismissY(holdY)
+          pullYRef.current = holdY
+          setPullY(holdY)
           setPullPhase('idle')
           settleRaf.current = null
           closeCoach()
           // Keep sliding a bit further during the exit fade.
           requestAnimationFrame(() => {
-            setGestureDismissY(prev =>
-              Math.max(prev, y + Math.min(v * 0.18, 120)),
-            )
+            const extra = holdY + Math.min(v * 0.18, 120)
+            setGestureDismissY(prev => Math.max(prev, extra))
+            pullYRef.current = Math.max(pullYRef.current, extra)
+            setPullY(prev => Math.max(prev, extra))
           })
           return
         }
@@ -419,30 +431,32 @@ export default function CoachSheet() {
       const y = pullYRef.current
       const vy = velY.current
       const h = sheetH.current || 400
-      const collapseThreshold = Math.max(56, h * 0.22)
-      const closeThreshold = Math.max(110, h * 0.32)
-      const expandThreshold = Math.max(56, Math.min(120, h * 0.2))
-      const flickedDown = vy > FLICK_VY
-      const flickedUp = vy < -FLICK_VY
-      const hardFlickDown = vy > FLICK_VY * 1.25
+      const minimizeAt = sheetMinimizeThreshold(h)
+      const dismissAt = sheetDismissThreshold(h)
+      const expandAt = sheetExpandThreshold(h)
+      const flickedDown = vy > SHEET_FLICK_VY
+      const flickedUp = vy < -SHEET_FLICK_VY
+      const hardFlickDown = vy > SHEET_DISMISS_FLICK_VY
 
       let shouldClose = false
       let shouldCollapse = false
       let shouldExpand = false
 
-      // Drag-up: compact → page. Drag-down: page → compact; compact (or a
-      // hard flick from page) → close. Velocity-aware like pull-to-dismiss.
+      // Three resting ends: page (expanded), compact (mini), off-screen (closed).
+      // Finger tracks 1:1 while down; release springs to the chosen end.
+      // From page: minimize zone is wide — only past dismissAt / hard flick closes.
+      // From compact: further pull / flick closes; pull up expands.
       if (y < 0 || flickedUp) {
-        if (size !== 'page' && (y < -expandThreshold || flickedUp)) {
+        if (size !== 'page' && (y < -expandAt || flickedUp)) {
           shouldExpand = true
         }
       } else if (size === 'page') {
-        if (y > closeThreshold || hardFlickDown) {
+        if (y > dismissAt || hardFlickDown) {
           shouldClose = true
-        } else if (y > collapseThreshold || flickedDown) {
+        } else if (y > minimizeAt || flickedDown) {
           shouldCollapse = true
         }
-      } else if (y > closeThreshold || flickedDown) {
+      } else if (y > dismissAt || flickedDown) {
         shouldClose = true
       }
 
@@ -453,6 +467,7 @@ export default function CoachSheet() {
 
       setGestureDismissY(0)
       setDismissBackdropOpacity(null)
+      setPullDismissing(false)
       if (shouldExpand) {
         expandToPage()
       } else if (shouldCollapse) {
@@ -498,14 +513,22 @@ export default function CoachSheet() {
   const empty = messages.length === 0
   const dragging = pullPhase === 'dragging'
   const settling = pullPhase === 'settling'
-  const exitDismissY = closing ? gestureDismissY : 0
+  // Gesture dismiss keeps its Y whether closing has latched or not — never
+  // fall back to resting layout mid-handoff.
+  const exitDismissY =
+    gestureDismissY > 0
+      ? Math.max(gestureDismissY, pullY)
+      : closing && pullDismissing && pullY > 0
+        ? pullY
+        : 0
+  const fromDragDismiss = exitDismissY > 0
   const origin =
     dock === 'tl' || dock === 'bl' ? 'bottom left' : 'bottom right'
 
   const sheetTransition = (() => {
     const curve = 'cubic-bezier(0.22, 1, 0.36, 1)'
     // Gesture-dismiss exit: continue translateY off-screen while opacity fades.
-    if (!reduceMotion && closing && exitDismissY > 0) {
+    if (!reduceMotion && closing && fromDragDismiss) {
       return `transform ${EXIT_MS}ms ${curve}`
     }
     if (reduceMotion || dragging || settling) return 'none'
@@ -524,29 +547,28 @@ export default function CoachSheet() {
   })()
 
   // Backdrop fades with drag progress toward dismiss; CSS owns exit fade.
-  // Use the compact close threshold (110px) so we don't read sheetH during render.
   const dismissProgress =
     (dragging || settling || pullDismissing) && pullY > 0
-      ? Math.min(1, pullY / 110)
+      ? Math.min(1, pullY / sheetDismissThreshold(sheetH.current || 400))
       : 0
   const backdropOpacity = 0.45 * (1 - dismissProgress * 0.85)
 
   const sheetTransform = (() => {
-    if (exitDismissY > 0) {
+    // Live pull / RAF settle / post-fling hold — always prefer the finger offset.
+    if (dragging || settling || pullDismissing) {
+      return `translate3d(0, ${pullY}px, 0)`
+    }
+    if (fromDragDismiss) {
       return `translate3d(0, ${exitDismissY}px, 0)`
     }
     // Button-close exit uses CSS keyframes for translate; don't fight them.
     if (closing) return undefined
-    // Live pull / RAF settle — 1:1 while dragging, spring while settling.
-    if (dragging || settling) {
-      return `translate3d(0, ${pullY}px, 0)`
-    }
     return undefined
   })()
 
   // Compact sheet always has a scrim; full page does not (except gesture-dismiss
   // from compact, which keeps the dimmed scrim through the exit).
-  const showBackdrop = !isPage || exitDismissY > 0 || pullDismissing
+  const showBackdrop = !isPage || fromDragDismiss || pullDismissing
 
   // Lift fixed sheet above the iOS keyboard so autofocus can't bury the composer.
   // Top-docked desktop cards use `top`/`bottom:auto` — don't override bottom there.
@@ -566,7 +588,7 @@ export default function CoachSheet() {
         <button
           type="button"
           className={`coach-backdrop${closing ? ' coach-backdrop--closing' : ''}${
-            closing && exitDismissY > 0
+            closing && fromDragDismiss
               ? ' coach-backdrop--closing-from-drag'
               : ''
           }`}
@@ -594,7 +616,7 @@ export default function CoachSheet() {
         ref={sheetRef}
         className={`coach-sheet coach-sheet--${visualSize}${
           closing ? ' coach-sheet--closing' : ''
-        }${exitDismissY > 0 ? ' coach-sheet--closing-from-drag' : ''}${
+        }${fromDragDismiss ? ' coach-sheet--closing-from-drag' : ''}${
           dragging ? ' coach-sheet--pulling' : ''
         }`}
         data-dock={dock}

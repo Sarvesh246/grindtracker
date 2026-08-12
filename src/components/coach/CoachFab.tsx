@@ -239,8 +239,7 @@ export default function CoachFab() {
         if (held < DRAG_ACTIVATE_MS && dist < DRAG_FAST_THRESHOLD) return
         moved.current = true
         setDragging(true)
-        setPressed(false)
-        setGlowing(false)
+        // Keep --pressed glow while the finger is down through the drag.
         cancelSquashSpring()
       }
 
@@ -287,6 +286,9 @@ export default function CoachFab() {
         // ignore
       }
 
+      // Glow fades out on release (tap or drag) — not snipped when drag starts.
+      releaseGlow()
+
       if (wasDrag && pos) {
         const centerX = pos.x
         const centerY = pos.y
@@ -315,8 +317,6 @@ export default function CoachFab() {
 
       setGhost(null)
       springSquashToRest()
-      // Satisfying tap release: glow eases out while scale springs back.
-      releaseGlow()
       // Tap haptic via data-haptic (iOS overlay + Android vibrate) — no extra
       // navigator.vibrate here (would double-buzz on Android).
       if (!open) openCoach()
@@ -376,9 +376,9 @@ export default function CoachFab() {
       type="button"
       className={`coach-fab press${dragging ? ' coach-fab--dragging' : ''}${
         settling ? ' coach-fab--settling' : ''
-      }${pressed && !dragging ? ' coach-fab--pressed' : ''}${
+      }${pressed ? ' coach-fab--pressed' : ''}${
         alive ? ' coach-fab--alive' : ''
-      }${glowing && !dragging && !pressed ? ' coach-fab--glow' : ''}${
+      }${glowing && !pressed ? ' coach-fab--glow' : ''}${
         capped ? ' coach-fab--capped' : ''
       }`}
       data-dock={dock}
