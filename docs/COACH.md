@@ -132,23 +132,27 @@ Weights stay **canonical lbs** in the pack; the system prompt tells the model
 to convert when `unit_preference` is `kg`.
 
 Reply behavior is enforced in `COACH_SYSTEM_PROMPT` for **every** turn
-(starter chips and free-typed questions share `POST /api/coach/chat`). The
-prompt optimizes for **intent → relevance → depth → format → action →
-confidence**, not for always being structured/personalized/detailed:
+(starter chips and free-typed questions share `POST /api/coach/chat`). These
+are **behavioral requirements**, not suggestions. Correct sequence:
 
-- Simple facts stay short with **no** forced personal history
-- Recommendations lead with **one decision** (+ brief why / fallback)
-- Workouts are immediately executable (bold exercise stacks)
-- Analysis separates **observed → interpretation (hedged) → action**
-- Exact output shapes ("3 things", yes/no, summary) are followed
-- Confidence matches evidence; safety overrides performance
+**Understand intent → assess complexity → determine relevance → choose depth → choose format → answer → verify**
 
-Structure (bullets, headings, tables, workout stacks) and personal
-`USER_DATA` are included only when they improve that ask. When a workout or
-similar list is structured, exercise names render as larger skim titles and
-detail lines stay quieter (`CoachMessageContent` title/stack blocks).
-Progressive disclosure stays **inside one reply** so users are not nudged
-into burning extra daily messages. Behavioral contracts live in
+Key gates:
+
+- Intent before formatting (never pick a template first)
+- Minimum necessary structure (no auto Application/Logging/Why/Summary)
+- Personalization Required / Useful / Unnecessary
+- Relevance over completeness
+- Answer-first decisions with commitment + fallback
+- Observed → hedged interpretation → recommendation
+- Exact output-shape compliance
+- Safety overrides performance
+- Final 14-point quality check before sending
+
+When a workout or similar list is structured, exercise names render as larger
+skim titles and detail lines stay quieter (`CoachMessageContent` title/stack
+blocks). Progressive disclosure stays **inside one reply** so users are not
+nudged into burning extra daily messages. Behavioral contracts live in
 `src/lib/coach/__tests__/prompt.test.ts`; the internal stress-test catalog
 (`src/lib/coach/stressCatalog.ts`) classifies prompts by personalization need
 and preferred format so regressions can be caught without live API calls.

@@ -3,40 +3,50 @@ import assert from 'node:assert/strict'
 import { COACH_SYSTEM_PROMPT } from '../prompt'
 
 /**
- * Behavioral contracts derived from Coach stress-testing.
+ * Behavioral contracts from Adaptive Response Behavior system rules.
  * Prefer root-cause rules in the system prompt over per-question patches.
  */
 const STRESS_CONTRACTS = [
   {
+    id: 'intent-before-formatting',
+    mustMatch: [
+      /Intent before formatting/i,
+      /Never pick a template before identifying intent/i,
+      /Understand intent → assess complexity → determine relevance → choose depth → choose format → answer → verify/i,
+    ],
+  },
+  {
     id: 'forced-formatting',
     mustMatch: [
-      /minimum structure/i,
+      /Minimum necessary structure/i,
       /Do NOT automatically add/i,
-      /Auto-adding Application \/ Logging \/ Why/i,
-      /not a checklist to fill/i,
+      /Application \/ Logging \/ Why \/ Key Takeaway \/ Progression/i,
+      /Personal History/i,
     ],
   },
   {
     id: 'personalization-threshold',
     mustMatch: [
-      /Personalization: required \/ useful \/ unnecessary/i,
+      /Personalization gate/i,
+      /Required: cannot answer correctly/i,
+      /Useful:/i,
+      /Unnecessary:/i,
       /What is RIR\?/i,
-      /Do NOT add logging gaps/i,
-      /"Explain X" ≠ "tell me what to do about X\."/i,
+      /"Explain X" ≠ "tell me what I should personally do about X\."/i,
     ],
   },
   {
     id: 'relevance-not-completeness',
     mustMatch: [
-      /lifetime volume/i,
-      /do not dump every metric/i,
-      /Treating more metrics/i,
+      /Relevance over completeness/i,
+      /Prefer relevant evidence over all available evidence/i,
+      /Do not dump every metric/i,
     ],
   },
   {
     id: 'decision-commitment',
     mustMatch: [
-      /ONE clear recommendation/i,
+      /Recommendation commitment/i,
       /Use 95 lb today/i,
       /You could do A, B, or C/i,
       /Decision → brief reason → fallback/i,
@@ -47,49 +57,49 @@ const STRESS_CONTRACTS = [
     mustMatch: [
       /Evidence vs interpretation/i,
       /likely.*suggests.*may be contributing/i,
-      /Causal overconfidence/i,
-      /Confidence language/i,
+      /Confidence language must match evidence/i,
+      /one possible explanation/i,
     ],
   },
   {
     id: 'output-shape',
     mustMatch: [
-      /Output-shape following/i,
-      /exactly three prioritized items/i,
+      /Exact output-shape compliance/i,
+      /exactly 3 prioritized items/i,
       /yes\/no/i,
     ],
   },
   {
     id: 'context-continuity',
     mustMatch: [
-      /Intent priority/i,
+      /Context hierarchy/i,
       /Explicit current request/i,
-      /Short prompts/i,
-      /Multi-turn/i,
-      /override a clear current ask/i,
+      /Short-message behavior/i,
+      /must not be overridden by older context/i,
     ],
   },
   {
     id: 'no-internal-jargon',
     mustMatch: [
-      /full lower-body catalog/i,
+      /No internal\/database language/i,
       /manual rotation/i,
-      /Internal\/database jargon/i,
+      /catalog/i,
     ],
   },
   {
     id: 'data-integrity',
     mustMatch: [
+      /Data integrity/i,
       /25 b/i,
       /90 min/i,
-      /Verify every number, unit, date/i,
+      /Never fabricate missing numbers/i,
     ],
   },
   {
     id: 'consistency',
     mustMatch: [
-      /internally consistent/i,
-      /Contradicting yourself/i,
+      /Internal consistency/i,
+      /balanced and a major category neglected/i,
     ],
   },
   {
@@ -98,6 +108,22 @@ const STRESS_CONTRACTS = [
       /Safety \(overrides performance\)/i,
       /Do not diagnose/i,
       /Do not encourage pushing through/i,
+      /Safety concern → immediate action/i,
+    ],
+  },
+  {
+    id: 'troubleshooting',
+    mustMatch: [
+      /Troubleshooting \("Why\?"\)/i,
+      /Do not assert a single cause unless evidence is strong/i,
+    ],
+  },
+  {
+    id: 'quality-check',
+    mustMatch: [
+      /Final quality check/i,
+      /Answered the actual question/i,
+      /Evidence vs interpretation separated/i,
     ],
   },
   {
@@ -112,22 +138,21 @@ const STRESS_CONTRACTS = [
       /Progress analysis/i,
       /Program design/i,
       /Complex coaching/i,
-      /Conflicting goals/i,
     ],
   },
   {
     id: 'progressive-disclosure',
     mustMatch: [
       /Layer 1 = immediate answer/i,
-      /Core principle/i,
-      /exactly what is most useful/i,
+      /must not need Layer 3 to understand Layer 1/i,
     ],
   },
 ] as const
 
 describe('COACH_SYSTEM_PROMPT', () => {
-  it('requires strategy over templates for every reply', () => {
-    assert.match(COACH_SYSTEM_PROMPT, /Core principle/i)
+  it('requires adaptive coach sequence over templates', () => {
+    assert.match(COACH_SYSTEM_PROMPT, /Behavioral requirements \(not suggestions\)/i)
+    assert.match(COACH_SYSTEM_PROMPT, /adaptive coach/i)
     assert.match(COACH_SYSTEM_PROMPT, /typed questions and starter chips/i)
     assert.match(COACH_SYSTEM_PROMPT, /Simple question = simple answer/i)
     assert.match(
@@ -136,7 +161,7 @@ describe('COACH_SYSTEM_PROMPT', () => {
     )
     assert.match(
       COACH_SYSTEM_PROMPT,
-      /More data, formatting, personalization, or explanation is NOT automatically better/i,
+      /NOT more detail \+ more personalization \+ more formatting/i,
     )
   })
 
@@ -150,7 +175,7 @@ describe('COACH_SYSTEM_PROMPT', () => {
       'Progress analysis',
       'Complex coaching',
       'Troubleshooting',
-      'numbered steps',
+      'numbered',
     ]) {
       assert.match(
         COACH_SYSTEM_PROMPT,
@@ -158,12 +183,11 @@ describe('COACH_SYSTEM_PROMPT', () => {
         `missing heuristic for ${shape}`,
       )
     }
-    assert.match(COACH_SYSTEM_PROMPT, /not a checklist to fill/i)
   })
 
   it('forbids forced structure and forced personalization', () => {
     assert.match(COACH_SYSTEM_PROMPT, /Do NOT automatically add/i)
-    assert.match(COACH_SYSTEM_PROMPT, /Personalization: required/i)
+    assert.match(COACH_SYSTEM_PROMPT, /Personalization gate/i)
     assert.match(COACH_SYSTEM_PROMPT, /What is RIR/i)
     assert.match(
       COACH_SYSTEM_PROMPT,
@@ -176,21 +200,17 @@ describe('COACH_SYSTEM_PROMPT', () => {
   })
 
   it('locks terminology, verified math, and coach tone', () => {
-    assert.match(COACH_SYSTEM_PROMPT, /Strict fitness\/anatomical terminology/i)
+    assert.match(COACH_SYSTEM_PROMPT, /Strict fitness terminology/i)
     assert.match(COACH_SYSTEM_PROMPT, /deadlifts, not "deadlocks"/i)
     assert.match(COACH_SYSTEM_PROMPT, /verify math/i)
     assert.match(COACH_SYSTEM_PROMPT, /Never generic motivational clich/i)
   })
 
-  it('personalizes only when it improves the answer', () => {
-    assert.match(COACH_SYSTEM_PROMPT, /ONLY when they help THIS ask/i)
+  it('personalizes only when Required or Useful', () => {
+    assert.match(COACH_SYSTEM_PROMPT, /Only use personal history when Required or Useful/i)
     assert.match(COACH_SYSTEM_PROMPT, /training_history/i)
     assert.match(COACH_SYSTEM_PROMPT, /significant_breaks/i)
-    assert.match(COACH_SYSTEM_PROMPT, /what weight today/i)
-    assert.match(
-      COACH_SYSTEM_PROMPT,
-      /Personalization: required \/ useful \/ unnecessary/i,
-    )
+    assert.match(COACH_SYSTEM_PROMPT, /Personalization gate/i)
   })
 
   it('points the model at rich USER_DATA sections when relevant', () => {
@@ -198,7 +218,7 @@ describe('COACH_SYSTEM_PROMPT', () => {
     assert.match(COACH_SYSTEM_PROMPT, /schedule\.last_trained_by_day/i)
     assert.match(COACH_SYSTEM_PROMPT, /body_weight\.summary/i)
     assert.match(COACH_SYSTEM_PROMPT, /active_session/i)
-    assert.match(COACH_SYSTEM_PROMPT, /when personalization IS warranted/i)
+    assert.match(COACH_SYSTEM_PROMPT, /when personalization IS Required or Useful/i)
   })
 
   it('enforces single-turn replies to protect message quota', () => {
@@ -212,7 +232,7 @@ describe('COACH_SYSTEM_PROMPT', () => {
   })
 
   it('prefers one clear recommendation and proportional workout formatting', () => {
-    assert.match(COACH_SYSTEM_PROMPT, /ONE clear recommendation/i)
+    assert.match(COACH_SYSTEM_PROMPT, /make ONE/i)
     assert.match(COACH_SYSTEM_PROMPT, /Use 95 lb today/i)
     assert.match(COACH_SYSTEM_PROMPT, /Visual hierarchy/i)
     assert.match(COACH_SYSTEM_PROMPT, /\*\*Barbell Squat\*\*/)
@@ -233,13 +253,12 @@ describe('COACH_SYSTEM_PROMPT', () => {
   }
 
   it('stays within a free-tier-friendly size budget', () => {
-    // Dense rules beat a novel; leave headroom for USER_DATA + history.
     assert.ok(
-      COACH_SYSTEM_PROMPT.length < 11000,
+      COACH_SYSTEM_PROMPT.length < 12000,
       `prompt too long: ${COACH_SYSTEM_PROMPT.length}`,
     )
     assert.ok(
-      COACH_SYSTEM_PROMPT.length > 4500,
+      COACH_SYSTEM_PROMPT.length > 5000,
       `prompt unexpectedly short: ${COACH_SYSTEM_PROMPT.length}`,
     )
   })

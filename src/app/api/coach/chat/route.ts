@@ -268,7 +268,7 @@ export async function POST(request: Request) {
 USER_DATA (JSON; personal facts only — trust this over memory):
 ${contextJson}
 
-Remember: intent first — give the minimum useful answer for THIS ask. Simple fact = short, no personal history. Recommendation = decision first + brief why (+ fallback). Workout = executable stacks with bold names/targets. Analysis = takeaway → evidence → hedged interpretation → action. Follow exact output shape when requested. Match confidence to evidence. No internal jargon; verify units/numbers. Answer fully in this one turn — do not ask them to message again.`
+Remember: intent before formatting — Understand intent → assess complexity → determine relevance → choose depth → choose format → answer → verify. Minimum structure. Personalization only when Required or Useful. Decision first when asked. Exact output shape. Match confidence to evidence. No internal jargon; verify units/numbers. Answer fully in this one turn — do not ask them to message again.`
 
   try {
     const result = streamText({
