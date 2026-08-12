@@ -48,6 +48,9 @@ export {
 export {
   encodeNdjson,
   parseCoachChatStreamLine,
+  shouldParseCoachNdjson,
+  looksLikeCoachNdjson,
+  rehydrateCoachNdjson,
   type CoachChatStreamEvent,
   type CoachActionStreamEvent,
 } from './stream'

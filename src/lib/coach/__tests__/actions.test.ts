@@ -7,6 +7,9 @@ import {
   weightsMatch,
   isProposalExpired,
   fmtWeightForUnit,
+  looksLikeCoachNdjson,
+  shouldParseCoachNdjson,
+  rehydrateCoachNdjson,
 } from '../actions'
 
 describe('coach actions helpers', () => {
@@ -77,8 +80,43 @@ describe('coach actions helpers', () => {
     )
     assert.equal(proposal?.type, 'proposal')
 
-    // Legacy plain text fallback
     const plain = parseCoachChatStreamLine('hello world')
     assert.deepEqual(plain, { type: 'text-delta', text: 'hello world' })
+
+    // Incomplete JSON mid-stream must not become literal text
+    assert.equal(parseCoachChatStreamLine('{"type":"text-delta","text":"To'), null)
+  })
+
+  it('sniffs NDJSON even without the custom header', () => {
+    const sample =
+      '{"type":"text-delta","text":"To"}\n{"type":"text-delta","text":" build"}\n'
+    assert.equal(looksLikeCoachNdjson(sample), true)
+    assert.equal(
+      shouldParseCoachNdjson({
+        contentType: 'text/plain',
+        streamHeader: null,
+        sample,
+      }),
+      true,
+    )
+    assert.equal(
+      shouldParseCoachNdjson({
+        contentType: 'application/x-ndjson; charset=utf-8',
+        streamHeader: null,
+      }),
+      true,
+    )
+    assert.equal(looksLikeCoachNdjson('Just a normal coach reply.'), false)
+  })
+
+  it('rehydrates a dumped NDJSON transcript into prose', () => {
+    const raw = [
+      encodeNdjson({ type: 'text-delta', text: 'To build ' }),
+      encodeNdjson({ type: 'text-delta', text: 'prominent abs.' }),
+      encodeNdjson({ type: 'done' }),
+    ].join('')
+    const recovered = rehydrateCoachNdjson(raw)
+    assert.equal(recovered.text, 'To build prominent abs.')
+    assert.equal(recovered.proposals.length, 0)
   })
 })

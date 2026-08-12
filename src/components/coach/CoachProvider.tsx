@@ -17,7 +17,7 @@ import {
   type CoachConversationSummary,
   type CoachProposalView,
 } from '@/lib/coach'
-import { parseCoachChatStreamLine } from '@/lib/coach/actions'
+import { parseCoachChatStreamLine, rehydrateCoachNdjson, shouldParseCoachNdjson, looksLikeCoachNdjson } from '@/lib/coach/actions'
 import { titleFromMessage } from '@/lib/coach/conversations'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { localDateKey } from '@/lib/utils/formatting'
@@ -484,10 +484,21 @@ export function CoachProvider({ children }: { children: ReactNode }) {
         const decoder = new TextDecoder()
         let buffer = ''
         let textAcc = ''
+        let rawAcc = ''
         const proposals: CoachProposalView[] = []
-        const isNdjson = res.headers.get('X-Coach-Stream') === 'ndjson'
+        // Don't trust the custom header alone — Vercel/fetch can hide it.
+        // Decide from Content-Type, header, or body sniff (may flip after first chunk).
+        let mode: 'unknown' | 'ndjson' | 'plain' = shouldParseCoachNdjson({
+          contentType: res.headers.get('Content-Type'),
+          streamHeader: res.headers.get('X-Coach-Stream'),
+        })
+          ? 'ndjson'
+          : 'unknown'
 
-        const flushAssistant = (content: string, nextProposals?: CoachProposalView[]) => {
+        const flushAssistant = (
+          content: string,
+          nextProposals?: CoachProposalView[],
+        ) => {
           setMessages(prev =>
             prev.map(m =>
               m.id === assistantId
@@ -504,47 +515,76 @@ export function CoachProvider({ children }: { children: ReactNode }) {
           )
         }
 
+        const applyNdjsonLine = (line: string) => {
+          const event = parseCoachChatStreamLine(line)
+          if (!event) return
+          if (event.type === 'text-delta') {
+            textAcc += event.text
+            flushAssistant(textAcc, proposals)
+          } else if (event.type === 'proposal') {
+            if (!proposals.some(p => p.id === event.proposal.id)) {
+              proposals.push(event.proposal)
+            }
+            flushAssistant(textAcc, [...proposals])
+          } else if (event.type === 'error') {
+            setError(event.error)
+          }
+        }
+
         while (true) {
           const { done, value } = await reader.read()
           if (done) break
           const chunk = decoder.decode(value, { stream: true })
-          if (!isNdjson) {
-            // Legacy plain-text stream fallback.
+          rawAcc += chunk
+
+          if (mode === 'unknown') {
+            const trimmed = rawAcc.trimStart()
+            if (looksLikeCoachNdjson(rawAcc) || trimmed.startsWith('{')) {
+              // Coach streams NDJSON; treat `{...` as NDJSON even mid-line.
+              mode = 'ndjson'
+            } else if (trimmed.length > 0) {
+              mode = 'plain'
+            }
+          }
+
+          if (mode === 'plain') {
             textAcc += chunk
             flushAssistant(textAcc)
             continue
           }
+
           buffer += chunk
           const lines = buffer.split('\n')
           buffer = lines.pop() ?? ''
-          for (const line of lines) {
-            const event = parseCoachChatStreamLine(line)
-            if (!event) continue
-            if (event.type === 'text-delta') {
-              textAcc += event.text
-              flushAssistant(textAcc, proposals)
-            } else if (event.type === 'proposal') {
-              if (!proposals.some(p => p.id === event.proposal.id)) {
-                proposals.push(event.proposal)
-              }
-              flushAssistant(textAcc, [...proposals])
-            } else if (event.type === 'error') {
-              setError(event.error)
-            }
-          }
+          for (const line of lines) applyNdjsonLine(line)
         }
 
-        if (isNdjson && buffer.trim()) {
-          const event = parseCoachChatStreamLine(buffer)
-          if (event?.type === 'text-delta') {
-            textAcc += event.text
-          } else if (event?.type === 'proposal') {
-            if (!proposals.some(p => p.id === event.proposal.id)) {
-              proposals.push(event.proposal)
+        rawAcc += decoder.decode()
+        if (mode === 'unknown') {
+          mode = looksLikeCoachNdjson(rawAcc) ? 'ndjson' : 'plain'
+        }
+
+        if (mode === 'ndjson') {
+          if (buffer.trim()) applyNdjsonLine(buffer)
+          // If we somehow accumulated raw envelopes into textAcc, rehydrate.
+          if (looksLikeCoachNdjson(textAcc) || looksLikeCoachNdjson(rawAcc)) {
+            const recovered = rehydrateCoachNdjson(
+              looksLikeCoachNdjson(textAcc) ? textAcc : rawAcc,
+            )
+            textAcc = recovered.text
+            for (const p of recovered.proposals) {
+              if (!proposals.some(x => x.id === p.id)) proposals.push(p)
             }
+            if (recovered.error) setError(recovered.error)
           }
-        } else if (!isNdjson) {
-          textAcc += decoder.decode()
+        } else if (looksLikeCoachNdjson(rawAcc)) {
+          // Plain mode was wrong — recover from the full raw stream.
+          const recovered = rehydrateCoachNdjson(rawAcc)
+          textAcc = recovered.text
+          for (const p of recovered.proposals) {
+            if (!proposals.some(x => x.id === p.id)) proposals.push(p)
+          }
+          if (recovered.error) setError(recovered.error)
         }
 
         const finalText = textAcc.trim()

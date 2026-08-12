@@ -421,6 +421,9 @@ Remember: intent before formatting — Understand intent → assess complexity �
       headers: {
         'Content-Type': 'application/x-ndjson; charset=utf-8',
         'Cache-Control': 'no-store',
+        // Ensure browser JS can read these (some proxies hide non-simple headers).
+        'Access-Control-Expose-Headers':
+          'X-Coach-Stream, X-Coach-Model, X-Coach-Conversation-Id',
       },
     })
     response.headers.set('X-Coach-Model', modelId)
