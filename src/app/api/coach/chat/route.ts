@@ -257,6 +257,10 @@ export async function POST(request: Request) {
     contextJson = JSON.stringify(context)
   } catch (err) {
     console.error('[grind] coach context', err)
+    const { error: refundErr } = await supabase.rpc('grind_coach_refund_message', {
+      p_message_id: insertedMessage.id,
+    })
+    if (refundErr) console.error('[grind] coach refund failed', refundErr)
     return NextResponse.json(
       { error: 'Failed to load your training data' },
       { status: 500 },
@@ -302,7 +306,7 @@ Remember: intent before formatting — Understand intent → assess complexity �
       model: google(modelId),
       system,
       messages: [...history, { role: 'user', content: message }],
-      maxOutputTokens: Math.max(intentProfile.maxOutputTokens, 700),
+      maxOutputTokens: intentProfile.maxOutputTokens,
       temperature: 0.4,
       tools,
       stopWhen: stepCountIs(3),
@@ -434,6 +438,10 @@ Remember: intent before formatting — Understand intent → assess complexity �
     return response
   } catch (err) {
     console.error('[grind] coach generate', err)
+    const { error: refundErr } = await supabase.rpc('grind_coach_refund_message', {
+      p_message_id: insertedMessage.id,
+    })
+    if (refundErr) console.error('[grind] coach refund failed', refundErr)
     return NextResponse.json(
       { error: 'Coach failed to respond. Try again in a moment.' },
       { status: 502 },

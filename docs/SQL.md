@@ -49,6 +49,7 @@ is fully linked to migration history.
 | [34-coach-quota-fixes.sql](sql/34-coach-quota-fixes.sql) | 34 | Refund quota for failed Coach turns + admin dev-unlimited toggle |
 | [35-coach-conversations.sql](sql/35-coach-conversations.sql) | 35 | Saved Coach chats (`coach_conversations` + message link) |
 | [36-coach-actions.sql](sql/36-coach-actions.sql) | 36 | Coach action proposals (confirm-before-apply mutations) |
+| [37-coach-correct-weights.sql](sql/37-coach-correct-weights.sql) | 37 | In-place Coach weight corrections (preserve skips + RPE) |
 
 See also [PUSH.md](PUSH.md) for VAPID keys, Vercel env, and cron setup.
 See [COACH.md](COACH.md) for Gemini env, rate limits, `/api/coach/chat`, and

@@ -114,13 +114,21 @@ export function buildCoachProposalTools(ctx: CoachToolContext) {
               name: z.string().min(1),
               sets_target: z.number().int().min(1).max(12),
               reps_target: z.string().min(1),
-              weight_target_lbs: z.number().positive().optional(),
+              weight_target_lbs: z
+                .number()
+                .positive()
+                .optional()
+                .describe(
+                  'Optional target weight in the user display unit (lb or kg from preference)',
+                ),
             }),
           )
           .min(1)
           .max(20),
       }),
       execute: async input => {
+        const toLbs = (v: number) =>
+          ctx.unit === 'kg' ? v * 2.2046 : v
         const result = await previewCreateDay(ctx.supabase, {
           userId: ctx.userId,
           conversationId: ctx.conversationId,
@@ -130,7 +138,8 @@ export function buildCoachProposalTools(ctx: CoachToolContext) {
             name: e.name,
             sets_target: e.sets_target,
             reps_target: e.reps_target,
-            weight_target_lbs: e.weight_target_lbs ?? null,
+            weight_target_lbs:
+              e.weight_target_lbs != null ? toLbs(e.weight_target_lbs) : null,
           })),
         })
         if (!result.ok) {

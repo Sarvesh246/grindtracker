@@ -196,7 +196,7 @@ export async function previewCorrectWeights(
         `${executeSessions.length} session${executeSessions.length === 1 ? '' : 's'} · ${matchedSets} set${matchedSets === 1 ? '' : 's'}`,
       ],
       riskNote:
-        'This rewrites the matched completed sessions and recomputes XP/PRs.',
+        'Updates matched set weights in place (keeps skips/RPE) and recomputes XP/PRs.',
       steps: executeSessions.map(
         s => `${s.localDate} · ${s.dayType} · ${s.matchedSets} set${s.matchedSets === 1 ? '' : 's'}`,
       ),
@@ -232,6 +232,10 @@ export async function executeCorrectWeights(
   execute: CorrectWeightsExecutePayload,
   onStep?: (index: number, total: number, label: string) => void | Promise<void>,
 ): Promise<{ ok: true; updated: number } | { ok: false; message: string }> {
+  if (!execute.exerciseId) {
+    return { ok: false, message: 'Missing exercise id for weight correction.' }
+  }
+
   const total = execute.sessions.length
   let updated = 0
 
@@ -243,25 +247,24 @@ export async function executeCorrectWeights(
       `Updating ${session.localDate} (${session.dayType})…`,
     )
 
-    const { error } = await supabase.rpc('upsert_past_session', {
-      p_day_type: session.dayType,
-      p_local_date: session.localDate,
-      p_logs: session.logs.map(l => ({
-        exercise_id: l.exercise_id,
-        set_number: l.set_number,
-        weight: l.weight,
-        reps: l.reps,
-        is_warmup: l.is_warmup ?? false,
-        note: l.note ?? null,
-      })),
+    // In-place weight update (migration 37) — preserves is_skipped markers and RPE.
+    // Do NOT rewrite via upsert_past_session (that drops skips and never stores RPE).
+    const { error } = await supabase.rpc('coach_correct_session_weights', {
       p_session_id: session.sessionId,
-      p_note: null,
+      p_exercise_id: execute.exerciseId,
+      p_from_weight_lbs: execute.fromWeightLbs,
+      p_to_weight_lbs: execute.toWeightLbs,
+      p_local_date: session.localDate,
     })
 
     if (error) {
+      const partial =
+        updated > 0
+          ? ` Updated ${updated} session${updated === 1 ? '' : 's'} before failing.`
+          : ''
       return {
         ok: false,
-        message: `Failed on ${session.localDate}: ${error.message}`,
+        message: `Failed on ${session.localDate}: ${error.message}.${partial} Apply docs/sql/37-coach-correct-weights.sql if this RPC is missing.`,
       }
     }
     updated += 1

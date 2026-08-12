@@ -7,11 +7,14 @@ Server-only Gemini key; free-tier friendly with hard per-user rate limits.
 
 Paste and run [`sql/33-coach.sql`](sql/33-coach.sql), then
 [`sql/34-coach-quota-fixes.sql`](sql/34-coach-quota-fixes.sql), then
-[`sql/35-coach-conversations.sql`](sql/35-coach-conversations.sql) in the
-Supabase SQL editor **before** relying on saved chats. 33 creates
+[`sql/35-coach-conversations.sql`](sql/35-coach-conversations.sql), then
+[`sql/36-coach-actions.sql`](sql/36-coach-actions.sql), then
+[`sql/37-coach-correct-weights.sql`](sql/37-coach-correct-weights.sql) in the
+Supabase SQL editor **before** relying on saved chats / Confirm actions. 33 creates
 `coach_messages` + RLS + rate-limit trigger; 34 adds a refund path for failed
 turns and the admin dev-unlimited toggle; 35 adds `coach_conversations` so
-threads can be listed, reopened, and deleted.
+threads can be listed, reopened, and deleted; 36 stores confirm-before-apply
+proposals; 37 updates past set weights in place (keeps skips + RPE).
 
 Limits (also in `src/lib/coach/constants.ts` — change both):
 
@@ -87,10 +90,10 @@ Auth required. Body:
 - `unit` optional (`lbs`/`kg` or `imperial`/`metric`); falls back to
   `grind_unit_pref` cookie.
 
-**Success:** plain text stream (`text/plain`), assembled from the AI SDK's
-`fullStream` by hand rather than `toTextStreamResponse()` — that helper
-silently drops `error` parts, which used to make upstream failures look like
-Coach wasn't responding at all. Header: `X-Coach-Model`. The client re-fetches
+**Success:** NDJSON stream (`application/x-ndjson`) with `text-delta` /
+`proposal` / `error` / `done` events (header `X-Coach-Stream: ndjson`). The
+client also sniffs Content-Type / body shape and can rehydrate if a proxy
+strips the custom header. Header: `X-Coach-Model`. The client re-fetches
 `GET /api/coach/chat` after every turn (success or failure) to read the
 post-turn quota back from Postgres, rather than trusting an optimistic
 pre-call estimate — necessary because a failed turn gets refunded server-side
@@ -158,7 +161,7 @@ before relying on this.
 
 | Action | Tool | Execute path |
 | --- | --- | --- |
-| Correct past weights | `propose_correct_weights` | `upsert_past_session` per matched session |
+| Correct past weights | `propose_correct_weights` | `coach_correct_session_weights` (in-place; preserves skips/RPE) + recompute |
 | Start today’s workout | `propose_start_workout` | `start_or_resume_session` → `/log?day=…` |
 | Create a new day | `propose_create_day` | `exercises` insert (+ optional category) → `/log` day picker (does **not** auto-start; use `propose_start_workout` only if they ask) |
 

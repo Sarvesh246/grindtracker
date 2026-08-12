@@ -144,6 +144,20 @@ it('classifies mutation asks as actionable', () => {
       inferCoachIntent('Create a new day called upper from that plan').intent,
       'actionable',
     )
+    assert.equal(inferCoachIntent('Start push').intent, 'actionable')
+    assert.equal(inferCoachIntent('start legs').intent, 'actionable')
+    assert.equal(inferCoachIntent('Train now').intent, 'actionable')
+    assert.equal(inferCoachIntent('Create an upper day').intent, 'actionable')
+    assert.equal(
+      inferCoachIntent('Fix my bench weights from 90 to 95').intent,
+      'actionable',
+    )
+  })
+
+  it('does not treat advisory start/weight questions as actionable', () => {
+    const shouldStart = inferCoachIntent('Should I start my workout?')
+    assert.notEqual(shouldStart.intent, 'actionable')
+    assert.equal(shouldStart.intent, 'recommendation')
   })
 })
 

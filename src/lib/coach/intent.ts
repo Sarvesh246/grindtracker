@@ -55,7 +55,7 @@ const ANALYSIS_RE =
   /\b(analy[sz]e|progress|getting stronger|what stands out|what changed|biggest weakness|holding me back|three biggest|last (month|3 months|week)|improving|explain everything|how has my training)\b/i
 
 const RECOMMENDATION_RE =
-  /\b(what weight|should i (increase|add|train|rest|skip|go heavier|deload)|which exercise|what should i (do|use|change)|increase\?|worth it\?|enough\?|go heavier|add another set)\b/i
+  /\b(what weight|should i (increase|add|train|rest|skip|go heavier|deload|start)|which exercise|what should i (do|use|change)|increase\?|worth it\?|enough\?|go heavier|add another set)\b/i
 
 const COMPARISON_RE =
   /\b(\bvs\.?\b|versus|compare|comparison|or better|which is better|difference between)\b/i
@@ -66,8 +66,12 @@ const DEFINITION_RE =
 const SHORT_CONTEXT_RE =
   /^(bench|squat|deadlift|ohp|row|pull|push|legs?|today|progress|increase|why|next|worth it|same|more|enough|rest|deload|skip)\??$/i
 
+/** Imperative mutation asks — not “should I / can I” advice. */
 const ACTIONABLE_RE =
-  /\b(change|correct|fix|update|edit|set|make)\b.{0,40}\b(weight|lbs?|kg)\b|\b(was|should (have )?been|meant|actually)\b.{0,30}\b(lb|kg|weight)\b|\bstart (my |today'?s )?workout\b|\b(start|begin|open)\b.{0,20}\b(today|workout|session)\b|\bcreate (a |an )?(new )?(day|workout day)\b|\bsave (this|that) (as |to )?(a )?day\b|\badd (this|that) (day|workout) to (my )?(program|catalog|rotation)\b/i
+  /\b(change|correct|fix|update|edit|set|make|fix)\b.{0,40}\b(weight|lbs?|kg|bench|squat|deadlift|press)\b|\b(was|should (have )?been|meant|actually)\b.{0,30}\b(lb|kg|weight)\b|\bstart (my |today'?s )?workout\b|\b(begin|open)\b.{0,20}\b(today|workout|session)\b|\btrain (now|today)\b|\bstart\s+(?!with\b|from\b|by\b)(my |today'?s )?(workout|session|push|pull|legs|[a-z][\w\- ]{0,24})\b|\bcreate\b.{0,40}\bday\b|\bsave (this|that) (as |to )?(a )?day\b|\badd (this|that) (day|workout) to (my )?(program|catalog|rotation)\b/i
+
+const ADVISORY_PREFIX_RE =
+  /^(should i|can i|could i|would you|do you think|is it (ok|okay|fine)|what if)\b/i
 
 /** Soft token ceilings by intent — simple asks cannot sprawl. */
 const TOKEN_BUDGET: Record<CoachIntent, number> = {
@@ -153,7 +157,9 @@ export function inferCoachIntent(
   }
 
   if (SAFETY_RE.test(text)) return profile('safety')
-  if (ACTIONABLE_RE.test(text)) return profile('actionable')
+  if (ACTIONABLE_RE.test(text) && !ADVISORY_PREFIX_RE.test(text)) {
+    return profile('actionable')
+  }
   if (WORKOUT_RE.test(text)) return profile('workout')
   if (PROGRAM_RE.test(text)) return profile('program')
   if (TECHNIQUE_RE.test(text)) return profile('technique')

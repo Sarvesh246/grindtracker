@@ -816,12 +816,17 @@ export function CoachProvider({ children }: { children: ReactNode }) {
           window.setTimeout(() => router.push(body.href!), 450)
         }
       } catch {
-        patchProposal(proposalId, { status: 'failed' }, {
-          proposalId,
-          phase: 'error',
-          steps: [],
-          message: 'Could not reach the action endpoint.',
-        })
+        if (decision === 'cancel') {
+          // Optimistic cancel failed — restore pending so the user can retry.
+          patchProposal(proposalId, { status: 'pending' })
+        } else {
+          patchProposal(proposalId, { status: 'failed' }, {
+            proposalId,
+            phase: 'error',
+            steps: [],
+            message: 'Could not reach the action endpoint.',
+          })
+        }
         setError('Could not complete that action. Check your connection.')
       }
     },

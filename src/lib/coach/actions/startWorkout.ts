@@ -1,4 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import type { UserRotation } from '@/lib/types'
+import { effectiveSequence, nextDay } from '@/lib/utils/rotation'
 import { insertCoachProposal } from './proposals'
 import type { CoachActionPayload, CoachProposalView } from './types'
 
@@ -17,11 +19,23 @@ export async function previewStartWorkout(
   | { ok: true; proposal: CoachProposalView }
   | { ok: false; reason: string }
 > {
-  const { data: exercises } = await supabase
-    .from('exercises')
-    .select('day_type')
-    .eq('user_id', args.userId)
-    .eq('active', true)
+  const [{ data: exercises }, { data: flexRows }, { data: rotation }] =
+    await Promise.all([
+      supabase
+        .from('exercises')
+        .select('day_type')
+        .eq('user_id', args.userId)
+        .eq('active', true),
+      supabase
+        .from('user_flex_days')
+        .select('day_key')
+        .eq('user_id', args.userId),
+      supabase
+        .from('user_rotation')
+        .select('mode, sequence, current_index')
+        .eq('user_id', args.userId)
+        .maybeSingle(),
+    ])
 
   const dayKeys = [
     ...new Set(
@@ -60,28 +74,20 @@ export async function previewStartWorkout(
     }
   } else {
     resolvedFrom = 'next_day'
-    const { data: rotation } = await supabase
-      .from('user_rotation')
-      .select('mode, sequence, current_index')
-      .eq('user_id', args.userId)
-      .maybeSingle()
-
-    if (
-      rotation?.sequence &&
-      Array.isArray(rotation.sequence) &&
-      rotation.sequence.length > 0
-    ) {
-      const seq = rotation.sequence as string[]
-      const idx =
-        typeof rotation.current_index === 'number'
-          ? rotation.current_index
-          : 0
-      // next slot after last completed pointer
-      const nextIdx = (idx + 1) % seq.length
-      const candidate = String(seq[nextIdx] ?? seq[0] ?? '').trim()
-      if (candidate && dayKeys.includes(candidate)) {
-        dayType = candidate
-      }
+    // Same next-day resolution as Home / Coach context (effectiveSequence + flex).
+    const flexSet = new Set(
+      (flexRows ?? [])
+        .map(r => String(r.day_key ?? '').trim())
+        .filter(Boolean),
+    )
+    const seq = effectiveSequence(
+      (rotation as UserRotation | null) ?? null,
+      dayKeys,
+      flexSet,
+    )
+    const upNext = nextDay(seq, rotation?.current_index ?? -1)
+    if (upNext && dayKeys.includes(upNext)) {
+      dayType = upNext
     }
 
     if (!dayType) {
