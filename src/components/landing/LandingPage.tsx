@@ -9,7 +9,7 @@ import {
   LevelUpMock,
   FriendsMock,
 } from './FeatureDemos'
-import InstallSection, { FinalCta } from './InstallSection'
+import InstallSection, { FinalCta, LandingFooter } from './InstallSection'
 import GoogleSignInButton from '@/components/GoogleSignInButton'
 
 function Section({
@@ -120,15 +120,7 @@ export default function LandingPage() {
         <FinalCta />
       </main>
 
-      <footer className="landing-footer">
-        <div className="landing-footer__inner">
-          <span className="landing-footer__brand">GRIND</span>
-          <p className="landing-footer__line">Track. Progress. Dominate.</p>
-          <Link href="/login" className="landing-footer__login press">
-            Log in
-          </Link>
-        </div>
-      </footer>
+      <LandingFooter />
     </div>
   )
 }

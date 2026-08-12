@@ -9,7 +9,7 @@
 
 /* ---------------------------------------------------------------------------
    Design tokens (Tailwind v4 CSS-first config).
-   Every color/size in the app should reference one of these â no hex literals
+   Every color/size in the app should reference one of these Ã¢ÂÂ no hex literals
    in component code. Mirror values exist as CSS vars below so inline styles
    and arbitrary values can consume them too.
    --------------------------------------------------------------------------- */
@@ -72,7 +72,7 @@
   /* Faint accent-tinted panel background (active tabs, highlighted rows). */
   --accent-wash: rgba(200, 241, 53, 0.1);
   /* Text/icon color ON TOP OF a lime accent fill. Always #0f0f0f regardless of
-     theme â the lime fill itself is unchanged, so text on it is always dark. */
+     theme Ã¢ÂÂ the lime fill itself is unchanged, so text on it is always dark. */
   --on-accent: #0f0f0f;
   --text-primary: #f0f0f0;
   --text-secondary: #888888;
@@ -81,7 +81,7 @@
   --danger: #ef4444;
   --danger-bg: rgba(239, 68, 68, 0.08);
   --danger-bg-hover: rgba(239, 68, 68, 0.14);
-  /* Card depth â none in dark (borders carry separation), subtle in light. */
+  /* Card depth Ã¢ÂÂ none in dark (borders carry separation), subtle in light. */
   --card-shadow: none;
 
   --radius-sm: 8px;
@@ -108,7 +108,7 @@
 /* ---------------------------------------------------------------------------
    Light theme. Activated by `class="light"` on <html> (set server-side from the
    grind_theme_pref cookie, then toggled client-side by ThemeContext). Only the
-   color mirror vars change â every size/font/radius token is shared. Warm neutral
+   color mirror vars change Ã¢ÂÂ every size/font/radius token is shared. Warm neutral
    surfaces (not pure white) keep the look calm and on-brand; the lime accent fill
    is unchanged, while lime TEXT darkens to olive so it stays readable on white.
    --------------------------------------------------------------------------- */
@@ -144,10 +144,10 @@ html.light {
   -webkit-tap-highlight-color: transparent;
   /* `manipulation` (pan-x pan-y, no double-tap-zoom) used to be the default
      here, but pan-x is exactly what lets iOS/WKWebView treat a left-edge drag
-     as its own "swipe back" gesture â which fights SwipeNavigator below and,
+     as its own "swipe back" gesture Ã¢ÂÂ which fights SwipeNavigator below and,
      in a standalone PWA with no browser chrome to go "back" to, just looks
      broken. Dropping pan-x kills that system gesture app-wide while keeping
-     vertical scroll, pinch-zoom (WCAG â see layout.tsx), and the same
+     vertical scroll, pinch-zoom (WCAG Ã¢ÂÂ see layout.tsx), and the same
      no-double-tap-delay benefit (any non-'auto' value suppresses it, not
      just 'manipulation'). Any element that genuinely needs native horizontal
      scroll (tab rows, timelines) opts back in locally with `touchAction:
@@ -168,7 +168,7 @@ body {
   -moz-osx-font-smoothing: grayscale;
   /* The app is a fixed, non-scrolling shell (.app-shell): only .app-main
      scrolls. Locking body scroll is what makes the fixed bottom bars rock
-     solid in an iOS standalone PWA â a scrolling <body> is what let them
+     solid in an iOS standalone PWA Ã¢ÂÂ a scrolling <body> is what let them
      strand mid-screen (home nav) and detach after keyboard dismissal. */
   overflow: hidden;
   overscroll-behavior: none;
@@ -231,7 +231,7 @@ select:focus-visible,
   border: 0;
 }
 
-/* Bottom nav â a normal flow flex child at the bottom of the .app-shell column,
+/* Bottom nav Ã¢ÂÂ a normal flow flex child at the bottom of the .app-shell column,
    NOT position:fixed. As a flow element in a non-scrolling shell it is pinned to
    the bottom edge by layout and can never strand mid-screen. */
 .bottom-nav {
@@ -242,12 +242,12 @@ select:focus-visible,
   align-items: stretch;
   z-index: 100;
   /* Fills through the home-indicator safe area to the true bottom; min 8px when
-     there's no inset. (env is real now that the app declares standalone â see
+     there's no inset. (env is real now that the app declares standalone Ã¢ÂÂ see
      layout.tsx apple-mobile-web-app-capable.) */
   padding-bottom: max(8px, env(safe-area-inset-bottom));
 }
 
-/* Active tab is color only â never keep a focus/haptic square around it. */
+/* Active tab is color only Ã¢ÂÂ never keep a focus/haptic square around it. */
 .bottom-nav a:focus,
 .bottom-nav a:focus-visible {
   outline: none !important;
@@ -263,13 +263,13 @@ select:focus-visible,
 
 /* Coach FAB press/drag: BottomNav (and its iOS switch overlays) must not
    receive hits under the finger. Overlays set pointer-events:auto explicitly,
-   so disabling only the nav parent is not enough â children would still tick. */
+   so disabling only the nav parent is not enough Ã¢ÂÂ children would still tick. */
 body.coach-fab-dragging .bottom-nav,
 body.coach-fab-dragging .bottom-nav [data-haptic-overlay] {
   pointer-events: none !important;
 }
 
-/* Workout Manager modal â bottom sheet on mobile, centered dialog on desktop */
+/* Workout Manager modal Ã¢ÂÂ bottom sheet on mobile, centered dialog on desktop */
 .wm-backdrop {
   position: fixed;
   inset: 0;
@@ -382,7 +382,7 @@ body.coach-fab-dragging .bottom-nav [data-haptic-overlay] {
   }
 }
 
-/* Exit variants â reverse of the entrances above, played while a toast is
+/* Exit variants Ã¢ÂÂ reverse of the entrances above, played while a toast is
    being removed instead of just vanishing when its owning state clears. */
 @keyframes toast-out {
   from {
@@ -406,7 +406,7 @@ body.coach-fab-dragging .bottom-nav [data-haptic-overlay] {
 }
 
 /* ---------------------------------------------------------------------------
-   Onboarding (coach marks / tours / contextual tooltips). Subtle 150â200ms
+   Onboarding (coach marks / tours / contextual tooltips). Subtle 150Ã¢ÂÂ200ms
    ease entrances matching the rest of the app. The dim mask fades in on its
    own; floating bubbles scale up slightly; the mobile bottom-sheet rises.
    --------------------------------------------------------------------------- */
@@ -439,7 +439,7 @@ body.coach-fab-dragging .bottom-nav [data-haptic-overlay] {
   to { transform: translateY(0); }
 }
 
-/* Small inline popovers (rest-timer adjust grid, default-rest row) â quick
+/* Small inline popovers (rest-timer adjust grid, default-rest row) Ã¢ÂÂ quick
    fade + settle so they don't just snap into existence. */
 @keyframes popover-in {
   from { opacity: 0; transform: translateY(4px) scale(0.98); }
@@ -485,7 +485,7 @@ body.coach-fab-dragging .bottom-nav [data-haptic-overlay] {
 
 /* Collapsible drawer (badges, body-weight history, friends, set notes).
    `grid-template-rows: 0fr -> 1fr` animates to the content's natural height
-   without hardcoding a max-height â a 35-tile badge grid and a 90-row weight
+   without hardcoding a max-height Ã¢ÂÂ a 35-tile badge grid and a 90-row weight
    list are nowhere near the same size. The inner wrapper does the clipping.
 
    Named `drawer`, NOT `collapse`: Tailwind ships a `.collapse` utility
@@ -499,14 +499,14 @@ body.coach-fab-dragging .bottom-nav [data-haptic-overlay] {
 }
 .drawer[data-open='true'] { grid-template-rows: 1fr; }
 /* The direct child must carry NO padding: 0fr zeroes its content height only,
-   so padding survives the collapse and â because overflow clips at the padding
-   box â leaves a visible sliver of the panel behind. Pad an inner wrapper. */
+   so padding survives the collapse and Ã¢ÂÂ because overflow clips at the padding
+   box Ã¢ÂÂ leaves a visible sliver of the panel behind. Pad an inner wrapper. */
 .drawer > * {
   overflow: hidden;
   min-height: 0;
 }
 
-/* Keyed content swap â a panel whose contents change wholesale (chart series,
+/* Keyed content swap Ã¢ÂÂ a panel whose contents change wholesale (chart series,
    calendar month, leaderboard category). Remount it with a changing React key
    so the animation actually replays. */
 @keyframes swap-in {
@@ -531,7 +531,7 @@ body.coach-fab-dragging .bottom-nav [data-haptic-overlay] {
    doesn't trail.
 
    Fade only, no rise: this one is aimed at the dashboard columns, which set
-   `overflow: hidden` to keep wide children from widening the layout â a child
+   `overflow: hidden` to keep wide children from widening the layout Ã¢ÂÂ a child
    translated down would be clipped against the column's bottom edge on the
    way in. */
 @keyframes fade-in {
@@ -545,12 +545,12 @@ body.coach-fab-dragging .bottom-nav [data-haptic-overlay] {
 .stagger-auto > *:nth-child(5) { animation-delay: 160ms; }
 .stagger-auto > *:nth-child(n + 6) { animation-delay: 200ms; }
 
-/* Route-level entrance. Opacity only â a transform here would make every page
+/* Route-level entrance. Opacity only Ã¢ÂÂ a transform here would make every page
    a containing block for the fixed nav and workout bars. */
 .page { animation: fade-in 200ms ease; }
 
 /* First-run setup wizard. Direction-aware slide + soft fade + slight scale.
-   fill-mode: backwards (not both) â same containing-block rule as swap-in. */
+   fill-mode: backwards (not both) Ã¢ÂÂ same containing-block rule as swap-in. */
 @keyframes setup-enter-forward {
   from { opacity: 0; transform: translateX(16px) scale(0.985); }
   to { opacity: 1; transform: translateX(0) scale(1); }
@@ -578,7 +578,7 @@ body.coach-fab-dragging .bottom-nav [data-haptic-overlay] {
 }
 
 /* ---------------------------------------------------------------------------
-   Reduced motion â respect user preference. Zero out transitions and
+   Reduced motion Ã¢ÂÂ respect user preference. Zero out transitions and
    keyframe animations rather than disabling functionality. Two independent
    triggers land on the same rule: the OS-level media query, and the app's own
    "Reduce Motion" setting (MotionContext, `html.reduce-motion`) for anyone who
@@ -611,16 +611,16 @@ html.reduce-motion *::after {
 /* ---------------------------------------------------------------------------
    Responsive desktop layout. Mobile-first: the rules below only engage at
    >=768px. Navigation switches from the fixed bottom bar to a fixed top bar
-   via pure CSS display toggles â both bars are always rendered, so there's no
+   via pure CSS display toggles Ã¢ÂÂ both bars are always rendered, so there's no
    JS width detection and no hydration/resize jank at the breakpoint.
    --------------------------------------------------------------------------- */
 
 /* The app shell: a fixed, full-viewport, non-scrolling flex column. Because the
    shell itself never scrolls, the bottom nav (a flow child below) is pinned to
-   the bottom edge by layout â it cannot strand mid-screen â and the body can
+   the bottom edge by layout Ã¢ÂÂ it cannot strand mid-screen Ã¢ÂÂ and the body can
    never be left panned after the iOS keyboard dismisses. This single structural
    choice is what makes all the bottom bars permanently stable in a standalone
-   PWA. (No `transform`/`filter`/`will-change:transform` here or on .app-main â
+   PWA. (No `transform`/`filter`/`will-change:transform` here or on .app-main Ã¢ÂÂ
    those would create a containing block and re-trap position:fixed bars.) */
 .app-shell {
   position: fixed;
@@ -673,7 +673,7 @@ html.reduce-motion *::after {
 }
 
 /* Desktop top-nav tabs: quiet hover only. Active state is color/weight on the
-   icon+label â no filled pill behind the selected tab. */
+   icon+label Ã¢ÂÂ no filled pill behind the selected tab. */
 .top-nav-tab {
   background-color: transparent;
   transition: background-color 150ms ease;
@@ -701,7 +701,7 @@ html.reduce-motion *::after {
   overflow-x: hidden;
 }
 
-/* Responsive grids â mobile column counts match the current inline values. */
+/* Responsive grids Ã¢ÂÂ mobile column counts match the current inline values. */
 /* Cards keep their own marginBottom for vertical rhythm; the grid only adds a
    horizontal gap between the two columns on desktop (row-gap stays 0). */
 .home-grid {
@@ -740,7 +740,7 @@ html.reduce-motion *::after {
 .lw-notes {
   border-top: 1px solid var(--border);
 }
-/* On mobile, an empty notes panel would just be clutter â hide the placeholder. */
+/* On mobile, an empty notes panel would just be clutter Ã¢ÂÂ hide the placeholder. */
 .lw-notes--empty {
   display: none;
 }
@@ -761,7 +761,7 @@ html.reduce-motion *::after {
 }
 
 /* Active-workout fixed bars: full-width on mobile, pinned to the viewport bottom.
-   No keyboard tracking â the keyboard just appears on top of the bar. No
+   No keyboard tracking Ã¢ÂÂ the keyboard just appears on top of the bar. No
    compositor hack needed either: content scrolls inside .app-main, not <body>,
    so the viewport-fixed bar is never repaint-shifted by scrolling. */
 .wo-fixed-bar {
@@ -769,7 +769,7 @@ html.reduce-motion *::after {
   right: 0;
 }
 
-/* ââ Active-workout desktop layout ââââââââââââââââââââââââââââââââââââââââââ
+/* Ã¢ÂÂÃ¢ÂÂ Active-workout desktop layout Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
    Mobile base rules below MUST equal the prior inline values so the phone UI
    is byte-identical. The sidebar/grid desktop layout lives in the >=1024 block
    further down. */
@@ -784,23 +784,23 @@ html.reduce-motion *::after {
   display: block;
 }
 
-/* Desktop-only sidebar rail â hidden on mobile. */
+/* Desktop-only sidebar rail Ã¢ÂÂ hidden on mobile. */
 .wo-sidebar {
   display: none;
 }
 
-/* Mobile sticky header â visible on mobile, hidden on desktop (sidebar
+/* Mobile sticky header Ã¢ÂÂ visible on mobile, hidden on desktop (sidebar
    replaces it). No inline `display` on the element, so this class wins. */
 .wo-mobile-header {
   display: block;
 }
 
-/* Exercise list inner wrapper â no constraint on mobile. */
+/* Exercise list inner wrapper Ã¢ÂÂ no constraint on mobile. */
 .wo-main-inner {
   width: 100%;
 }
 
-/* Finish bar inner layout â mobile = stacked (button, then summary below). */
+/* Finish bar inner layout Ã¢ÂÂ mobile = stacked (button, then summary below). */
 .wo-finish-inner {
   display: block;
 }
@@ -859,7 +859,7 @@ html.reduce-motion *::after {
     max-width: 640px;
   }
 
-  /* The top nav carries the brand â hide the in-page wordmark on home. */
+  /* The top nav carries the brand Ã¢ÂÂ hide the in-page wordmark on home. */
   .home-brand {
     display: none;
   }
@@ -951,7 +951,7 @@ html.reduce-motion *::after {
   }
 }
 
-/* ââ Active-workout desktop sidebar layout (>=1024px) âââââââââââââââââââââââ
+/* Ã¢ÂÂÃ¢ÂÂ Active-workout desktop sidebar layout (>=1024px) Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
    Below 1024 the workout keeps the centered 640px single column (unchanged). */
 @media (min-width: 1024px) {
   .page--workout {
@@ -981,7 +981,7 @@ html.reduce-motion *::after {
     box-shadow: var(--card-shadow);
   }
 
-  /* The mobile header is redundant on desktop â the sidebar carries title,
+  /* The mobile header is redundant on desktop Ã¢ÂÂ the sidebar carries title,
      timer and progress. */
   .wo-mobile-header {
     display: none;
@@ -1026,13 +1026,13 @@ html.reduce-motion *::after {
   background-color: var(--surface-elevated);
 }
 
-/* ââ Landscape phones âââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+/* Ã¢ÂÂÃ¢ÂÂ Landscape phones Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
    A rotated phone can be nearly as wide as a small desktop window (up to
-   ~930px) but only ~320â430px tall â a real desktop browser window in that
+   ~930px) but only ~320Ã¢ÂÂ430px tall Ã¢ÂÂ a real desktop browser window in that
    width range is essentially never that short, so max-height is a safe signal
    for "rotated phone" that won't misfire on an actual narrow desktop window.
-   Without this, pages that treat "wide viewport" as "desktop" â page--workout
-   in particular, capped at 640px until the 1024px sidebar layout kicks in â
+   Without this, pages that treat "wide viewport" as "desktop" Ã¢ÂÂ page--workout
+   in particular, capped at 640px until the 1024px sidebar layout kicks in Ã¢ÂÂ
    leave a big chunk of the extra width as unused side margin that portrait
    mode never had. Guarded to max-width:1023px so an actual landscape TABLET
    (which clears 1024px width and already gets the fuller sidebar/grid layouts,
@@ -1050,10 +1050,10 @@ html.reduce-motion *::after {
   }
 }
 
-/* ââ Feedback inbox (developer-only, /admin/feedback) âââââââââââââââââââââââââ
+/* Ã¢ÂÂÃ¢ÂÂ Feedback inbox (developer-only, /admin/feedback) Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
    Two panes side by side once there's room; below 900px exactly one pane is
-   visible at a time (list, or detail after tapping a row) â the same
-   listâdetail push a mail app uses on a phone. The wrapper carries
+   visible at a time (list, or detail after tapping a row) Ã¢ÂÂ the same
+   listÃ¢ÂÂdetail push a mail app uses on a phone. The wrapper carries
    data-detail-open so the swap is pure CSS with no width detection in JS. */
 .inbox-layout {
   display: grid;
@@ -1092,7 +1092,7 @@ html.reduce-motion *::after {
 
 /* ---------------------------------------------------------------------------
    Coach FAB + chat sheet
-   z-index: FAB 420 Â· backdrop 430 Â· sheet 440 (above nav 100, below wm 500)
+   z-index: FAB 420 ÃÂ· backdrop 430 ÃÂ· sheet 440 (above nav 100, below wm 500)
    --------------------------------------------------------------------------- */
 
 .coach-fab {
@@ -1103,7 +1103,7 @@ html.reduce-motion *::after {
   border-radius: var(--radius-pill);
   border: none;
   /* Accent fill lives on `__disc`; shadow/glow stay on the button.
-     Orb is always a circle â no liquid squash/stretch. */
+     Orb is always a circle Ã¢ÂÂ no liquid squash/stretch. */
   background-color: transparent;
   color: var(--on-accent);
   display: flex;
@@ -1122,7 +1122,7 @@ html.reduce-motion *::after {
   /* Float lives on the inner wrapper so grab/tap transforms stay clean. */
   overflow: visible;
 }
-/* Glow / press scale is the affordance â kill the global square focus ring
+/* Glow / press scale is the affordance Ã¢ÂÂ kill the global square focus ring
    (button:focus-visible also forces --radius-sm, which boxed the circle). */
 .coach-fab:focus,
 .coach-fab:focus-visible,
@@ -1162,7 +1162,7 @@ html.light .coach-fab {
   align-items: center;
   justify-content: center;
 }
-/* Idle breathe â Â±4px over ~3s; paused when dragging / settling / open. */
+/* Idle breathe Ã¢ÂÂ ÃÂ±4px over ~3s; paused when dragging / settling / open. */
 @keyframes coach-fab-float {
   0%,
   100% {
@@ -1175,7 +1175,7 @@ html.light .coach-fab {
 .coach-fab--alive .coach-fab__float {
   animation: coach-fab-float 3s ease-in-out infinite;
 }
-/* Tap/drag glow â release fade only (hold uses --pressed sustained glow). */
+/* Tap/drag glow Ã¢ÂÂ release fade only (hold uses --pressed sustained glow). */
 @keyframes coach-fab-glow {
   0% {
     box-shadow:
@@ -1190,7 +1190,7 @@ html.light .coach-fab {
 .coach-fab--glow {
   animation: coach-fab-glow 450ms cubic-bezier(0.22, 1, 0.36, 1);
 }
-/* Sustained press/hold â scale + accent glow for the whole pointer-down. */
+/* Sustained press/hold Ã¢ÂÂ scale + accent glow for the whole pointer-down. */
 .coach-fab--pressed {
   transform: scale(0.94);
   box-shadow:
@@ -1207,14 +1207,14 @@ html.light .coach-fab--pressed {
     0 0 36px 14px color-mix(in srgb, var(--accent) 40%, transparent),
     var(--card-shadow);
 }
-/* Special G tap: deeper press than shared `.press` (0.96 â 0.9) â pressed class owns hold. */
+/* Special G tap: deeper press than shared `.press` (0.96 Ã¢ÂÂ 0.9) Ã¢ÂÂ pressed class owns hold. */
 .coach-fab.press:active:not(.coach-fab--dragging):not(.coach-fab--settling):not(.coach-fab--pressed) {
   transform: scale(0.9);
 }
 .coach-fab--dragging,
 .coach-fab--settling {
   cursor: grabbing;
-  /* Uniform scale only â disc stays circular via border-radius pill. */
+  /* Uniform scale only Ã¢ÂÂ disc stays circular via border-radius pill. */
   transition:
     transform 180ms ease,
     box-shadow 180ms ease,
@@ -1322,7 +1322,7 @@ html.reduce-motion .coach-fab.press:active:not(.coach-fab--dragging):not(.coach-
   animation: none;
 }
 
-/* Dock anchors â positions only; drag ghost overrides via inline style */
+/* Dock anchors Ã¢ÂÂ positions only; drag ghost overrides via inline style */
 .coach-fab[data-dock='br'] {
   right: 16px;
   left: auto;
@@ -1353,14 +1353,14 @@ html.reduce-motion .coach-fab.press:active:not(.coach-fab--dragging):not(.coach-
   .coach-fab[data-dock='tl'] {
     top: calc(var(--nav-h) + env(safe-area-inset-top) + 16px);
   }
-  /* Desktop has no bottom nav strip â lift the bottom docks slightly less. */
+  /* Desktop has no bottom nav strip Ã¢ÂÂ lift the bottom docks slightly less. */
   .coach-fab[data-dock='br'],
   .coach-fab[data-dock='bl'] {
     bottom: calc(16px + env(safe-area-inset-bottom));
   }
 }
 
-/* Coach-scoped enter/exit â longer than shared `sheet-up` so other sheets stay snappy. */
+/* Coach-scoped enter/exit Ã¢ÂÂ longer than shared `sheet-up` so other sheets stay snappy. */
 @keyframes coach-sheet-in {
   from {
     opacity: 0;
@@ -1405,7 +1405,7 @@ html.reduce-motion .coach-fab.press:active:not(.coach-fab--dragging):not(.coach-
   background: rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
-  /* Enter is opt-in via --enter so pageâcompact never remounts/replays it. */
+  /* Enter is opt-in via --enter so pageÃ¢ÂÂcompact never remounts/replays it. */
 }
 .coach-backdrop.coach-backdrop--enter {
   animation: coach-backdrop-in 520ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
@@ -1414,7 +1414,7 @@ html.reduce-motion .coach-fab.press:active:not(.coach-fab--dragging):not(.coach-
   animation: coach-backdrop-out 480ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
   pointer-events: none;
 }
-/* Gesture dismiss already dimmed the scrim â don't restart from opacity 1. */
+/* Gesture dismiss already dimmed the scrim Ã¢ÂÂ don't restart from opacity 1. */
 .coach-backdrop--closing.coach-backdrop--closing-from-drag {
   animation: none;
 }
@@ -1454,7 +1454,7 @@ html.reduce-motion .coach-backdrop--closing {
 .coach-sheet-motion > .coach-sheet {
   pointer-events: auto;
 }
-/* Fixed descendants become relative to this transformed ancestor â expected. */
+/* Fixed descendants become relative to this transformed ancestor Ã¢ÂÂ expected. */
 .coach-sheet-motion--drag-dismiss {
   will-change: transform, opacity;
 }
@@ -1469,9 +1469,9 @@ html.reduce-motion .coach-backdrop--closing {
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
   color: var(--text-primary);
   font-family: var(--font-sans);
-  /* Enter is opt-in (--enter) so pageâcompact class swaps never replay
-     coach-sheet-in (that was the minimize âpop from bottomâ). */
-  /* Mobile compact defaults â quick âtype to orbâ card */
+  /* Enter is opt-in (--enter) so pageÃ¢ÂÂcompact class swaps never replay
+     coach-sheet-in (that was the minimize Ã¢ÂÂpop from bottomÃ¢ÂÂ). */
+  /* Mobile compact defaults Ã¢ÂÂ quick Ã¢ÂÂtype to orbÃ¢ÂÂ card */
   left: 12px;
   right: 12px;
   bottom: calc(12px + env(safe-area-inset-bottom));
@@ -1502,30 +1502,30 @@ html.light .coach-sheet {
   /* Interruptible enter: finger takes over mid-open without locking. */
   animation: none !important;
 }
-/* FLIP lock during pageâcompact: fixed pixel box, no CSS size jump yet. */
+/* FLIP lock during pageÃ¢ÂÂcompact: fixed pixel box, no CSS size jump yet. */
 .coach-sheet--morph-lock {
   animation: none !important;
   right: auto !important;
   bottom: auto !important;
   max-height: none !important;
 }
-/* Compactâpage: keep card chrome (radius/border/shadow) while FLIP owns the
+/* CompactÃ¢ÂÂpage: keep card chrome (radius/border/shadow) while FLIP owns the
    rect and size is still compact. Mid-late morph applies --page so padding /
    radius can ease overlapping the height spring. */
 .coach-sheet--morph-lock:not(.coach-sheet--page) {
   border-radius: var(--radius-lg);
 }
 
-/* Full Coach page â morphs from the compact sheet (Siri-app style). */
+/* Full Coach page Ã¢ÂÂ morphs from the compact sheet (Siri-app style). */
 .coach-sheet.coach-sheet--page {
   left: 0;
   right: 0;
   top: 0;
   bottom: 0;
   width: 100%;
-  /* Never 100dvh â standalone iOS has burned us with dvh full-bleed overlays
+  /* Never 100dvh Ã¢ÂÂ standalone iOS has burned us with dvh full-bleed overlays
      leaving a persistent viewport gap after dismiss (same class of bug as the
-     old app-shell 100dvh â 100% fix). 100% stays animatable for the compactâ
+     old app-shell 100dvh Ã¢ÂÂ 100% fix). 100% stays animatable for the compactÃ¢ÂÂ
      page morph (height:auto would jump). */
   height: 100%;
   max-height: none;
@@ -1534,7 +1534,7 @@ html.light .coach-sheet {
   box-shadow: none;
   /* Clear the Dynamic Island / status bar while open. The padding band is
      painted solid --bg (theme-color / app-shell), not --surface, so chrome
-     matches the rest of the app. Do not push --surface into theme-color â
+     matches the rest of the app. Do not push --surface into theme-color Ã¢ÂÂ
      that left iOS PWAs stuck on olive/gray after dismiss. Accent wash stays
      BELOW the safe-area band so status-bar sampling can't pick it up. */
   padding-top: env(safe-area-inset-top);
@@ -1556,8 +1556,8 @@ html.light .coach-sheet {
   animation: coach-sheet-out 560ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 .coach-sheet.coach-sheet--page.coach-sheet--closing.coach-sheet--closing-from-drag {
-  /* Keep !important â page.closing alone is equal specificity to a 3-class
-     rule and used to win the cascade for one paint â middle flash. */
+  /* Keep !important Ã¢ÂÂ page.closing alone is equal specificity to a 3-class
+     rule and used to win the cascade for one paint Ã¢ÂÂ middle flash. */
   animation: none !important;
 }
 html.reduce-motion .coach-sheet.coach-sheet--enter,
@@ -1593,7 +1593,7 @@ html.reduce-motion .coach-sheet--closing {
     bottom: auto;
   }
   .coach-sheet.coach-sheet--page {
-    /* Dedicated page even on desktop â centered column feel via body padding. */
+    /* Dedicated page even on desktop Ã¢ÂÂ centered column feel via body padding. */
     max-width: none;
   }
 }
@@ -1693,7 +1693,7 @@ html.reduce-motion .coach-sheet--closing {
   gap: 6px;
   flex-shrink: 0;
 }
-/* Compact expand vs page history/new â crossfade + width ease (no icon snap). */
+/* Compact expand vs page history/new Ã¢ÂÂ crossfade + width ease (no icon snap). */
 .coach-sheet__actions-set {
   display: flex;
   align-items: center;
@@ -1735,8 +1735,8 @@ html.reduce-motion .coach-sheet__quota {
   overflow-y: auto;
   padding: 12px 12px 8px;
   overscroll-behavior: contain;
-  /* Always cap the reading column â never `none`â720 (can't interpolate).
-     During compactâpage FLIP the sheet width springs, so wrap tracks that
+  /* Always cap the reading column Ã¢ÂÂ never `none`Ã¢ÂÂ720 (can't interpolate).
+     During compactÃ¢ÂÂpage FLIP the sheet width springs, so wrap tracks that
      continuously; --page only eases the gutter padding. */
   max-width: 720px;
   width: 100%;
@@ -1750,7 +1750,7 @@ html.reduce-motion .coach-sheet__quota {
 .coach-sheet--page .coach-sheet__composer {
   border-top-color: var(--border);
 }
-/* Keyboard open: visible frame already ends above the keyboard â drop the
+/* Keyboard open: visible frame already ends above the keyboard Ã¢ÂÂ drop the
    home-indicator pad so the composer isn't double-spaced off the bottom. */
 .coach-sheet--page.coach-sheet--keyboard .coach-sheet__composer {
   padding-bottom: 10px;
@@ -1768,7 +1768,7 @@ html.reduce-motion .coach-bubble {
   }
 }
 
-/* History drawer â slides under the header inside the full page. */
+/* History drawer Ã¢ÂÂ slides under the header inside the full page. */
 .coach-history {
   position: absolute;
   inset: 0;
@@ -1778,7 +1778,7 @@ html.reduce-motion .coach-bubble {
   background: color-mix(in srgb, var(--surface) 94%, transparent);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  /* backwards only â `both` keeps a finished transform and breaks hit-testing
+  /* backwards only Ã¢ÂÂ `both` keeps a finished transform and breaks hit-testing
      / containing blocks for nested controls (same rule as other coach motion). */
   animation: coach-history-in 220ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
@@ -2018,13 +2018,13 @@ html.reduce-motion .coach-history {
     padding 520ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 .coach-sheet--page .coach-bubble {
-  /* Same relative cap â absolute line length grows with the column during
+  /* Same relative cap Ã¢ÂÂ absolute line length grows with the column during
      expand; page gutter padding eases separately on the body. */
   max-width: 88%;
   padding: 10px 14px;
 }
-/* Organic AI bubble enter â opacity / y / scale spring-feel.
-   fill-mode: backwards only â never `both` (containing-block rule). */
+/* Organic AI bubble enter Ã¢ÂÂ opacity / y / scale spring-feel.
+   fill-mode: backwards only Ã¢ÂÂ never `both` (containing-block rule). */
 @keyframes coach-bubble-in {
   from {
     opacity: 0;
@@ -2097,7 +2097,7 @@ html.reduce-motion .coach-bubble--user {
   flex-direction: column;
   gap: 6px;
 }
-/* Parent message list sets list-style: none (inherited) â restore markers. */
+/* Parent message list sets list-style: none (inherited) Ã¢ÂÂ restore markers. */
 ul.coach-md__list {
   list-style: disc;
 }
@@ -2138,7 +2138,7 @@ ol.coach-md__list,
   border-top: 1px solid var(--border);
   flex-shrink: 0;
   background: var(--surface);
-  /* Same always-on 720 column as body â wrap tracks FLIP, not --page snap. */
+  /* Same always-on 720 column as body Ã¢ÂÂ wrap tracks FLIP, not --page snap. */
   max-width: 720px;
   width: 100%;
   margin: 0 auto;
@@ -2153,7 +2153,7 @@ ol.coach-md__list,
   padding-right: 16px;
 }
 /* Compact card already clears the home indicator via `bottom: 12px + safe-area`.
-   Don't pad the composer again â that left a dead band under the input. */
+   Don't pad the composer again Ã¢ÂÂ that left a dead band under the input. */
 .coach-sheet:not(.coach-sheet--page) .coach-sheet__composer {
   padding-bottom: 10px;
 }
@@ -2217,7 +2217,7 @@ ol.coach-md__list,
   font-family: var(--font-sans);
 }
 
-/* Non-sticky scroll target for brand #top — must sit at scrollTop 0. */
+/* Non-sticky scroll target for brand #top â must sit at scrollTop 0. */
 .landing-top-anchor {
   position: absolute;
   top: 0;
@@ -2407,160 +2407,262 @@ ol.coach-md__list,
   }
 }
 
-/* Phone mockup */
+/* Phone mockup — ~19.5:9 tall handset with island + home indicator */
 .landing-hero-phone {
-  width: min(260px, 72vw);
+  height: min(540px, 56svh, calc(68vw * 19.5 / 9));
+  width: auto;
+  aspect-ratio: 9 / 19.5;
+  max-width: min(248px, 68vw);
   filter: drop-shadow(0 24px 48px rgba(0, 0, 0, 0.45));
 }
 
 .landing-hero-phone__bezel {
+  height: 100%;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
   background: #0a0a0a;
-  border: 2px solid var(--border-strong);
-  border-radius: 28px;
-  padding: 10px 8px 14px;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  border: 2.5px solid #2a2a2a;
+  border-radius: 36px;
+  padding: 12px 9px 10px;
+  box-shadow:
+    inset 0 0 0 1.5px rgba(255, 255, 255, 0.06),
+    inset 0 0 0 4px #111;
+  box-sizing: border-box;
 }
 
-.landing-hero-phone__notch {
-  width: 72px;
-  height: 8px;
-  margin: 0 auto 10px;
+.landing-hero-phone__island {
+  width: 78px;
+  height: 22px;
+  margin: 0 auto 8px;
   border-radius: 999px;
-  background: #1c1c1c;
+  background: #050505;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  flex-shrink: 0;
 }
 
 .landing-hero-phone__screen {
-  background: var(--surface);
-  border-radius: 18px;
-  padding: 14px 12px 16px;
-  min-height: 320px;
+  flex: 1;
+  min-height: 0;
+  background: var(--bg);
+  border-radius: 22px;
+  padding: 12px 8px 10px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.landing-hero-phone__home {
+  width: 72px;
+  height: 4px;
+  margin: 8px auto 2px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  flex-shrink: 0;
 }
 
 .landing-hero-phone__bar {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
+  padding: 0 4px;
 }
 
 .landing-hero-phone__day {
   font-family: var(--font-display);
-  font-size: 22px;
-  letter-spacing: 1.5px;
-  color: var(--accent-text);
+  font-size: 26px;
+  letter-spacing: 1px;
+  color: var(--text-primary);
+  line-height: 1;
 }
 
 .landing-hero-phone__timer {
   font-family: var(--font-mono);
   font-size: 12px;
-  color: var(--text-muted);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.landing-hero-phone__ex {
+  padding: 0 4px;
+  margin-bottom: 10px;
 }
 
 .landing-hero-phone__ex-name {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--text-primary);
 }
 
 .landing-hero-phone__ex-meta {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-secondary);
   margin-top: 2px;
-  margin-bottom: 14px;
+}
+
+.landing-hero-phone__col-labels {
+  display: grid;
+  grid-template-columns: 34px 1fr 1fr 28px;
+  gap: 6px;
+  padding: 0 2px 6px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.landing-hero-phone__col-labels span:first-child,
+.landing-hero-phone__col-labels span:last-child {
+  visibility: hidden;
 }
 
 .landing-hero-phone__sets {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
+/* Set rows mirror ActiveWorkout: SET label, weight/reps boxes, circular check, PR pill */
 .landing-hero-set {
   display: grid;
-  grid-template-columns: 22px 1fr auto 22px;
+  grid-template-columns: 34px 1fr 1fr 28px;
   align-items: center;
-  gap: 8px;
-  padding: 10px 10px;
-  border-radius: var(--radius-sm);
+  gap: 6px;
+  padding: 6px 2px;
+  border-radius: 8px;
+  transition: opacity 150ms ease;
+}
+
+.landing-hero-set--done {
+  opacity: 0.75;
+}
+
+.landing-hero-set__label {
+  font-size: 10px;
+  font-weight: 500;
+  font-family: var(--font-sans);
+  color: var(--text-muted);
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+
+.landing-hero-set__box {
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: var(--surface-elevated);
   border: 1px solid var(--border);
+  border-radius: 8px;
   font-family: var(--font-mono);
   font-size: 13px;
-}
-
-.landing-hero-set__n {
-  color: var(--text-muted);
-}
-
-.landing-hero-set__w {
   color: var(--text-primary);
-  font-weight: 600;
 }
 
-.landing-hero-set__r {
-  color: var(--text-secondary);
+.landing-hero-set--done .landing-hero-set__box {
+  border-color: var(--border);
+}
+
+.landing-hero-set--active .landing-hero-set__box {
+  border-color: var(--border-strong);
+}
+
+.landing-hero-set__pr {
+  display: none;
+  font-size: 9px;
+  font-family: var(--font-display);
+  color: var(--accent-text);
+  background: rgba(200, 241, 53, 0.1);
+  border: 1px solid rgba(200, 241, 53, 0.3);
+  border-radius: 9999px;
+  padding: 2px 6px;
+  letter-spacing: 0.5px;
+  line-height: 1.2;
+  opacity: 0;
+  transform: scale(0.85);
+  white-space: nowrap;
+}
+
+.landing-hero-set--active {
+  grid-template-columns: 34px 1fr 1fr auto 28px;
+}
+
+.landing-hero-set--active .landing-hero-set__pr {
+  display: inline-flex;
+  align-items: center;
 }
 
 .landing-hero-set__check {
-  color: var(--accent-text);
+  width: 28px;
+  height: 28px;
+  border-radius: 9999px;
+  border: 2px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: end;
   opacity: 0;
-  transform: scale(0.6);
+  transform: scale(0.75);
 }
 
 .landing-hero-set--done .landing-hero-set__check {
   opacity: 1;
   transform: scale(1);
+  border-color: var(--accent);
+  background: rgba(200, 241, 53, 0.12);
+  color: var(--accent-text);
 }
 
-.landing-hero-set--active {
-  border-color: var(--accent-dim);
-  background: var(--accent-wash);
+.landing-hero-set--active .landing-hero-set__check {
+  border-color: var(--border-strong);
+  background: transparent;
+  color: var(--text-muted);
 }
 
-/* Demo loop: check appears -> PR chip - only while landing-demo--active */
+/* Demo loop: check → PR pill — only while landing-demo--active */
 .landing-demo--active .landing-hero-set--active .landing-hero-set__check--anim {
   animation: landing-check-pop 3.6s ease infinite;
 }
 
-.landing-hero-pr {
-  margin-top: 14px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  opacity: 0;
-  transform: translateY(6px);
-}
-
-.landing-demo--active .landing-hero-pr {
+.landing-demo--active .landing-hero-set--active .landing-hero-set__pr {
   animation: landing-pr-in 3.6s ease infinite;
 }
 
-.landing-hero-pr__chip {
-  font-family: var(--font-display);
-  font-size: 14px;
-  letter-spacing: 1px;
-  background: var(--accent);
-  color: var(--on-accent);
-  padding: 2px 8px;
-  border-radius: 6px;
-  line-height: 1.4;
-}
-
-.landing-hero-pr__copy {
-  font-size: 11px;
-  color: var(--text-secondary);
-}
-
 @keyframes landing-check-pop {
-  0%, 18% { opacity: 0; transform: scale(0.6); }
-  28%, 72% { opacity: 1; transform: scale(1); }
-  82%, 100% { opacity: 0; transform: scale(0.6); }
+  0%, 16% {
+    opacity: 0;
+    transform: scale(0.75);
+    border-color: var(--border-strong);
+    background: transparent;
+    color: var(--text-muted);
+  }
+  26%, 74% {
+    opacity: 1;
+    transform: scale(1);
+    border-color: var(--accent);
+    background: rgba(200, 241, 53, 0.12);
+    color: var(--accent-text);
+  }
+  26% { transform: scale(1.15); }
+  32% { transform: scale(1); }
+  84%, 100% {
+    opacity: 0;
+    transform: scale(0.75);
+    border-color: var(--border-strong);
+    background: transparent;
+    color: var(--text-muted);
+  }
 }
 
 @keyframes landing-pr-in {
-  0%, 30% { opacity: 0; transform: translateY(6px); }
-  40%, 72% { opacity: 1; transform: translateY(0); }
-  82%, 100% { opacity: 0; transform: translateY(6px); }
+  0%, 28% { opacity: 0; transform: scale(0.85); }
+  38%, 74% { opacity: 1; transform: scale(1); }
+  84%, 100% { opacity: 0; transform: scale(0.85); }
 }
 
 /* Feature sections */
@@ -2658,12 +2760,12 @@ ol.coach-md__list,
   stroke: var(--accent);
   stroke-width: 6;
   stroke-linecap: round;
-  stroke-dasharray: 264;
-  stroke-dashoffset: 264;
+  /* dasharray/offset set inline from remaining time */
+  transition: stroke 150ms ease;
 }
 
-.landing-demo--active .landing-timer-demo__progress {
-  animation: landing-timer-ring 4s linear infinite;
+.landing-timer-demo__ring--low .landing-timer-demo__progress {
+  stroke: var(--danger);
 }
 
 .landing-timer-demo__time {
@@ -2680,10 +2782,11 @@ ol.coach-md__list,
   font-family: var(--font-mono);
   font-size: 28px;
   color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
 }
 
-.landing-demo--active .landing-timer-demo__digits {
-  animation: landing-timer-count 4s linear infinite;
+.landing-timer-demo__ring--low .landing-timer-demo__digits {
+  color: var(--danger);
 }
 
 .landing-timer-demo__label {
@@ -2707,17 +2810,6 @@ ol.coach-md__list,
   border-radius: var(--radius-pill);
   padding: 4px 10px;
   background: var(--surface-elevated);
-}
-
-@keyframes landing-timer-ring {
-  from { stroke-dashoffset: 264; }
-  to { stroke-dashoffset: 40; }
-}
-
-/* Digit swap is visual only - CSS content can't count; pulse opacity instead */
-@keyframes landing-timer-count {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.72; }
 }
 
 /* Streak / XP one-shot */
@@ -2849,7 +2941,11 @@ ol.coach-md__list,
 }
 
 .landing-level-mock__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--accent-text);
+  flex-shrink: 0;
 }
 
 .landing-level-mock__xp {
@@ -2912,6 +3008,46 @@ ol.coach-md__list,
   margin: 0;
   font-size: 13px;
   color: var(--text-secondary);
+}
+
+/* Install shortcut — secondary, not competing with Get started */
+.landing-install-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: var(--radius-md);
+  background: var(--surface-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.landing-install-btn:hover {
+  border-color: var(--border-strong);
+  color: var(--accent-text);
+}
+
+.landing-install-btn--compact {
+  min-height: 40px;
+  height: 40px;
+  padding: 0 12px;
+  font-size: 12px;
+  border-radius: var(--radius-sm);
+}
+
+.landing-header__install {
+  flex-shrink: 0;
+}
+
+.landing-install__actions {
+  margin-top: 20px;
 }
 
 /* Install / A2HS */
@@ -3004,60 +3140,102 @@ ol.coach-md__list,
   color: var(--accent-text);
 }
 
-/* Footer */
+/* Footer — compact site chrome, not a sticky CTA bar clone */
 .landing-footer {
   border-top: 1px solid var(--border);
-  padding: 28px 20px calc(28px + env(safe-area-inset-bottom));
+  padding: 36px 20px calc(32px + env(safe-area-inset-bottom));
+  background: color-mix(in srgb, var(--surface) 55%, var(--bg));
 }
 
 .landing-footer__inner {
   max-width: 1000px;
   margin: 0 auto;
+  display: grid;
+  gap: 20px;
+}
+
+.landing-footer__brand-block {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px 20px;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 28rem;
 }
 
 .landing-footer__brand {
   font-family: var(--font-display);
-  font-size: 22px;
+  font-size: 24px;
   letter-spacing: 1.5px;
   color: var(--accent-text);
+  text-decoration: none;
+  line-height: 1;
+  width: fit-content;
 }
 
-.landing-footer__line {
+.landing-footer__tagline {
   margin: 0;
   font-size: 13px;
-  color: var(--text-muted);
-  flex: 1 1 auto;
+  line-height: 1.45;
+  color: var(--text-secondary);
 }
 
-.landing-footer__login {
+.landing-footer__nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 4px;
+}
+
+.landing-footer__link {
   display: inline-flex;
   align-items: center;
-  min-height: 44px;
+  min-height: 40px;
+  padding: 0 12px;
   font-size: 13px;
   font-weight: 600;
   color: var(--text-secondary);
   text-decoration: none;
+  border-radius: var(--radius-sm);
 }
 
-.landing-footer__login:hover {
+.landing-footer__link:hover {
   color: var(--text-primary);
+}
+
+.landing-footer__install {
+  margin-left: 4px;
+}
+
+.landing-footer__legal {
+  margin: 0;
+  padding-top: 4px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+@media (min-width: 720px) {
+  .landing-footer__inner {
+    grid-template-columns: 1fr auto;
+    align-items: start;
+  }
+  .landing-footer__legal {
+    grid-column: 1 / -1;
+  }
 }
 
 /* Reduce-motion: show end states for one-shot / loop demos immediately */
 @media (prefers-reduced-motion: reduce) {
-  .landing-hero-set--active .landing-hero-set__check--anim,
-  .landing-hero-pr {
+  .landing-hero-set--active .landing-hero-set__check--anim {
     opacity: 1 !important;
     transform: none !important;
     animation: none !important;
+    border-color: var(--accent) !important;
+    background: rgba(200, 241, 53, 0.12) !important;
+    color: var(--accent-text) !important;
   }
-  .landing-timer-demo__progress {
-    stroke-dashoffset: 40 !important;
+  .landing-hero-set--active .landing-hero-set__pr {
+    opacity: 1 !important;
+    transform: none !important;
     animation: none !important;
   }
   .landing-streak-demo__fill {
@@ -3069,14 +3247,17 @@ ol.coach-md__list,
   }
 }
 
-html.reduce-motion .landing-hero-set--active .landing-hero-set__check--anim,
-html.reduce-motion .landing-hero-pr {
+html.reduce-motion .landing-hero-set--active .landing-hero-set__check--anim {
   opacity: 1 !important;
   transform: none !important;
   animation: none !important;
+  border-color: var(--accent) !important;
+  background: rgba(200, 241, 53, 0.12) !important;
+  color: var(--accent-text) !important;
 }
-html.reduce-motion .landing-timer-demo__progress {
-  stroke-dashoffset: 40 !important;
+html.reduce-motion .landing-hero-set--active .landing-hero-set__pr {
+  opacity: 1 !important;
+  transform: none !important;
   animation: none !important;
 }
 html.reduce-motion .landing-streak-demo__fill {

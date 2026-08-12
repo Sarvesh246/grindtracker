@@ -1,16 +1,64 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type MouseEvent } from 'react'
 import Link from 'next/link'
 import GoogleSignInButton from '@/components/GoogleSignInButton'
 
 /** Local copy — avoid pulling the whole push client into the landing chunk. */
-function isStandalonePwa(): boolean {
+export function isStandalonePwa(): boolean {
   if (typeof window === 'undefined') return false
   const nav = window.navigator as Navigator & { standalone?: boolean }
   return (
     window.matchMedia('(display-mode: standalone)').matches ||
     nav.standalone === true
+  )
+}
+
+function scrollToInstall(e?: MouseEvent) {
+  e?.preventDefault()
+  const el = document.getElementById('install')
+  if (!el) return
+  el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  const heading = el.querySelector('h2')
+  if (heading instanceof HTMLElement) {
+    heading.setAttribute('tabindex', '-1')
+    heading.focus({ preventScroll: true })
+  }
+}
+
+/**
+ * Secondary Install control for header / install section / footer.
+ * Hides when already running as a standalone PWA.
+ */
+export function InstallShortcut({
+  className,
+  label = 'Install',
+  compact,
+}: {
+  className?: string
+  label?: string
+  /** Tighter padding for sticky header. */
+  compact?: boolean
+}) {
+  const [standalone, setStandalone] = useState(false)
+
+  useEffect(() => {
+    // Client-only display-mode check; SSR renders the control then may hide.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setStandalone(isStandalonePwa())
+  }, [])
+
+  if (standalone) return null
+
+  return (
+    <a
+      href="#install"
+      className={`landing-install-btn press${compact ? ' landing-install-btn--compact' : ''} ${className ?? ''}`}
+      data-haptic="light"
+      onClick={scrollToInstall}
+    >
+      {label}
+    </a>
   )
 }
 
@@ -39,6 +87,9 @@ export default function InstallSection() {
             The full gym experience is a PWA — no App Store. On iPhone it feels like a native app
             once it lives on your Home Screen.
           </p>
+          <div className="landing-install__actions">
+            <InstallShortcut label="Add to Home Screen" />
+          </div>
           <ol className="landing-install__steps">
             <li>
               <span className="landing-install__step-n">1</span>
@@ -102,5 +153,35 @@ export function FinalCta() {
         </div>
       </div>
     </section>
+  )
+}
+
+/** Compact site footer — not a sticky header clone. */
+export function LandingFooter() {
+  const year = new Date().getFullYear()
+
+  return (
+    <footer className="landing-footer">
+      <div className="landing-footer__inner">
+        <div className="landing-footer__brand-block">
+          <a href="#top" className="landing-footer__brand" aria-label="GRIND home">
+            GRIND
+          </a>
+          <p className="landing-footer__tagline">
+            Gym tracker for lifters who want speed, streaks, and a private scoreboard.
+          </p>
+        </div>
+        <nav className="landing-footer__nav" aria-label="Footer">
+          <Link href="/login" className="landing-footer__link press" data-haptic="light">
+            Log in
+          </Link>
+          <a href="#start" className="landing-footer__link press" data-haptic="light">
+            Get started
+          </a>
+          <InstallShortcut className="landing-footer__install" label="Add to Home Screen" />
+        </nav>
+        <p className="landing-footer__legal">© {year} GRIND · Free to start</p>
+      </div>
+    </footer>
   )
 }

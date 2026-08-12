@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import GoogleSignInButton from '@/components/GoogleSignInButton'
+import { InstallShortcut } from './InstallSection'
 
 export default function LandingHeader() {
   return (
@@ -10,6 +11,7 @@ export default function LandingHeader() {
         GRIND
       </a>
       <div className="landing-header__actions">
+        <InstallShortcut compact label="Install" className="landing-header__install" />
         <Link href="/login" className="landing-header__login press" data-haptic="light">
           Log in
         </Link>

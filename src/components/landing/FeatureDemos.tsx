@@ -1,6 +1,14 @@
 'use client'
 
-import { useEffect, useRef, type ReactNode, type RefObject } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from 'react'
+import BadgeIcon from '@/components/BadgeIcon'
+import { ALL_BADGES } from '@/lib/utils/badges'
 
 function useInViewOnce(threshold = 0.35) {
   const ref = useRef<HTMLDivElement>(null)
@@ -27,13 +35,16 @@ function useInViewOnce(threshold = 0.35) {
 
 function useInViewLoop(threshold = 0.3) {
   const ref = useRef<HTMLDivElement>(null)
+  const [active, setActive] = useState(false)
 
   useEffect(() => {
     const el = ref.current
     if (!el) return
     const io = new IntersectionObserver(
       ([entry]) => {
-        el.classList.toggle('landing-demo--active', entry.isIntersecting)
+        const on = entry.isIntersecting
+        el.classList.toggle('landing-demo--active', on)
+        setActive(on)
       },
       { threshold },
     )
@@ -41,7 +52,15 @@ function useInViewLoop(threshold = 0.3) {
     return () => io.disconnect()
   }, [threshold])
 
-  return ref
+  return { ref, active }
+}
+
+function prefersReducedMotion(): boolean {
+  if (typeof window === 'undefined') return false
+  return (
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches ||
+    document.documentElement.classList.contains('reduce-motion')
+  )
 }
 
 function DemoFrame({
@@ -60,19 +79,80 @@ function DemoFrame({
   )
 }
 
-/** Rest-timer ring — loops while in view. */
+const TIMER_SECONDS = 15
+const TIMER_RADIUS = 42
+const TIMER_CIRC = 2 * Math.PI * TIMER_RADIUS
+
+function fmtRest(secs: number): string {
+  const s = Math.max(0, Math.ceil(secs))
+  const m = Math.floor(s / 60)
+  const r = s % 60
+  return `${m}:${String(r).padStart(2, '0')}`
+}
+
+/** Rest-timer ring — real countdown; loops while in view. */
 export function RestTimerDemo() {
-  const ref = useInViewLoop()
+  const { ref, active } = useInViewLoop()
+  const [remaining, setRemaining] = useState(TIMER_SECONDS)
+  const [reduceMotion, setReduceMotion] = useState(false)
+  const startRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    // Client-only motion preference (SSR shows animated-capable markup).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setReduceMotion(prefersReducedMotion())
+  }, [])
+
+  useEffect(() => {
+    if (reduceMotion || !active) {
+      startRef.current = null
+      return
+    }
+
+    startRef.current = null
+    let raf = 0
+    const tick = (now: number) => {
+      if (startRef.current === null) startRef.current = now
+      const elapsed = (now - startRef.current) / 1000
+      // Loop: count 15→0, brief hold, restart.
+      const cycle = TIMER_SECONDS + 1.2
+      const t = elapsed % cycle
+      if (t <= TIMER_SECONDS) {
+        setRemaining(TIMER_SECONDS - t)
+      } else {
+        setRemaining(0)
+      }
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [active, reduceMotion])
+
+  // Reduce-motion: static completed end-state (empty ring + 0:00).
+  const shown = reduceMotion ? 0 : remaining
+  const progress = shown / TIMER_SECONDS
+  const dashOffset = TIMER_CIRC * (1 - progress)
+  const low = !reduceMotion && shown <= 5 && shown > 0
+
   return (
     <DemoFrame demoRef={ref} className="landing-timer-demo">
-      <div className="landing-timer-demo__ring">
+      <div className={`landing-timer-demo__ring${low ? ' landing-timer-demo__ring--low' : ''}`}>
         <svg viewBox="0 0 100 100" className="landing-timer-demo__svg">
-          <circle cx="50" cy="50" r="42" className="landing-timer-demo__track" />
-          <circle cx="50" cy="50" r="42" className="landing-timer-demo__progress" />
+          <circle cx="50" cy="50" r={TIMER_RADIUS} className="landing-timer-demo__track" />
+          <circle
+            cx="50"
+            cy="50"
+            r={TIMER_RADIUS}
+            className="landing-timer-demo__progress"
+            style={{
+              strokeDasharray: TIMER_CIRC,
+              strokeDashoffset: dashOffset,
+            }}
+          />
         </svg>
         <div className="landing-timer-demo__time">
-          <span className="landing-timer-demo__digits">1:28</span>
-          <span className="landing-timer-demo__label">REST</span>
+          <span className="landing-timer-demo__digits">{fmtRest(shown)}</span>
+          <span className="landing-timer-demo__label">{shown <= 0 ? 'DONE' : 'REST'}</span>
         </div>
       </div>
       <div className="landing-timer-demo__hints">
@@ -148,22 +228,27 @@ export function ProgressMock() {
   )
 }
 
-/** Level-up / badge strip mock. */
+const LANDING_BADGE_IDS = ['flawless', 'plates_225', 'weekend_warrior'] as const
+
+/** Level-up / badge strip — real BadgeIcon + catalog labels. */
 export function LevelUpMock() {
+  const badges = LANDING_BADGE_IDS.map((id) => ALL_BADGES.find((b) => b.id === id)!).filter(
+    Boolean,
+  )
+
   return (
     <div className="landing-level-mock" aria-hidden="true">
-      <div className="landing-level-mock__badge">
-        <span className="landing-level-mock__icon">◆</span>
-        <span>Flawless</span>
-      </div>
-      <div className="landing-level-mock__badge landing-level-mock__badge--hot">
-        <span className="landing-level-mock__icon">★</span>
-        <span>Two Plates</span>
-      </div>
-      <div className="landing-level-mock__badge">
-        <span className="landing-level-mock__icon">▲</span>
-        <span>Weekend</span>
-      </div>
+      {badges.map((badge, i) => (
+        <div
+          key={badge.id}
+          className={`landing-level-mock__badge${i === 1 ? ' landing-level-mock__badge--hot' : ''}`}
+        >
+          <span className="landing-level-mock__icon">
+            <BadgeIcon badgeId={badge.id} size={22} earned />
+          </span>
+          <span>{badge.label}</span>
+        </div>
+      ))}
       <div className="landing-level-mock__xp">+100 XP · workout complete</div>
     </div>
   )
