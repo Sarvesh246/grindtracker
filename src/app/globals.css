@@ -3225,6 +3225,7 @@ ol.coach-md__list,
 }
 
 /* Mobile A2HS tip — replaces the header Install control on small screens */
+.landing > .landing-install-pill,
 .landing-install-pill {
   position: fixed;
   left: 50%;
