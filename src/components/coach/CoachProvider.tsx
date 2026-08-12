@@ -17,6 +17,7 @@ import {
 } from '@/lib/coach'
 import { titleFromMessage } from '@/lib/coach/conversations'
 import { useUnit } from '@/lib/contexts/UnitContext'
+import { localDateKey } from '@/lib/utils/formatting'
 
 export type CoachDockId = 'br' | 'bl' | 'tr' | 'tl'
 /** compact = quick sheet; page = full-screen Coach app */
@@ -35,6 +36,8 @@ export type CoachQuotaState = {
   burstLimit: number
   burstRemaining: number
   unlimited: boolean
+  dailyResetsAt?: string | null
+  burstResetsAt?: string | null
 }
 
 type CoachContextValue = {
@@ -213,9 +216,8 @@ export function CoachProvider({ children }: { children: ReactNode }) {
         // ignore
       }
     }
-    // theme-color restore is owned by CoachSheet's useThemeColor cleanup
-    // (pushes --surface while the page sheet is open; pops + force-writes
-    // --bg on close/unmount). Only heal the visual-viewport pan here.
+    // theme-color stays on app --bg (Coach no longer pushes --surface).
+    // CoachSheet still force-heals chrome on page close for iOS PWA stickiness.
     reanchor()
     requestAnimationFrame(() => {
       reanchor()
@@ -309,8 +311,23 @@ export function CoachProvider({ children }: { children: ReactNode }) {
         return
       }
       if (quota && !quota.unlimited && quota.dailyRemaining <= 0) {
+        const when = quota.dailyResetsAt
+          ? (() => {
+              const at = new Date(quota.dailyResetsAt)
+              if (Number.isNaN(at.getTime())) return null
+              const ms = at.getTime() - Date.now()
+              if (ms <= 0) return 'soon'
+              const mins = Math.max(1, Math.ceil(ms / 60_000))
+              if (mins < 60) return `in ${mins}m`
+              const h = Math.floor(mins / 60)
+              const m = mins % 60
+              return m ? `in ${h}h ${m}m` : `in ${h}h`
+            })()
+          : null
         setError(
-          `Daily coach limit reached (${quota.dailyLimit} messages per day). Try again tomorrow.`,
+          when
+            ? `Daily coach limit reached (${quota.dailyLimit} messages). Try again ${when}.`
+            : `Daily coach limit reached (${quota.dailyLimit} messages per day). Try again after the 24-hour window resets.`,
         )
         return
       }
@@ -345,6 +362,12 @@ export function CoachProvider({ children }: { children: ReactNode }) {
       }
 
       try {
+        let timeZone: string | undefined
+        try {
+          timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+        } catch {
+          timeZone = undefined
+        }
         const res = await fetch('/api/coach/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -353,6 +376,8 @@ export function CoachProvider({ children }: { children: ReactNode }) {
             history,
             unit: unitLabel,
             conversationId: activeConversationId,
+            localDate: localDateKey(),
+            timeZone,
           }),
         })
 
@@ -385,10 +410,42 @@ export function CoachProvider({ children }: { children: ReactNode }) {
           try {
             const body = (await res.json()) as {
               error?: string
+              code?: string
               quota?: CoachQuotaState
             }
-            if (body.error) errText = body.error
             if (body.quota) setQuota(body.quota)
+            if (body.error) errText = body.error
+            if (body.code === 'daily' && body.quota?.dailyResetsAt) {
+              const at = new Date(body.quota.dailyResetsAt)
+              if (!Number.isNaN(at.getTime())) {
+                const ms = at.getTime() - Date.now()
+                const mins = Math.max(1, Math.ceil(ms / 60_000))
+                const when =
+                  ms <= 0
+                    ? 'soon'
+                    : mins < 60
+                      ? `in ${mins}m`
+                      : (() => {
+                          const h = Math.floor(mins / 60)
+                          const m = mins % 60
+                          return m ? `in ${h}h ${m}m` : `in ${h}h`
+                        })()
+                const clock = at.toLocaleString(undefined, {
+                  hour: 'numeric',
+                  minute: '2-digit',
+                })
+                errText = `Daily coach limit reached (${body.quota.dailyLimit} messages). Chat again ${when} (around ${clock}).`
+              }
+            } else if (body.code === 'burst' && body.quota?.burstResetsAt) {
+              const at = new Date(body.quota.burstResetsAt)
+              if (!Number.isNaN(at.getTime())) {
+                const mins = Math.max(
+                  1,
+                  Math.ceil((at.getTime() - Date.now()) / 60_000),
+                )
+                errText = `Too many messages too quickly. Try again in ${mins}m.`
+              }
+            }
           } catch {
             if (res.status === 503) {
               errText = "Coach isn't ready yet."

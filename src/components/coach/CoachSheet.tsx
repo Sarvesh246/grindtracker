@@ -14,9 +14,9 @@ import {
 import { COACH_MAX_MESSAGE_CHARS } from '@/lib/coach'
 import { useMotionPref } from '@/lib/contexts/MotionContext'
 import {
-  SURFACE_THEME_COLOR,
+  THEME_COLOR,
+  refreshThemeColor,
   useTheme,
-  useThemeColor,
 } from '@/lib/contexts/ThemeContext'
 import { useExitingValue } from '@/lib/hooks/useExitingValue'
 import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
@@ -56,6 +56,38 @@ const VEL_EMA = 0.78
 const EXPAND_RUBBER_AT = 160
 /** Gravity-ish assist while flinging the sheet off-screen (px/s²). */
 const FLING_GRAVITY = 2800
+
+/** Human-readable "when the next daily slot frees" from quota.dailyResetsAt. */
+function formatQuotaReset(iso: string | null | undefined): string | null {
+  if (!iso) return null
+  const at = new Date(iso)
+  if (Number.isNaN(at.getTime())) return null
+  const ms = at.getTime() - Date.now()
+  if (ms <= 0) return 'soon'
+  const mins = Math.max(1, Math.ceil(ms / 60_000))
+  if (mins < 60) return `in ${mins}m`
+  const hours = Math.floor(mins / 60)
+  const rem = mins % 60
+  if (hours < 48) {
+    return rem === 0 ? `in ${hours}h` : `in ${hours}h ${rem}m`
+  }
+  return at.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
+function formatQuotaResetClock(iso: string | null | undefined): string | null {
+  if (!iso) return null
+  const at = new Date(iso)
+  if (Number.isNaN(at.getTime())) return null
+  return at.toLocaleString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
 
 /**
  * Soft rubber at the top only. Downward travel stays 1:1 so the sheet can
@@ -140,17 +172,48 @@ export default function CoachSheet() {
   }
 
   const isPage = visualSize === 'page'
-  // Keep --surface theme-color for the whole page-sheet lifetime (including
-  // exit), so iOS doesn't re-sample mid-animation; cleanup on unmount pops
-  // and force-writes app --bg. visualSize stays 'page' through closeCoach's
-  // immediate size reset.
-  useThemeColor(mounted && isPage ? SURFACE_THEME_COLOR[theme] : null)
+  // Do NOT push --surface into theme-color while the page sheet is open.
+  // The safe-area band is already painted --bg; overriding chrome to surface
+  // is what left iOS PWAs stuck on olive/gray after close. Heal on page exit
+  // so WebKit re-samples app --bg once the sheet is gone.
+  useEffect(() => {
+    if (!closing || !isPage) return
+    refreshThemeColor()
+  }, [closing, isPage])
   const dailyRemaining = quota?.dailyRemaining
+  const dailyLimit = quota?.dailyLimit
+  const resetRelative = formatQuotaReset(quota?.dailyResetsAt)
+  const resetClock = formatQuotaResetClock(quota?.dailyResetsAt)
   const capped =
     !quota?.unlimited && dailyRemaining != null && dailyRemaining <= 0
   const sendDisabled =
     !draft.trim() || streaming || capped || configured === false
 
+  const quotaLabel = (() => {
+    if (!quota) return '—'
+    const left =
+      dailyRemaining != null && dailyLimit != null
+        ? `${dailyRemaining}/${dailyLimit}`
+        : dailyRemaining != null
+          ? `${dailyRemaining} left`
+          : null
+    const resetBit = resetRelative ? ` · resets ${resetRelative}` : ''
+    if (quota.unlimited) {
+      return left
+        ? `Unlimited (dev) · ${left}${resetBit}`
+        : `Unlimited (dev)${resetBit}`
+    }
+    if (dailyRemaining != null) {
+      return `${dailyRemaining} left${resetBit}`
+    }
+    return '…'
+  })()
+
+  const quotaTitle = quota?.unlimited
+    ? 'Dev toggle is on — the app’s 15/day limit is bypassed until you hit Gemini’s own free-tier quota. Remaining count is informational.'
+    : resetClock
+      ? `Coach messages left in the rolling 24h window — next slot frees around ${resetClock}`
+      : 'Coach messages left in the rolling 24h window'
   const cancelSettle = useCallback(() => {
     if (settleRaf.current != null) {
       cancelAnimationFrame(settleRaf.current)
@@ -444,8 +507,9 @@ export default function CoachSheet() {
 
       // Three resting ends: page (expanded), compact (mini), off-screen (closed).
       // Finger tracks 1:1 while down; release springs to the chosen end.
-      // From page: minimize zone is wide — only past dismissAt / hard flick closes.
-      // From compact: further pull / flick closes; pull up expands.
+      // From page: medium pulls + soft flicks → compact. Close only when clearly
+      // past dismissAt OR a hard flick (soft flick alone never skips minimize).
+      // From compact: further pull / soft flick closes; pull up expands.
       if (y < 0 || flickedUp) {
         if (size !== 'page' && (y < -expandAt || flickedUp)) {
           shouldExpand = true
@@ -584,6 +648,16 @@ export default function CoachSheet() {
 
   return (
     <>
+      {/* Fixed --bg band under the status bar while the page sheet (incl. exit)
+          is mounted. Stops iOS from sampling --surface / accent wash into the
+          chrome after the sheet slides/fades away. */}
+      {mounted && isPage ? (
+        <div
+          className="coach-status-bar-heal"
+          style={{ backgroundColor: THEME_COLOR[theme] }}
+          aria-hidden
+        />
+      ) : null}
       {showBackdrop ? (
         <button
           type="button"
@@ -651,19 +725,9 @@ export default function CoachSheet() {
               capped ? ' coach-sheet__quota--danger' : ''
             }`}
             aria-live="polite"
-            title={
-              quota?.unlimited
-                ? 'Dev toggle is on — the app’s 15/day limit is bypassed until you hit Gemini’s own free-tier quota'
-                : 'Coach messages you can send today — resets 24 hours after your first message'
-            }
+            title={quotaTitle}
           >
-            {quota?.unlimited
-              ? 'Unlimited (dev)'
-              : dailyRemaining != null
-                ? `${dailyRemaining} left`
-                : quota
-                  ? '…'
-                  : '—'}
+            {quotaLabel}
           </div>
           <div className="coach-sheet__actions">
             {isPage ? (
@@ -787,20 +851,37 @@ export default function CoachSheet() {
                 <p className="coach-sheet__disclaimer">
                   Not medical advice. Uses your GRIND log.
                 </p>
-                <div className="coach-sheet__chips">
-                  {CHIPS.map(chip => (
-                    <button
-                      key={chip}
-                      type="button"
-                      className="coach-chip press"
-                      data-haptic="light"
-                      disabled={streaming || capped || configured === false}
-                      onClick={() => void handleSend(chip)}
-                    >
-                      {chip}
-                    </button>
-                  ))}
-                </div>
+                {capped ? (
+                  <div className="coach-sheet__quota-banner" role="status">
+                    <p className="coach-sheet__quota-banner-title">
+                      Daily Coach limit reached
+                    </p>
+                    <p className="coach-sheet__quota-banner-body">
+                      You’ve used all {quota?.dailyLimit ?? 15} messages in the
+                      current window.
+                      {resetRelative
+                        ? ` Chat with GRIND Coach again ${resetRelative}${
+                            resetClock ? ` (around ${resetClock})` : ''
+                          }.`
+                        : ' Chat again after the rolling 24-hour window resets.'}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="coach-sheet__chips">
+                    {CHIPS.map(chip => (
+                      <button
+                        key={chip}
+                        type="button"
+                        className="coach-chip press"
+                        data-haptic="light"
+                        disabled={streaming || capped || configured === false}
+                        onClick={() => void handleSend(chip)}
+                      >
+                        {chip}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             ) : (
               <ul className="coach-sheet__messages">
@@ -834,6 +915,22 @@ export default function CoachSheet() {
                     </li>
                   )
                 })}
+                {capped ? (
+                  <li className="coach-sheet__quota-banner" role="status">
+                    <p className="coach-sheet__quota-banner-title">
+                      Daily Coach limit reached
+                    </p>
+                    <p className="coach-sheet__quota-banner-body">
+                      You’ve used all {quota?.dailyLimit ?? 15} messages in the
+                      current window.
+                      {resetRelative
+                        ? ` Chat with GRIND Coach again ${resetRelative}${
+                            resetClock ? ` (around ${resetClock})` : ''
+                          }.`
+                        : ' Chat again after the rolling 24-hour window resets.'}
+                    </p>
+                  </li>
+                ) : null}
               </ul>
             )}
             {error ? (
@@ -858,7 +955,7 @@ export default function CoachSheet() {
                   ? 'Coach unavailable'
                   : 'Ask Coach…'
             }
-            disabled={streaming || configured === false}
+            disabled={streaming || capped || configured === false}
             aria-label="Message to Coach"
             onChange={e => setDraft(e.target.value)}
             onKeyDown={onKeyDown}

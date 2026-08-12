@@ -96,27 +96,30 @@ describe('coachMotion sheet snap thresholds', () => {
     assert.ok(SHEET_MINIMIZE_FRAC < SHEET_DISMISS_FRAC)
     assert.ok(SHEET_MINIMIZE_MIN_PX < SHEET_DISMISS_MIN_PX)
     assert.ok(SHEET_FLICK_VY < SHEET_DISMISS_FLICK_VY)
-    assert.equal(SHEET_MINIMIZE_FRAC, 0.2)
-    assert.equal(SHEET_DISMISS_FRAC, 0.45)
+    assert.equal(SHEET_MINIMIZE_FRAC, 0.14)
+    assert.equal(SHEET_DISMISS_FRAC, 0.58)
     assert.equal(SHEET_EXPAND_FRAC, 0.18)
-    assert.equal(SHEET_FLICK_VY, 880)
-    assert.equal(SHEET_DISMISS_FLICK_VY, 1350)
+    assert.equal(SHEET_FLICK_VY, 720)
+    assert.equal(SHEET_DISMISS_FLICK_VY, 1750)
+    // Soft flick must stay clearly below hard-dismiss so a normal pull
+    // settles to compact instead of closing.
+    assert.ok(SHEET_DISMISS_FLICK_VY - SHEET_FLICK_VY >= 800)
   })
 
   it('computes distance gates from height', () => {
-    assert.equal(sheetMinimizeThreshold(400), Math.max(80, 80))
-    assert.equal(sheetDismissThreshold(400), Math.max(180, 180))
-    assert.equal(sheetMinimizeThreshold(800), 160)
-    assert.equal(sheetDismissThreshold(800), 360)
+    assert.equal(sheetMinimizeThreshold(400), Math.max(56, 400 * 0.14))
+    assert.equal(sheetDismissThreshold(400), Math.max(260, 400 * 0.58))
+    assert.equal(sheetMinimizeThreshold(800), Math.max(56, 800 * 0.14))
+    assert.equal(sheetDismissThreshold(800), Math.max(260, 800 * 0.58))
     // Expand caps at 120px so tall sheets aren't a long pull.
     assert.equal(sheetExpandThreshold(800), 120)
-    assert.equal(sheetExpandThreshold(200), Math.max(64, 36))
+    assert.equal(sheetExpandThreshold(200), Math.max(64, 200 * 0.18))
   })
 
-  it('always places dismiss above minimize for typical heights', () => {
+  it('always places dismiss well above minimize for typical heights', () => {
     for (const h of [320, 420, 640, 844, 1000]) {
       assert.ok(
-        sheetDismissThreshold(h) > sheetMinimizeThreshold(h) + 60,
+        sheetDismissThreshold(h) > sheetMinimizeThreshold(h) + 120,
         `height ${h}: dismiss should sit well above minimize`,
       )
     }

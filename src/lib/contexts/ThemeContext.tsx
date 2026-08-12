@@ -96,8 +96,16 @@ function writeThemeColorMeta(color: string, force = false) {
     return meta
   }
 
+  // Keep html/body paint aligned with chrome — iOS can re-sample the top
+  // band after a sheet exit even when the meta tag is already correct.
+  const syncShellBackground = (c: string) => {
+    document.documentElement.style.backgroundColor = c
+    document.body.style.backgroundColor = c
+  }
+
   if (!force) {
     ensureMeta().setAttribute('content', color)
+    syncShellBackground(color)
     return
   }
 
@@ -113,6 +121,7 @@ function writeThemeColorMeta(color: string, force = false) {
   } else {
     metas.forEach(meta => meta.setAttribute('content', bounce))
   }
+  syncShellBackground(bounce)
 
   const paint = () => {
     // Replace the node — attribute-only tweaks are flaky in iOS PWAs.
@@ -121,6 +130,7 @@ function writeThemeColorMeta(color: string, force = false) {
     fresh.setAttribute('name', 'theme-color')
     fresh.setAttribute('content', color)
     document.head.appendChild(fresh)
+    syncShellBackground(color)
   }
 
   requestAnimationFrame(() => {
@@ -135,6 +145,24 @@ function flushThemeColor(opts?: { force?: boolean }) {
   writeThemeColorMeta(effectiveThemeColor(readDomTheme()), opts?.force === true)
 }
 
+function scheduleForcedThemeColorHeals(delaysMs: number[]) {
+  if (themeColorFlushTimer != null) clearTimeout(themeColorFlushTimer)
+  flushThemeColor({ force: true })
+  let i = 0
+  const scheduleNext = () => {
+    if (i >= delaysMs.length) {
+      themeColorFlushTimer = null
+      return
+    }
+    const delay = delaysMs[i++]
+    themeColorFlushTimer = setTimeout(() => {
+      flushThemeColor({ force: true })
+      scheduleNext()
+    }, delay)
+  }
+  scheduleNext()
+}
+
 /** Apply the theme to <html> and the browser chrome meta. Safe to call client-side only. */
 function applyTheme(theme: Theme) {
   document.documentElement.classList.toggle('light', theme === 'light')
@@ -143,16 +171,12 @@ function applyTheme(theme: Theme) {
 
 /**
  * Re-assert the effective theme-color (stack top, else theme default).
- * Prefer `useThemeColor` for overlays; this remains for one-shot heal paths.
+ * Prefer `useThemeColor` for overlays; this remains for one-shot heal paths
+ * (Coach page close — force iOS to drop a stuck surface/olive sample).
  */
 export function refreshThemeColor() {
-  flushThemeColor({ force: true })
-  if (themeColorFlushTimer != null) clearTimeout(themeColorFlushTimer)
-  // Exit animations (~560ms) can leave sampled pixels until the sheet unmounts.
-  themeColorFlushTimer = setTimeout(() => {
-    themeColorFlushTimer = null
-    flushThemeColor({ force: true })
-  }, 580)
+  // Coach exit is ~560ms; a late pass catches post-unmount safe-area settle.
+  scheduleForcedThemeColorHeals([600, 700])
 }
 
 function pushThemeColor(color: string): number {
@@ -167,19 +191,15 @@ function popThemeColor(id: number) {
   themeColorStack = themeColorStack.filter(e => e.id !== id)
   if (themeColorStack.length === before) return
   // Restoring default (or a lower overlay) after Coach — force iOS re-sample.
-  flushThemeColor({ force: true })
-  if (themeColorFlushTimer != null) clearTimeout(themeColorFlushTimer)
-  themeColorFlushTimer = setTimeout(() => {
-    themeColorFlushTimer = null
-    flushThemeColor({ force: true })
-  }, 580)
+  scheduleForcedThemeColorHeals([600, 700])
 }
 
 /**
  * Push an override onto the theme-color stack while `color` is non-null.
- * Cleanup pops that entry and force-restores the previous/default color —
- * use for full-bleed overlays (Coach page sheet) so unmount always heals
- * the iOS PWA status bar. Pass `null` to release early (e.g. on close start).
+ * Cleanup pops that entry and force-restores the previous/default color.
+ * Prefer for transient overlays that intentionally recolor chrome.
+ * Coach page sheet deliberately does NOT use this (keeps app --bg) — pushing
+ * --surface was the root cause of stuck olive/gray status bars on iOS PWAs.
  */
 export function useThemeColor(color: string | null) {
   const idRef = useRef<number | null>(null)

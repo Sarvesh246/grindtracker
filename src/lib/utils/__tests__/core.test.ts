@@ -2,7 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { getLevel, getXpInCurrentLevel, getXpRequiredForLevel } from '../gamification'
 import { calendarDaysSince, nextDay, advanceIndex, autoSequence, orderedDayKeys } from '../rotation'
-import { localDateKey } from '../formatting'
+import { localDateKey, parseClientLocalDate } from '../formatting'
 import { datesConnected, uncoveredDatesBetween } from '../restDays'
 
 describe('gamification level curve', () => {
@@ -29,6 +29,24 @@ describe('localDateKey', () => {
   it('formats YYYY-MM-DD from local components', () => {
     const d = new Date(2026, 7, 3, 23, 30, 0) // Aug 3 local
     assert.equal(localDateKey(d), '2026-08-03')
+  })
+})
+
+describe('parseClientLocalDate', () => {
+  it('accepts a valid calendar key near UTC today', () => {
+    const now = new Date(Date.UTC(2026, 7, 12, 2, 0, 0)) // Aug 12 UTC
+    assert.equal(parseClientLocalDate('2026-08-11', { now, daySkew: 2 }), '2026-08-11')
+  })
+
+  it('rejects garbage and impossible dates', () => {
+    assert.equal(parseClientLocalDate('not-a-date'), null)
+    assert.equal(parseClientLocalDate('2026-13-01'), null)
+    assert.equal(parseClientLocalDate('2026-02-30'), null)
+  })
+
+  it('rejects dates far from UTC today', () => {
+    const now = new Date(Date.UTC(2026, 7, 11, 12, 0, 0))
+    assert.equal(parseClientLocalDate('2026-01-01', { now, daySkew: 2 }), null)
   })
 })
 

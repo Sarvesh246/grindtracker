@@ -1382,6 +1382,20 @@ html.reduce-motion .coach-fab.press:active:not(.coach-fab--dragging):not(.coach-
   animation: none;
 }
 
+/* Fixed --bg strip under the iOS status bar while Coach page (incl. exit) is
+   mounted. theme-color stays on app --bg; this band guarantees the sampled
+   pixels match after the sheet slides/fades away. */
+.coach-status-bar-heal {
+  position: fixed;
+  z-index: 441;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: env(safe-area-inset-top, 0px);
+  pointer-events: none;
+  background-color: var(--bg);
+}
+
 .coach-sheet {
   position: fixed;
   z-index: 440;
@@ -1440,10 +1454,10 @@ html.light .coach-sheet {
   /* Size morph owns the expand; don't replay the compact enter keyframe. */
   animation: none;
   /* Clear the Dynamic Island / status bar while open. The padding band is
-     painted solid --bg (theme-color / app-shell), not --surface, so it matches
-     the normal chrome and can't read as a leftover gray strip after close.
-     Keep the accent wash BELOW the safe-area band — tinting the status-bar
-     region makes iOS sample --surface/--accent and stick after dismiss. */
+     painted solid --bg (theme-color / app-shell), not --surface, so chrome
+     matches the rest of the app. Do not push --surface into theme-color —
+     that left iOS PWAs stuck on olive/gray after dismiss. Accent wash stays
+     BELOW the safe-area band so status-bar sampling can't pick it up. */
   padding-top: env(safe-area-inset-top);
   background:
     radial-gradient(
@@ -1562,7 +1576,7 @@ html.light .coach-sheet {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 132px;
+  max-width: min(52vw, 220px);
 }
 .coach-sheet__quota--danger {
   color: var(--danger);
@@ -1781,6 +1795,26 @@ html.reduce-motion .coach-history {
   font-size: 12px;
   line-height: 1.4;
   color: var(--text-muted);
+}
+.coach-sheet__quota-banner {
+  margin: 12px 0 0;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--border));
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface-elevated));
+  list-style: none;
+}
+.coach-sheet__quota-banner-title {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--danger);
+}
+.coach-sheet__quota-banner-body {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-secondary);
 }
 .coach-sheet__chips {
   display: flex;

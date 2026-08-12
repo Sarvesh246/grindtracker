@@ -5,6 +5,8 @@ import {
   COACH_DAILY_LIMIT,
 } from './constants'
 
+const DAY_MS = 24 * 60 * 60 * 1000
+
 export type CoachQuota = {
   dailyUsed: number
   dailyLimit: number
@@ -14,6 +16,13 @@ export type CoachQuota = {
   burstRemaining: number
   /** Admin-only dev toggle (user_profiles.coach_dev_unlimited) — daily/burst caps don't apply. */
   unlimited: boolean
+  /**
+   * When the oldest user message in the rolling 24h window ages out
+   * (ISO). Remaining increases by 1 at this instant. Null when unused.
+   */
+  dailyResetsAt: string | null
+  /** When the oldest burst-window message ages out (ISO). Null when unused. */
+  burstResetsAt: string | null
 }
 
 export function mapCoachRateLimitError(message: string | undefined): {
@@ -39,6 +48,33 @@ export function mapCoachRateLimitError(message: string | undefined): {
   return null
 }
 
+async function oldestMessageCreatedAt(
+  supabase: SupabaseClient,
+  userId: string,
+  sinceIso: string,
+): Promise<string | null> {
+  const { data } = await supabase
+    .from('coach_messages')
+    .select('created_at')
+    .eq('user_id', userId)
+    .eq('role', 'user')
+    .gt('created_at', sinceIso)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+  return typeof data?.created_at === 'string' ? data.created_at : null
+}
+
+function resetsAtFromOldest(
+  oldestCreatedAt: string | null,
+  windowMs: number,
+): string | null {
+  if (!oldestCreatedAt) return null
+  const t = new Date(oldestCreatedAt).getTime()
+  if (Number.isNaN(t)) return null
+  return new Date(t + windowMs).toISOString()
+}
+
 /** Pre-check counts so we fail before spending Gemini tokens when possible. */
 export async function getCoachQuota(
   supabase: SupabaseClient,
@@ -46,10 +82,9 @@ export async function getCoachQuota(
   isAdmin: boolean,
 ): Promise<CoachQuota | null> {
   const now = Date.now()
-  const dailySince = new Date(now - 24 * 60 * 60 * 1000).toISOString()
-  const burstSince = new Date(
-    now - COACH_BURST_WINDOW_MINUTES * 60 * 1000,
-  ).toISOString()
+  const dailySince = new Date(now - DAY_MS).toISOString()
+  const burstWindowMs = COACH_BURST_WINDOW_MINUTES * 60 * 1000
+  const burstSince = new Date(now - burstWindowMs).toISOString()
 
   const [daily, burst] = await Promise.all([
     supabase
@@ -88,6 +123,15 @@ export async function getCoachQuota(
     unlimited = !!profile?.coach_dev_unlimited
   }
 
+  const [dailyOldest, burstOldest] = await Promise.all([
+    dailyUsed > 0
+      ? oldestMessageCreatedAt(supabase, userId, dailySince)
+      : Promise.resolve(null),
+    burstUsed > 0
+      ? oldestMessageCreatedAt(supabase, userId, burstSince)
+      : Promise.resolve(null),
+  ])
+
   return {
     dailyUsed,
     dailyLimit: COACH_DAILY_LIMIT,
@@ -96,5 +140,7 @@ export async function getCoachQuota(
     burstLimit: COACH_BURST_LIMIT,
     burstRemaining: Math.max(0, COACH_BURST_LIMIT - burstUsed),
     unlimited,
+    dailyResetsAt: resetsAtFromOldest(dailyOldest, DAY_MS),
+    burstResetsAt: resetsAtFromOldest(burstOldest, burstWindowMs),
   }
 }

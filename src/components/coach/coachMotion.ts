@@ -41,21 +41,22 @@ export const RUBBER_FACTOR = 0.2
 /**
  * Two-stage sheet snap (page ↔ compact ↔ off-screen).
  * Distance gates use max(minPx, height × frac). Minimize zone is intentionally
- * wide so a normal pull lands on compact instead of hair-trigger dismiss.
+ * wide so a normal pull lands on compact instead of hair-trigger dismiss —
+ * only a clear past-dismiss distance or a hard flick closes from page.
  */
 /** Page → compact on release past this (or soft flick down). */
-export const SHEET_MINIMIZE_FRAC = 0.2
-export const SHEET_MINIMIZE_MIN_PX = 80
+export const SHEET_MINIMIZE_FRAC = 0.14
+export const SHEET_MINIMIZE_MIN_PX = 56
 /** Page/compact → dismiss past this (must sit well above minimize). */
-export const SHEET_DISMISS_FRAC = 0.45
-export const SHEET_DISMISS_MIN_PX = 180
+export const SHEET_DISMISS_FRAC = 0.58
+export const SHEET_DISMISS_MIN_PX = 260
 /** Compact → page on pull-up past this. */
 export const SHEET_EXPAND_FRAC = 0.18
 export const SHEET_EXPAND_MIN_PX = 64
 /** Soft flick (px/s): minimize from page, dismiss from compact, expand upward. */
-export const SHEET_FLICK_VY = 880
+export const SHEET_FLICK_VY = 720
 /** Hard flick (px/s): skip minimize and dismiss from page. */
-export const SHEET_DISMISS_FLICK_VY = 1350
+export const SHEET_DISMISS_FLICK_VY = 1750
 
 export function sheetMinimizeThreshold(height: number): number {
   return Math.max(SHEET_MINIMIZE_MIN_PX, height * SHEET_MINIMIZE_FRAC)

@@ -35,3 +35,63 @@ export function formatHeaderDate(): string {
 export function localDateKey(date: Date = new Date()): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
+
+const LOCAL_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/
+
+/**
+ * Validate a client-supplied YYYY-MM-DD calendar key (no timezone shift).
+ * Rejects impossible months/days. Optional ±daySkew vs UTC "today" guards
+ * against garbage / clock-skew abuse without requiring the server TZ.
+ */
+export function parseClientLocalDate(
+  raw: unknown,
+  opts?: { now?: Date; daySkew?: number },
+): string | null {
+  if (typeof raw !== 'string' || !LOCAL_DATE_RE.test(raw)) return null
+  const match = LOCAL_DATE_RE.exec(raw)
+  if (!match) return null
+  const y = Number(match[1])
+  const m = Number(match[2])
+  const d = Number(match[3])
+  // Use UTC noon components only for calendar validity — not for "today".
+  const probe = new Date(Date.UTC(y, m - 1, d))
+  if (
+    probe.getUTCFullYear() !== y ||
+    probe.getUTCMonth() !== m - 1 ||
+    probe.getUTCDate() !== d
+  ) {
+    return null
+  }
+  const skew = opts?.daySkew ?? 2
+  const now = opts?.now ?? new Date()
+  const utcToday = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate(),
+  )
+  const clientDay = Date.UTC(y, m - 1, d)
+  const diffDays = Math.abs(clientDay - utcToday) / 86_400_000
+  if (diffDays > skew) return null
+  return raw
+}
+
+/** YYYY-MM-DD for an IANA time zone at `date` (defaults to now). */
+export function localDateKeyInTimeZone(
+  timeZone: string,
+  date: Date = new Date(),
+): string | null {
+  if (!timeZone || typeof timeZone !== 'string' || timeZone.length > 64) {
+    return null
+  }
+  try {
+    const formatted = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(date)
+    return parseClientLocalDate(formatted, { now: date, daySkew: 2 })
+  } catch {
+    return null
+  }
+}

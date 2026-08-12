@@ -5,6 +5,10 @@ import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import { isAdminEmail } from '@/lib/utils/admin'
 import {
+  localDateKeyInTimeZone,
+  parseClientLocalDate,
+} from '@/lib/utils/formatting'
+import {
   COACH_DEFAULT_MODEL,
   COACH_MAX_HISTORY_MESSAGES,
   COACH_MAX_MESSAGE_CHARS,
@@ -29,6 +33,26 @@ function parseUnit(
   if (bodyUnit === 'lbs' || bodyUnit === 'lb' || bodyUnit === 'imperial') return 'lbs'
   if (cookieValue === 'metric') return 'kg'
   return 'lbs'
+}
+
+/** Prefer client localDate; else derive from IANA tz; never use server TZ. */
+function resolveAsOfLocalDate(body: Record<string, unknown>): {
+  localDate: string
+  timeZone: string | null
+} {
+  const rawTz =
+    typeof body.timeZone === 'string' ? body.timeZone.trim() : ''
+  const timeZone = rawTz && rawTz.length <= 64 ? rawTz : null
+  const fromClient = parseClientLocalDate(body.localDate)
+  if (fromClient) return { localDate: fromClient, timeZone }
+  if (timeZone) {
+    const fromTz = localDateKeyInTimeZone(timeZone)
+    if (fromTz) return { localDate: fromTz, timeZone }
+  }
+  // Last resort: UTC calendar day (still better than server "local" elsewhere).
+  const now = new Date()
+  const utc = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`
+  return { localDate: utc, timeZone }
 }
 
 function sanitizeHistory(raw: unknown): ModelMessage[] {
@@ -103,7 +127,7 @@ export async function POST(request: Request) {
   if (!quota.unlimited && quota.dailyRemaining <= 0) {
     return NextResponse.json(
       {
-        error: `Daily coach limit reached (${quota.dailyLimit} messages per day). Try again tomorrow.`,
+        error: `Daily coach limit reached (${quota.dailyLimit} messages in the rolling 24-hour window).`,
         code: 'daily',
         quota,
       },
@@ -214,10 +238,14 @@ export async function POST(request: Request) {
 
   const cookieStore = await cookies()
   const unit = parseUnit(body.unit, cookieStore.get('grind_unit_pref')?.value)
+  const { localDate, timeZone } = resolveAsOfLocalDate(body)
 
   let contextJson: string
   try {
-    const context = await buildCoachContext(supabase, user.id, unit)
+    const context = await buildCoachContext(supabase, user.id, unit, {
+      asOfLocalDate: localDate,
+      timeZone,
+    })
     contextJson = JSON.stringify(context)
   } catch (err) {
     console.error('[grind] coach context', err)

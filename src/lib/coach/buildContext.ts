@@ -1,6 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { UserRotation } from '@/lib/types'
-import { localDateKey } from '@/lib/utils/formatting'
 import { effectiveSequence, nextDay } from '@/lib/utils/rotation'
 import {
   COACH_CONTEXT_BODY_WEIGHTS,
@@ -13,6 +12,8 @@ export type CoachUnitPreference = 'lbs' | 'kg'
 
 export interface CoachContext {
   as_of_local_date: string
+  /** IANA tz from the client when provided (informational for the model). */
+  time_zone: string | null
   unit_preference: CoachUnitPreference
   /** Canonical storage is always lbs; convert for display when unit is kg. */
   weight_storage: 'lbs'
@@ -98,13 +99,23 @@ function exerciseName(exercises: LogRow['exercises']): string {
 /**
  * Build a compact personal snapshot for the coach system prompt.
  * Server-only: use after auth; always scopes through the caller's Supabase session.
+ *
+ * `asOfLocalDate` must be the user's calendar day (from the client via
+ * `localDateKey()`). Never derive "today" with server `localDateKey()` or
+ * `toISOString().split('T')[0]` — Vercel runs in UTC and will shift the day
+ * for anyone west of UTC.
  */
 export async function buildCoachContext(
   supabase: SupabaseClient,
   userId: string,
   unitPreference: CoachUnitPreference,
+  opts?: { asOfLocalDate: string; timeZone?: string | null },
 ): Promise<CoachContext> {
-  const today = localDateKey()
+  const today = opts?.asOfLocalDate
+  if (!today) {
+    throw new Error('buildCoachContext requires asOfLocalDate from the client')
+  }
+  const timeZone = opts?.timeZone ?? null
 
   const [
     { data: profile },
@@ -253,6 +264,7 @@ export async function buildCoachContext(
 
   return {
     as_of_local_date: today,
+    time_zone: timeZone,
     unit_preference: unitPreference,
     weight_storage: 'lbs',
     profile: {
