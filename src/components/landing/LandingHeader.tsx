@@ -18,8 +18,7 @@ export default function LandingHeader() {
         <GoogleSignInButton
           variant="primary"
           label="Get started"
-          className="landing-header__cta"
-          style={{ height: '44px', padding: '0 16px', fontSize: '13px', gap: '8px' }}
+          className="landing-btn-primary landing-header__cta"
         />
       </div>
     </header>
