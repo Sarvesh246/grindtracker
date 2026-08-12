@@ -53,6 +53,28 @@ function applyTheme(theme: Theme) {
   if (meta) meta.setAttribute('content', THEME_COLOR[theme])
 }
 
+/**
+ * Re-assert theme-color after a full-bleed overlay (Coach page sheet) so iOS
+ * standalone chrome / status-bar sampling doesn't stay stuck on --surface.
+ * Safe to call from any client close path; no-ops when meta is missing.
+ */
+export function refreshThemeColor() {
+  if (typeof document === 'undefined') return
+  const theme: Theme = document.documentElement.classList.contains('light')
+    ? 'light'
+    : 'dark'
+  const color = THEME_COLOR[theme]
+  const metas = document.querySelectorAll('meta[name="theme-color"]')
+  if (metas.length === 0) return
+  // WebKit sometimes ignores a no-op write after sampling overlay content —
+  // flip to a sibling near-black/near-white then restore on the next frame.
+  const nudge = theme === 'light' ? '#eeeeee' : '#101010'
+  metas.forEach(meta => meta.setAttribute('content', nudge))
+  requestAnimationFrame(() => {
+    metas.forEach(meta => meta.setAttribute('content', color))
+  })
+}
+
 export function ThemeProvider({
   children,
   // Default dark — a fresh visitor with no saved preference always opens in dark.

@@ -36,4 +36,14 @@ describe('COACH_SYSTEM_PROMPT', () => {
       /Do not use unordered bullets for a sequence/i,
     )
   })
+
+  it('locks terminology, verified math, and data-driven tone', () => {
+    assert.match(COACH_SYSTEM_PROMPT, /Strict fitness\/anatomical terminology/i)
+    assert.match(COACH_SYSTEM_PROMPT, /deadlifts, not "deadlocks"/i)
+    assert.match(COACH_SYSTEM_PROMPT, /work step-by-step/i)
+    assert.match(COACH_SYSTEM_PROMPT, /verify before stating/i)
+    assert.match(COACH_SYSTEM_PROMPT, /data-driven coach/i)
+    assert.match(COACH_SYSTEM_PROMPT, /never generic motivational clich/i)
+    assert.match(COACH_SYSTEM_PROMPT, /ground advice in their real logs\/PRs/i)
+  })
 })

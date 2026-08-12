@@ -1120,13 +1120,40 @@ html.light .coach-fab {
 .coach-fab--settling {
   cursor: grabbing;
   opacity: 0.95;
+  /* Keep a circle — scale only, no morph/rotation */
+  transition:
+    transform 150ms ease,
+    box-shadow 150ms ease,
+    opacity 150ms ease;
+}
+.coach-fab--dragging {
+  transform: scale(1.08);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.55);
+}
+html.light .coach-fab--dragging {
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.22);
+}
+.coach-fab--settling {
+  transform: scale(1);
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5);
 }
-/* Inline stretch transform owns `transform` while live; kill `.press:active`
-   so a leftover active state can't fight the droplet scale after release. */
-.coach-fab--dragging.press:active,
+/* Prefer drag lift over `.press:active` tap dip while dragging/settling. */
+.coach-fab--dragging.press:active {
+  transform: scale(1.08);
+}
 .coach-fab--settling.press:active {
   transform: none;
+}
+/* In-app / OS reduce-motion: skip lift scale (shadow deepen is fine). */
+html.reduce-motion .coach-fab--dragging,
+html.reduce-motion .coach-fab--dragging.press:active {
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .coach-fab--dragging,
+  .coach-fab--dragging.press:active {
+    transform: none;
+  }
 }
 .coach-fab svg {
   display: block;
@@ -1288,12 +1315,14 @@ html.light .coach-sheet {
   /* Size morph owns the expand; don't replay the compact enter keyframe. */
   animation: none;
   /* Clear the Dynamic Island / status bar while open. The padding band is
-     painted --bg (theme-color / app-shell), not --surface, so it matches the
-     normal chrome and can't read as a leftover gray strip after close. */
+     painted solid --bg (theme-color / app-shell), not --surface, so it matches
+     the normal chrome and can't read as a leftover gray strip after close.
+     Keep the accent wash BELOW the safe-area band — tinting the status-bar
+     region makes iOS sample --surface/--accent and stick after dismiss. */
   padding-top: env(safe-area-inset-top);
   background:
     radial-gradient(
-      900px 420px at 50% calc(env(safe-area-inset-top) - 10%),
+      900px 420px at 50% calc(env(safe-area-inset-top) + 96px),
       color-mix(in srgb, var(--accent) 10%, transparent),
       transparent 70%
     ),
@@ -1451,7 +1480,9 @@ html.light .coach-sheet {
   background: color-mix(in srgb, var(--surface) 94%, transparent);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  animation: coach-history-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  /* backwards only — `both` keeps a finished transform and breaks hit-testing
+     / containing blocks for nested controls (same rule as other coach motion). */
+  animation: coach-history-in 220ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
 @keyframes coach-history-in {
   from {

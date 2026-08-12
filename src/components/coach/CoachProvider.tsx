@@ -16,6 +16,7 @@ import {
   type CoachConversationSummary,
 } from '@/lib/coach'
 import { titleFromMessage } from '@/lib/coach/conversations'
+import { refreshThemeColor } from '@/lib/contexts/ThemeContext'
 import { useUnit } from '@/lib/contexts/UnitContext'
 
 export type CoachDockId = 'br' | 'bl' | 'tr' | 'tl'
@@ -213,13 +214,20 @@ export function CoachProvider({ children }: { children: ReactNode }) {
         // ignore
       }
     }
+    // Status-bar / theme-color can stick on --surface after the page sheet
+    // covered the safe-area band; re-assert immediately and again after exit.
+    refreshThemeColor()
     reanchor()
     requestAnimationFrame(() => {
       reanchor()
+      refreshThemeColor()
       fabRef.current?.focus()
     })
     window.setTimeout(reanchor, 250)
-    window.setTimeout(reanchor, 600)
+    window.setTimeout(() => {
+      reanchor()
+      refreshThemeColor()
+    }, 520)
   }, [])
 
   const expandToPage = useCallback(() => {
@@ -247,8 +255,13 @@ export function CoachProvider({ children }: { children: ReactNode }) {
 
   const loadConversation = useCallback(
     async (id: string) => {
-      if (streaming) return
+      if (streaming || !id || id === 'pending') return
       setError(null)
+      // Already viewing this thread — just dismiss the history panel.
+      if (id === activeConversationId) {
+        setHistoryOpen(false)
+        return
+      }
       try {
         const res = await fetch(`/api/coach/conversations/${id}`)
         if (!res.ok) {
@@ -267,7 +280,7 @@ export function CoachProvider({ children }: { children: ReactNode }) {
         setError('Could not open that chat.')
       }
     },
-    [streaming],
+    [streaming, activeConversationId],
   )
 
   const deleteConversation = useCallback(
@@ -366,6 +379,10 @@ export function CoachProvider({ children }: { children: ReactNode }) {
               ...without,
             ]
           })
+        } else {
+          // Migration 35 missing / create failed — drop the optimistic stub so
+          // history doesn't show a disabled "pending" row that can't be opened.
+          setConversations(prev => prev.filter(c => c.id !== 'pending'))
         }
 
         if (!res.ok) {
@@ -431,6 +448,7 @@ export function CoachProvider({ children }: { children: ReactNode }) {
         setMessages(prev =>
           prev.filter(m => !(m.id === assistantId && !m.content)),
         )
+        setConversations(prev => prev.filter(c => c.id !== 'pending'))
         setError('Could not reach Coach. Check your connection.')
       } finally {
         setStreaming(false)

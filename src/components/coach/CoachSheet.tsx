@@ -12,7 +12,9 @@ import {
 } from 'react'
 import { COACH_MAX_MESSAGE_CHARS } from '@/lib/coach'
 import { useMotionPref } from '@/lib/contexts/MotionContext'
+import { refreshThemeColor } from '@/lib/contexts/ThemeContext'
 import { useExitingValue } from '@/lib/hooks/useExitingValue'
+import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
 import IconButton from '@/components/ui/IconButton'
 import CoachFabIcon from './CoachFabIcon'
 import CoachHistory from './CoachHistory'
@@ -30,16 +32,28 @@ const CHIPS = [
 const EXIT_MS = 480
 const SIZE_MS = 500
 const SETTLE_MS = 420
+const ENTER_MS = 520
 const PULL_AXIS_LOCK = 8
 const FLICK_VY = 900
 const VEL_EMA = 0.78
+/** 1:1 upward travel while expandable before light rubber-band. */
+const EXPAND_RUBBER_AT = 160
+/** Soft resistance past this downward travel. */
+const DISMISS_RUBBER_AT = 240
 
-function rubberY(y: number): number {
-  if (y < 0) return y * 0.28
+function rubberY(y: number, canExpand: boolean): number {
+  if (y < 0) {
+    // Already full-page — only a light upward rubber-band.
+    if (!canExpand) return y * 0.28
+    const up = -y
+    if (up <= EXPAND_RUBBER_AT) return y
+    const extra = up - EXPAND_RUBBER_AT
+    return -(EXPAND_RUBBER_AT + extra * 0.35)
+  }
   // Soft resistance past ~240px so dismiss still reaches threshold.
-  if (y <= 240) return y
-  const extra = y - 240
-  return 240 + extra * 0.35
+  if (y <= DISMISS_RUBBER_AT) return y
+  const extra = y - DISMISS_RUBBER_AT
+  return DISMISS_RUBBER_AT + extra * 0.35
 }
 
 export default function CoachSheet() {
@@ -63,6 +77,7 @@ export default function CoachSheet() {
     closeHistory,
   } = useCoach()
   const { reduceMotion } = useMotionPref()
+  const keyboardInset = useKeyboardInset()
   const titleId = useId()
   const listRef = useRef<HTMLDivElement>(null)
   const sheetRef = useRef<HTMLDivElement>(null)
@@ -73,6 +88,7 @@ export default function CoachSheet() {
   const exit = useExitingValue(open ? true : null, EXIT_MS)
   const mounted = exit.data != null
   const closing = exit.closing
+  const activelyOpen = open && !closing
 
   type PullPhase = 'idle' | 'dragging' | 'settling'
   const [pullY, setPullY] = useState(0)
@@ -97,9 +113,10 @@ export default function CoachSheet() {
   // Freeze size for the exit window — closeCoach resets to compact immediately,
   // which would otherwise snap a full-page sheet mid-fade.
   const [visualSize, setVisualSize] = useState(size)
-  if (open && !closing && visualSize !== size) {
+  if (activelyOpen && visualSize !== size) {
     setVisualSize(size)
   }
+
   const isPage = visualSize === 'page'
   const dailyRemaining = quota?.dailyRemaining
   const capped =
@@ -107,15 +124,19 @@ export default function CoachSheet() {
   const sendDisabled =
     !draft.trim() || streaming || capped || configured === false
 
-  // Clear gesture-dismiss offset whenever a fresh open starts.
+  // Clear dismiss leftovers on a fresh open (render-time sync — same pattern as
+  // visualSize). pullY is ignored while idle (see sheetTransform) so a leaked
+  // offset after gesture-dismiss can't snap the sheet down post-enter.
   if (
-    open &&
-    !closing &&
+    activelyOpen &&
     (gestureDismissY !== 0 || dismissBackdropOpacity != null || backdropOut)
   ) {
     setGestureDismissY(0)
     setDismissBackdropOpacity(null)
     setBackdropOut(false)
+  }
+  if (activelyOpen && pullPhase === 'idle' && pullY !== 0) {
+    setPullY(0)
   }
 
   // After a pull-to-close, fade the scrim from the drag-dimmed opacity → 0
@@ -126,16 +147,18 @@ export default function CoachSheet() {
     return () => cancelAnimationFrame(id)
   }, [closing, dismissBackdropOpacity, reduceMotion])
 
+  // Focus after the enter spring settles so iOS keyboard + visualViewport pan
+  // can't fight the open animation (or strand the composer under the keyboard).
   useEffect(() => {
     if (!open || closing) return
     const t = window.setTimeout(
       () => {
         inputRef.current?.focus()
       },
-      reduceMotion ? 0 : 80,
+      reduceMotion ? 0 : ENTER_MS,
     )
     return () => window.clearTimeout(t)
-  }, [open, closing, reduceMotion, size])
+  }, [open, closing, reduceMotion])
 
   useEffect(() => {
     if (!open || closing) return
@@ -175,6 +198,20 @@ export default function CoachSheet() {
     }
   }, [open, closing, isPage])
 
+  // Page sheet paints under the status bar; when it leaves, nudge theme-color
+  // so iOS standalone chrome doesn't keep a --surface-tinted top band.
+  const wasPageOpen = useRef(false)
+  useEffect(() => {
+    const pageOpen = isPage && open && !closing
+    if (wasPageOpen.current && !pageOpen) {
+      refreshThemeColor()
+      const t = window.setTimeout(refreshThemeColor, EXIT_MS)
+      wasPageOpen.current = pageOpen
+      return () => window.clearTimeout(t)
+    }
+    wasPageOpen.current = pageOpen
+  }, [isPage, open, closing])
+
   useEffect(
     () => () => {
       if (settleTimer.current != null) window.clearTimeout(settleTimer.current)
@@ -199,6 +236,7 @@ export default function CoachSheet() {
       lastY.current = e.clientY
       lastTs.current = performance.now()
       velY.current = 0
+      pullYRef.current = 0
       sheetH.current = sheetRef.current?.offsetHeight ?? 400
       try {
         ;(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId)
@@ -209,33 +247,36 @@ export default function CoachSheet() {
     [closing, historyOpen, pullPhase],
   )
 
-  const onPullMove = useCallback((e: ReactPointerEvent) => {
-    if (pointerId.current !== e.pointerId || !pullStart.current) return
-    const dx = e.clientX - pullStart.current.x
-    const dy = e.clientY - pullStart.current.y
+  const onPullMove = useCallback(
+    (e: ReactPointerEvent) => {
+      if (pointerId.current !== e.pointerId || !pullStart.current) return
+      const dx = e.clientX - pullStart.current.x
+      const dy = e.clientY - pullStart.current.y
 
-    if (!axis.current) {
-      if (Math.abs(dx) < PULL_AXIS_LOCK && Math.abs(dy) < PULL_AXIS_LOCK) {
-        return
+      if (!axis.current) {
+        if (Math.abs(dx) < PULL_AXIS_LOCK && Math.abs(dy) < PULL_AXIS_LOCK) {
+          return
+        }
+        axis.current = Math.abs(dy) >= Math.abs(dx) ? 'y' : 'x'
+        if (axis.current === 'y') {
+          setPullPhase('dragging')
+        }
       }
-      axis.current = Math.abs(dy) >= Math.abs(dx) ? 'y' : 'x'
-      if (axis.current === 'y') {
-        setPullPhase('dragging')
-      }
-    }
-    if (axis.current !== 'y') return
+      if (axis.current !== 'y') return
 
-    e.preventDefault()
-    const now = performance.now()
-    const dt = Math.max(1, now - lastTs.current)
-    const ivy = ((e.clientY - lastY.current) / dt) * 1000
-    velY.current = velY.current * VEL_EMA + ivy * (1 - VEL_EMA)
-    lastY.current = e.clientY
-    lastTs.current = now
-    const next = rubberY(dy)
-    pullYRef.current = next
-    setPullY(next)
-  }, [])
+      e.preventDefault()
+      const now = performance.now()
+      const dt = Math.max(1, now - lastTs.current)
+      const ivy = ((e.clientY - lastY.current) / dt) * 1000
+      velY.current = velY.current * VEL_EMA + ivy * (1 - VEL_EMA)
+      lastY.current = e.clientY
+      lastTs.current = now
+      const next = rubberY(dy, size !== 'page')
+      pullYRef.current = next
+      setPullY(next)
+    },
+    [size],
+  )
 
   const endPull = useCallback(
     (e: ReactPointerEvent) => {
@@ -263,19 +304,27 @@ export default function CoachSheet() {
       const h = sheetH.current || 400
       const collapseThreshold = Math.max(56, h * 0.22)
       const closeThreshold = Math.max(110, h * 0.32)
-      const flicked = vy > FLICK_VY
+      const expandThreshold = Math.max(56, Math.min(120, h * 0.2))
+      const flickedDown = vy > FLICK_VY
+      const flickedUp = vy < -FLICK_VY
 
       let shouldClose = false
       let shouldCollapse = false
+      let shouldExpand = false
 
-      // page → compact; compact (or a hard flick from page) → close
-      if (size === 'page') {
+      // Drag-up: compact → page. Drag-down: page → compact; compact (or a
+      // hard flick from page) → close. Velocity-aware like pull-to-dismiss.
+      if (y < 0 || flickedUp) {
+        if (size !== 'page' && (y < -expandThreshold || flickedUp)) {
+          shouldExpand = true
+        }
+      } else if (size === 'page') {
         if (y > closeThreshold || vy > FLICK_VY * 1.25) {
           shouldClose = true
-        } else if (y > collapseThreshold || flicked) {
+        } else if (y > collapseThreshold || flickedDown) {
           shouldCollapse = true
         }
-      } else if (y > closeThreshold || flicked) {
+      } else if (y > closeThreshold || flickedDown) {
         shouldClose = true
       }
 
@@ -285,6 +334,9 @@ export default function CoachSheet() {
         setDismissBackdropOpacity(0.45 * (1 - progress * 0.85))
         setGestureDismissY(y)
         setBackdropOut(false)
+        // Clear live pull so a reopen can't inherit translateY after enter.
+        pullYRef.current = 0
+        setPullY(0)
         setPullPhase('idle')
         closeCoach()
         return
@@ -292,24 +344,30 @@ export default function CoachSheet() {
 
       setGestureDismissY(0)
       setDismissBackdropOpacity(null)
-      if (shouldCollapse) {
+      if (shouldExpand) {
+        expandToPage()
+      } else if (shouldCollapse) {
         setSize('compact')
       }
 
       // Spring settle transform back to 0
-      setPullPhase('settling')
+      setPullPhase(reduceMotion ? 'idle' : 'settling')
       pullYRef.current = 0
       setPullY(0)
       if (settleTimer.current != null) window.clearTimeout(settleTimer.current)
-      settleTimer.current = window.setTimeout(
-        () => {
-          setPullPhase('idle')
-          settleTimer.current = null
-        },
-        reduceMotion ? 0 : SETTLE_MS,
-      )
+      if (reduceMotion) {
+        settleTimer.current = null
+      } else {
+        settleTimer.current = window.setTimeout(
+          () => {
+            setPullPhase('idle')
+            settleTimer.current = null
+          },
+          SETTLE_MS,
+        )
+      }
     },
-    [closeCoach, reduceMotion, setSize, size],
+    [closeCoach, expandToPage, reduceMotion, setSize, size],
   )
 
   if (!mounted) return null
@@ -380,7 +438,9 @@ export default function CoachSheet() {
     }
     // Button-close exit uses CSS keyframes for translate; don't fight them.
     if (closing) return undefined
-    if (pullY) return `translate3d(0, ${pullY}px, 0)`
+    // Only apply pull offset while a gesture is live. Idle leftovers (e.g. after
+    // gesture-dismiss) must not survive into the next open's enter keyframe.
+    if (dragging && pullY) return `translate3d(0, ${pullY}px, 0)`
     if (pullPhase === 'settling') return 'translate3d(0, 0, 0)'
     return undefined
   })()
@@ -388,6 +448,18 @@ export default function CoachSheet() {
   // Compact sheet always has a scrim; full page does not (except gesture-dismiss
   // from compact, which keeps the dimmed scrim through the exit).
   const showBackdrop = !isPage || exitDismissY > 0
+
+  // Lift fixed sheet above the iOS keyboard so autofocus can't bury the composer.
+  // Top-docked desktop cards use `top`/`bottom:auto` — don't override bottom there.
+  const topDocked = dock === 'tl' || dock === 'tr'
+  const sheetKeyboardStyle =
+    !closing && keyboardInset > 0
+      ? isPage
+        ? ({ paddingBottom: keyboardInset } as const)
+        : !topDocked
+          ? ({ bottom: keyboardInset + 12 } as const)
+          : undefined
+      : undefined
 
   return (
     <>
@@ -432,6 +504,7 @@ export default function CoachSheet() {
           transformOrigin: origin,
           transition: sheetTransition,
           transform: sheetTransform,
+          ...sheetKeyboardStyle,
         }}
       >
         <header

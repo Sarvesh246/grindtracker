@@ -10,60 +10,24 @@ import {
   nearestDock,
 } from './dockGeometry'
 
-const DRAG_THRESHOLD = 8
+/**
+ * Tap vs drag — older / clumsier taps often jitter 8–12px.
+ * Require distance + a short hold, OR a clearly intentional flick.
+ */
+const DRAG_THRESHOLD = 16
+const DRAG_ACTIVATE_MS = 120
+/** Skip the hold delay once movement clearly isn't a tap */
+const DRAG_FAST_THRESHOLD = 32
 
-/** Soft Apple-sheet spring (mass = 1) */
-const SPRING_K = 210
-const SPRING_C = 24
-const SETTLE_POS = 0.5
-const SETTLE_VEL = 12
+/** Soft magnetic spring to corner docks (mass = 1), slightly underdamped */
+const SPRING_K = 280
+const SPRING_C = 26
+const SETTLE_POS = 0.4
+const SETTLE_VEL = 10
+/** How much release velocity feeds the spring (magnetic fling) */
+const SPRING_VEL_CARRY = 0.45
 
 const VEL_EMA = 0.78
-const STRETCH_SPEED = 1400
-const STRETCH_MAX = 0.12
-
-type Stretch = {
-  sx: number
-  sy: number
-  angle: number
-  radius: string
-}
-
-const IDENTITY_STRETCH: Stretch = {
-  sx: 1,
-  sy: 1,
-  angle: 0,
-  radius: '9999px',
-}
-
-function stretchFromVelocity(vx: number, vy: number): Stretch {
-  const speed = Math.hypot(vx, vy)
-  if (speed < 8) return IDENTITY_STRETCH
-  const t = Math.min(1, speed / STRETCH_SPEED)
-  const stretch = 1 + STRETCH_MAX * t
-  const squash = 1 - STRETCH_MAX * t
-  const angle = (Math.atan2(vy, vx) * 180) / Math.PI
-  // Droplet: trail flatter, lead rounder — bias by velocity direction.
-  const lead = Math.round(9999 - 2200 * t)
-  const trail = Math.round(9999 - 4800 * t)
-  // Corners: TL TR BR BL — shift which pair leads based on angle octant.
-  const a = ((angle % 360) + 360) % 360
-  let radius: string
-  if (a >= 315 || a < 45) {
-    // → right
-    radius = `${trail}px ${lead}px ${lead}px ${trail}px`
-  } else if (a < 135) {
-    // ↓ down
-    radius = `${trail}px ${trail}px ${lead}px ${lead}px`
-  } else if (a < 225) {
-    // ← left
-    radius = `${lead}px ${trail}px ${trail}px ${lead}px`
-  } else {
-    // ↑ up
-    radius = `${lead}px ${lead}px ${trail}px ${trail}px`
-  }
-  return { sx: stretch, sy: squash, angle, radius }
-}
 
 export default function CoachFab() {
   const { open, openCoach, dock, setDock, fabRef, quota, quotaLoaded } =
@@ -78,10 +42,10 @@ export default function CoachFab() {
   const [dragging, setDragging] = useState(false)
   const [settling, setSettling] = useState(false)
   const [ghost, setGhost] = useState<{ x: number; y: number } | null>(null)
-  const [stretch, setStretch] = useState<Stretch>(IDENTITY_STRETCH)
 
   const pointerId = useRef<number | null>(null)
   const start = useRef<{ x: number; y: number } | null>(null)
+  const startTs = useRef(0)
   const moved = useRef(false)
   const lastPos = useRef<{ x: number; y: number } | null>(null)
   const lastTs = useRef(0)
@@ -90,7 +54,6 @@ export default function CoachFab() {
   const springPos = useRef({ x: 0, y: 0, vx: 0, vy: 0 })
   const springTarget = useRef({ x: 0, y: 0 })
   const pendingDock = useRef<CoachDockId | null>(null)
-  const stretchSpring = useRef({ sx: 1, sy: 1, angle: 0, vsx: 0, vsy: 0 })
 
   const cancelSpring = useCallback(() => {
     if (rafRef.current != null) {
@@ -111,21 +74,12 @@ export default function CoachFab() {
       springPos.current = {
         x: from.x,
         y: from.y,
-        vx: vel.current.x * 0.35,
-        vy: vel.current.y * 0.35,
+        vx: vel.current.x * SPRING_VEL_CARRY,
+        vy: vel.current.y * SPRING_VEL_CARRY,
       }
       springTarget.current = target
-      const cur = stretchFromVelocity(vel.current.x, vel.current.y)
-      stretchSpring.current = {
-        sx: cur.sx,
-        sy: cur.sy,
-        angle: cur.angle,
-        vsx: 0,
-        vsy: 0,
-      }
       setSettling(true)
       setGhost({ x: from.x, y: from.y })
-      setStretch(cur)
 
       const finish = () => {
         cancelSpring()
@@ -133,15 +87,12 @@ export default function CoachFab() {
         pendingDock.current = null
         setGhost(null)
         setSettling(false)
-        setStretch(IDENTITY_STRETCH)
-        stretchSpring.current = { sx: 1, sy: 1, angle: 0, vsx: 0, vsy: 0 }
         if (docked) setDock(docked)
       }
 
       const tick = () => {
         const pos = springPos.current
         const tgt = springTarget.current
-        const st = stretchSpring.current
         const dt = 1 / 60
 
         const ax = -SPRING_K * (pos.x - tgt.x) - SPRING_C * pos.vx
@@ -151,30 +102,11 @@ export default function CoachFab() {
         pos.x += pos.vx * dt
         pos.y += pos.vy * dt
 
-        const asx = -SPRING_K * (st.sx - 1) - SPRING_C * st.vsx
-        const asy = -SPRING_K * (st.sy - 1) - SPRING_C * st.vsy
-        st.vsx += asx * dt
-        st.vsy += asy * dt
-        st.sx += st.vsx * dt
-        st.sy += st.vsy * dt
-
         setGhost({ x: pos.x, y: pos.y })
-        const nearId =
-          Math.abs(st.sx - 1) < 0.01 && Math.abs(st.sy - 1) < 0.01
-        setStretch(
-          nearId
-            ? IDENTITY_STRETCH
-            : {
-                sx: st.sx,
-                sy: st.sy,
-                angle: st.angle,
-                radius: stretchFromVelocity(pos.vx, pos.vy).radius,
-              },
-        )
 
         const dist = Math.hypot(pos.x - tgt.x, pos.y - tgt.y)
         const speed = Math.hypot(pos.vx, pos.vy)
-        if (dist < SETTLE_POS && speed < SETTLE_VEL && nearId) {
+        if (dist < SETTLE_POS && speed < SETTLE_VEL) {
           finish()
           return
         }
@@ -191,8 +123,10 @@ export default function CoachFab() {
       cancelSpring()
       pointerId.current = e.pointerId
       start.current = { x: e.clientX, y: e.clientY }
+      const now = performance.now()
+      startTs.current = now
       lastPos.current = { x: e.clientX, y: e.clientY }
-      lastTs.current = performance.now()
+      lastTs.current = now
       vel.current = { x: 0, y: 0 }
       moved.current = false
       try {
@@ -210,7 +144,13 @@ export default function CoachFab() {
       const dx = e.clientX - start.current.x
       const dy = e.clientY - start.current.y
       if (!moved.current) {
-        if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return
+        const dist = Math.hypot(dx, dy)
+        if (dist < DRAG_THRESHOLD) return
+        const held = performance.now() - startTs.current
+        // Distance alone isn't enough for short shaky taps; a clear flick
+        // (≥ fast threshold) activates immediately so intentional drags
+        // don't feel sticky.
+        if (held < DRAG_ACTIVATE_MS && dist < DRAG_FAST_THRESHOLD) return
         moved.current = true
         setDragging(true)
       }
@@ -232,11 +172,8 @@ export default function CoachFab() {
       const x = e.clientX - COACH_FAB_SIZE / 2
       const y = e.clientY - COACH_FAB_SIZE / 2
       setGhost({ x, y })
-      if (!reduceMotion) {
-        setStretch(stretchFromVelocity(vel.current.x, vel.current.y))
-      }
     },
-    [reduceMotion],
+    [],
   )
 
   const endDrag = useCallback(
@@ -264,7 +201,6 @@ export default function CoachFab() {
         }
         if (reduceMotion) {
           setGhost(null)
-          setStretch(IDENTITY_STRETCH)
           setDock(next)
           return
         }
@@ -273,7 +209,6 @@ export default function CoachFab() {
       }
 
       setGhost(null)
-      setStretch(IDENTITY_STRETCH)
       if (!open) openCoach()
     },
     [open, openCoach, reduceMotion, setDock, startSpringToDock],
@@ -281,7 +216,7 @@ export default function CoachFab() {
 
   // Parked: CSS data-dock owns left/right/top/bottom with no position
   // transitions — settle is the RAF spring above (avoids L-shaped travel).
-  // Leave style unset so `.press` can still animate tap scale.
+  // Leave transform unset so `.press` can still animate tap scale.
   const live =
     (dragging || settling) && ghost
       ? {
@@ -290,11 +225,11 @@ export default function CoachFab() {
           top: ghost.y,
           right: 'auto',
           bottom: 'auto',
-          transform: reduceMotion
+          // left/top update every frame with no transition; keep CSS lift
+          // (scale/shadow) on `.coach-fab--dragging` smooth.
+          transition: reduceMotion
             ? 'none'
-            : `rotate(${stretch.angle}deg) scale(${stretch.sx}, ${stretch.sy})`,
-          borderRadius: reduceMotion ? undefined : stretch.radius,
-          transition: 'none',
+            : 'transform 150ms ease, box-shadow 150ms ease, opacity 150ms ease',
           zIndex: 420,
         }
       : open
