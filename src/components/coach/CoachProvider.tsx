@@ -495,7 +495,10 @@ export function CoachProvider({ children }: { children: ReactNode }) {
           ? 'ndjson'
           : 'unknown'
 
-        const flushAssistant = (
+        let pendingContent = ''
+        let pendingProposals: CoachProposalView[] | undefined
+        let flushRaf: number | null = null
+        const commitAssistant = (
           content: string,
           nextProposals?: CoachProposalView[],
         ) => {
@@ -513,6 +516,29 @@ export function CoachProvider({ children }: { children: ReactNode }) {
                 : m,
             ),
           )
+        }
+        const flushAssistant = (
+          content: string,
+          nextProposals?: CoachProposalView[],
+          sync = false,
+        ) => {
+          pendingContent = content
+          if (nextProposals && nextProposals.length) {
+            pendingProposals = nextProposals
+          }
+          if (sync) {
+            if (flushRaf != null) {
+              window.cancelAnimationFrame(flushRaf)
+              flushRaf = null
+            }
+            commitAssistant(pendingContent, pendingProposals)
+            return
+          }
+          if (flushRaf != null) return
+          flushRaf = window.requestAnimationFrame(() => {
+            flushRaf = null
+            commitAssistant(pendingContent, pendingProposals)
+          })
         }
 
         const applyNdjsonLine = (line: string) => {
@@ -594,6 +620,7 @@ export function CoachProvider({ children }: { children: ReactNode }) {
               ? 'I prepared an action for you — confirm or cancel below.'
               : ''),
           proposals,
+          true,
         )
         if (!finalText && proposals.length === 0) {
           setMessages(prev => prev.filter(m => m.id !== assistantId))

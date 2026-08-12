@@ -31,12 +31,18 @@ function renderInline(nodes: CoachInline[], keyPrefix: string): ReactNode[] {
  * (bold, lists, labels, titles, exercise stacks, tables).
  * User bubbles should stay plain `pre-wrap` text.
  */
-export default function CoachMessageContent({ content }: { content: string }) {
+export default function CoachMessageContent({
+  content,
+  className,
+}: {
+  content: string
+  className?: string
+}) {
   const blocks = formatCoachMessage(content)
   if (!blocks.length) return null
 
   return (
-    <div className="coach-md">
+    <div className={['coach-md', className].filter(Boolean).join(' ')}>
       {blocks.map((block, i) => {
         if (block.type === 'paragraph') {
           return (

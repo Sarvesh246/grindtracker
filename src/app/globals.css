@@ -2109,31 +2109,74 @@ html.reduce-motion .coach-history {
   /* Page gutter padding eases separately; max-width lives on .coach-msg. */
   padding: 10px 14px;
 }
-/* Organic AI bubble enter — opacity / y / scale spring-feel.
-   fill-mode: backwards only — never `both` (containing-block rule). */
-@keyframes coach-bubble-in {
+/* Organic AI reply enter — Apple-soft rise (backwards only, never `both`). */
+@keyframes coach-reply-in {
   from {
     opacity: 0;
-    transform: translateY(10px) scale(0.95);
+    transform: translate3d(0, 14px, 0) scale(0.98);
   }
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translate3d(0, 0, 0) scale(1);
   }
 }
+@keyframes coach-bubble-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+@keyframes coach-md-block-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+@keyframes coach-md-settle {
+  from {
+    opacity: 0.4;
+    transform: translate3d(0, 6px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+@keyframes coach-pending-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.coach-msg--assistant .coach-msg__row {
+  animation: coach-reply-in 680ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  animation-delay: calc(var(--i, 0) * 36ms);
+}
 .coach-bubble--enter {
-  animation: coach-bubble-in 420ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  /* Kept for history/user; assistant rows use .coach-msg__row instead. */
+  animation: coach-bubble-in 560ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
   animation-delay: calc(var(--i, 0) * 32ms);
 }
 .coach-msg--assistant .coach-bubble--enter {
-  animation-delay: calc(var(--i, 0) * 32ms);
+  animation: none;
 }
 .coach-bubble--user {
   background: var(--accent);
   color: var(--on-accent);
   border-radius: 12px 12px 4px 12px;
   white-space: pre-wrap;
-  animation: coach-bubble-in 360ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation: coach-bubble-in 520ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
   animation-delay: calc(var(--i, 0) * 32ms);
 }
 .coach-bubble--assistant {
@@ -2145,6 +2188,12 @@ html.reduce-motion .coach-history {
 .coach-bubble__pending {
   color: var(--text-muted);
   letter-spacing: 2px;
+  animation: coach-pending-pulse 1.5s ease-in-out infinite;
+}
+.coach-bubble__stream {
+  white-space: pre-wrap;
+  /* Soft grow — avoids markdown reflow jumps mid-stream. */
+  animation: coach-md-block-in 420ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
 }
 
 /* Confirm-before-apply action cards inside assistant bubbles */
@@ -2335,13 +2384,23 @@ html.reduce-motion .coach-action__step--active .coach-action__step-mark {
 }
 
 html.reduce-motion .coach-bubble--enter,
-html.reduce-motion .coach-bubble--user {
-  animation: none;
+html.reduce-motion .coach-bubble--user,
+html.reduce-motion .coach-msg--assistant .coach-msg__row,
+html.reduce-motion .coach-bubble__pending,
+html.reduce-motion .coach-bubble__stream,
+html.reduce-motion .coach-md--settle,
+html.reduce-motion .coach-md > * {
+  animation: none !important;
 }
 @media (prefers-reduced-motion: reduce) {
   .coach-bubble--enter,
-  .coach-bubble--user {
-    animation: none;
+  .coach-bubble--user,
+  .coach-msg--assistant .coach-msg__row,
+  .coach-bubble__pending,
+  .coach-bubble__stream,
+  .coach-md--settle,
+  .coach-md > * {
+    animation: none !important;
   }
 }
 
@@ -2350,6 +2409,30 @@ html.reduce-motion .coach-bubble--user {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+.coach-md--settle {
+  animation: coach-md-settle 560ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+.coach-md > * {
+  animation: coach-md-block-in 520ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+.coach-md > *:nth-child(1) {
+  animation-delay: 0ms;
+}
+.coach-md > *:nth-child(2) {
+  animation-delay: 40ms;
+}
+.coach-md > *:nth-child(3) {
+  animation-delay: 80ms;
+}
+.coach-md > *:nth-child(4) {
+  animation-delay: 120ms;
+}
+.coach-md > *:nth-child(5) {
+  animation-delay: 160ms;
+}
+.coach-md > *:nth-child(n + 6) {
+  animation-delay: 200ms;
 }
 .coach-md__p {
   margin: 0;

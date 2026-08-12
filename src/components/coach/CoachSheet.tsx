@@ -1648,10 +1648,15 @@ export default function CoachSheet() {
                 {messages.map((m, i) => {
                   const waiting =
                     m.role === 'assistant' && !m.content && streaming
+                  const isLiveStream =
+                    m.role === 'assistant' &&
+                    streaming &&
+                    i === messages.length - 1 &&
+                    Boolean(m.content)
                   const bubble = (
                     <div
                       className={`coach-bubble coach-bubble--${m.role}${
-                        m.role === 'assistant' ? ' coach-bubble--enter' : ''
+                        m.role === 'user' ? ' coach-bubble--enter' : ''
                       }`}
                     >
                       {waiting ? (
@@ -1664,7 +1669,16 @@ export default function CoachSheet() {
                       ) : m.role === 'assistant' ? (
                         <>
                           {m.content ? (
-                            <CoachMessageContent content={m.content} />
+                            isLiveStream ? (
+                              <div className="coach-bubble__stream">
+                                {m.content}
+                              </div>
+                            ) : (
+                              <CoachMessageContent
+                                content={m.content}
+                                className="coach-md--settle"
+                              />
+                            )
                           ) : null}
                           {m.proposals?.map(p => (
                             <CoachActionCard
