@@ -114,6 +114,70 @@ function formatQuotaResetClock(iso: string | null | undefined): string | null {
   })
 }
 
+function safeInsetPx(side: 'top' | 'bottom'): number {
+  if (typeof document === 'undefined') return 0
+  const probe = document.createElement('div')
+  probe.style.cssText =
+    'position:fixed;visibility:hidden;pointer-events:none;' +
+    'padding-top:env(safe-area-inset-top);' +
+    'padding-bottom:env(safe-area-inset-bottom);'
+  document.documentElement.appendChild(probe)
+  const cs = getComputedStyle(probe)
+  const n = parseFloat(side === 'top' ? cs.paddingTop : cs.paddingBottom)
+  probe.remove()
+  return Number.isFinite(n) ? n : 0
+}
+
+/** Compact sheet resting box — mirrors `.coach-sheet` / desktop dock rules. */
+function compactRestRect(dock: 'tl' | 'tr' | 'bl' | 'br'): {
+  top: number
+  left: number
+  width: number
+  height: number
+} {
+  const w = window.innerWidth
+  const h = window.innerHeight
+  const safeTop = safeInsetPx('top')
+  const safeBottom = safeInsetPx('bottom')
+  let desktop = false
+  try {
+    desktop = window.matchMedia('(min-width: 768px)').matches
+  } catch {
+    desktop = false
+  }
+
+  if (desktop) {
+    const width = 380
+    const height = 440
+    const left = dock === 'bl' || dock === 'tl' ? 16 : w - 16 - width
+    if (dock === 'tl' || dock === 'tr') {
+      return {
+        top: 72 + safeTop + 16,
+        left,
+        width,
+        height,
+      }
+    }
+    return {
+      top: h - (16 + safeBottom) - height,
+      left,
+      width,
+      height,
+    }
+  }
+
+  const left = 12
+  const width = Math.max(0, w - 24)
+  const height = Math.min(h * 0.52, 420)
+  const bottom = 12 + safeBottom
+  return {
+    top: h - bottom - height,
+    left,
+    width,
+    height,
+  }
+}
+
 /**
  * Soft rubber at the top only. Downward travel stays 1:1 so the sheet can
  * slide past minimize and fully off-screen under the finger — no mid-drag
@@ -197,8 +261,26 @@ export default function CoachSheet() {
   const [backdropOut, setBackdropOut] = useState(false)
   /** Opacity fade on the motion shell after drag-off (no transform keyframes). */
   const [dragFadeOut, setDragFadeOut] = useState(false)
-  /** Page sheet has no scrim until a pull-to-close fling starts. */
+  /** True while a pull-to-close fling owns the scrim fade. */
   const [pullDismissing, setPullDismissing] = useState(false)
+  /**
+   * Opt-in enter keyframes for sheet + backdrop. Latched off after the first
+   * open spring so page↔compact never replays coach-sheet-in / backdrop-in.
+   */
+  const [playEnter, setPlayEnter] = useState(true)
+  /**
+   * FLIP lock for page→compact: pixel box matching the dragged frame so the
+   * size-class swap doesn't jump the sheet to the compact resting slot.
+   */
+  const [morphLock, setMorphLock] = useState<{
+    top: number
+    left: number
+    width: number
+    height: number
+  } | null>(null)
+  /** True while height/inset CSS is morphing toward compact rest. */
+  const [sizeMorphing, setSizeMorphing] = useState(false)
+  const morphTimer = useRef<number | null>(null)
 
   // Freeze size for the exit window — closeCoach resets to compact immediately,
   // which would otherwise snap a full-page sheet mid-fade.
@@ -271,7 +353,12 @@ export default function CoachSheet() {
     if (backdropOut) setBackdropOut(false)
     if (pullDismissing) setPullDismissing(false)
     if (dragFadeOut) setDragFadeOut(false)
+    if (morphLock) setMorphLock(null)
+    if (sizeMorphing) setSizeMorphing(false)
     if (pullPhase === 'idle' && pullY !== 0) setPullY(0)
+    // Fresh open — allow enter keyframes once (sheet state survives unmount
+    // of the portal contents via `mounted`, so this must be re-armed).
+    setPlayEnter(true)
   }
   wasOpenRef.current = open
   // Idle reopen leftovers (e.g. interrupted non-gesture close).
@@ -279,6 +366,8 @@ export default function CoachSheet() {
     activelyOpen &&
     pullPhase === 'idle' &&
     !gestureDismissActive &&
+    !sizeMorphing &&
+    !morphLock &&
     (gestureDismissY !== 0 ||
       dismissBackdropOpacity != null ||
       backdropOut ||
@@ -295,6 +384,8 @@ export default function CoachSheet() {
     activelyOpen &&
     pullPhase === 'idle' &&
     !gestureDismissActive &&
+    !sizeMorphing &&
+    !morphLock &&
     pullY !== 0
   ) {
     setPullY(0)
@@ -315,6 +406,24 @@ export default function CoachSheet() {
     const id = requestAnimationFrame(() => setDragFadeOut(true))
     return () => cancelAnimationFrame(id)
   }, [closing, gestureDismissActive, reduceMotion])
+
+  // Drop enter classes after the open spring so later size swaps stay quiet.
+  useEffect(() => {
+    if (!open || closing || !playEnter) return
+    if (reduceMotion) {
+      setPlayEnter(false)
+      return
+    }
+    const t = window.setTimeout(() => setPlayEnter(false), ENTER_MS)
+    return () => window.clearTimeout(t)
+  }, [open, closing, playEnter, reduceMotion])
+
+  useEffect(
+    () => () => {
+      if (morphTimer.current != null) window.clearTimeout(morphTimer.current)
+    },
+    [],
+  )
 
   // Focus after the enter spring settles so iOS keyboard + visualViewport pan
   // can't fight the open animation (or strand the composer under the keyboard).
@@ -388,6 +497,104 @@ export default function CoachSheet() {
   )
 
   /**
+   * Page → compact without a bottom pop-in: lock the current visual rect
+   * (includes pull translate), clear pullY, swap to compact classes, then
+   * spring the locked box to compact resting geometry — one continuous sheet.
+   */
+  const morphToCompact = useCallback(
+    (fromY: number) => {
+      cancelSettle()
+      setPlayEnter(false)
+      setGestureDismissY(0)
+      setDismissBackdropOpacity(null)
+      setPullDismissing(false)
+
+      if (reduceMotion) {
+        if (morphTimer.current != null) window.clearTimeout(morphTimer.current)
+        setMorphLock(null)
+        setSizeMorphing(false)
+        pullYRef.current = 0
+        setPullY(0)
+        setPullPhase('idle')
+        setSize('compact')
+        return
+      }
+
+      const sheet = sheetRef.current
+      const rect = sheet?.getBoundingClientRect()
+      if (!rect || rect.height < 8) {
+        setSize('compact')
+        springPullToZero(fromY, 0)
+        return
+      }
+
+      if (morphTimer.current != null) window.clearTimeout(morphTimer.current)
+      pullYRef.current = 0
+      setPullY(0)
+      setPullPhase('idle')
+
+      const from = {
+        top: rect.top,
+        left: rect.left,
+        width: rect.width,
+        height: rect.height,
+      }
+      const to = compactRestRect(dock)
+      setMorphLock(from)
+      setSizeMorphing(true)
+      setSize('compact')
+
+      // Spring each edge as one critically-damped unit (same sheet constants).
+      let top = from.top
+      let left = from.left
+      let width = from.width
+      let height = from.height
+      let vTop = 0
+      let vLeft = 0
+      let vW = 0
+      let vH = 0
+
+      const tick = () => {
+        const dt = 1 / 60
+        const step = (
+          cur: number,
+          target: number,
+          vel: number,
+        ): [number, number] => {
+          const a = -SHEET_SPRING_K * (cur - target) - SHEET_SPRING_C * vel
+          const nextV = vel + a * dt
+          return [cur + nextV * dt, nextV]
+        }
+        ;[top, vTop] = step(top, to.top, vTop)
+        ;[left, vLeft] = step(left, to.left, vLeft)
+        ;[width, vW] = step(width, to.width, vW)
+        ;[height, vH] = step(height, to.height, vH)
+
+        const done =
+          Math.abs(top - to.top) < SHEET_SETTLE_POS &&
+          Math.abs(left - to.left) < SHEET_SETTLE_POS &&
+          Math.abs(width - to.width) < SHEET_SETTLE_POS &&
+          Math.abs(height - to.height) < SHEET_SETTLE_POS &&
+          Math.abs(vTop) < SHEET_SETTLE_VEL &&
+          Math.abs(vLeft) < SHEET_SETTLE_VEL &&
+          Math.abs(vW) < SHEET_SETTLE_VEL &&
+          Math.abs(vH) < SHEET_SETTLE_VEL
+
+        if (done) {
+          setMorphLock(null)
+          setSizeMorphing(false)
+          settleRaf.current = null
+          return
+        }
+        setMorphLock({ top, left, width, height })
+        settleRaf.current = requestAnimationFrame(tick)
+      }
+      settleRaf.current = requestAnimationFrame(tick)
+    },
+    [cancelSettle, dock, reduceMotion, setSize, springPullToZero],
+  )
+
+  /**
    * Continue the pull motion off-screen, then close — same physical sheet,
    * not a snappy cut/fade in place. Never reset translateY to 0 before exit.
    * Gesture dismiss owns Y on the motion shell until unmount; CSS transform
@@ -396,6 +603,13 @@ export default function CoachSheet() {
   const flingOffAndClose = useCallback(
     (fromY: number, fromVy: number) => {
       cancelSettle()
+      if (morphTimer.current != null) {
+        window.clearTimeout(morphTimer.current)
+        morphTimer.current = null
+      }
+      setMorphLock(null)
+      setSizeMorphing(false)
+      setPlayEnter(false)
       const h = sheetH.current || sheetRef.current?.offsetHeight || 400
       sheetH.current = h
       const offY = Math.max(fromY + 48, h + 24)
@@ -465,6 +679,12 @@ export default function CoachSheet() {
   const requestClose = useCallback(() => {
     if (closing || gestureDismissActiveRef.current) return
     cancelSettle()
+    if (morphTimer.current != null) {
+      window.clearTimeout(morphTimer.current)
+      morphTimer.current = null
+    }
+    setMorphLock(null)
+    setSizeMorphing(false)
     const y = pullYRef.current
     // Mid-pull / mid-settle with meaningful offset → continue as gesture dismiss
     // so Y never snaps to 0 under coach-sheet-out.
@@ -510,16 +730,32 @@ export default function CoachSheet() {
       const t = e.target as HTMLElement | null
       if (t?.closest('button, a, textarea, input')) return
 
-      // Capture live offset before killing enter/settle motion (motion shell
-      // owns Y during pull; fall back to sheet for enter-keyframe interrupts).
-      const liveY =
+      // Capture live offset before killing enter/settle/morph motion.
+      let liveY =
         pullPhase === 'dragging' || pullPhase === 'settling'
           ? pullYRef.current
           : readTranslateY(motionRef.current) ||
             readTranslateY(sheetRef.current)
+      // Mid page→compact morph: convert locked box → pullY so the finger
+      // continues from the same visual top (compact rest + offset).
+      if (sizeMorphing || morphLock) {
+        const rect = sheetRef.current?.getBoundingClientRect()
+        if (rect) {
+          const rest = compactRestRect(dock)
+          liveY = rect.top - rest.top
+        }
+      }
       cancelSettle()
+      // Interrupt an in-flight page→compact morph — finger takes over.
+      if (morphTimer.current != null) {
+        window.clearTimeout(morphTimer.current)
+        morphTimer.current = null
+      }
+      if (morphLock) setMorphLock(null)
+      if (sizeMorphing) setSizeMorphing(false)
       setPullDismissing(false)
       setDismissBackdropOpacity(null)
+      setPlayEnter(false)
 
       pointerId.current = e.pointerId
       // Map finger so dy continues from the interrupted visual offset.
@@ -538,7 +774,15 @@ export default function CoachSheet() {
         // ignore
       }
     },
-    [cancelSettle, closing, historyOpen, pullPhase],
+    [
+      cancelSettle,
+      closing,
+      dock,
+      historyOpen,
+      morphLock,
+      pullPhase,
+      sizeMorphing,
+    ],
   )
 
   const onPullMove = useCallback(
@@ -636,14 +880,23 @@ export default function CoachSheet() {
       setPullDismissing(false)
       if (shouldExpand) {
         expandToPage()
+        // Critically damped settle back to rest (interruptible via beginPull).
+        springPullToZero(y, vy)
       } else if (shouldCollapse) {
-        setSize('compact')
+        // Continuous morph — do NOT springPullToZero (that + compact class swap
+        // was the bottom pop-in).
+        morphToCompact(y)
+      } else {
+        springPullToZero(y, vy)
       }
-
-      // Critically damped settle back to rest (interruptible via beginPull).
-      springPullToZero(y, vy)
     },
-    [expandToPage, flingOffAndClose, setSize, size, springPullToZero],
+    [
+      expandToPage,
+      flingOffAndClose,
+      morphToCompact,
+      size,
+      springPullToZero,
+    ],
   )
 
   if (!mounted) return null
@@ -696,8 +949,10 @@ export default function CoachSheet() {
 
   // Size morph only — Y lives on the motion shell, never on CSS exit keyframes
   // for gesture dismiss (coach-sheet-out from{translateY(0)} = middle flash).
+  // During page→compact FLIP, keep transitions on after the lock releases.
   const sheetTransition = (() => {
     if (reduceMotion || dragging || settling || fromDragDismiss) return 'none'
+    if (morphLock) return 'none'
     if (closing) return 'none'
     const curve = 'cubic-bezier(0.22, 1, 0.36, 1)'
     const parts: string[] = [
@@ -710,20 +965,28 @@ export default function CoachSheet() {
       `right ${SIZE_MS}ms ${curve}`,
       `top ${SIZE_MS}ms ${curve}`,
       `bottom ${SIZE_MS}ms ${curve}`,
+      `padding ${SIZE_MS}ms ${curve}`,
     ]
     return parts.join(', ')
   })()
 
-  // Backdrop fades with drag progress toward dismiss; CSS owns exit fade.
-  const dismissProgress =
-    (dragging || settling || pullDismissing) && pullY > 0
-      ? Math.min(1, pullY / sheetDismissThreshold(sheetH.current || 400))
-      : 0
+  // Dim the scrim only on a real dismiss path — never while settling a minimize
+  // (that caused blur on→off→on when compact remounted the backdrop).
+  const dismissAtLive = sheetDismissThreshold(sheetH.current || 400)
+  const liveDismissScrim =
+    pullDismissing ||
+    fromDragDismiss ||
+    (dragging &&
+      pullY > 0 &&
+      (visualSize !== 'page' || pullY > dismissAtLive))
+  const dismissProgress = liveDismissScrim
+    ? Math.min(1, Math.max(0, pullY) / dismissAtLive)
+    : 0
   const backdropOpacity = 0.45 * (1 - dismissProgress * 0.85)
 
-  // Compact sheet always has a scrim; full page does not (except gesture-dismiss
-  // from compact, which keeps the dimmed scrim through the exit).
-  const showBackdrop = !isPage || fromDragDismiss || pullDismissing
+  // Scrim stays up for any open chat (page or compact), including morph/pull.
+  // Fade only on full close — never unmount on size change.
+  const showBackdrop = mounted
 
   // Lift fixed sheet above the iOS keyboard so autofocus can't bury the composer.
   // Top-docked desktop cards use `top`/`bottom:auto` — don't override bottom there.
@@ -736,6 +999,18 @@ export default function CoachSheet() {
           ? ({ bottom: keyboardInset + 12 } as const)
           : undefined
       : undefined
+
+  const morphLockStyle: CSSProperties | undefined = morphLock
+    ? {
+        top: morphLock.top,
+        left: morphLock.left,
+        width: morphLock.width,
+        height: morphLock.height,
+        right: 'auto',
+        bottom: 'auto',
+        maxHeight: 'none',
+      }
+    : undefined
 
   const motionStyle: CSSProperties = {
     transform:
@@ -760,7 +1035,7 @@ export default function CoachSheet() {
       {/* Fixed --bg band under the status bar while the page sheet (incl. exit)
           is mounted. Stops iOS from sampling --surface / accent wash into the
           chrome after the sheet slides/fades away. */}
-      {mounted && isPage ? (
+      {mounted && (isPage || sizeMorphing) ? (
         <div
           className="coach-status-bar-heal"
           style={{ backgroundColor: THEME_COLOR[theme] }}
@@ -770,7 +1045,11 @@ export default function CoachSheet() {
       {showBackdrop ? (
         <button
           type="button"
-          className={`coach-backdrop${closing ? ' coach-backdrop--closing' : ''}${
+          className={`coach-backdrop${
+            playEnter && !closing && !reduceMotion
+              ? ' coach-backdrop--enter'
+              : ''
+          }${closing ? ' coach-backdrop--closing' : ''}${
             closing && fromDragDismiss
               ? ' coach-backdrop--closing-from-drag'
               : ''
@@ -778,9 +1057,7 @@ export default function CoachSheet() {
           aria-label="Close Coach"
           onClick={requestClose}
           style={
-            !reduceMotion &&
-            (dragging || settling || pullDismissing) &&
-            pullY > 0
+            !reduceMotion && liveDismissScrim
               ? { opacity: backdropOpacity, transition: 'none' }
               : !reduceMotion && closing && dismissBackdropOpacity != null
                 ? {
@@ -805,10 +1082,14 @@ export default function CoachSheet() {
       <div
         ref={sheetRef}
         className={`coach-sheet coach-sheet--${visualSize}${
-          closing ? ' coach-sheet--closing' : ''
-        }${fromDragDismiss ? ' coach-sheet--closing-from-drag' : ''}${
-          dragging ? ' coach-sheet--pulling' : ''
-        }`}
+          playEnter && !closing && !reduceMotion && !morphLock
+            ? ' coach-sheet--enter'
+            : ''
+        }${closing ? ' coach-sheet--closing' : ''}${
+          fromDragDismiss ? ' coach-sheet--closing-from-drag' : ''
+        }${
+          dragging || settling ? ' coach-sheet--pulling' : ''
+        }${morphLock ? ' coach-sheet--morph-lock' : ''}`}
         data-dock={dock}
         role="dialog"
         aria-modal="true"
@@ -816,6 +1097,7 @@ export default function CoachSheet() {
         style={{
           transformOrigin: origin,
           transition: sheetTransition,
+          ...morphLockStyle,
           ...sheetKeyboardStyle,
         }}
       >

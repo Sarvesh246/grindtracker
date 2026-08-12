@@ -1382,6 +1382,9 @@ html.reduce-motion .coach-fab.press:active:not(.coach-fab--dragging):not(.coach-
   background: rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
+  /* Enter is opt-in via --enter so page↔compact never remounts/replays it. */
+}
+.coach-backdrop.coach-backdrop--enter {
   animation: coach-backdrop-in 520ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
 .coach-backdrop--closing {
@@ -1391,6 +1394,16 @@ html.reduce-motion .coach-fab.press:active:not(.coach-fab--dragging):not(.coach-
 /* Gesture dismiss already dimmed the scrim — don't restart from opacity 1. */
 .coach-backdrop--closing.coach-backdrop--closing-from-drag {
   animation: none;
+}
+html.reduce-motion .coach-backdrop.coach-backdrop--enter,
+html.reduce-motion .coach-backdrop--closing {
+  animation: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .coach-backdrop.coach-backdrop--enter,
+  .coach-backdrop--closing {
+    animation: none !important;
+  }
 }
 
 /* Fixed --bg strip under the iOS status bar while Coach page (incl. exit) is
@@ -1433,7 +1446,8 @@ html.reduce-motion .coach-fab.press:active:not(.coach-fab--dragging):not(.coach-
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
   color: var(--text-primary);
   font-family: var(--font-sans);
-  animation: coach-sheet-in 640ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  /* Enter is opt-in (--enter) so page↔compact class swaps never replay
+     coach-sheet-in (that was the minimize “pop from bottom”). */
   /* Mobile compact defaults — quick “type to orb” card */
   left: 12px;
   right: 12px;
@@ -1443,6 +1457,9 @@ html.reduce-motion .coach-fab.press:active:not(.coach-fab--dragging):not(.coach-
   max-height: calc(100dvh - env(safe-area-inset-top) - 12px);
   border-radius: var(--radius-lg);
   overflow: hidden;
+}
+.coach-sheet.coach-sheet--enter {
+  animation: coach-sheet-in 640ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
 html.light .coach-sheet {
   box-shadow: var(--card-shadow), 0 12px 40px rgba(0, 0, 0, 0.12);
@@ -1462,6 +1479,13 @@ html.light .coach-sheet {
   /* Interruptible enter: finger takes over mid-open without locking. */
   animation: none !important;
 }
+/* FLIP lock during page→compact: fixed pixel box, no CSS size jump yet. */
+.coach-sheet--morph-lock {
+  animation: none !important;
+  right: auto !important;
+  bottom: auto !important;
+  max-height: none !important;
+}
 
 /* Full Coach page — morphs from the compact sheet (Siri-app style). */
 .coach-sheet.coach-sheet--page {
@@ -1479,8 +1503,6 @@ html.light .coach-sheet {
   border-radius: 0;
   border: none;
   box-shadow: none;
-  /* Size morph owns the expand; don't replay the compact enter keyframe. */
-  animation: none;
   /* Clear the Dynamic Island / status bar while open. The padding band is
      painted solid --bg (theme-color / app-shell), not --surface, so chrome
      matches the rest of the app. Do not push --surface into theme-color —
@@ -1508,6 +1530,16 @@ html.light .coach-sheet {
   /* Keep !important — page.closing alone is equal specificity to a 3-class
      rule and used to win the cascade for one paint → middle flash. */
   animation: none !important;
+}
+html.reduce-motion .coach-sheet.coach-sheet--enter,
+html.reduce-motion .coach-sheet--closing {
+  animation: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .coach-sheet.coach-sheet--enter,
+  .coach-sheet--closing {
+    animation: none !important;
+  }
 }
 
 @media (min-width: 768px) {
