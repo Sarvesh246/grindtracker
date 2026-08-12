@@ -2,6 +2,9 @@ export {
   COACH_BURST_LIMIT,
   COACH_BURST_WINDOW_MINUTES,
   COACH_CONTEXT_BODY_WEIGHTS,
+  COACH_CONTEXT_BODY_WEIGHTS_FETCH,
+  COACH_CONTEXT_EXERCISE_BESTS,
+  COACH_CONTEXT_FULL_DETAIL_SESSIONS,
   COACH_CONTEXT_RECENT_PRS,
   COACH_CONTEXT_SESSIONS,
   COACH_CONTEXT_SETS_PER_SESSION,
@@ -17,6 +20,11 @@ export {
   type TrainingBreak,
   type TrainingHistorySummary,
 } from './trainingHistory'
+export {
+  summarizeBodyWeight,
+  summarizeRpe,
+  rollupSessionExercises,
+} from './contextSummaries'
 export {
   formatCoachMessage,
   type CoachBlock,

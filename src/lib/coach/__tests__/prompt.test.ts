@@ -56,4 +56,12 @@ describe('COACH_SYSTEM_PROMPT', () => {
       /Do not answer a general fitness question with only textbook timelines/i,
     )
   })
+
+  it('points the model at rich USER_DATA sections', () => {
+    assert.match(COACH_SYSTEM_PROMPT, /exercise_performance/i)
+    assert.match(COACH_SYSTEM_PROMPT, /schedule\.last_trained_by_day/i)
+    assert.match(COACH_SYSTEM_PROMPT, /body_weight\.summary/i)
+    assert.match(COACH_SYSTEM_PROMPT, /active_session/i)
+    assert.match(COACH_SYSTEM_PROMPT, /Dig into the right USER_DATA section/i)
+  })
 })

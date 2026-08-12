@@ -103,16 +103,29 @@ the failure occurs mid-stream, after headers are already sent.
 
 ## How context works
 
-`buildCoachContext` (server) loads only the caller’s data via Supabase RLS:
+`buildCoachContext` (server) loads only the caller’s data via Supabase RLS +
+existing RPCs (`grind_badge_metrics`, `grind_home_history`,
+`get_friend_profile`, `get_exercise_bests`, `get_exercise_last_weights`):
 
-- Profile, `user_stats`, program days, rotation + next day
-- Rest days (weekly + recent one-offs)
-- Recent body weight
+- Profile (incl. join date), `user_stats`, badges earned (id + label)
+- Program: days, **flex days**, day→push/pull/legs categories, rotation,
+  next day + that day’s exercises (targets)
+- Full **active catalog** grouped by day (sets/reps/`weight_target`)
+- **Exercise performance**: all-time best weight/volume + last-session weight
+  per active exercise
+- **Lifetime**: volume, heaviest set, max reps, unique exercises, PR/set/
+  days-active counts, body-weight log count, friend flag (boolean only)
+- Schedule: `last_trained_by_day` (when each day was last completed)
+- Rest days (weekly + recent one-offs, with weekday names)
+- Body weight: trend summary (latest, Δ7/30d, 90d min/max) + recent points
+- RPE summary from the recent-session window
+- Open/incomplete session (if any)
+- Progress-photo **metadata** only (count + latest date/note — never images)
 - `training_history` — tenure + layoff snapshot from **all** completed-session
   `local_date`s (first/last workout, days since, rolling 30/90-day counts,
-  significant breaks of ≥14 idle days). Recent session detail alone is too
-  short a window for “how long have I been training?” / timeline questions.
-- Last ~10 completed sessions + working sets
+  significant breaks of ≥14 idle days)
+- Last ~14 completed sessions: newest 3 keep full set rows (incl. notes);
+  older ones are per-exercise rollups (top weight, volume, avg RPE, PR flag)
 - Recent PR sets
 
 Weights stay **canonical lbs** in the pack; the system prompt tells the model
@@ -123,8 +136,9 @@ Reply formatting is enforced in `COACH_SYSTEM_PROMPT` for **every** turn
 prompt picks a structure by intent — stats/PRs use `- ` bullets, how-tos use
 numbered steps, simple facts stay 1–2 sentences, explanation/timeline answers
 must pair general knowledge with `training_history` when present, multi-topic
-answers may use `###` labels — and the sheet renders that Markdown via
-`CoachMessageContent`.
+answers may use `###` labels — and routes the model to the right USER_DATA
+section (catalog, bests, schedule, lifetime, etc.). The sheet renders that
+Markdown via `CoachMessageContent`.
 
 ## UI
 

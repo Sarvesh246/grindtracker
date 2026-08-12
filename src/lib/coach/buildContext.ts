@@ -1,8 +1,18 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { UserRotation } from '@/lib/types'
+import type { DayCategory, UserRotation } from '@/lib/types'
+import { ALL_BADGES } from '@/lib/utils/badges'
 import { effectiveSequence, nextDay } from '@/lib/utils/rotation'
 import {
+  summarizeBodyWeight,
+  summarizeRpe,
+  rollupSessionExercises,
+  type RawSetForSummary,
+} from './contextSummaries'
+import {
   COACH_CONTEXT_BODY_WEIGHTS,
+  COACH_CONTEXT_BODY_WEIGHTS_FETCH,
+  COACH_CONTEXT_EXERCISE_BESTS,
+  COACH_CONTEXT_FULL_DETAIL_SESSIONS,
   COACH_CONTEXT_RECENT_PRS,
   COACH_CONTEXT_SESSIONS,
   COACH_CONTEXT_SETS_PER_SESSION,
@@ -14,6 +24,47 @@ import {
 
 export type CoachUnitPreference = 'lbs' | 'kg'
 
+export interface CoachCatalogExercise {
+  name: string
+  sets_target: number
+  reps_target: string
+  weight_target_lbs: number | null
+  sort_order: number
+}
+
+export interface CoachExercisePerformance {
+  name: string
+  day_type: string
+  max_weight_lbs: number | null
+  max_volume: number | null
+  last_weight_lbs: number | null
+  weight_target_lbs: number | null
+}
+
+export interface CoachSetDetail {
+  exercise: string
+  set_number: number
+  weight_lbs: number | null
+  reps: number | null
+  is_pr: boolean
+  is_warmup: boolean
+  rpe: number | null
+  note: string | null
+}
+
+export interface CoachRecentSession {
+  local_date: string | null
+  day_type: string
+  completed_at: string | null
+  xp_earned: number
+  note: string | null
+  /** Present on the newest sessions — full set rows. */
+  sets?: CoachSetDetail[]
+  /** Present on older sessions — per-exercise rollup (token-cheap). */
+  exercises?: ReturnType<typeof rollupSessionExercises>
+  detail: 'full' | 'rollup'
+}
+
 export interface CoachContext {
   as_of_local_date: string
   /** IANA tz from the client when provided (informational for the model). */
@@ -24,6 +75,7 @@ export interface CoachContext {
   profile: {
     display_name: string | null
     username: string | null
+    joined_at: string | null
   }
   stats: {
     xp_total: number
@@ -35,40 +87,68 @@ export interface CoachContext {
   } | null
   program: {
     days: string[]
+    flex_days: string[]
+    day_categories: Record<string, DayCategory>
     rotation_mode: 'auto' | 'manual' | null
     sequence: string[]
     current_index: number | null
     next_day: string | null
+    next_day_exercises: CoachCatalogExercise[]
   }
   rest: {
     weekly_days_of_week: number[]
+    /** 0=Sun..6=Sat labels for the model. */
+    weekly_day_names: string[]
     recent_one_off_dates: string[]
   }
+  catalog: {
+    inactive_count: number
+    days: { day_type: string; exercises: CoachCatalogExercise[] }[]
+  }
+  /** Active-exercise bests + last-session working weight + targets. */
+  exercise_performance: CoachExercisePerformance[]
+  lifetime: {
+    total_volume_lbs: number
+    max_set_weight_lbs: number
+    max_set_reps: number
+    unique_exercises: number
+    total_prs: number
+    total_sets: number
+    days_active: number
+    body_weight_log_count: number
+    has_accepted_friend: boolean
+  }
+  badges: {
+    earned_count: number
+    earned: { id: string; name: string }[]
+  }
+  schedule: {
+    /** Last completed local_date per day_type (null = never in lookback / ever). */
+    last_trained_by_day: Record<string, string | null>
+  }
   body_weight: {
+    summary: ReturnType<typeof summarizeBodyWeight>['summary']
     recent: { date: string; weight_lbs: number }[]
+  }
+  rpe: ReturnType<typeof summarizeRpe>
+  active_session: {
+    day_type: string
+    started_at: string
+    logged_working_sets: number
+  } | null
+  photos: {
+    group_count: number
+    latest_date: string | null
+    latest_day_type: string | null
+    latest_note: string | null
   }
   /**
    * Tenure + layoff snapshot derived from all completed-session local dates.
-   * Use for timelines, “how long have I been training”, comeback framing —
-   * recent_sessions alone is too short a window for that.
+   * Use for timelines / “how long have I been training” — recent_sessions alone
+   * is too short a window for that.
    */
   training_history: TrainingHistorySummary
-  recent_sessions: {
-    local_date: string | null
-    day_type: string
-    completed_at: string | null
-    xp_earned: number
-    note: string | null
-    sets: {
-      exercise: string
-      set_number: number
-      weight_lbs: number | null
-      reps: number | null
-      is_pr: boolean
-      is_warmup: boolean
-      rpe: number | null
-    }[]
-  }[]
+  recent_sessions: CoachRecentSession[]
   recent_prs: {
     exercise: string
     weight_lbs: number
@@ -77,6 +157,8 @@ export interface CoachContext {
     completed_at: string | null
   }[]
 }
+
+const DOW_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const
 
 type SessionRow = {
   id: string
@@ -96,14 +178,31 @@ type LogRow = {
   is_warmup: boolean | null
   is_skipped: boolean | null
   rpe: number | null
+  note: string | null
   created_at: string
   exercises: { name: string } | { name: string }[] | null
+}
+
+type ExerciseRow = {
+  id: string
+  name: string
+  day_type: string
+  sets_target: number
+  reps_target: string
+  weight_target: number | null
+  sort_order: number
+  active: boolean
 }
 
 function exerciseName(exercises: LogRow['exercises']): string {
   if (!exercises) return 'Unknown'
   if (Array.isArray(exercises)) return exercises[0]?.name ?? 'Unknown'
   return exercises.name ?? 'Unknown'
+}
+
+function num(v: unknown, fallback = 0): number {
+  const n = typeof v === 'number' ? v : Number(v)
+  return Number.isFinite(n) ? n : fallback
 }
 
 /**
@@ -130,22 +229,35 @@ export async function buildCoachContext(
   const [
     { data: profile },
     { data: stats },
-    { data: dayTypeRows },
+    { data: exerciseRows },
     { data: rotationRow },
     { data: flexRows },
     { data: restDayRows },
     { data: restDateRows },
+    { data: categoryRows },
     { data: bodyWeights },
     { data: sessions },
     { data: historyDateRows },
+    { data: badgeMetrics },
+    { data: homeHistory },
+    { data: friendProfile },
+    { data: activeRow },
+    { count: photoCount },
+    { data: latestPhoto },
   ] = await Promise.all([
     supabase
       .from('user_profiles')
-      .select('display_name, username')
+      .select('display_name, username, created_at')
       .eq('id', userId)
       .maybeSingle(),
     supabase.from('user_stats').select('*').eq('user_id', userId).maybeSingle(),
-    supabase.from('exercises').select('day_type').eq('user_id', userId),
+    supabase
+      .from('exercises')
+      .select(
+        'id, name, day_type, sets_target, reps_target, weight_target, sort_order, active',
+      )
+      .eq('user_id', userId)
+      .order('sort_order', { ascending: true }),
     supabase.from('user_rotation').select('*').eq('user_id', userId).maybeSingle(),
     supabase.from('user_flex_days').select('day_key').eq('user_id', userId),
     supabase.from('user_rest_days').select('day_of_week').eq('user_id', userId),
@@ -156,11 +268,15 @@ export async function buildCoachContext(
       .order('rest_date', { ascending: false })
       .limit(14),
     supabase
+      .from('user_day_categories')
+      .select('day_key, category')
+      .eq('user_id', userId),
+    supabase
       .from('body_weights')
       .select('weight, recorded_at')
       .eq('user_id', userId)
       .order('recorded_at', { ascending: false })
-      .limit(COACH_CONTEXT_BODY_WEIGHTS),
+      .limit(COACH_CONTEXT_BODY_WEIGHTS_FETCH),
     supabase
       .from('sessions')
       .select('id, day_type, completed_at, local_date, xp_earned, note')
@@ -169,8 +285,6 @@ export async function buildCoachContext(
       .order('completed_at', { ascending: false })
       .limit(COACH_CONTEXT_SESSIONS),
     // Date-only scan for tenure / layoff summary (not set detail).
-    // Explicit high limit — PostgREST defaults to 1000 rows, which would
-    // silently truncate multi-year logs and mis-state first_workout_date.
     supabase
       .from('sessions')
       .select('local_date')
@@ -179,15 +293,110 @@ export async function buildCoachContext(
       .not('local_date', 'is', null)
       .order('local_date', { ascending: true })
       .limit(4000),
+    supabase.rpc('grind_badge_metrics'),
+    supabase.rpc('grind_home_history', { p_lookback_days: 90 }),
+    supabase.rpc('get_friend_profile', { p_user_id: userId }),
+    supabase
+      .from('sessions')
+      .select('id, day_type, started_at')
+      .eq('user_id', userId)
+      .is('completed_at', null)
+      .order('started_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from('progress_photo_groups')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId),
+    supabase
+      .from('progress_photo_groups')
+      .select('taken_date, day_type, note')
+      .eq('user_id', userId)
+      .order('taken_date', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ])
 
-  const dayKeys = Array.from(
-    new Set((dayTypeRows ?? []).map((r: { day_type: string }) => r.day_type)),
-  )
-  const flexDays = new Set((flexRows ?? []).map((r: { day_key: string }) => r.day_key))
+  const allExercises = (exerciseRows ?? []) as ExerciseRow[]
+  const activeExercises = allExercises.filter(e => e.active)
+  const inactive_count = allExercises.length - activeExercises.length
+
+  const dayKeys = Array.from(new Set(allExercises.map(e => e.day_type))).sort()
+  const flexDays = (flexRows ?? []).map((r: { day_key: string }) => r.day_key).sort()
+  const flexSet = new Set(flexDays)
   const rotation = (rotationRow as UserRotation | null) ?? null
-  const seq = effectiveSequence(rotation, dayKeys, flexDays)
+  const seq = effectiveSequence(rotation, dayKeys, flexSet)
   const upNext = nextDay(seq, rotation?.current_index ?? -1)
+
+  const day_categories: Record<string, DayCategory> = {}
+  for (const row of (categoryRows ?? []) as { day_key: string; category: DayCategory }[]) {
+    day_categories[row.day_key] = row.category
+  }
+
+  const catalogByDay = new Map<string, CoachCatalogExercise[]>()
+  for (const e of activeExercises) {
+    const list = catalogByDay.get(e.day_type) ?? []
+    list.push({
+      name: e.name,
+      sets_target: e.sets_target,
+      reps_target: e.reps_target,
+      weight_target_lbs: e.weight_target,
+      sort_order: e.sort_order,
+    })
+    catalogByDay.set(e.day_type, list)
+  }
+  const catalogDays = dayKeys
+    .filter(d => catalogByDay.has(d))
+    .map(day_type => ({
+      day_type,
+      exercises: catalogByDay.get(day_type)!,
+    }))
+
+  const next_day_exercises =
+    upNext && catalogByDay.has(upNext) ? catalogByDay.get(upNext)! : []
+
+  // Bests / last weights for active catalog (capped).
+  const perfIds = activeExercises
+    .slice(0, COACH_CONTEXT_EXERCISE_BESTS)
+    .map(e => e.id)
+  let bestsMap = new Map<string, { max_weight: number; max_volume: number }>()
+  let lastMap = new Map<string, number>()
+  if (perfIds.length > 0) {
+    const [{ data: bestRows }, { data: lastRows }] = await Promise.all([
+      supabase.rpc('get_exercise_bests', { p_exercise_ids: perfIds }),
+      supabase.rpc('get_exercise_last_weights', { p_exercise_ids: perfIds }),
+    ])
+    for (const r of (bestRows ?? []) as {
+      exercise_id: string
+      max_weight: number | string | null
+      max_volume: number | string | null
+    }[]) {
+      bestsMap.set(r.exercise_id, {
+        max_weight: num(r.max_weight),
+        max_volume: num(r.max_volume),
+      })
+    }
+    for (const r of (lastRows ?? []) as {
+      exercise_id: string
+      last_weight: number | string | null
+    }[]) {
+      lastMap.set(r.exercise_id, num(r.last_weight))
+    }
+  }
+
+  const exercise_performance: CoachExercisePerformance[] = activeExercises
+    .slice(0, COACH_CONTEXT_EXERCISE_BESTS)
+    .map(e => {
+      const b = bestsMap.get(e.id)
+      return {
+        name: e.name,
+        day_type: e.day_type,
+        max_weight_lbs: b ? b.max_weight : null,
+        max_volume: b ? b.max_volume : null,
+        last_weight_lbs: lastMap.has(e.id) ? lastMap.get(e.id)! : null,
+        weight_target_lbs: e.weight_target,
+      }
+    })
 
   const sessionList = (sessions ?? []) as SessionRow[]
   const sessionIds = sessionList.map(s => s.id)
@@ -197,7 +406,7 @@ export async function buildCoachContext(
     const { data: logRows } = await supabase
       .from('session_logs')
       .select(
-        'session_id, set_number, weight, reps, is_pr, is_warmup, is_skipped, rpe, created_at, exercises(name)',
+        'session_id, set_number, weight, reps, is_pr, is_warmup, is_skipped, rpe, note, created_at, exercises(name)',
       )
       .in('session_id', sessionIds)
       .order('created_at', { ascending: true })
@@ -212,28 +421,52 @@ export async function buildCoachContext(
     logsBySession.set(log.session_id, list)
   }
 
-  const recent_sessions = sessionList.map(s => {
+  const allRawSets: RawSetForSummary[] = []
+  const recent_sessions: CoachRecentSession[] = sessionList.map((s, idx) => {
     const raw = logsBySession.get(s.id) ?? []
-    const capped = raw.slice(0, COACH_CONTEXT_SETS_PER_SESSION)
-    return {
+    const mapped: RawSetForSummary[] = raw.map(l => ({
+      exercise: exerciseName(l.exercises),
+      set_number: l.set_number,
+      weight_lbs: l.weight,
+      reps: l.reps,
+      is_pr: !!l.is_pr,
+      is_warmup: !!l.is_warmup,
+      rpe: l.rpe,
+      note: l.note,
+    }))
+    allRawSets.push(...mapped)
+
+    const base = {
       local_date: s.local_date,
       day_type: s.day_type,
       completed_at: s.completed_at,
       xp_earned: s.xp_earned ?? 0,
       note: s.note,
-      sets: capped.map(l => ({
-        exercise: exerciseName(l.exercises),
-        set_number: l.set_number,
-        weight_lbs: l.weight,
-        reps: l.reps,
-        is_pr: !!l.is_pr,
-        is_warmup: !!l.is_warmup,
-        rpe: l.rpe,
-      })),
+    }
+
+    if (idx < COACH_CONTEXT_FULL_DETAIL_SESSIONS) {
+      return {
+        ...base,
+        detail: 'full' as const,
+        sets: mapped.slice(0, COACH_CONTEXT_SETS_PER_SESSION).map(l => ({
+          exercise: l.exercise,
+          set_number: l.set_number,
+          weight_lbs: l.weight_lbs,
+          reps: l.reps,
+          is_pr: l.is_pr,
+          is_warmup: l.is_warmup,
+          rpe: l.rpe,
+          note: l.note?.trim() ? l.note.trim().slice(0, 120) : null,
+        })),
+      }
+    }
+    return {
+      ...base,
+      detail: 'rollup' as const,
+      exercises: rollupSessionExercises(mapped),
     }
   })
 
-  // PRs from the same recent window first; if thin, one broader query.
   let recent_prs = logs
     .filter(l => l.is_pr && l.weight != null && l.reps != null && !l.is_skipped)
     .slice(0, COACH_CONTEXT_RECENT_PRS)
@@ -284,6 +517,56 @@ export async function buildCoachContext(
       })
   }
 
+  let active_session: CoachContext['active_session'] = null
+  if (activeRow) {
+    const { count } = await supabase
+      .from('session_logs')
+      .select('id', { count: 'exact', head: true })
+      .eq('session_id', activeRow.id)
+      .eq('is_skipped', false)
+      .not('weight', 'is', null)
+    active_session = {
+      day_type: activeRow.day_type,
+      started_at: activeRow.started_at,
+      logged_working_sets: count ?? 0,
+    }
+  }
+
+  const metrics = (badgeMetrics ?? {}) as Record<string, unknown>
+  const friend = (friendProfile ?? {}) as Record<string, unknown>
+  const historyPayload = (homeHistory ?? {}) as {
+    last_trained_by_day?: Record<string, string | null>
+    days_active?: number
+  }
+
+  const last_trained_by_day: Record<string, string | null> = {}
+  for (const key of dayKeys) last_trained_by_day[key] = null
+  for (const [k, v] of Object.entries(historyPayload.last_trained_by_day ?? {})) {
+    last_trained_by_day[k] = v
+  }
+
+  const badgeIds = Array.isArray(friend.badge_ids)
+    ? (friend.badge_ids as string[])
+    : []
+  const badgeLabel = new Map(ALL_BADGES.map(b => [b.id, b.label]))
+  const earned = badgeIds.map(id => ({
+    id,
+    name: badgeLabel.get(id) ?? id,
+  }))
+
+  const weekly = ((restDayRows ?? []) as { day_of_week: number }[]).map(
+    r => r.day_of_week,
+  )
+
+  const bw = summarizeBodyWeight(
+    ((bodyWeights ?? []) as { weight: number; recorded_at: string }[]).map(r => ({
+      date: r.recorded_at,
+      weight_lbs: r.weight,
+    })),
+    today,
+    COACH_CONTEXT_BODY_WEIGHTS,
+  )
+
   return {
     as_of_local_date: today,
     time_zone: timeZone,
@@ -292,6 +575,7 @@ export async function buildCoachContext(
     profile: {
       display_name: profile?.display_name ?? null,
       username: profile?.username ?? null,
+      joined_at: profile?.created_at ?? (typeof friend.joined_at === 'string' ? friend.joined_at : null),
     },
     stats: stats
       ? {
@@ -304,25 +588,56 @@ export async function buildCoachContext(
         }
       : null,
     program: {
-      days: dayKeys.sort(),
+      days: dayKeys,
+      flex_days: flexDays,
+      day_categories,
       rotation_mode: rotation?.mode ?? null,
       sequence: seq,
       current_index: rotation?.current_index ?? null,
       next_day: upNext,
+      next_day_exercises,
     },
     rest: {
-      weekly_days_of_week: (restDayRows ?? []).map(
-        (r: { day_of_week: number }) => r.day_of_week,
-      ),
+      weekly_days_of_week: weekly,
+      weekly_day_names: weekly
+        .filter(d => d >= 0 && d <= 6)
+        .map(d => DOW_NAMES[d]!),
       recent_one_off_dates: (restDateRows ?? []).map(
         (r: { rest_date: string }) => r.rest_date,
       ),
     },
+    catalog: {
+      inactive_count,
+      days: catalogDays,
+    },
+    exercise_performance,
+    lifetime: {
+      total_volume_lbs: num(metrics.total_volume),
+      max_set_weight_lbs: num(metrics.max_set_weight),
+      max_set_reps: num(metrics.max_set_reps),
+      unique_exercises: num(metrics.unique_exercise_count),
+      total_prs: num(friend.total_prs),
+      total_sets: num(friend.total_sets),
+      days_active: num(friend.days_active ?? historyPayload.days_active),
+      body_weight_log_count: num(metrics.body_weight_log_count),
+      has_accepted_friend: !!metrics.has_accepted_friend,
+    },
+    badges: {
+      earned_count: earned.length,
+      earned,
+    },
+    schedule: { last_trained_by_day },
     body_weight: {
-      recent: (bodyWeights ?? []).map((r: { weight: number; recorded_at: string }) => ({
-        date: r.recorded_at,
-        weight_lbs: r.weight,
-      })),
+      summary: bw.summary,
+      recent: bw.recent,
+    },
+    rpe: summarizeRpe(allRawSets),
+    active_session,
+    photos: {
+      group_count: photoCount ?? 0,
+      latest_date: latestPhoto?.taken_date ?? null,
+      latest_day_type: latestPhoto?.day_type ?? null,
+      latest_note: latestPhoto?.note ?? null,
     },
     training_history: summarizeTrainingHistory(
       ((historyDateRows ?? []) as { local_date: string | null }[]).map(r => r.local_date),
