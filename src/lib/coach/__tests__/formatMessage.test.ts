@@ -15,6 +15,28 @@ describe('formatCoachMessage', () => {
     ])
   })
 
+  it('auto-closes unclosed ** so markers never leak into the bubble', () => {
+    const blocks = formatCoachMessage('Push **harder next set')
+    assert.equal(blocks[0]!.type, 'paragraph')
+    if (blocks[0]!.type !== 'paragraph') return
+    assert.deepEqual(blocks[0].children, [
+      { type: 'text', value: 'Push ' },
+      { type: 'bold', children: [{ type: 'text', value: 'harder next set' }] },
+    ])
+  })
+
+  it('drops orphan single asterisks instead of painting them', () => {
+    const blocks = formatCoachMessage('Rest * 90 sec then go.')
+    assert.equal(blocks[0]!.type, 'paragraph')
+    if (blocks[0]!.type !== 'paragraph') return
+    const text = blocks[0].children
+      .map(c => (c.type === 'text' ? c.value : ''))
+      .join('')
+    assert.equal(text.includes('*'), false)
+    assert.match(text, /Rest/)
+    assert.match(text, /90 sec/)
+  })
+
   it('splits star bullets into a list even without blank lines', () => {
     const raw = [
       'Yes, you are making solid progress. Key signs:',

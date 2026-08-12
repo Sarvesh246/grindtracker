@@ -13,7 +13,7 @@ export default function CoachCopyButton({ text, align = 'start' }: Props) {
 
   useEffect(() => {
     if (!copied) return
-    const id = window.setTimeout(() => setCopied(false), 1400)
+    const id = window.setTimeout(() => setCopied(false), 1200)
     return () => window.clearTimeout(id)
   }, [copied])
 
@@ -21,21 +21,21 @@ export default function CoachCopyButton({ text, align = 'start' }: Props) {
 
   return (
     <div
-      className={`coach-bubble__copy-row coach-bubble__copy-row--${align}`}
+      className={`coach-msg__copy-row coach-msg__copy-row--${align}`}
       data-no-sheet-drag
     >
       <button
         type="button"
-        className="coach-bubble__copy press"
+        className={`coach-msg__copy press${copied ? ' coach-msg__copy--done' : ''}`}
         data-haptic="light"
         aria-label={copied ? 'Copied' : 'Copy message'}
+        title={copied ? 'Copied' : 'Copy'}
         onClick={async e => {
           e.stopPropagation()
           try {
             await navigator.clipboard.writeText(text)
             setCopied(true)
           } catch {
-            // Fallback for older WebViews / denied permission.
             try {
               const ta = document.createElement('textarea')
               ta.value = text
@@ -54,25 +54,34 @@ export default function CoachCopyButton({ text, align = 'start' }: Props) {
         }}
       >
         {copied ? (
-          'Copied'
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+          >
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
         ) : (
-          <>
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
-            >
-              <rect x="9" y="9" width="13" height="13" rx="2" />
-              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-            </svg>
-            Copy
-          </>
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+          >
+            <rect x="9" y="9" width="13" height="13" rx="2" />
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+          </svg>
         )}
       </button>
     </div>

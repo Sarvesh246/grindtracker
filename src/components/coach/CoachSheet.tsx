@@ -1651,9 +1651,7 @@ export default function CoachSheet() {
                   return (
                     <li
                       key={m.id}
-                      className={`coach-bubble coach-bubble--${m.role}${
-                        m.role === 'assistant' ? ' coach-bubble--enter' : ''
-                      }`}
+                      className={`coach-msg coach-msg--${m.role}`}
                       data-no-sheet-drag
                       style={
                         {
@@ -1661,38 +1659,48 @@ export default function CoachSheet() {
                         } as CSSProperties
                       }
                     >
-                      {waiting ? (
-                        <span
-                          className="coach-bubble__pending"
-                          aria-label="Thinking"
-                        >
-                          …
-                        </span>
-                      ) : m.role === 'assistant' ? (
-                        <>
-                          {m.content ? (
-                            <CoachMessageContent content={m.content} />
-                          ) : null}
-                          {m.proposals?.map(p => (
-                            <CoachActionCard
-                              key={p.id}
-                              proposal={p}
-                              run={m.actionRuns?.[p.id] ?? null}
-                              busy={streaming}
-                              onConfirm={id => void decideProposal(id, 'confirm')}
-                              onCancel={id => void decideProposal(id, 'cancel')}
-                            />
-                          ))}
-                          {m.content ? (
-                            <CoachCopyButton text={m.content} align="start" />
-                          ) : null}
-                        </>
-                      ) : (
-                        <>
+                      <div
+                        className={`coach-bubble coach-bubble--${m.role}${
+                          m.role === 'assistant' ? ' coach-bubble--enter' : ''
+                        }`}
+                      >
+                        {waiting ? (
+                          <span
+                            className="coach-bubble__pending"
+                            aria-label="Thinking"
+                          >
+                            …
+                          </span>
+                        ) : m.role === 'assistant' ? (
+                          <>
+                            {m.content ? (
+                              <CoachMessageContent content={m.content} />
+                            ) : null}
+                            {m.proposals?.map(p => (
+                              <CoachActionCard
+                                key={p.id}
+                                proposal={p}
+                                run={m.actionRuns?.[p.id] ?? null}
+                                busy={streaming}
+                                onConfirm={id =>
+                                  void decideProposal(id, 'confirm')
+                                }
+                                onCancel={id =>
+                                  void decideProposal(id, 'cancel')
+                                }
+                              />
+                            ))}
+                          </>
+                        ) : (
                           <div className="coach-bubble__text">{m.content}</div>
-                          <CoachCopyButton text={m.content} align="end" />
-                        </>
-                      )}
+                        )}
+                      </div>
+                      {!waiting && m.content ? (
+                        <CoachCopyButton
+                          text={m.content}
+                          align={m.role === 'user' ? 'end' : 'start'}
+                        />
+                      ) : null}
                     </li>
                   )
                 })}

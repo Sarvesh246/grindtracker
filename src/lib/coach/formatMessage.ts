@@ -51,10 +51,23 @@ function parseInline(input: string): CoachInline[] {
       const end = input.indexOf('**', i + 2)
       if (end !== -1) {
         const inner = input.slice(i + 2, end)
-        if (inner) out.push({ type: 'bold', children: parseInline(inner) })
-        i = end + 2
-        continue
+        // Don't bold across line breaks — treat as per-line markers.
+        if (inner && !inner.includes('\n')) {
+          out.push({ type: 'bold', children: parseInline(inner) })
+          i = end + 2
+          continue
+        }
       }
+      // Unclosed or cross-line ** — bold to end of this line, drop the markers
+      // so leftover asterisks never show in the bubble.
+      const nl = input.indexOf('\n', i + 2)
+      const endLine = nl === -1 ? input.length : nl
+      const inner = input.slice(i + 2, endLine).replace(/\*+$/, '')
+      if (inner.trim()) {
+        out.push({ type: 'bold', children: parseInline(inner) })
+      }
+      i = endLine
+      continue
     }
 
     // Single-asterisk italic — avoid treating "**" or list leftovers as italic.
@@ -66,12 +79,15 @@ function parseInline(input: string): CoachInline[] {
       const end = input.indexOf('*', i + 1)
       if (end !== -1 && input[end + 1] !== '*') {
         const inner = input.slice(i + 1, end)
-        if (inner && !inner.includes('\n')) {
+        if (inner && !inner.includes('\n') && !/^\s|\s$/.test(inner)) {
           out.push({ type: 'italic', children: parseInline(inner) })
           i = end + 1
           continue
         }
       }
+      // Orphan "*" — skip it (common model junk) instead of painting it.
+      i += 1
+      continue
     }
 
     if (input[i] === '_' && input[i + 1] !== '_') {

@@ -1757,12 +1757,14 @@ html.reduce-motion .coach-sheet__quota {
 }
 html.reduce-motion .coach-sheet__body,
 html.reduce-motion .coach-sheet__composer,
+html.reduce-motion .coach-msg,
 html.reduce-motion .coach-bubble {
   transition: none !important;
 }
 @media (prefers-reduced-motion: reduce) {
   .coach-sheet__body,
   .coach-sheet__composer,
+  .coach-msg,
   .coach-bubble {
     transition: none !important;
   }
@@ -2003,10 +2005,59 @@ html.reduce-motion .coach-history {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+}
+.coach-msg {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 88%;
+  /* Width follows the 720 reading column as the FLIP box grows. */
+  transition: max-width 560ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.coach-msg--user {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+.coach-msg--assistant {
+  align-self: flex-start;
+  align-items: flex-start;
+}
+.coach-msg__copy-row {
+  display: flex;
+}
+.coach-msg__copy-row--start {
+  justify-content: flex-start;
+}
+.coach-msg__copy-row--end {
+  justify-content: flex-end;
+}
+.coach-msg__copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0.55;
+}
+.coach-msg__copy:hover,
+.coach-msg__copy:focus-visible {
+  opacity: 1;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--surface-elevated) 80%, transparent);
+}
+.coach-msg__copy--done {
+  opacity: 1;
+  color: var(--accent-text);
 }
 .coach-bubble {
-  max-width: 88%;
+  max-width: 100%;
   padding: 10px 12px;
   font-size: 14px;
   line-height: 1.45;
@@ -2014,53 +2065,10 @@ html.reduce-motion .coach-history {
   user-select: text;
   -webkit-user-select: text;
   cursor: text;
-  /* Width follows the 720 reading column as the FLIP box grows; keep a long
-     soft ease so any residual max-width/padding tweak doesn't snap wrap. */
-  transition:
-    max-width 560ms cubic-bezier(0.16, 1, 0.3, 1),
-    padding 520ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: padding 520ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 .coach-bubble__text {
   white-space: pre-wrap;
-}
-.coach-bubble__copy-row {
-  display: flex;
-  margin-top: 8px;
-}
-.coach-bubble__copy-row--start {
-  justify-content: flex-start;
-}
-.coach-bubble__copy-row--end {
-  justify-content: flex-end;
-}
-.coach-bubble__copy {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-height: 28px;
-  padding: 0 8px;
-  border-radius: 9999px;
-  border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--surface) 70%, transparent);
-  color: var(--text-muted);
-  font-family: var(--font-sans);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  cursor: pointer;
-}
-.coach-bubble__copy:hover {
-  color: var(--text-secondary);
-  border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
-}
-.coach-bubble--user .coach-bubble__copy {
-  border-color: color-mix(in srgb, var(--on-accent) 22%, transparent);
-  background: color-mix(in srgb, var(--on-accent) 10%, transparent);
-  color: color-mix(in srgb, var(--on-accent) 75%, transparent);
-}
-.coach-bubble--user .coach-bubble__copy:hover {
-  color: var(--on-accent);
-  border-color: color-mix(in srgb, var(--on-accent) 40%, transparent);
 }
 .coach-sheet__composer,
 .coach-sheet__input {
@@ -2068,13 +2076,11 @@ html.reduce-motion .coach-history {
   -webkit-user-select: text;
 }
 .coach-sheet--page .coach-bubble {
-  /* Same relative cap ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ absolute line length grows with the column during
-     expand; page gutter padding eases separately on the body. */
-  max-width: 88%;
+  /* Page gutter padding eases separately; max-width lives on .coach-msg. */
   padding: 10px 14px;
 }
-/* Organic AI bubble enter ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ opacity / y / scale spring-feel.
-   fill-mode: backwards only ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ never `both` (containing-block rule). */
+/* Organic AI bubble enter — opacity / y / scale spring-feel.
+   fill-mode: backwards only — never `both` (containing-block rule). */
 @keyframes coach-bubble-in {
   from {
     opacity: 0;
@@ -2089,16 +2095,18 @@ html.reduce-motion .coach-history {
   animation: coach-bubble-in 420ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
   animation-delay: calc(var(--i, 0) * 32ms);
 }
+.coach-msg--assistant .coach-bubble--enter {
+  animation-delay: calc(var(--i, 0) * 32ms);
+}
 .coach-bubble--user {
-  align-self: flex-end;
   background: var(--accent);
   color: var(--on-accent);
   border-radius: 12px 12px 4px 12px;
   white-space: pre-wrap;
   animation: coach-bubble-in 360ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation-delay: calc(var(--i, 0) * 32ms);
 }
 .coach-bubble--assistant {
-  align-self: flex-start;
   background: var(--surface-elevated);
   color: var(--text-primary);
   border: 1px solid var(--border);
