@@ -2233,8 +2233,8 @@ ol.coach-md__list,
   inset: 0 0 auto 0;
   height: min(92vh, 1080px);
   background:
-    /* Primary halo — sits under the phone top (demo column), not the copy/phone gutter */
-    radial-gradient(ellipse 64% 48% at 78% 22%, rgba(200, 241, 53, 0.15), transparent 52%),
+    /* Mobile: soft wash behind the stacked phone (lower-center) */
+    radial-gradient(ellipse 68% 46% at 50% 52%, rgba(200, 241, 53, 0.13), transparent 55%),
     radial-gradient(ellipse 50% 36% at 10% 6%, rgba(200, 241, 53, 0.05), transparent 50%),
     linear-gradient(180deg, #141414 0%, var(--bg) 72%);
   z-index: 0;
@@ -2281,13 +2281,13 @@ ol.coach-md__list,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 44px;
-  min-width: 44px;
-  font-size: 14px;
+  min-height: 40px;
+  min-width: 40px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text-secondary);
   text-decoration: none;
-  padding: 8px 12px;
+  padding: 6px 10px;
   border-radius: var(--radius-sm);
 }
 
@@ -2298,8 +2298,8 @@ ol.coach-md__list,
 /* Compact header CTA — overrides .landing-btn-primary sizing */
 .landing-header .landing-header__cta.landing-btn-primary {
   flex-shrink: 0;
-  height: 44px;
-  padding: 0 16px;
+  height: 40px;
+  padding: 0 14px;
   font-size: 13px;
   gap: 8px;
 }
@@ -2376,11 +2376,11 @@ ol.coach-md__list,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 56px;
-  padding: 0 22px;
+  height: 52px;
+  padding: 0 20px;
   border-radius: var(--radius-md);
   font-family: var(--font-sans);
-  font-size: 16px;
+  font-size: 15px;
   letter-spacing: 0.5px;
   text-decoration: none;
 }
@@ -2449,31 +2449,39 @@ ol.coach-md__list,
 }
 
 @media (min-width: 900px) {
+  /* Halo centered on phone top in the demo column (~70% of viewport) */
+  .landing-atmosphere {
+    background:
+      radial-gradient(ellipse 46% 44% at 70% 26%, rgba(200, 241, 53, 0.16), transparent 56%),
+      radial-gradient(ellipse 50% 36% at 10% 6%, rgba(200, 241, 53, 0.05), transparent 50%),
+      linear-gradient(180deg, #141414 0%, var(--bg) 72%);
+  }
+
   .landing-header {
-    height: calc(67px + env(safe-area-inset-top));
+    height: calc(60px + env(safe-area-inset-top));
     padding: env(safe-area-inset-top) max(24px, env(safe-area-inset-right)) 0 max(24px, env(safe-area-inset-left));
-    gap: 14px;
+    gap: 12px;
   }
   .landing-header__brand {
     font-size: 34px;
   }
   .landing-header__actions {
-    gap: 12px;
+    gap: 10px;
   }
   .landing-header__login {
-    font-size: 16px;
-    padding: 10px 14px;
+    font-size: 14px;
+    padding: 8px 12px;
   }
   .landing-header .landing-header__cta.landing-btn-primary {
-    height: 53px;
-    padding: 0 19px;
-    font-size: 16px;
-    gap: 10px;
+    height: 44px;
+    padding: 0 16px;
+    font-size: 14px;
+    gap: 8px;
   }
 
   .landing-hero {
-    /* Match scaled sticky header (67px) */
-    min-height: calc(100svh - 67px - env(safe-area-inset-top));
+    /* Match sticky header (60px) */
+    min-height: calc(100svh - 60px - env(safe-area-inset-top));
     padding: 34px 48px 67px;
   }
   /*
@@ -2517,13 +2525,13 @@ ol.coach-md__list,
   .landing-hero__ctas {
     margin-top: 34px;
     justify-content: flex-start;
-    gap: 17px;
+    gap: 14px;
   }
   .landing-hero__ctas .landing-btn-primary,
   .landing-hero__ctas .landing-btn-secondary {
-    height: 67px;
-    padding: 0 31px;
-    font-size: 19px;
+    height: 56px;
+    padding: 0 24px;
+    font-size: 16px;
   }
   .landing-hero__demo {
     flex: 1 1 44%;
@@ -3579,15 +3587,15 @@ ol.coach-md__list,
   }
 
   .landing-install-btn {
-    min-height: 53px;
-    padding: 0 19px;
-    font-size: 16px;
+    min-height: 48px;
+    padding: 0 16px;
+    font-size: 14px;
   }
   .landing-install-btn--compact {
-    min-height: 48px;
-    height: 48px;
-    padding: 0 14px;
-    font-size: 14px;
+    min-height: 40px;
+    height: 40px;
+    padding: 0 12px;
+    font-size: 12px;
   }
   .landing-install__actions {
     margin-top: 24px;
