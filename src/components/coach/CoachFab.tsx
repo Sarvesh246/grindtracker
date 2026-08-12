@@ -1,30 +1,68 @@
 'use client'
 
-import { useCallback, useRef, useState, type PointerEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react'
 import { useMotionPref } from '@/lib/contexts/MotionContext'
 import CoachFabIcon from './CoachFabIcon'
 import { useCoach, type CoachDockId } from './CoachProvider'
+import {
+  COACH_FAB_SIZE,
+  dockPixelPosition,
+  nearestDock,
+} from './dockGeometry'
 
-const FAB_SIZE = 56
 const DRAG_THRESHOLD = 8
-/** Max squash/stretch while dragging — tasteful, not cartoonish. */
-const STRETCH_MAX = 0.16
 
-const DOCK_ORDER: CoachDockId[] = ['tl', 'tr', 'bl', 'br']
+/** Soft Apple-sheet spring (mass = 1) */
+const SPRING_K = 210
+const SPRING_C = 24
+const SETTLE_POS = 0.5
+const SETTLE_VEL = 12
 
-function nearestDock(x: number, y: number): CoachDockId {
-  const w = window.innerWidth
-  const h = window.innerHeight
-  const cx = w / 2
-  const cy = h / 2
-  if (x < cx && y < cy) return 'tl'
-  if (x >= cx && y < cy) return 'tr'
-  if (x < cx && y >= cy) return 'bl'
-  return 'br'
+const VEL_EMA = 0.78
+const STRETCH_SPEED = 1400
+const STRETCH_MAX = 0.12
+
+type Stretch = {
+  sx: number
+  sy: number
+  angle: number
+  radius: string
 }
 
-function clamp(n: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, n))
+const IDENTITY_STRETCH: Stretch = {
+  sx: 1,
+  sy: 1,
+  angle: 0,
+  radius: '9999px',
+}
+
+function stretchFromVelocity(vx: number, vy: number): Stretch {
+  const speed = Math.hypot(vx, vy)
+  if (speed < 8) return IDENTITY_STRETCH
+  const t = Math.min(1, speed / STRETCH_SPEED)
+  const stretch = 1 + STRETCH_MAX * t
+  const squash = 1 - STRETCH_MAX * t
+  const angle = (Math.atan2(vy, vx) * 180) / Math.PI
+  // Droplet: trail flatter, lead rounder — bias by velocity direction.
+  const lead = Math.round(9999 - 2200 * t)
+  const trail = Math.round(9999 - 4800 * t)
+  // Corners: TL TR BR BL — shift which pair leads based on angle octant.
+  const a = ((angle % 360) + 360) % 360
+  let radius: string
+  if (a >= 315 || a < 45) {
+    // → right
+    radius = `${trail}px ${lead}px ${lead}px ${trail}px`
+  } else if (a < 135) {
+    // ↓ down
+    radius = `${trail}px ${trail}px ${lead}px ${lead}px`
+  } else if (a < 225) {
+    // ← left
+    radius = `${lead}px ${trail}px ${trail}px ${lead}px`
+  } else {
+    // ↑ up
+    radius = `${lead}px ${lead}px ${trail}px ${trail}px`
+  }
+  return { sx: stretch, sy: squash, angle, radius }
 }
 
 export default function CoachFab() {
@@ -38,28 +76,132 @@ export default function CoachFab() {
     quota.dailyRemaining <= 0
 
   const [dragging, setDragging] = useState(false)
+  const [settling, setSettling] = useState(false)
   const [ghost, setGhost] = useState<{ x: number; y: number } | null>(null)
-  const [stretch, setStretch] = useState({ x: 1, y: 1 })
+  const [stretch, setStretch] = useState<Stretch>(IDENTITY_STRETCH)
+
   const pointerId = useRef<number | null>(null)
   const start = useRef<{ x: number; y: number } | null>(null)
   const moved = useRef(false)
-  const lastPos = useRef<{ x: number; y: number; t: number } | null>(null)
+  const lastPos = useRef<{ x: number; y: number } | null>(null)
+  const lastTs = useRef(0)
+  const vel = useRef({ x: 0, y: 0 })
+  const rafRef = useRef<number | null>(null)
+  const springPos = useRef({ x: 0, y: 0, vx: 0, vy: 0 })
+  const springTarget = useRef({ x: 0, y: 0 })
+  const pendingDock = useRef<CoachDockId | null>(null)
+  const stretchSpring = useRef({ sx: 1, sy: 1, angle: 0, vsx: 0, vsy: 0 })
+
+  const cancelSpring = useCallback(() => {
+    if (rafRef.current != null) {
+      cancelAnimationFrame(rafRef.current)
+      rafRef.current = null
+    }
+  }, [])
+
+  useEffect(() => () => cancelSpring(), [cancelSpring])
+
+  const startSpringToDock = useCallback(
+    (from: { x: number; y: number }, next: CoachDockId) => {
+      cancelSpring()
+      const target = dockPixelPosition(next)
+      pendingDock.current = next
+      // Persist dock early so sheet/open state stay in sync; inline px still win.
+      setDock(next)
+      springPos.current = {
+        x: from.x,
+        y: from.y,
+        vx: vel.current.x * 0.35,
+        vy: vel.current.y * 0.35,
+      }
+      springTarget.current = target
+      const cur = stretchFromVelocity(vel.current.x, vel.current.y)
+      stretchSpring.current = {
+        sx: cur.sx,
+        sy: cur.sy,
+        angle: cur.angle,
+        vsx: 0,
+        vsy: 0,
+      }
+      setSettling(true)
+      setGhost({ x: from.x, y: from.y })
+      setStretch(cur)
+
+      const finish = () => {
+        cancelSpring()
+        const docked = pendingDock.current
+        pendingDock.current = null
+        setGhost(null)
+        setSettling(false)
+        setStretch(IDENTITY_STRETCH)
+        stretchSpring.current = { sx: 1, sy: 1, angle: 0, vsx: 0, vsy: 0 }
+        if (docked) setDock(docked)
+      }
+
+      const tick = () => {
+        const pos = springPos.current
+        const tgt = springTarget.current
+        const st = stretchSpring.current
+        const dt = 1 / 60
+
+        const ax = -SPRING_K * (pos.x - tgt.x) - SPRING_C * pos.vx
+        const ay = -SPRING_K * (pos.y - tgt.y) - SPRING_C * pos.vy
+        pos.vx += ax * dt
+        pos.vy += ay * dt
+        pos.x += pos.vx * dt
+        pos.y += pos.vy * dt
+
+        const asx = -SPRING_K * (st.sx - 1) - SPRING_C * st.vsx
+        const asy = -SPRING_K * (st.sy - 1) - SPRING_C * st.vsy
+        st.vsx += asx * dt
+        st.vsy += asy * dt
+        st.sx += st.vsx * dt
+        st.sy += st.vsy * dt
+
+        setGhost({ x: pos.x, y: pos.y })
+        const nearId =
+          Math.abs(st.sx - 1) < 0.01 && Math.abs(st.sy - 1) < 0.01
+        setStretch(
+          nearId
+            ? IDENTITY_STRETCH
+            : {
+                sx: st.sx,
+                sy: st.sy,
+                angle: st.angle,
+                radius: stretchFromVelocity(pos.vx, pos.vy).radius,
+              },
+        )
+
+        const dist = Math.hypot(pos.x - tgt.x, pos.y - tgt.y)
+        const speed = Math.hypot(pos.vx, pos.vy)
+        if (dist < SETTLE_POS && speed < SETTLE_VEL && nearId) {
+          finish()
+          return
+        }
+        rafRef.current = requestAnimationFrame(tick)
+      }
+      rafRef.current = requestAnimationFrame(tick)
+    },
+    [cancelSpring, setDock],
+  )
 
   const onPointerDown = useCallback(
     (e: PointerEvent<HTMLButtonElement>) => {
-      if (open) return
+      if (open || settling) return
+      cancelSpring()
       pointerId.current = e.pointerId
       start.current = { x: e.clientX, y: e.clientY }
-      lastPos.current = { x: e.clientX, y: e.clientY, t: performance.now() }
+      lastPos.current = { x: e.clientX, y: e.clientY }
+      lastTs.current = performance.now()
+      vel.current = { x: 0, y: 0 }
       moved.current = false
-      setStretch({ x: 1, y: 1 })
       try {
         e.currentTarget.setPointerCapture(e.pointerId)
       } catch {
         // ignore
       }
     },
-    [open],
+    [cancelSpring, open, settling],
   )
 
   const onPointerMove = useCallback(
@@ -74,37 +216,25 @@ export default function CoachFab() {
       }
 
       const now = performance.now()
-      const prev = lastPos.current
-      lastPos.current = { x: e.clientX, y: e.clientY, t: now }
-
-      // Soft liquid stretch from velocity + travel direction (iOS-orb feel).
-      if (!reduceMotion && prev) {
-        const dt = Math.max(8, now - prev.t)
-        const vx = (e.clientX - prev.x) / dt
-        const vy = (e.clientY - prev.y) / dt
-        const travelX = clamp(dx / 140, -1, 1)
-        const travelY = clamp(dy / 140, -1, 1)
-        const sx = clamp(
-          1 + vx * 0.045 + travelX * 0.06,
-          1 - STRETCH_MAX,
-          1 + STRETCH_MAX,
-        )
-        const sy = clamp(
-          1 + vy * 0.045 + travelY * 0.06,
-          1 - STRETCH_MAX,
-          1 + STRETCH_MAX,
-        )
-        // Conserve a bit of “volume”: stretch on one axis lightly compresses the other.
-        setStretch({
-          x: clamp(sx * (2 - sy) * 0.5 + sx * 0.5, 1 - STRETCH_MAX, 1 + STRETCH_MAX),
-          y: clamp(sy * (2 - sx) * 0.5 + sy * 0.5, 1 - STRETCH_MAX, 1 + STRETCH_MAX),
-        })
+      const dtMs = Math.max(1, now - lastTs.current)
+      const last = lastPos.current
+      if (last) {
+        const ivx = ((e.clientX - last.x) / dtMs) * 1000
+        const ivy = ((e.clientY - last.y) / dtMs) * 1000
+        vel.current = {
+          x: vel.current.x * VEL_EMA + ivx * (1 - VEL_EMA),
+          y: vel.current.y * VEL_EMA + ivy * (1 - VEL_EMA),
+        }
       }
+      lastTs.current = now
+      lastPos.current = { x: e.clientX, y: e.clientY }
 
-      setGhost({
-        x: e.clientX - FAB_SIZE / 2,
-        y: e.clientY - FAB_SIZE / 2,
-      })
+      const x = e.clientX - COACH_FAB_SIZE / 2
+      const y = e.clientY - COACH_FAB_SIZE / 2
+      setGhost({ x, y })
+      if (!reduceMotion) {
+        setStretch(stretchFromVelocity(vel.current.x, vel.current.y))
+      }
     },
     [reduceMotion],
   )
@@ -118,72 +248,77 @@ export default function CoachFab() {
       start.current = null
       moved.current = false
       setDragging(false)
-      setGhost(null)
-      setStretch({ x: 1, y: 1 })
       try {
         e.currentTarget.releasePointerCapture(e.pointerId)
       } catch {
         // ignore
       }
+
       if (wasDrag && pos) {
-        const next = nearestDock(pos.x, pos.y)
-        if (next !== dock) setDock(next)
-        if (!DOCK_ORDER.includes(next)) setDock('br')
+        const centerX = pos.x
+        const centerY = pos.y
+        const next = nearestDock(centerX, centerY)
+        const from = {
+          x: centerX - COACH_FAB_SIZE / 2,
+          y: centerY - COACH_FAB_SIZE / 2,
+        }
+        if (reduceMotion) {
+          setGhost(null)
+          setStretch(IDENTITY_STRETCH)
+          setDock(next)
+          return
+        }
+        startSpringToDock(from, next)
         return
       }
+
+      setGhost(null)
+      setStretch(IDENTITY_STRETCH)
       if (!open) openCoach()
     },
-    [dock, open, openCoach, setDock],
+    [open, openCoach, reduceMotion, setDock, startSpringToDock],
   )
 
-  const stretchTransform =
-    dragging && !reduceMotion
-      ? `scale(${stretch.x.toFixed(3)}, ${stretch.y.toFixed(3)})`
-      : undefined
+  // Parked: CSS data-dock owns left/right/top/bottom with no position
+  // transitions — settle is the RAF spring above (avoids L-shaped travel).
+  // Leave style unset so `.press` can still animate tap scale.
+  const live =
+    (dragging || settling) && ghost
+      ? {
+          position: 'fixed' as const,
+          left: ghost.x,
+          top: ghost.y,
+          right: 'auto',
+          bottom: 'auto',
+          transform: reduceMotion
+            ? 'none'
+            : `rotate(${stretch.angle}deg) scale(${stretch.sx}, ${stretch.sy})`,
+          borderRadius: reduceMotion ? undefined : stretch.radius,
+          transition: 'none',
+          zIndex: 420,
+        }
+      : open
+        ? {
+            visibility: 'hidden' as const,
+            pointerEvents: 'none' as const,
+          }
+        : undefined
 
   return (
     <button
       ref={fabRef}
       type="button"
       className={`coach-fab press${dragging ? ' coach-fab--dragging' : ''}${
-        capped ? ' coach-fab--capped' : ''
-      }`}
+        settling ? ' coach-fab--settling' : ''
+      }${capped ? ' coach-fab--capped' : ''}`}
       data-dock={dock}
-      data-haptic={dragging || open ? undefined : 'light'}
+      data-haptic={dragging || settling || open ? undefined : 'light'}
       aria-label="Open Coach"
       aria-expanded={open}
       aria-haspopup="dialog"
       tabIndex={open ? -1 : 0}
       aria-hidden={open || undefined}
-      style={
-        open
-          ? {
-              visibility: 'hidden' as const,
-              pointerEvents: 'none' as const,
-            }
-          : ghost
-            ? {
-                position: 'fixed',
-                left: ghost.x,
-                top: ghost.y,
-                right: 'auto',
-                bottom: 'auto',
-                transform: stretchTransform ?? 'none',
-                transition: reduceMotion
-                  ? 'none'
-                  : dragging
-                    ? 'transform 40ms linear'
-                    : 'transform 280ms cubic-bezier(0.22, 1, 0.36, 1)',
-                zIndex: 420,
-                willChange: 'transform',
-              }
-            : {
-                transform: stretchTransform,
-                transition: reduceMotion
-                  ? 'none'
-                  : 'left 280ms cubic-bezier(0.2, 0.9, 0.2, 1), right 280ms cubic-bezier(0.2, 0.9, 0.2, 1), top 280ms cubic-bezier(0.2, 0.9, 0.2, 1), bottom 280ms cubic-bezier(0.2, 0.9, 0.2, 1), transform 280ms cubic-bezier(0.22, 1, 0.36, 1)',
-              }
-      }
+      style={live}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}
