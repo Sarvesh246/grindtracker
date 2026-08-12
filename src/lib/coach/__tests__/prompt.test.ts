@@ -3,85 +3,87 @@ import assert from 'node:assert/strict'
 import { COACH_SYSTEM_PROMPT } from '../prompt'
 
 describe('COACH_SYSTEM_PROMPT', () => {
-  it('requires adaptive formatting on every reply, not only chips', () => {
-    assert.match(COACH_SYSTEM_PROMPT, /EVERY reply/i)
+  it('requires strategy over templates for every reply', () => {
+    assert.match(COACH_SYSTEM_PROMPT, /Strategy, not template/i)
     assert.match(COACH_SYSTEM_PROMPT, /typed questions and starter chips/i)
-    assert.match(COACH_SYSTEM_PROMPT, /Pick the format that fits THIS ask/i)
-    assert.match(COACH_SYSTEM_PROMPT, /Never reuse one template/i)
+    assert.match(COACH_SYSTEM_PROMPT, /Simple question = simple answer/i)
+    assert.match(COACH_SYSTEM_PROMPT, /Never make a short question artificially long/i)
   })
 
-  it('defines distinct structures for different question intents', () => {
+  it('defines proportional response-size heuristics, not forced sections', () => {
     for (const shape of [
-      'Simple fact',
-      'Stats / progress / PRs',
-      'Progress analysis',
+      'Definition / simple fact',
+      'Direct recommendation',
+      'Workout',
+      'Technique',
       'Comparison',
-      'Technique / how-to',
-      'Workout /',
-      'Program (multi-day',
-      'Coaching recommendation',
-      'Explanation / concept',
-      'Multi-topic',
-      'Missing / thin data',
-      'NUMBERED steps',
+      'Analysis',
+      'Complex coaching',
+      'numbered steps',
     ]) {
       assert.match(
         COACH_SYSTEM_PROMPT,
         new RegExp(shape.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'),
-        `missing shape guidance for ${shape}`,
+        `missing heuristic for ${shape}`,
       )
     }
+    assert.match(COACH_SYSTEM_PROMPT, /not a checklist to fill/i)
   })
 
-  it('forbids collapsing every answer into identical bullets', () => {
-    assert.match(COACH_SYSTEM_PROMPT, /Same bullet template for every answer/i)
+  it('forbids forced structure and forced personalization', () => {
+    assert.match(COACH_SYSTEM_PROMPT, /Do NOT automatically add/i)
+    assert.match(COACH_SYSTEM_PROMPT, /Personalization threshold/i)
+    assert.match(COACH_SYSTEM_PROMPT, /What is RIR/i)
     assert.match(
       COACH_SYSTEM_PROMPT,
-      /Unordered bullets for ordered steps/i,
+      /Forcing personal history onto definition\/concept questions/i,
+    )
+    assert.match(
+      COACH_SYSTEM_PROMPT,
+      /Auto-adding Application \/ Logging \/ Why/i,
     )
   })
 
-  it('locks terminology, verified math, and data-driven tone', () => {
+  it('locks terminology, verified math, and coach tone', () => {
     assert.match(COACH_SYSTEM_PROMPT, /Strict fitness\/anatomical terminology/i)
     assert.match(COACH_SYSTEM_PROMPT, /deadlifts, not "deadlocks"/i)
-    assert.match(COACH_SYSTEM_PROMPT, /verify step-by-step/i)
-    assert.match(COACH_SYSTEM_PROMPT, /data-driven/i)
-    assert.match(COACH_SYSTEM_PROMPT, /never generic motivational clich/i)
+    assert.match(COACH_SYSTEM_PROMPT, /verify before stating/i)
+    assert.match(COACH_SYSTEM_PROMPT, /Never generic motivational clich/i)
   })
 
-  it('requires general answers to also use personal training_history', () => {
-    assert.match(COACH_SYSTEM_PROMPT, /Always pair general fitness knowledge/i)
+  it('personalizes only when it improves the answer', () => {
+    assert.match(COACH_SYSTEM_PROMPT, /ONLY when they help answer the specific ask/i)
     assert.match(COACH_SYSTEM_PROMPT, /training_history/i)
     assert.match(COACH_SYSTEM_PROMPT, /significant_breaks/i)
     assert.match(COACH_SYSTEM_PROMPT, /how long until muscle growth/i)
     assert.match(
       COACH_SYSTEM_PROMPT,
-      /Textbook-only timelines when training_history/i,
+      /Would personal USER_DATA change or improve/i,
     )
   })
 
-  it('points the model at rich USER_DATA sections', () => {
+  it('points the model at rich USER_DATA sections when relevant', () => {
     assert.match(COACH_SYSTEM_PROMPT, /exercise_performance/i)
     assert.match(COACH_SYSTEM_PROMPT, /schedule\.last_trained_by_day/i)
     assert.match(COACH_SYSTEM_PROMPT, /body_weight\.summary/i)
     assert.match(COACH_SYSTEM_PROMPT, /active_session/i)
-    assert.match(COACH_SYSTEM_PROMPT, /Dig into the right USER_DATA section/i)
+    assert.match(COACH_SYSTEM_PROMPT, /when personalization IS warranted/i)
   })
 
   it('enforces single-turn replies to protect message quota', () => {
     assert.match(COACH_SYSTEM_PROMPT, /Quota \/ single-turn/i)
     assert.match(COACH_SYSTEM_PROMPT, /ONE reply/i)
-    assert.match(COACH_SYSTEM_PROMPT, /Do not invent tool calls/i)
+    assert.match(COACH_SYSTEM_PROMPT, /No tool calls/i)
     assert.match(
       COACH_SYSTEM_PROMPT,
-      /splitting one answer across quota-burning turns/i,
+      /splitting across quota-burning turns/i,
     )
   })
 
-  it('allows comparison tables and executable workout formatting', () => {
-    assert.match(COACH_SYSTEM_PROMPT, /pipe tables/i)
-    assert.match(COACH_SYSTEM_PROMPT, /3 × 6–8/i)
-    assert.match(COACH_SYSTEM_PROMPT, /Target: 155 lb/i)
-    assert.match(COACH_SYSTEM_PROMPT, /Information hierarchy/i)
+  it('prefers one clear recommendation and proportional workout formatting', () => {
+    assert.match(COACH_SYSTEM_PROMPT, /one clear recommendation/i)
+    assert.match(COACH_SYSTEM_PROMPT, /Use 95 lb today/i)
+    assert.match(COACH_SYSTEM_PROMPT, /sets×reps/i)
+    assert.match(COACH_SYSTEM_PROMPT, /pipe table/i)
   })
 })

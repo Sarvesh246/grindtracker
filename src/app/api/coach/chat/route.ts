@@ -268,7 +268,7 @@ export async function POST(request: Request) {
 USER_DATA (JSON; personal facts only — trust this over memory):
 ${contextJson}
 
-Remember: pick the best structure for THIS question (simple→short, workout→executable targets, how-to→numbered steps, comparison→table, analysis→takeaway then findings). Answer fully in this one turn from USER_DATA — do not ask them to message again. Do not reuse one template for every ask.`
+Remember: strategy not template — simple question = simple answer. Only add structure or personal USER_DATA when it improves THIS ask. Prefer one clear recommendation when they ask what to do. Answer fully in this one turn — do not ask them to message again.`
 
   try {
     const result = streamText({

@@ -133,14 +133,12 @@ to convert when `unit_preference` is `kg`.
 
 Reply formatting is enforced in `COACH_SYSTEM_PROMPT` for **every** turn
 (starter chips and free-typed questions share `POST /api/coach/chat`). The
-prompt adapts structure to intent — simple facts stay short, workouts are
-executable set/rep/target blocks, how-tos use numbered steps, comparisons may
-use pipe tables, analysis leads with takeaway then findings — and routes the
-model to the right USER_DATA section (catalog, bests, schedule, lifetime,
-`training_history`, etc.). Progressive disclosure stays **inside one reply**
-so users are not nudged into burning extra daily messages. The sheet renders
-that Markdown via `CoachMessageContent` (paragraphs, lists, labels, tables,
-**bold**).
+prompt follows a **strategy, not a template**: simple questions stay short;
+structure (bullets, headings, tables, workout blocks) and personal
+`USER_DATA` are included only when they improve that ask. Progressive
+disclosure stays **inside one reply** so users are not nudged into burning
+extra daily messages. The sheet renders Markdown via `CoachMessageContent`
+(paragraphs, lists, labels, tables, **bold**).
 
 ## UI
 
