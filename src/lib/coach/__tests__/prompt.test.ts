@@ -163,6 +163,8 @@ describe('COACH_SYSTEM_PROMPT', () => {
       COACH_SYSTEM_PROMPT,
       /NOT more detail \+ more personalization \+ more formatting/i,
     )
+    assert.match(COACH_SYSTEM_PROMPT, /format must emerge from THIS ask/i)
+    assert.match(COACH_SYSTEM_PROMPT, /NOT templates to fill/i)
   })
 
   it('defines proportional response-size heuristics, not forced sections', () => {

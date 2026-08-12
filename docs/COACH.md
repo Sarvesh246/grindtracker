@@ -137,6 +137,19 @@ are **behavioral requirements**, not suggestions. Correct sequence:
 
 **Understand intent → assess complexity → determine relevance → choose depth → choose format → answer → verify**
 
+Format must **emerge from the ask** — the prompt treats depth/format lists as
+calibration examples, not templates to fill. At runtime,
+`inferCoachIntent()` (`src/lib/coach/intent.ts`) classifies the user message
+and adapts:
+
+- **maxOutputTokens** — simple definitions cannot sprawl into workout-length
+  replies; workouts/programs get a higher ceiling
+- **turn reminder** — a one-line intent nudge after `USER_DATA` (e.g.
+  definition → no personal history; recommendation → one decision first)
+
+So different intents get physically different depth budgets without requiring
+the user (or the prompt) to prescribe formatting per question.
+
 Key gates:
 
 - Intent before formatting (never pick a template first)
@@ -153,9 +166,10 @@ When a workout or similar list is structured, exercise names render as larger
 skim titles and detail lines stay quieter (`CoachMessageContent` title/stack
 blocks). Progressive disclosure stays **inside one reply** so users are not
 nudged into burning extra daily messages. Behavioral contracts live in
-`src/lib/coach/__tests__/prompt.test.ts`; the internal stress-test catalog
+`src/lib/coach/__tests__/prompt.test.ts`; intent divergence is locked in
+`src/lib/coach/__tests__/intent.test.ts`; the stress catalog
 (`src/lib/coach/stressCatalog.ts`) classifies prompts by personalization need
-and preferred format so regressions can be caught without live API calls.
+and preferred format.
 
 ## UI
 

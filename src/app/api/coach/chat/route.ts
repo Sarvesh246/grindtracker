@@ -14,7 +14,9 @@ import {
   COACH_MAX_MESSAGE_CHARS,
   COACH_SYSTEM_PROMPT,
   buildCoachContext,
+  buildCoachTurnReminder,
   getCoachQuota,
+  inferCoachIntent,
   mapCoachRateLimitError,
   type CoachUnitPreference,
 } from '@/lib/coach'
@@ -259,23 +261,33 @@ export async function POST(request: Request) {
   const modelId =
     process.env.GEMINI_MODEL?.trim() || COACH_DEFAULT_MODEL
 
+  // Adapt depth budget + reminder from THIS ask so different intents cannot
+  // collapse into one template sprawl (token ceiling + intent-calibrated nudge).
+  const priorUser = [...history]
+    .reverse()
+    .find(m => m.role === 'user' && typeof m.content === 'string')
+  const priorUserText =
+    typeof priorUser?.content === 'string' ? priorUser.content : null
+  const intentProfile = inferCoachIntent(message, priorUserText)
+  const turnReminder = buildCoachTurnReminder(intentProfile)
+
   const google = createGoogleGenerativeAI({ apiKey })
-  // Same system prompt for every turn (starter chips and free-typed questions
-  // share this route). Format reminder sits after USER_DATA so structure stays
-  // salient once the model has the facts.
+  // Same base system prompt for every turn (starter chips and free-typed
+  // questions share this route). Intent-specific reminder sits after
+  // USER_DATA so depth/personalization stay salient for THIS ask.
   const system = `${COACH_SYSTEM_PROMPT}
 
 USER_DATA (JSON; personal facts only — trust this over memory):
 ${contextJson}
 
-Remember: intent before formatting — Understand intent → assess complexity → determine relevance → choose depth → choose format → answer → verify. Minimum structure. Personalization only when Required or Useful. Decision first when asked. Exact output shape. Match confidence to evidence. No internal jargon; verify units/numbers. Answer fully in this one turn — do not ask them to message again.`
+Remember: intent before formatting — Understand intent → assess complexity → determine relevance → choose depth → choose format → answer → verify. ${turnReminder}`
 
   try {
     const result = streamText({
       model: google(modelId),
       system,
       messages: [...history, { role: 'user', content: message }],
-      maxOutputTokens: 1536,
+      maxOutputTokens: intentProfile.maxOutputTokens,
       temperature: 0.4,
       // Keep thinking minimal / off. Do NOT hardcode thinkingBudget: 0 —
       // Gemini 3.x Flash-Lite (incl. gemini-3.5-flash-lite and

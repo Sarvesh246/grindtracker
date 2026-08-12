@@ -16,6 +16,13 @@ export {
 export { buildCoachContext, type CoachContext, type CoachUnitPreference } from './buildContext'
 export { COACH_SYSTEM_PROMPT } from './prompt'
 export {
+  inferCoachIntent,
+  buildCoachTurnReminder,
+  COACH_TURN_CLOSING,
+  type CoachIntent,
+  type CoachIntentProfile,
+} from './intent'
+export {
   COACH_STRESS_CATALOG,
   COACH_STRESS_CATEGORIES,
   type CoachStressCase,
