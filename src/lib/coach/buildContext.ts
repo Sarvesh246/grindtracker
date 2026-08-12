@@ -7,6 +7,10 @@ import {
   COACH_CONTEXT_SESSIONS,
   COACH_CONTEXT_SETS_PER_SESSION,
 } from './constants'
+import {
+  summarizeTrainingHistory,
+  type TrainingHistorySummary,
+} from './trainingHistory'
 
 export type CoachUnitPreference = 'lbs' | 'kg'
 
@@ -43,6 +47,12 @@ export interface CoachContext {
   body_weight: {
     recent: { date: string; weight_lbs: number }[]
   }
+  /**
+   * Tenure + layoff snapshot derived from all completed-session local dates.
+   * Use for timelines, “how long have I been training”, comeback framing —
+   * recent_sessions alone is too short a window for that.
+   */
+  training_history: TrainingHistorySummary
   recent_sessions: {
     local_date: string | null
     day_type: string
@@ -127,6 +137,7 @@ export async function buildCoachContext(
     { data: restDateRows },
     { data: bodyWeights },
     { data: sessions },
+    { data: historyDateRows },
   ] = await Promise.all([
     supabase
       .from('user_profiles')
@@ -157,6 +168,17 @@ export async function buildCoachContext(
       .not('completed_at', 'is', null)
       .order('completed_at', { ascending: false })
       .limit(COACH_CONTEXT_SESSIONS),
+    // Date-only scan for tenure / layoff summary (not set detail).
+    // Explicit high limit — PostgREST defaults to 1000 rows, which would
+    // silently truncate multi-year logs and mis-state first_workout_date.
+    supabase
+      .from('sessions')
+      .select('local_date')
+      .eq('user_id', userId)
+      .not('completed_at', 'is', null)
+      .not('local_date', 'is', null)
+      .order('local_date', { ascending: true })
+      .limit(4000),
   ])
 
   const dayKeys = Array.from(
@@ -302,6 +324,10 @@ export async function buildCoachContext(
         weight_lbs: r.weight,
       })),
     },
+    training_history: summarizeTrainingHistory(
+      ((historyDateRows ?? []) as { local_date: string | null }[]).map(r => r.local_date),
+      today,
+    ),
     recent_sessions,
     recent_prs,
   }

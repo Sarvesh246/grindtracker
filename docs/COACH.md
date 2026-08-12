@@ -108,6 +108,10 @@ the failure occurs mid-stream, after headers are already sent.
 - Profile, `user_stats`, program days, rotation + next day
 - Rest days (weekly + recent one-offs)
 - Recent body weight
+- `training_history` — tenure + layoff snapshot from **all** completed-session
+  `local_date`s (first/last workout, days since, rolling 30/90-day counts,
+  significant breaks of ≥14 idle days). Recent session detail alone is too
+  short a window for “how long have I been training?” / timeline questions.
 - Last ~10 completed sessions + working sets
 - Recent PR sets
 
@@ -117,8 +121,10 @@ to convert when `unit_preference` is `kg`.
 Reply formatting is enforced in `COACH_SYSTEM_PROMPT` for **every** turn
 (starter chips and free-typed questions share `POST /api/coach/chat`). The
 prompt picks a structure by intent — stats/PRs use `- ` bullets, how-tos use
-numbered steps, simple facts stay 1–2 sentences, multi-topic answers may use
-`###` labels — and the sheet renders that Markdown via `CoachMessageContent`.
+numbered steps, simple facts stay 1–2 sentences, explanation/timeline answers
+must pair general knowledge with `training_history` when present, multi-topic
+answers may use `###` labels — and the sheet renders that Markdown via
+`CoachMessageContent`.
 
 ## UI
 

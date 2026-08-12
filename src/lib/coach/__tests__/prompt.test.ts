@@ -44,6 +44,16 @@ describe('COACH_SYSTEM_PROMPT', () => {
     assert.match(COACH_SYSTEM_PROMPT, /verify before stating/i)
     assert.match(COACH_SYSTEM_PROMPT, /data-driven coach/i)
     assert.match(COACH_SYSTEM_PROMPT, /never generic motivational clich/i)
-    assert.match(COACH_SYSTEM_PROMPT, /ground advice in their real logs\/PRs/i)
+  })
+
+  it('requires general answers to also use personal training_history', () => {
+    assert.match(COACH_SYSTEM_PROMPT, /Always pair general fitness knowledge/i)
+    assert.match(COACH_SYSTEM_PROMPT, /training_history/i)
+    assert.match(COACH_SYSTEM_PROMPT, /significant_breaks/i)
+    assert.match(COACH_SYSTEM_PROMPT, /how long until muscle growth/i)
+    assert.match(
+      COACH_SYSTEM_PROMPT,
+      /Do not answer a general fitness question with only textbook timelines/i,
+    )
   })
 })

@@ -13,6 +13,11 @@ export {
 export { buildCoachContext, type CoachContext, type CoachUnitPreference } from './buildContext'
 export { COACH_SYSTEM_PROMPT } from './prompt'
 export {
+  summarizeTrainingHistory,
+  type TrainingBreak,
+  type TrainingHistorySummary,
+} from './trainingHistory'
+export {
   formatCoachMessage,
   type CoachBlock,
   type CoachFormattedMessage,
