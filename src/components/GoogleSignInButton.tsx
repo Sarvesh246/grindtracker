@@ -114,10 +114,15 @@ export default function GoogleSignInButton({
         alignItems: 'center',
         justifyContent: 'center',
         gap: '12px',
-        height: '52px',
-        padding: '0 20px',
+        // Landing CTAs size via `.landing-btn-primary` in globals.css
+        ...(className?.includes('landing-btn')
+          ? {}
+          : {
+              height: '52px',
+              padding: '0 20px',
+              fontSize: '15px',
+            }),
         borderRadius: 'var(--radius-md)',
-        fontSize: '15px',
         fontFamily: 'var(--font-sans)',
         letterSpacing: '0.5px',
         cursor: loading ? 'default' : 'pointer',

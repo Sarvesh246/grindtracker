@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import Link from 'next/link'
 import LandingHeader from './LandingHeader'
 import HeroDemo from './HeroDemo'
+import HeroScrollCue from './HeroScrollCue'
 import {
   RestTimerDemo,
   StreakXpDemo,
@@ -56,22 +57,29 @@ export default function LandingPage() {
       <main>
         {/* Hero — brand first, one composition, phone demo as visual anchor */}
         <section className="landing-hero">
-          <div className="landing-hero__copy">
-            <h1 className="landing-hero__brand">GRIND</h1>
-            <p className="landing-hero__tagline">Track. Progress. Dominate.</p>
-            <p className="landing-hero__support">
-              The gym tracker that logs fast, keeps streaks honest, and turns every session into XP.
-            </p>
-            <div className="landing-hero__ctas">
-              <GoogleSignInButton variant="primary" label="Get started" />
-              <Link href="/login" className="landing-btn-secondary press" data-haptic="light">
-                Log in
-              </Link>
+          <div className="landing-hero__layout">
+            <div className="landing-hero__copy">
+              <h1 className="landing-hero__brand">GRIND</h1>
+              <p className="landing-hero__tagline">Track. Progress. Dominate.</p>
+              <p className="landing-hero__support">
+                The gym tracker that logs fast, keeps streaks honest, and turns every session into XP.
+              </p>
+              <div className="landing-hero__ctas">
+                <GoogleSignInButton
+                  variant="primary"
+                  label="Get started"
+                  className="landing-btn-primary"
+                />
+                <Link href="/login" className="landing-btn-secondary press" data-haptic="light">
+                  Log in
+                </Link>
+              </div>
+            </div>
+            <div className="landing-hero__demo">
+              <HeroDemo />
             </div>
           </div>
-          <div className="landing-hero__demo">
-            <HeroDemo />
-          </div>
+          <HeroScrollCue targetId="log-fast" />
         </section>
 
         <Section

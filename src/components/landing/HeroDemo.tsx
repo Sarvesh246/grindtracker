@@ -81,11 +81,18 @@ export default function HeroDemo() {
                 <CheckIcon />
               </span>
             </div>
+            {/*
+              PR mirrors ActiveWorkout intent: same-size weight/reps boxes;
+              the PR pill overlays the top-right corner of the reps box
+              (absolute + translate) so it never steals grid track width.
+            */}
             <div className="landing-hero-set landing-hero-set--active">
               <span className="landing-hero-set__label">SET 3</span>
               <span className="landing-hero-set__box">190</span>
-              <span className="landing-hero-set__box">8</span>
-              <span className="landing-hero-set__pr">PR</span>
+              <span className="landing-hero-set__reps-wrap">
+                <span className="landing-hero-set__box">8</span>
+                <span className="landing-hero-set__pr">PR</span>
+              </span>
               <span className="landing-hero-set__check landing-hero-set__check--anim">
                 <CheckIcon />
               </span>

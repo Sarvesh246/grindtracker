@@ -3,32 +3,19 @@
 import { useEffect, useState, type MouseEvent } from 'react'
 import Link from 'next/link'
 import GoogleSignInButton from '@/components/GoogleSignInButton'
+import {
+  ensureInstallListeners,
+  isStandalonePwa,
+  tryInstallApp,
+} from './installApp'
 
-/** Local copy — avoid pulling the whole push client into the landing chunk. */
-export function isStandalonePwa(): boolean {
-  if (typeof window === 'undefined') return false
-  const nav = window.navigator as Navigator & { standalone?: boolean }
-  return (
-    window.matchMedia('(display-mode: standalone)').matches ||
-    nav.standalone === true
-  )
-}
-
-function scrollToInstall(e?: MouseEvent) {
-  e?.preventDefault()
-  const el = document.getElementById('install')
-  if (!el) return
-  el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  const heading = el.querySelector('h2')
-  if (heading instanceof HTMLElement) {
-    heading.setAttribute('tabindex', '-1')
-    heading.focus({ preventScroll: true })
-  }
-}
+export { isStandalonePwa } from './installApp'
 
 /**
  * Secondary Install control for header / install section / footer.
  * Hides when already running as a standalone PWA.
+ * Tries Android `beforeinstallprompt`, then Web Share (iOS Share sheet),
+ * then scrolls to #install instructions — see installApp.ts.
  */
 export function InstallShortcut({
   className,
@@ -41,8 +28,10 @@ export function InstallShortcut({
   compact?: boolean
 }) {
   const [standalone, setStandalone] = useState(false)
+  const [busy, setBusy] = useState(false)
 
   useEffect(() => {
+    ensureInstallListeners()
     // Client-only display-mode check; SSR renders the control then may hide.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setStandalone(isStandalonePwa())
@@ -50,12 +39,24 @@ export function InstallShortcut({
 
   if (standalone) return null
 
+  async function onInstallClick(e: MouseEvent<HTMLAnchorElement>) {
+    e.preventDefault()
+    if (busy) return
+    setBusy(true)
+    try {
+      await tryInstallApp()
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <a
       href="#install"
       className={`landing-install-btn press${compact ? ' landing-install-btn--compact' : ''} ${className ?? ''}`}
       data-haptic="light"
-      onClick={scrollToInstall}
+      aria-busy={busy || undefined}
+      onClick={onInstallClick}
     >
       {label}
     </a>
@@ -70,6 +71,7 @@ export default function InstallSection() {
   const [standalone, setStandalone] = useState(false)
 
   useEffect(() => {
+    ensureInstallListeners()
     // Client-only display-mode check; SSR always shows the section.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setStandalone(isStandalonePwa())
