@@ -148,6 +148,19 @@ function hostOwnsDragGesture(host: HTMLElement): boolean {
   }
 }
 
+/**
+ * Fixed app chrome (BottomNav / TopNav). These never scroll under the finger —
+ * scroll-forward + the 10px drag-cancel would only add lag / eaten taps from
+ * normal finger wobble. Instant click re-dispatch only.
+ */
+function hostIsAppChrome(host: HTMLElement): boolean {
+  try {
+    return !!host.closest('.bottom-nav, .top-nav')
+  } catch {
+    return false
+  }
+}
+
 /** Nearest ancestor that can scroll on the given axis (overflow + overflow size). */
 function nearestScrollParent(
   from: HTMLElement,
@@ -189,8 +202,9 @@ function nearestScrollParent(
  * `touch-action: pan-y` (the earlier CSS-only fix). For ordinary hosts we set
  * `touch-action: none` on the overlay and forward pans past
  * {@link TAP_DRAG_CANCEL_PX} to the nearest scroll parent, canceling the
- * click. Drag-owned hosts (e.g. `.coach-fab`) skip forwarding so their own
- * pointer handlers keep working.
+ * click — but ONLY when a scroll parent exists. Drag-owned hosts (e.g.
+ * `.coach-fab`) and fixed app chrome (`.bottom-nav` / `.top-nav`) skip
+ * forwarding so taps navigate instantly and wobble can't eat the click.
  */
 export function attachHapticOverlay(el: HTMLElement): () => void {
   if (typeof document === 'undefined') return () => {}
@@ -200,6 +214,9 @@ export function attachHapticOverlay(el: HTMLElement): () => void {
   ensurePositioned(el)
 
   const ownsDrag = hostOwnsDragGesture(el)
+  const isAppChrome = hostIsAppChrome(el)
+  // No scroll-forward wait / drag-cancel on chrome or drag-owned hosts.
+  const skipScrollForward = ownsDrag || isAppChrome
 
   const sw = document.createElement('input')
   sw.type = 'checkbox'
@@ -211,10 +228,13 @@ export function attachHapticOverlay(el: HTMLElement): () => void {
   // touch-action:none — WebKit's switch slide gesture ignores pan-y and claims
   // the touch, blocking parent scroll. We own the gesture and either forward
   // scroll (normal hosts) or let pointer events bubble to a drag host (FAB).
+  // App chrome uses manipulation: instant tap, no double-tap-zoom delay, no
+  // pan-steal (nothing scrolls under the tab itself).
+  const touchAction = isAppChrome ? 'manipulation' : 'none'
   sw.style.cssText =
     'position:absolute;inset:0;width:100%;height:100%;margin:0;padding:0;border:0;' +
     '-webkit-appearance:switch;appearance:auto;opacity:0;cursor:inherit;pointer-events:auto;z-index:1;' +
-    'outline:none;box-shadow:none;-webkit-tap-highlight-color:transparent;touch-action:none;'
+    `outline:none;box-shadow:none;-webkit-tap-highlight-color:transparent;touch-action:${touchAction};`
 
   const syncPointerEvents = () => {
     sw.style.pointerEvents = hostIsDisabled(el) ? 'none' : 'auto'
@@ -236,7 +256,6 @@ export function attachHapticOverlay(el: HTMLElement): () => void {
   let gestureDragged = false
 
   const onTouchStart = (e: TouchEvent) => {
-    if (ownsDrag) return
     if (e.touches.length !== 1) {
       gesture = null
       gestureDragged = false
@@ -255,7 +274,7 @@ export function attachHapticOverlay(el: HTMLElement): () => void {
   }
 
   const onTouchMove = (e: TouchEvent) => {
-    if (ownsDrag || !gesture || e.touches.length !== 1) return
+    if (!gesture || e.touches.length !== 1) return
     const t = e.touches[0]
     const dx = t.clientX - gesture.x
     const dy = t.clientY - gesture.y
@@ -266,21 +285,25 @@ export function attachHapticOverlay(el: HTMLElement): () => void {
         gesture.lastY = t.clientY
         return
       }
-      gestureDragged = true
       gesture.axis = Math.abs(dy) >= Math.abs(dx) ? 'y' : 'x'
       gesture.scrollEl = nearestScrollParent(el, gesture.axis)
+      // Only cancel the eventual click when we actually steal the pan for a
+      // scroll parent. No scrollable ancestor → leave the tap alone (chrome
+      // already skipped this path; this guards odd fixed controls).
+      if (!gesture.scrollEl) return
+      gestureDragged = true
+    } else if (!gesture.scrollEl) {
+      return
     } else {
       gestureDragged = true
     }
 
-    if (gesture.scrollEl) {
-      // Claim the gesture from the switch so the toggle slide can't win.
-      e.preventDefault()
-      if (gesture.axis === 'y') {
-        gesture.scrollEl.scrollTop -= t.clientY - gesture.lastY
-      } else {
-        gesture.scrollEl.scrollLeft -= t.clientX - gesture.lastX
-      }
+    // Claim the gesture from the switch so the toggle slide can't win.
+    e.preventDefault()
+    if (gesture.axis === 'y') {
+      gesture.scrollEl.scrollTop -= t.clientY - gesture.lastY
+    } else {
+      gesture.scrollEl.scrollLeft -= t.clientX - gesture.lastX
     }
 
     gesture.lastX = t.clientX
@@ -324,7 +347,7 @@ export function attachHapticOverlay(el: HTMLElement): () => void {
   }
 
   sw.addEventListener('click', onClick)
-  if (!ownsDrag) {
+  if (!skipScrollForward) {
     sw.addEventListener('touchstart', onTouchStart, { passive: true })
     // Non-passive: we preventDefault once a pan is claimed for scroll-forward.
     sw.addEventListener('touchmove', onTouchMove, { passive: false })
@@ -339,7 +362,7 @@ export function attachHapticOverlay(el: HTMLElement): () => void {
   return () => {
     attrObs.disconnect()
     sw.removeEventListener('click', onClick)
-    if (!ownsDrag) {
+    if (!skipScrollForward) {
       sw.removeEventListener('touchstart', onTouchStart)
       sw.removeEventListener('touchmove', onTouchMove)
       sw.removeEventListener('touchend', onTouchEnd)
@@ -467,6 +490,8 @@ export function setupHaptics(root: ParentNode = document): () => void {
  *
  * Chart interactions (Recharts `<Line>` dot tap/scrub) manage their own
  * touch handling and are excluded — this guard would otherwise fight them.
+ * BottomNav / TopNav are also excluded: a few px of finger wobble on a tab
+ * must never swallow navigation (felt like severe lag on iOS PWA).
  * Mount once via `<HapticsSetup />`, alongside `setupHaptics`.
  */
 export function setupTapDragGuard(root: ParentNode = document): () => void {
@@ -506,7 +531,14 @@ export function setupTapDragGuard(root: ParentNode = document): () => void {
   const onClickCapture = (e: MouseEvent) => {
     if (!dragged) return
     const t = e.target
-    if (t instanceof Element && t.closest('.recharts-wrapper')) return
+    // Charts own their scrub gesture. App chrome must never lose a nav tap to
+    // a few px of finger wobble — that felt like severe BottomNav lag on iOS.
+    if (
+      t instanceof Element &&
+      t.closest('.recharts-wrapper, .bottom-nav, .top-nav')
+    ) {
+      return
+    }
     e.stopImmediatePropagation()
     e.preventDefault()
   }

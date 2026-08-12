@@ -50,10 +50,24 @@ const CHIPS = [
 const EXIT_MS = 560
 const SIZE_MS = 640
 const ENTER_MS = 640
+/** Soft keyboard frame ease — longer than morph spring, Apple-like. */
+const KEYBOARD_MS = 380
+const KEYBOARD_EASE = 'cubic-bezier(0.22, 1, 0.36, 1)'
+/** Compact→page chrome/text reflow — soft spring-like ease, overlaps height FLIP. */
+const CHROME_MS = 520
+const CHROME_EASE = 'cubic-bezier(0.16, 1, 0.3, 1)'
 const PULL_AXIS_LOCK = 8
 const VEL_EMA = 0.78
 /** Gravity-ish assist while flinging the sheet off-screen (px/s²). */
 const FLING_GRAVITY = 2800
+/**
+ * Apply page chrome mid-late in the FLIP (not at the very end) so padding /
+ * radius / header density can ease in while the height spring still runs.
+ * Absolute px OR remaining travel fraction — whichever fires first.
+ */
+const PAGE_CHROME_NEAR_PX = 128
+/** Fire chrome handoff when this fraction of the morph distance remains. */
+const PAGE_CHROME_NEAR_PROGRESS = 0.32
 
 /**
  * Compact reset label for the header (fits beside actions).
@@ -541,9 +555,10 @@ export default function CoachSheet() {
     listRef.current.scrollTop = listRef.current.scrollHeight
   }, [keyboardOpen, vvHeight])
 
-  // Lock body scroll while the full Coach page is open (iOS PWA).
+  // Lock body scroll while the full Coach page is open (iOS PWA), and while
+  // expanding toward page (chrome may still be compact until near-settle).
   useEffect(() => {
-    if (!open || closing || !isPage) return
+    if (!open || closing || (!isPage && !sizeMorphing)) return
     const prev = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     return () => {
@@ -556,7 +571,7 @@ export default function CoachSheet() {
         // ignore
       }
     }
-  }, [open, closing, isPage])
+  }, [open, closing, isPage, sizeMorphing])
 
   useEffect(() => () => cancelSettle(), [cancelSettle])
 
@@ -595,12 +610,21 @@ export default function CoachSheet() {
 
   /**
    * Spring a FLIP-locked pixel box to a resting rect (page or compact).
-   * Caller already set morphLock to `from` and swapped size classes.
+   * Caller already set morphLock to `from`. Size-class swap may be deferred
+   * via `onNearEnd` (expand) so compact chrome stays stable early in flight.
    */
   const springMorphBox = useCallback(
     (
       from: { top: number; left: number; width: number; height: number },
       to: { top: number; left: number; width: number; height: number },
+      opts?: {
+        /** Fire once mid-late morph (expand chrome / text-gutter handoff). */
+        onNearEnd?: () => void
+        nearPx?: number
+        /** Remaining travel fraction (0–1) that also triggers onNearEnd. */
+        nearProgress?: number
+        onDone?: () => void
+      },
     ) => {
       let top = from.top
       let left = from.left
@@ -610,6 +634,15 @@ export default function CoachSheet() {
       let vLeft = 0
       let vW = 0
       let vH = 0
+      let nearFired = false
+      const nearPx = opts?.nearPx ?? PAGE_CHROME_NEAR_PX
+      const nearProgress = opts?.nearProgress
+      const totalDist = Math.hypot(
+        to.top - from.top,
+        to.left - from.left,
+        to.width - from.width,
+        to.height - from.height,
+      )
 
       const tick = () => {
         const dt = 1 / 60
@@ -627,6 +660,28 @@ export default function CoachSheet() {
         ;[width, vW] = step(width, to.width, vW)
         ;[height, vH] = step(height, to.height, vH)
 
+        if (!nearFired && opts?.onNearEnd) {
+          const remainDist = Math.hypot(
+            top - to.top,
+            left - to.left,
+            width - to.width,
+            height - to.height,
+          )
+          const nearByPx =
+            Math.abs(top - to.top) < nearPx &&
+            Math.abs(left - to.left) < nearPx &&
+            Math.abs(width - to.width) < nearPx &&
+            Math.abs(height - to.height) < nearPx
+          const nearByProgress =
+            nearProgress != null &&
+            totalDist > 1 &&
+            remainDist <= totalDist * nearProgress
+          if (nearByPx || nearByProgress) {
+            nearFired = true
+            opts.onNearEnd()
+          }
+        }
+
         const done =
           Math.abs(top - to.top) < SHEET_SETTLE_POS &&
           Math.abs(left - to.left) < SHEET_SETTLE_POS &&
@@ -638,6 +693,11 @@ export default function CoachSheet() {
           Math.abs(vH) < SHEET_SETTLE_VEL
 
         if (done) {
+          if (!nearFired && opts?.onNearEnd) {
+            nearFired = true
+            opts.onNearEnd()
+          }
+          opts?.onDone?.()
           setMorphLock(null)
           setSizeMorphing(false)
           settleRaf.current = null
@@ -710,11 +770,10 @@ export default function CoachSheet() {
   )
 
   /**
-   * Compact → page without a remount/enter pop: same FLIP as minimize.
-   * Lock the dragged expand-preview frame (or current layout), clear pullY,
-   * swap to page classes, spring the locked box to full-page geometry —
-   * never springPullToZero across a size swap (that + page class was the
-   * expand flash).
+   * Compact → page without a remount/enter pop: FLIP geometry only while
+   * compact chrome stays locked early. Applying `--page` mid-late lets body
+   * padding / radius / header actions ease in overlapping the height spring
+   * (column max-width is always 720 so message wrap tracks FLIP continuously).
    */
   const morphToPage = useCallback(
     (fromY: number) => {
@@ -766,8 +825,14 @@ export default function CoachSheet() {
 
       setMorphLock(from)
       setSizeMorphing(true)
-      expandToPage()
-      springMorphBox(from, pageRestRect())
+      // Keep compact classes early; expandToPage mid-late for soft chrome ease.
+      springMorphBox(from, pageRestRect(), {
+        nearPx: PAGE_CHROME_NEAR_PX,
+        nearProgress: PAGE_CHROME_NEAR_PROGRESS,
+        onNearEnd: () => {
+          expandToPage()
+        },
+      })
     },
     [
       cancelSettle,
@@ -1163,15 +1228,39 @@ export default function CoachSheet() {
   // Size morph only — Y lives on the motion shell, never on CSS exit keyframes
   // for gesture dismiss (coach-sheet-out from{translateY(0)} = middle flash).
   // During page→compact FLIP, keep transitions on after the lock releases.
-  // Stable page mode uses a short ease so keyboard open/dismiss tracks VV —
-  // not the slow morph spring.
+  // Keyboard frame geometry is driven by spring-smoothed metrics (rAF) — CSS
+  // transitions on the same props would restart every frame and stutter.
   const sheetTransition = (() => {
     if (reduceMotion || dragging || settling || fromDragDismiss) return 'none'
-    if (boxLock) return 'none'
+    // FLIP owns inset/size; still ease chrome props when --page lands mid-morph.
+    if (boxLock) {
+      if (sizeMorphing) {
+        return [
+          `border-radius ${CHROME_MS}ms ${CHROME_EASE}`,
+          `padding ${CHROME_MS}ms ${CHROME_EASE}`,
+          `box-shadow ${CHROME_MS}ms ${CHROME_EASE}`,
+        ].join(', ')
+      }
+      return 'none'
+    }
     if (closing) return 'none'
     const curve = 'cubic-bezier(0.22, 1, 0.36, 1)'
     if (isPage && !sizeMorphing) {
-      return 'height 180ms ease, top 180ms ease, bottom 180ms ease, padding-bottom 180ms ease'
+      if (keyboardOpen || keyboardOccluded > 1 || keyboardInset > 1) {
+        return 'none'
+      }
+      // Idle page (no keyboard motion) — soft ease if a residual frame shifts.
+      return [
+        `height ${KEYBOARD_MS}ms ${KEYBOARD_EASE}`,
+        `top ${KEYBOARD_MS}ms ${KEYBOARD_EASE}`,
+        `bottom ${KEYBOARD_MS}ms ${KEYBOARD_EASE}`,
+        `max-height ${KEYBOARD_MS}ms ${KEYBOARD_EASE}`,
+        `padding-bottom ${KEYBOARD_MS}ms ${KEYBOARD_EASE}`,
+      ].join(', ')
+    }
+    // Compact card: spring-smoothed `bottom` — same no-CSS-while-moving rule.
+    if (!isPage && (keyboardOpen || keyboardInset > 1)) {
+      return 'none'
     }
     const parts: string[] = [
       `inset ${SIZE_MS}ms ${curve}`,
@@ -1212,7 +1301,7 @@ export default function CoachSheet() {
   // Compact: keep lifting via `bottom` (small card, not a full-page shrink).
   const topDocked = dock === 'tl' || dock === 'tr'
   const pageKeyboardActive =
-    isPage && !closing && !boxLock && keyboardOpen && keyboardOccluded > 0
+    isPage && !closing && !boxLock && keyboardOpen
   const sheetKeyboardStyle: CSSProperties | undefined = (() => {
     if (closing || boxLock) return undefined
     if (pageKeyboardActive) {
@@ -1372,61 +1461,20 @@ export default function CoachSheet() {
             {quotaLabel}
           </div>
           <div className="coach-sheet__actions">
-            {isPage ? (
-              <>
-                <IconButton
-                  aria-label="Chat history"
-                  size="sm"
-                  variant="surface"
-                  haptic="light"
-                  onClick={openHistory}
-                  style={{ width: 32, height: 32 }}
-                >
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden
-                  >
-                    <circle cx="12" cy="12" r="9" />
-                    <polyline points="12 7 12 12 15 14" />
-                  </svg>
-                </IconButton>
-                <IconButton
-                  aria-label="New chat"
-                  size="sm"
-                  variant="surface"
-                  haptic="light"
-                  disabled={streaming}
-                  onClick={newChat}
-                  style={{ width: 32, height: 32 }}
-                >
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    aria-hidden
-                  >
-                    <line x1="12" y1="5" x2="12" y2="19" />
-                    <line x1="5" y1="12" x2="19" y2="12" />
-                  </svg>
-                </IconButton>
-              </>
-            ) : (
+            {/* Both densites stay mounted so compact↔page can crossfade instead of
+                hard-swapping icons (quota width also eases instead of jumping). */}
+            <div
+              className={`coach-sheet__actions-set coach-sheet__actions-set--compact${
+                !isPage ? ' is-active' : ''
+              }`}
+              aria-hidden={isPage}
+            >
               <IconButton
                 aria-label="Open full Coach"
                 size="sm"
                 variant="surface"
                 haptic="light"
+                tabIndex={isPage ? -1 : 0}
                 onClick={() => morphToPage(0)}
                 style={{ width: 32, height: 32 }}
               >
@@ -1447,7 +1495,62 @@ export default function CoachSheet() {
                   <line x1="3" y1="21" x2="10" y2="14" />
                 </svg>
               </IconButton>
-            )}
+            </div>
+            <div
+              className={`coach-sheet__actions-set coach-sheet__actions-set--page${
+                isPage ? ' is-active' : ''
+              }`}
+              aria-hidden={!isPage}
+            >
+              <IconButton
+                aria-label="Chat history"
+                size="sm"
+                variant="surface"
+                haptic="light"
+                tabIndex={isPage ? 0 : -1}
+                onClick={openHistory}
+                style={{ width: 32, height: 32 }}
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden
+                >
+                  <circle cx="12" cy="12" r="9" />
+                  <polyline points="12 7 12 12 15 14" />
+                </svg>
+              </IconButton>
+              <IconButton
+                aria-label="New chat"
+                size="sm"
+                variant="surface"
+                haptic="light"
+                tabIndex={isPage ? 0 : -1}
+                disabled={streaming}
+                onClick={newChat}
+                style={{ width: 32, height: 32 }}
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  aria-hidden
+                >
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+              </IconButton>
+            </div>
             <IconButton
               aria-label="Close Coach"
               size="sm"

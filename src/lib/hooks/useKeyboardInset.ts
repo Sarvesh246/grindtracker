@@ -36,6 +36,12 @@ const IDLE: KeyboardMetrics = {
 
 const OPEN_THRESHOLD = 60
 
+/** Soft spring toward VV targets — iOS fires resize in coarse steps. */
+const KB_SPRING_K = 180
+const KB_SPRING_C = 26
+const KB_SETTLE_POS = 0.4
+const KB_SETTLE_VEL = 8
+
 /**
  * visualViewport keyboard / occlusion metrics.
  *
@@ -50,6 +56,10 @@ const OPEN_THRESHOLD = 60
  *   baseline and compare VV height against that.
  * - Autofocus / focus often updates VV a beat late — we remeasure on a short
  *   schedule after `focusin`.
+ * - VV resize often jumps in discrete steps; inset/occluded/visibleHeight/
+ *   offsetTop are spring-smoothed so bottom-anchored UI eases with the
+ *   keyboard instead of stuttering. `open` follows the raw target so layout
+ *   can start transitioning as soon as the keyboard appears.
  *
  * A small threshold ignores sub-pixel jitter and address-bar show/hide.
  */
@@ -74,6 +84,117 @@ export function useKeyboardMetrics(): KeyboardMetrics {
     let baseline = Math.max(window.innerHeight, Math.round(vv.height))
     const focusTimers: number[] = []
 
+    let target: KeyboardMetrics = {
+      inset: 0,
+      occluded: 0,
+      offsetTop: 0,
+      visibleHeight: Math.round(vv.height),
+      open: false,
+    }
+    let display = { ...target }
+    let vInset = 0
+    let vOccluded = 0
+    let vOffsetTop = 0
+    let vVisibleHeight = 0
+    let raf: number | null = null
+    let preferReducedMotion = false
+    try {
+      preferReducedMotion = window.matchMedia(
+        '(prefers-reduced-motion: reduce)',
+      ).matches
+    } catch {
+      preferReducedMotion = false
+    }
+
+    const motionReduced = () =>
+      preferReducedMotion ||
+      document.documentElement.classList.contains('reduce-motion')
+
+    const publish = (next: KeyboardMetrics) => {
+      setMetrics(prev =>
+        prev.inset === next.inset &&
+        prev.occluded === next.occluded &&
+        prev.offsetTop === next.offsetTop &&
+        prev.visibleHeight === next.visibleHeight &&
+        prev.open === next.open
+          ? prev
+          : next,
+      )
+    }
+
+    const stepAxis = (
+      cur: number,
+      goal: number,
+      vel: number,
+      dt: number,
+    ): [number, number] => {
+      const a = -KB_SPRING_K * (cur - goal) - KB_SPRING_C * vel
+      const nextV = vel + a * dt
+      return [cur + nextV * dt, nextV]
+    }
+
+    const tick = () => {
+      raf = null
+      if (motionReduced()) {
+        display = { ...target }
+        vInset = vOccluded = vOffsetTop = vVisibleHeight = 0
+        publish(display)
+        return
+      }
+
+      const dt = 1 / 60
+      ;[display.inset, vInset] = stepAxis(display.inset, target.inset, vInset, dt)
+      ;[display.occluded, vOccluded] = stepAxis(
+        display.occluded,
+        target.occluded,
+        vOccluded,
+        dt,
+      )
+      ;[display.offsetTop, vOffsetTop] = stepAxis(
+        display.offsetTop,
+        target.offsetTop,
+        vOffsetTop,
+        dt,
+      )
+      ;[display.visibleHeight, vVisibleHeight] = stepAxis(
+        display.visibleHeight,
+        target.visibleHeight,
+        vVisibleHeight,
+        dt,
+      )
+
+      const settled =
+        Math.abs(display.inset - target.inset) < KB_SETTLE_POS &&
+        Math.abs(display.occluded - target.occluded) < KB_SETTLE_POS &&
+        Math.abs(display.offsetTop - target.offsetTop) < KB_SETTLE_POS &&
+        Math.abs(display.visibleHeight - target.visibleHeight) < KB_SETTLE_POS &&
+        Math.abs(vInset) < KB_SETTLE_VEL &&
+        Math.abs(vOccluded) < KB_SETTLE_VEL &&
+        Math.abs(vOffsetTop) < KB_SETTLE_VEL &&
+        Math.abs(vVisibleHeight) < KB_SETTLE_VEL
+
+      if (settled) {
+        display = { ...target }
+        vInset = vOccluded = vOffsetTop = vVisibleHeight = 0
+        publish(display)
+        return
+      }
+
+      // Keep `open` latched to the raw target so CSS/layout can start easing
+      // as soon as VV reports a keyboard, while dimensions catch up smoothly.
+      publish({ ...display, open: target.open })
+      raf = requestAnimationFrame(tick)
+    }
+
+    const kickSpring = () => {
+      if (motionReduced()) {
+        display = { ...target }
+        publish(display)
+        return
+      }
+      if (raf == null) raf = requestAnimationFrame(tick)
+    }
+
     const update = () => {
       const offsetTop = Math.round(vv.offsetTop)
       const visibleHeight = Math.round(vv.height)
@@ -97,7 +218,8 @@ export function useKeyboardMetrics(): KeyboardMetrics {
       // for bottom-anchored lifts.
       const hidden = occluded - offsetTop
       const inset = hidden > OPEN_THRESHOLD ? Math.round(hidden) : 0
-      setMetrics({ inset, occluded, offsetTop, visibleHeight, open })
+      target = { inset, occluded, offsetTop, visibleHeight, open }
+      kickSpring()
     }
 
     const clearFocusTimers = () => {
@@ -141,6 +263,7 @@ export function useKeyboardMetrics(): KeyboardMetrics {
     window.addEventListener('focusout', onFocusOut)
     return () => {
       clearFocusTimers()
+      if (raf != null) cancelAnimationFrame(raf)
       vv.removeEventListener('resize', update)
       vv.removeEventListener('scroll', update)
       window.removeEventListener('resize', update)

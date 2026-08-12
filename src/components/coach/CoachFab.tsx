@@ -84,6 +84,35 @@ export default function CoachFab() {
     [cancelSpring, clearGlowTimer],
   )
 
+  // iOS PWA can drop pointerup/cancel after setPointerCapture (app switch,
+  // control center, phone interrupt). A stuck `coach-fab-dragging` class
+  // leaves BottomNav at pointer-events:none — nav taps feel dead / lagged.
+  useEffect(() => {
+    const abortGesture = () => {
+      if (pointerId.current == null && !document.body.classList.contains('coach-fab-dragging')) {
+        return
+      }
+      pointerId.current = null
+      start.current = null
+      moved.current = false
+      setDragging(false)
+      setPressed(false)
+      setGhost(null)
+      document.body.classList.remove('coach-fab-dragging')
+    }
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') abortGesture()
+    }
+    window.addEventListener('blur', abortGesture)
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('pagehide', abortGesture)
+    return () => {
+      window.removeEventListener('blur', abortGesture)
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('pagehide', abortGesture)
+    }
+  }, [])
+
   const startSpringToDock = useCallback(
     (from: { x: number; y: number }, next: CoachDockId, flicked: boolean) => {
       cancelSpring()
@@ -298,6 +327,22 @@ export default function CoachFab() {
     ],
   )
 
+  /** Capture lost without pointerup — clear nav block; don't open coach. */
+  const onLostCapture = useCallback(
+    (e: PointerEvent<HTMLButtonElement>) => {
+      if (pointerId.current !== e.pointerId) return
+      pointerId.current = null
+      start.current = null
+      moved.current = false
+      setDragging(false)
+      setPressed(false)
+      setFabGesture(false)
+      setGhost(null)
+      releaseGlow()
+    },
+    [releaseGlow, setFabGesture],
+  )
+
   // Pause idle float while pressed/dragging/settling — press should feel solid.
   const alive = !open && !dragging && !settling && !ghost && !pressed
 
@@ -349,6 +394,7 @@ export default function CoachFab() {
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}
       onPointerCancel={endDrag}
+      onLostPointerCapture={onLostCapture}
     >
       <span className="coach-fab__float">
         <span className="coach-fab__disc">
