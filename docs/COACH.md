@@ -150,6 +150,27 @@ and adapts:
 So different intents get physically different depth budgets without requiring
 the user (or the prompt) to prescribe formatting per question.
 
+### Confirm-before-apply actions
+
+Coach can **propose** mutations via tools; it cannot write data until the user
+taps Confirm in chat. Apply [`sql/36-coach-actions.sql`](sql/36-coach-actions.sql)
+before relying on this.
+
+| Action | Tool | Execute path |
+| --- | --- | --- |
+| Correct past weights | `propose_correct_weights` | `upsert_past_session` per matched session |
+| Start today’s workout | `propose_start_workout` | `start_or_resume_session` → `/log?day=…` |
+| Create a new day | `propose_create_day` | `exercises` insert (+ optional category) |
+
+Flow:
+
+1. `POST /api/coach/chat` streams **NDJSON** (`text-delta`, `proposal`, `done`)
+2. UI shows an aesthetic **Confirm / Cancel** card (`CoachActionCard`)
+3. `POST /api/coach/actions` with `{ proposalId, decision }`
+4. Multi-session weight fixes stream step progress; quick actions return JSON
+
+Proposals expire after ~30 minutes (`coach_action_proposals`).
+
 Key gates:
 
 - Intent before formatting (never pick a template first)

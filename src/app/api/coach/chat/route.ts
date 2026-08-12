@@ -1,5 +1,5 @@
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
-import { streamText, type ModelMessage } from 'ai'
+import { stepCountIs, streamText, type ModelMessage } from 'ai'
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
@@ -20,6 +20,12 @@ import {
   mapCoachRateLimitError,
   type CoachUnitPreference,
 } from '@/lib/coach'
+import {
+  buildCoachProposalTools,
+  encodeNdjson,
+  type CoachProposalView,
+  type CoachToolContext,
+} from '@/lib/coach/actions'
 import { titleFromMessage } from '@/lib/coach/conversations'
 
 export const runtime = 'nodejs'
@@ -282,13 +288,24 @@ ${contextJson}
 
 Remember: intent before formatting — Understand intent → assess complexity → determine relevance → choose depth → choose format → answer → verify. ${turnReminder}`
 
+  const toolCtx: CoachToolContext = {
+    supabase,
+    userId: user.id,
+    conversationId,
+    unit: unit === 'kg' ? 'kg' : 'lb',
+    proposals: [] as CoachProposalView[],
+  }
+  const tools = buildCoachProposalTools(toolCtx)
+
   try {
     const result = streamText({
       model: google(modelId),
       system,
       messages: [...history, { role: 'user', content: message }],
-      maxOutputTokens: intentProfile.maxOutputTokens,
+      maxOutputTokens: Math.max(intentProfile.maxOutputTokens, 700),
       temperature: 0.4,
+      tools,
+      stopWhen: stepCountIs(3),
       // Keep thinking minimal / off. Do NOT hardcode thinkingBudget: 0 —
       // Gemini 3.x Flash-Lite (incl. gemini-3.5-flash-lite and
       // gemini-flash-lite-latest) rejects thinkingBudget with
@@ -307,50 +324,79 @@ Remember: intent before formatting — Understand intent → assess complexity �
       },
     })
 
-    // Build the response by hand instead of result.toTextStreamResponse():
-    // that helper silently drops 'error' parts of the stream, so an upstream
-    // failure used to produce a 200 response with an empty body and no
-    // indication anything went wrong. Consuming fullStream lets us turn a
-    // failure into a visible message instead of dead air.
+    // NDJSON stream: text-delta / proposal / error / done — so the client can
+    // attach Confirm/Cancel cards without parsing markdown.
     const encoder = new TextEncoder()
     let full = ''
     let sawError = false
+    const emittedProposalIds = new Set<string>()
 
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
+        const emit = (event: object) => {
+          controller.enqueue(encoder.encode(encodeNdjson(event)))
+        }
         try {
           for await (const part of result.fullStream) {
             if (part.type === 'text-delta') {
               full += part.text
-              controller.enqueue(encoder.encode(part.text))
+              emit({ type: 'text-delta', text: part.text })
+            } else if (part.type === 'tool-result') {
+              // Flush any proposals created by tool execute handlers.
+              for (const p of toolCtx.proposals) {
+                if (emittedProposalIds.has(p.id)) continue
+                emittedProposalIds.add(p.id)
+                emit({ type: 'proposal', proposal: p })
+              }
             } else if (part.type === 'error') {
               sawError = true
               console.error('[grind] coach stream error', part.error)
             }
           }
+          // Safety net if tool-result parts were skipped by the provider.
+          for (const p of toolCtx.proposals) {
+            if (emittedProposalIds.has(p.id)) continue
+            emittedProposalIds.add(p.id)
+            emit({ type: 'proposal', proposal: p })
+          }
         } catch (err) {
           sawError = true
           console.error('[grind] coach stream error', err)
         } finally {
-          const gotReply = full.trim().length > 0
+          const gotReply = full.trim().length > 0 || emittedProposalIds.size > 0
           if (sawError && !gotReply) {
-            full = 'Sorry, I hit an error generating a reply. Try again in a moment.'
-            controller.enqueue(encoder.encode(full))
+            full =
+              'Sorry, I hit an error generating a reply. Try again in a moment.'
+            emit({ type: 'text-delta', text: full })
           }
+          if (sawError && gotReply) {
+            emit({
+              type: 'error',
+              error: 'Something went wrong mid-reply. Partial answer shown.',
+            })
+          }
+          emit({ type: 'done' })
           controller.close()
           if (gotReply) {
-            const assistantInsert: Record<string, unknown> = {
-              user_id: user.id,
-              role: 'assistant',
-              content: full.trim().slice(0, 4000),
+            const assistantText =
+              full.trim() ||
+              (emittedProposalIds.size
+                ? 'I prepared an action for you — confirm or cancel below.'
+                : '')
+            if (assistantText) {
+              const assistantInsert: Record<string, unknown> = {
+                user_id: user.id,
+                role: 'assistant',
+                content: assistantText.slice(0, 4000),
+              }
+              if (conversationId) {
+                assistantInsert.conversation_id = conversationId
+              }
+              const { error } = await supabase
+                .from('coach_messages')
+                .insert(assistantInsert)
+              if (error) console.error('[grind] coach insert assistant', error)
             }
-            if (conversationId) {
-              assistantInsert.conversation_id = conversationId
-            }
-            const { error } = await supabase
-              .from('coach_messages')
-              .insert(assistantInsert)
-            if (error) console.error('[grind] coach insert assistant', error)
             if (conversationId) {
               void supabase
                 .from('coach_conversations')
@@ -372,9 +418,13 @@ Remember: intent before formatting — Understand intent → assess complexity �
     })
 
     const response = new Response(stream, {
-      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      headers: {
+        'Content-Type': 'application/x-ndjson; charset=utf-8',
+        'Cache-Control': 'no-store',
+      },
     })
     response.headers.set('X-Coach-Model', modelId)
+    response.headers.set('X-Coach-Stream', 'ndjson')
     if (conversationId) {
       response.headers.set('X-Coach-Conversation-Id', conversationId)
     }

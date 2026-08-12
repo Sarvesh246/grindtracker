@@ -11,6 +11,7 @@
 
 export type CoachIntent =
   | 'safety'
+  | 'actionable'
   | 'workout'
   | 'program'
   | 'technique'
@@ -65,6 +66,9 @@ const DEFINITION_RE =
 const SHORT_CONTEXT_RE =
   /^(bench|squat|deadlift|ohp|row|pull|push|legs?|today|progress|increase|why|next|worth it|same|more|enough|rest|deload|skip)\??$/i
 
+const ACTIONABLE_RE =
+  /\b(change|correct|fix|update|edit|set|make)\b.{0,40}\b(weight|lbs?|kg)\b|\b(was|should (have )?been|meant|actually)\b.{0,30}\b(lb|kg|weight)\b|\bstart (my |today'?s )?workout\b|\b(start|begin|open)\b.{0,20}\b(today|workout|session)\b|\bcreate (a |an )?(new )?(day|workout day)\b|\bsave (this|that) (as |to )?(a )?day\b|\badd (this|that) (day|workout) to (my )?(program|catalog|rotation)\b/i
+
 /** Soft token ceilings by intent — simple asks cannot sprawl. */
 const TOKEN_BUDGET: Record<CoachIntent, number> = {
   safety: 450,
@@ -75,6 +79,7 @@ const TOKEN_BUDGET: Record<CoachIntent, number> = {
   technique: 700,
   troubleshooting: 750,
   analysis: 1000,
+  actionable: 1100,
   workout: 1100,
   program: 1200,
   general: 700,
@@ -97,8 +102,10 @@ const REMINDER: Record<CoachIntent, string> = {
     'Intent: troubleshooting. Hedge causes (likely/suggests). Prioritize likely explanations, how to test, what to try — do not assert unproven causation.',
   analysis:
     'Intent: progress/coaching analysis. Lead with takeaway, then relevant evidence, hedged interpretation, and action. Prioritize — do not dump every metric.',
+  actionable:
+    'Intent: actionable mutation. Call the matching propose_* tool so the user gets a Confirm/Cancel card. Never claim the change is applied until they confirm.',
   workout:
-    'Intent: workout request. Lead with an executable workout using bold exercise stacks (sets×reps, Target, Rest). No essay intro.',
+    'Intent: workout request. Lead with an executable workout using bold exercise stacks (sets×reps, Target, Rest). No essay intro. If they ask to save it as a day, also call propose_create_day.',
   program:
     'Intent: program design. Give a structured plan with explicit assumptions. More detail than a simple Q is OK here.',
   general:
@@ -114,6 +121,7 @@ function personalizationFor(intent: CoachIntent): CoachIntentProfile['personaliz
     case 'analysis':
     case 'recommendation':
     case 'short_contextual':
+    case 'actionable':
       return 'required'
     case 'workout':
     case 'program':
@@ -145,6 +153,7 @@ export function inferCoachIntent(
   }
 
   if (SAFETY_RE.test(text)) return profile('safety')
+  if (ACTIONABLE_RE.test(text)) return profile('actionable')
   if (WORKOUT_RE.test(text)) return profile('workout')
   if (PROGRAM_RE.test(text)) return profile('program')
   if (TECHNIQUE_RE.test(text)) return profile('technique')

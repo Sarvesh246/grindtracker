@@ -223,10 +223,13 @@ describe('COACH_SYSTEM_PROMPT', () => {
     assert.match(COACH_SYSTEM_PROMPT, /when personalization IS Required or Useful/i)
   })
 
-  it('enforces single-turn replies to protect message quota', () => {
+  it('enforces single-turn replies and confirm-before-apply tools', () => {
     assert.match(COACH_SYSTEM_PROMPT, /Quota \/ single-turn/i)
     assert.match(COACH_SYSTEM_PROMPT, /ONE reply/i)
-    assert.match(COACH_SYSTEM_PROMPT, /No tool calls/i)
+    assert.match(COACH_SYSTEM_PROMPT, /propose_correct_weights/i)
+    assert.match(COACH_SYSTEM_PROMPT, /propose_start_workout/i)
+    assert.match(COACH_SYSTEM_PROMPT, /propose_create_day/i)
+    assert.match(COACH_SYSTEM_PROMPT, /Never claim a change is applied/i)
     assert.match(
       COACH_SYSTEM_PROMPT,
       /splitting across quota-burning turns/i,
@@ -256,7 +259,7 @@ describe('COACH_SYSTEM_PROMPT', () => {
 
   it('stays within a free-tier-friendly size budget', () => {
     assert.ok(
-      COACH_SYSTEM_PROMPT.length < 12000,
+      COACH_SYSTEM_PROMPT.length < 13000,
       `prompt too long: ${COACH_SYSTEM_PROMPT.length}`,
     )
     assert.ok(

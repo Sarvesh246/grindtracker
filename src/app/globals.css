@@ -2058,6 +2058,194 @@ html.reduce-motion .coach-history {
   color: var(--text-muted);
   letter-spacing: 2px;
 }
+
+/* Confirm-before-apply action cards inside assistant bubbles */
+.coach-action-card {
+  position: relative;
+  display: flex;
+  margin-top: 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--card-shadow);
+  overflow: hidden;
+}
+.coach-action-card--pending {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+.coach-action-card__rail {
+  width: 4px;
+  flex-shrink: 0;
+  background: var(--accent);
+}
+.coach-action-card__body {
+  flex: 1;
+  min-width: 0;
+  padding: 12px 12px 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.coach-action-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.coach-action-card__title {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: 0.01em;
+}
+.coach-action-card__pill {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 9999px;
+  border: 1px solid var(--border);
+  background: var(--surface-elevated);
+  color: var(--text-secondary);
+}
+.coach-action-card__pill--active {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  background: var(--accent-wash);
+  color: var(--accent-text);
+}
+.coach-action-card__pill--done {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+  background: var(--accent-wash);
+  color: var(--accent-text);
+}
+.coach-action-card__pill--error {
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--border));
+  background: color-mix(in srgb, var(--danger) 12%, var(--surface));
+  color: var(--danger);
+}
+.coach-action-card__pill--muted {
+  color: var(--text-muted);
+}
+.coach-action-card__summary {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.coach-action-card__summary li {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+.coach-action-card__summary li:first-child {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.coach-action-card__risk {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+.coach-action-card__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.coach-action-card__btn {
+  flex: 1;
+  min-height: 40px;
+  border-radius: var(--radius-md);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid var(--border);
+}
+.coach-action-card__btn--cancel {
+  background: var(--surface-elevated);
+  color: var(--text-primary);
+}
+.coach-action-card__btn--confirm {
+  background: var(--accent);
+  border-color: transparent;
+  color: var(--on-accent, #0f0f0f);
+}
+.coach-action__progress {
+  margin-top: 2px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--accent-wash);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+}
+.coach-action__steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.coach-action__step {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+.coach-action__step--active {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.coach-action__step--done {
+  color: var(--accent-text);
+}
+.coach-action__step--error {
+  color: var(--danger);
+}
+.coach-action__step-mark {
+  width: 14px;
+  text-align: center;
+  flex-shrink: 0;
+  font-size: 11px;
+}
+.coach-action__step--active .coach-action__step-mark {
+  animation: coach-action-pulse 1.2s ease-in-out infinite;
+}
+@keyframes coach-action-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+html.reduce-motion .coach-action__step--active .coach-action__step-mark {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .coach-action__step--active .coach-action__step-mark {
+    animation: none;
+  }
+}
+.coach-action__progress-msg {
+  margin: 8px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-text);
+}
+.coach-action__progress-msg--error {
+  color: var(--danger);
+}
+
 html.reduce-motion .coach-bubble--enter,
 html.reduce-motion .coach-bubble--user {
   animation: none;

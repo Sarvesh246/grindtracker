@@ -48,9 +48,11 @@ is fully linked to migration history.
 | [33-coach.sql](sql/33-coach.sql) | 33 | Coach chat log + per-user Gemini rate limits |
 | [34-coach-quota-fixes.sql](sql/34-coach-quota-fixes.sql) | 34 | Refund quota for failed Coach turns + admin dev-unlimited toggle |
 | [35-coach-conversations.sql](sql/35-coach-conversations.sql) | 35 | Saved Coach chats (`coach_conversations` + message link) |
+| [36-coach-actions.sql](sql/36-coach-actions.sql) | 36 | Coach action proposals (confirm-before-apply mutations) |
 
 See also [PUSH.md](PUSH.md) for VAPID keys, Vercel env, and cron setup.
-See [COACH.md](COACH.md) for Gemini env, rate limits, and `/api/coach/chat`.
+See [COACH.md](COACH.md) for Gemini env, rate limits, `/api/coach/chat`, and
+confirm-before-apply Coach actions (`docs/sql/36-coach-actions.sql`).
 
 **If you already applied an older 27:** run **28** next. Fresh installs can apply the
 updated **27** alone (includes the hardening) or 27 then 28 (idempotent).

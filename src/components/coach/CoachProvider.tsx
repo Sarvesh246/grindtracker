@@ -13,11 +13,15 @@ import {
 import {
   COACH_MAX_HISTORY_MESSAGES,
   COACH_MAX_MESSAGE_CHARS,
+  type CoachActionRunState,
   type CoachConversationSummary,
+  type CoachProposalView,
 } from '@/lib/coach'
+import { parseCoachChatStreamLine } from '@/lib/coach/actions'
 import { titleFromMessage } from '@/lib/coach/conversations'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { localDateKey } from '@/lib/utils/formatting'
+import { useRouter } from 'next/navigation'
 
 export type CoachDockId = 'br' | 'bl' | 'tr' | 'tl'
 /** compact = quick sheet; page = full-screen Coach app */
@@ -26,6 +30,8 @@ export type CoachMessage = {
   id: string
   role: 'user' | 'assistant'
   content: string
+  proposals?: CoachProposalView[]
+  actionRuns?: Record<string, CoachActionRunState>
 }
 
 export type CoachQuotaState = {
@@ -60,6 +66,10 @@ type CoachContextValue = {
   expandToPage: () => void
   setSize: (size: CoachSheetSize) => void
   sendMessage: (text: string) => Promise<void>
+  decideProposal: (
+    proposalId: string,
+    decision: 'confirm' | 'cancel',
+  ) => Promise<void>
   clearError: () => void
   newChat: () => void
   openHistory: () => void
@@ -113,6 +123,7 @@ function uid() {
 
 export function CoachProvider({ children }: { children: ReactNode }) {
   const { unitLabel } = useUnit()
+  const router = useRouter()
   const [open, setOpen] = useState(false)
   const [size, setSize] = useState<CoachSheetSize>('compact')
   const dock = useSyncExternalStore(
@@ -471,28 +482,80 @@ export function CoachProvider({ children }: { children: ReactNode }) {
         }
 
         const decoder = new TextDecoder()
-        let acc = ''
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-          acc += decoder.decode(value, { stream: true })
-          const snapshot = acc
+        let buffer = ''
+        let textAcc = ''
+        const proposals: CoachProposalView[] = []
+        const isNdjson = res.headers.get('X-Coach-Stream') === 'ndjson'
+
+        const flushAssistant = (content: string, nextProposals?: CoachProposalView[]) => {
           setMessages(prev =>
             prev.map(m =>
-              m.id === assistantId ? { ...m, content: snapshot } : m,
+              m.id === assistantId
+                ? {
+                    ...m,
+                    content,
+                    proposals:
+                      nextProposals && nextProposals.length
+                        ? nextProposals
+                        : m.proposals,
+                  }
+                : m,
             ),
           )
         }
-        acc += decoder.decode()
-        const finalText = acc.trim()
-        setMessages(prev =>
-          prev.map(m =>
-            m.id === assistantId
-              ? { ...m, content: finalText || m.content }
-              : m,
-          ),
+
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          const chunk = decoder.decode(value, { stream: true })
+          if (!isNdjson) {
+            // Legacy plain-text stream fallback.
+            textAcc += chunk
+            flushAssistant(textAcc)
+            continue
+          }
+          buffer += chunk
+          const lines = buffer.split('\n')
+          buffer = lines.pop() ?? ''
+          for (const line of lines) {
+            const event = parseCoachChatStreamLine(line)
+            if (!event) continue
+            if (event.type === 'text-delta') {
+              textAcc += event.text
+              flushAssistant(textAcc, proposals)
+            } else if (event.type === 'proposal') {
+              if (!proposals.some(p => p.id === event.proposal.id)) {
+                proposals.push(event.proposal)
+              }
+              flushAssistant(textAcc, [...proposals])
+            } else if (event.type === 'error') {
+              setError(event.error)
+            }
+          }
+        }
+
+        if (isNdjson && buffer.trim()) {
+          const event = parseCoachChatStreamLine(buffer)
+          if (event?.type === 'text-delta') {
+            textAcc += event.text
+          } else if (event?.type === 'proposal') {
+            if (!proposals.some(p => p.id === event.proposal.id)) {
+              proposals.push(event.proposal)
+            }
+          }
+        } else if (!isNdjson) {
+          textAcc += decoder.decode()
+        }
+
+        const finalText = textAcc.trim()
+        flushAssistant(
+          finalText ||
+            (proposals.length
+              ? 'I prepared an action for you — confirm or cancel below.'
+              : ''),
+          proposals,
         )
-        if (!finalText) {
+        if (!finalText && proposals.length === 0) {
           setMessages(prev => prev.filter(m => m.id !== assistantId))
           setError('Coach returned an empty reply. Try again.')
         }
@@ -519,6 +582,212 @@ export function CoachProvider({ children }: { children: ReactNode }) {
     ],
   )
 
+  const decideProposal = useCallback(
+    async (proposalId: string, decision: 'confirm' | 'cancel') => {
+      if (!proposalId || streaming) return
+
+      const patchProposal = (
+        id: string,
+        patch: Partial<CoachProposalView>,
+        runPatch?: CoachActionRunState | null,
+      ) => {
+        setMessages(prev =>
+          prev.map(m => {
+            if (!m.proposals?.some(p => p.id === id)) return m
+            return {
+              ...m,
+              proposals: m.proposals.map(p =>
+                p.id === id ? { ...p, ...patch } : p,
+              ),
+              actionRuns:
+                runPatch === undefined
+                  ? m.actionRuns
+                  : {
+                      ...(m.actionRuns ?? {}),
+                      ...(runPatch ? { [id]: runPatch } : {}),
+                    },
+            }
+          }),
+        )
+      }
+
+      if (decision === 'cancel') {
+        patchProposal(proposalId, { status: 'cancelled' })
+      } else {
+        patchProposal(proposalId, { status: 'confirmed' }, {
+          proposalId,
+          phase: 'running',
+          steps: [],
+          message: 'Working…',
+        })
+      }
+
+      try {
+        const res = await fetch('/api/coach/actions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ proposalId, decision }),
+        })
+
+        const streamHeader = res.headers.get('X-Coach-Action-Stream')
+        if (decision === 'confirm' && streamHeader === 'ndjson' && res.body) {
+          const reader = res.body.getReader()
+          const decoder = new TextDecoder()
+          let buffer = ''
+          let steps: CoachActionRunState['steps'] = []
+          let finalMessage = ''
+          let ok = true
+          let href: string | undefined
+
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            buffer += decoder.decode(value, { stream: true })
+            const lines = buffer.split('\n')
+            buffer = lines.pop() ?? ''
+            for (const line of lines) {
+              const trimmed = line.trim()
+              if (!trimmed.startsWith('{')) continue
+              try {
+                const event = JSON.parse(trimmed) as {
+                  type: string
+                  index?: number
+                  total?: number
+                  label?: string
+                  state?: CoachActionRunState['steps'][number]['state']
+                  ok?: boolean
+                  message?: string
+                  href?: string
+                  error?: string
+                }
+                if (event.type === 'step' && event.index != null && event.total != null) {
+                  const next = [...steps]
+                  next[event.index] = {
+                    index: event.index,
+                    total: event.total,
+                    label: event.label ?? `Step ${event.index + 1}`,
+                    state: event.state ?? 'active',
+                  }
+                  // Fill pending placeholders
+                  for (let i = 0; i < event.total; i++) {
+                    if (!next[i]) {
+                      next[i] = {
+                        index: i,
+                        total: event.total,
+                        label: `Step ${i + 1}`,
+                        state: 'pending',
+                      }
+                    }
+                  }
+                  steps = next
+                  patchProposal(proposalId, { status: 'confirmed' }, {
+                    proposalId,
+                    phase: 'running',
+                    steps,
+                  })
+                } else if (event.type === 'result') {
+                  ok = Boolean(event.ok)
+                  finalMessage = event.message ?? ''
+                  href = event.href
+                } else if (event.type === 'error') {
+                  ok = false
+                  finalMessage = event.error ?? 'Action failed.'
+                }
+              } catch {
+                // ignore bad lines
+              }
+            }
+          }
+
+          patchProposal(
+            proposalId,
+            { status: ok ? 'executed' : 'failed' },
+            {
+              proposalId,
+              phase: ok ? 'done' : 'error',
+              steps: steps.map(s =>
+                s.state === 'active' ? { ...s, state: ok ? 'done' : 'error' } : s,
+              ),
+              message: finalMessage,
+            },
+          )
+          if (finalMessage) {
+            setMessages(prev => [
+              ...prev,
+              {
+                id: uid(),
+                role: 'assistant',
+                content: finalMessage,
+              },
+            ])
+          }
+          if (ok && href) {
+            window.setTimeout(() => router.push(href!), 450)
+          }
+          return
+        }
+
+        const body = (await res.json().catch(() => ({}))) as {
+          ok?: boolean
+          status?: string
+          message?: string
+          href?: string
+          error?: string
+        }
+
+        if (!res.ok) {
+          const msg = body.error ?? body.message ?? 'Action failed.'
+          patchProposal(proposalId, { status: 'failed' }, {
+            proposalId,
+            phase: 'error',
+            steps: [],
+            message: msg,
+          })
+          setError(msg)
+          return
+        }
+
+        if (decision === 'cancel') {
+          patchProposal(proposalId, { status: 'cancelled' }, {
+            proposalId,
+            phase: 'done',
+            steps: [],
+            message: 'Cancelled.',
+          })
+          setMessages(prev => [
+            ...prev,
+            { id: uid(), role: 'assistant', content: 'Cancelled.' },
+          ])
+          return
+        }
+
+        const message = body.message ?? 'Done.'
+        patchProposal(proposalId, { status: 'executed' }, {
+          proposalId,
+          phase: 'done',
+          steps: [],
+          message,
+        })
+        setMessages(prev => [
+          ...prev,
+          { id: uid(), role: 'assistant', content: message },
+        ])
+        if (body.href) {
+          window.setTimeout(() => router.push(body.href!), 450)
+        }
+      } catch {
+        patchProposal(proposalId, { status: 'failed' }, {
+          proposalId,
+          phase: 'error',
+          steps: [],
+          message: 'Could not reach the action endpoint.',
+        })
+        setError('Could not complete that action. Check your connection.')
+      }
+    },
+    [streaming, router],
+  )
+
   const value = useMemo<CoachContextValue>(
     () => ({
       open,
@@ -540,6 +809,7 @@ export function CoachProvider({ children }: { children: ReactNode }) {
       expandToPage,
       setSize,
       sendMessage,
+      decideProposal,
       clearError,
       newChat,
       openHistory,
@@ -566,6 +836,7 @@ export function CoachProvider({ children }: { children: ReactNode }) {
       closeCoach,
       expandToPage,
       sendMessage,
+      decideProposal,
       clearError,
       newChat,
       openHistory,

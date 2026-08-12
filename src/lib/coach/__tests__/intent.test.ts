@@ -131,6 +131,20 @@ describe('inferCoachIntent', () => {
       `expected ≥4 distinct budgets, got ${distinct.size}`,
     )
   })
+it('classifies mutation asks as actionable', () => {
+    assert.equal(
+      inferCoachIntent('Change my bench from 90 to 95 lb').intent,
+      'actionable',
+    )
+    assert.equal(
+      inferCoachIntent('Start today’s workout').intent,
+      'actionable',
+    )
+    assert.equal(
+      inferCoachIntent('Create a new day called upper from that plan').intent,
+      'actionable',
+    )
+  })
 })
 
 describe('COACH_SYSTEM_PROMPT intent emergence', () => {

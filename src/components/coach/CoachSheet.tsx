@@ -24,6 +24,7 @@ import IconButton from '@/components/ui/IconButton'
 import CoachFabIcon from './CoachFabIcon'
 import CoachHistory from './CoachHistory'
 import CoachMessageContent from './CoachMessageContent'
+import CoachActionCard from './CoachActionCard'
 import {
   RUBBER_FACTOR,
   SHEET_DISMISS_FLICK_VY,
@@ -297,6 +298,7 @@ export default function CoachSheet() {
     expandToPage,
     setSize,
     sendMessage,
+    decideProposal,
     clearError,
     newChat,
     openHistory,
@@ -1653,7 +1655,21 @@ export default function CoachSheet() {
                           …
                         </span>
                       ) : m.role === 'assistant' ? (
-                        <CoachMessageContent content={m.content} />
+                        <>
+                          {m.content ? (
+                            <CoachMessageContent content={m.content} />
+                          ) : null}
+                          {m.proposals?.map(p => (
+                            <CoachActionCard
+                              key={p.id}
+                              proposal={p}
+                              run={m.actionRuns?.[p.id] ?? null}
+                              busy={streaming}
+                              onConfirm={id => void decideProposal(id, 'confirm')}
+                              onCancel={id => void decideProposal(id, 'cancel')}
+                            />
+                          ))}
+                        </>
                       ) : (
                         m.content
                       )}

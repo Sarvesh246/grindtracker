@@ -29,6 +29,14 @@ export {
   type PersonalizationNeed,
   type PreferredFormat,
 } from './stressCatalog'
+export type {
+  CoachProposalView,
+  CoachActionKind,
+  CoachActionStatus,
+  CoachActionRunState,
+  CoachActionProgressStep,
+  CoachActionCardModel,
+} from './actions'
 export {
   summarizeTrainingHistory,
   type TrainingBreak,
