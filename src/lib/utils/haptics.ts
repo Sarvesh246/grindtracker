@@ -27,6 +27,14 @@
  *   haptic('light')
  */
 
+import {
+  lastFingerPoint,
+  pickSmallestContainingHost,
+  rectFromDOMRect,
+  touchHitCandidates,
+  type HitHost,
+} from '@/lib/utils/touchHit'
+
 export type HapticIntensity = 'light' | 'medium' | 'heavy' | 'success'
 
 const OVERLAY_ATTR = 'data-haptic-overlay'
@@ -182,6 +190,31 @@ function hostIsAppChrome(host: HTMLElement): boolean {
   }
 }
 
+/**
+ * Native switch hit-testing can land on the control below the finger (iOS PWA
+ * visualViewport / status-bar desync). Finger coords + layout rects stay
+ * honest — pick the [data-haptic] host that actually contains the tap.
+ */
+function resolveHapticHost(fallback: HTMLElement): HTMLElement {
+  const finger = lastFingerPoint()
+  if (!finger || typeof document === 'undefined') return fallback
+  const vv = typeof window !== 'undefined' ? window.visualViewport : null
+  const points = touchHitCandidates(
+    finger.x,
+    finger.y,
+    vv?.offsetLeft ?? 0,
+    vv?.offsetTop ?? 0,
+  )
+  const hosts: HitHost<HTMLElement>[] = []
+  for (const node of document.querySelectorAll<HTMLElement>(`[${DATA_HAPTIC}]`)) {
+    if (hostIsDisabled(node)) continue
+    const r = node.getBoundingClientRect()
+    if (r.width < 1 || r.height < 1) continue
+    hosts.push({ el: node, rect: rectFromDOMRect(r) })
+  }
+  return pickSmallestContainingHost(hosts, points) ?? fallback
+}
+
 /** Nearest ancestor that can scroll on the given axis (overflow + overflow size). */
 function nearestScrollParent(
   from: HTMLElement,
@@ -258,6 +291,7 @@ export function attachHapticOverlay(el: HTMLElement): () => void {
   sw.style.cssText =
     'position:absolute;inset:0;width:100%;height:100%;margin:0;padding:0;border:0;' +
     '-webkit-appearance:switch;appearance:auto;opacity:0;cursor:inherit;pointer-events:auto;z-index:1;' +
+    'overflow:hidden;clip-path:inset(0);' +
     `outline:none;box-shadow:none;-webkit-tap-highlight-color:transparent;touch-action:${touchAction};`
 
   const syncPointerEvents = () => {
@@ -369,12 +403,18 @@ export function attachHapticOverlay(el: HTMLElement): () => void {
     // programmatic focus after a switch-tick as keyboard-like, which paints
     // the global lime outline (and --radius-sm) on FAB / coach header buttons.
     // Keyboard users still get a ring when they Tab to the control.
-    if (!(el instanceof HTMLAnchorElement)) {
-      focusWithoutRing(el)
+    //
+    // Native switch hit-testing can be vertically offset from the pixels
+    // (iOS PWA leftover VV pan / status-bar). Trust the finger point, not
+    // which overlay WebKit delivered the click to.
+    const host = resolveHapticHost(el)
+    if (hostIsDisabled(host)) return
+    if (!(host instanceof HTMLAnchorElement)) {
+      focusWithoutRing(host)
     }
-    el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }))
-    if (el instanceof HTMLAnchorElement) {
-      queueMicrotask(() => el.blur())
+    host.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }))
+    if (host instanceof HTMLAnchorElement) {
+      queueMicrotask(() => host.blur())
     }
   }
 

@@ -29,6 +29,7 @@ import { titleFromMessage } from '@/lib/coach/conversations'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { localDateKey } from '@/lib/utils/formatting'
 import { focusWithoutRing } from '@/lib/utils/haptics'
+import { healIosViewport } from '@/lib/utils/iosViewportHeal'
 import { useRouter } from 'next/navigation'
 
 export type CoachDockId = 'br' | 'bl' | 'tr' | 'tl'
@@ -273,14 +274,8 @@ export function CoachProvider({
 
     // Same-position scrollTo is a no-op for the page but forces WebKit to
     // clamp a leftover visual-viewport pan and re-anchor fixed layers — the
-    // same heal used after keyboard dismiss in ActiveWorkout.
-    const reanchor = () => {
-      try {
-        window.scrollTo(window.scrollX, window.scrollY)
-      } catch {
-        // ignore
-      }
-    }
+    // same heal used after keyboard dismiss / iOS tap-offset drift.
+    const reanchor = () => healIosViewport()
     // theme-color stays on app --bg (Coach no longer pushes --surface).
     // CoachSheet still force-heals chrome on page close for iOS PWA stickiness.
     reanchor()

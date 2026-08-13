@@ -2,6 +2,7 @@
 
 import { useEffect, type CSSProperties, type ReactNode } from 'react'
 import { hapticAttrs, setupHaptics, setupTapDragGuard, type HapticIntensity } from '@/lib/utils/haptics'
+import { setupIosViewportHeal } from '@/lib/utils/iosViewportHeal'
 
 /**
  * Mount once in the authenticated app shell. Wires `[data-haptic]`:
@@ -10,11 +11,14 @@ import { hapticAttrs, setupHaptics, setupTapDragGuard, type HapticIntensity } fr
  * that starts on a button still scrolls (WebKit switch would otherwise eat
  * it) — skipped for BottomNav/TopNav so tab taps stay instant. Also installs
  * the tap/drag guard so that swipe never activates the control it started on
- * (app chrome excluded from drag-cancel).
+ * (app chrome excluded from drag-cancel). Also heals iOS PWA visual-viewport
+ * pan / vertical tap-offset (Save hitting Add Set) after keyboard, resume,
+ * and leftover status-bar desync.
  */
 export default function HapticsSetup() {
   useEffect(() => setupHaptics(), [])
   useEffect(() => setupTapDragGuard(), [])
+  useEffect(() => setupIosViewportHeal(), [])
   return null
 }
 
