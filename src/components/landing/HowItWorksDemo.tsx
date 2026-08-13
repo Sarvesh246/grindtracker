@@ -6,7 +6,7 @@ import FlameIcon from '@/components/FlameIcon'
 
 function CheckIcon() {
   return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <polyline points="20 6 9 17 4 12" />
     </svg>
   )
@@ -131,20 +131,14 @@ function SetRow({
   state: 'done' | 'live'
 }) {
   return (
-    <div
-      className={`landing-hero-set${state === 'done' ? ' landing-hero-set--done' : ' landing-hero-set--active landing-how-set--live'}`}
-    >
-      <span className="landing-hero-set__label">SET {n}</span>
-      <span className="landing-hero-set__box">{weight}</span>
-      {state === 'live' ? (
-        <span className="landing-hero-set__reps-wrap">
-          <span className="landing-hero-set__box">{reps}</span>
-          <span className="landing-hero-set__pr">PR</span>
-        </span>
-      ) : (
-        <span className="landing-hero-set__box">{reps}</span>
-      )}
-      <span className="landing-hero-set__check">
+    <div className={`landing-how-set${state === 'done' ? ' landing-how-set--done' : ' landing-how-set--live'}`}>
+      <span className="landing-how-set__label">SET {n}</span>
+      <span className="landing-how-set__box">{weight}</span>
+      <span className="landing-how-set__reps">
+        <span className="landing-how-set__box">{reps}</span>
+        {state === 'live' ? <span className="landing-how-set__pr">PR</span> : null}
+      </span>
+      <span className="landing-how-set__check">
         <CheckIcon />
       </span>
     </div>
@@ -215,7 +209,7 @@ export default function HowItWorksDemo() {
                 </div>
 
                 <div className="landing-how-home__cta">
-                  <DayIcon dayKey="push" size={22} color="var(--on-accent)" />
+                    <DayIcon dayKey="push" size={24} color="var(--on-accent)" />
                   <span className="landing-how-home__cta-copy">
                     <span className="landing-how-home__cta-title">START PUSH DAY</span>
                     <span className="landing-how-home__cta-meta">Bench, Incline +1 more</span>
@@ -274,13 +268,13 @@ export default function HowItWorksDemo() {
                       </div>
                     </div>
                     <div className="landing-how-wo__rule" />
-                    <div className="landing-hero-phone__col-labels">
+                    <div className="landing-how-set__cols">
                       <span />
                       <span>lbs</span>
                       <span>reps</span>
                       <span />
                     </div>
-                    <div className="landing-hero-phone__sets">
+                    <div className="landing-how-set__list">
                       <SetRow n={1} weight="185" reps="8" state="done" />
                       <SetRow n={2} weight="185" reps="8" state="done" />
                       <SetRow n={3} weight="190" reps="8" state="live" />
