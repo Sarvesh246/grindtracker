@@ -160,29 +160,62 @@ export default function IconGallery() {
                 gap: '14px',
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span style={{
+              <div>
+                <div style={{
                   fontFamily: 'var(--font-display)', fontSize: '22px',
                   letterSpacing: '1px', color: 'var(--text-primary)', lineHeight: 1,
                 }}>
                   {kind.toUpperCase()}
-                </span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <span style={{
-                  ...swatch,
-                  backgroundColor: 'var(--surface-elevated)',
-                  border: '1px solid var(--border)',
-                  color: 'var(--accent-text)',
-                }}>
-                  <DayIcon kind={kind} size={28} />
-                </span>
-                <div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{meta.glyph}</div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.4, marginTop: '4px' }}>
-                    {meta.matches.join(' · ')}
-                  </div>
                 </div>
+                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px' }}>{meta.glyph}</div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+                  <span style={{
+                    ...swatch,
+                    backgroundColor: 'var(--surface-elevated)',
+                    border: '1px solid var(--border)',
+                    color: 'var(--accent-text)',
+                  }}>
+                    <DayIcon kind={kind} size={28} />
+                  </span>
+                  <span style={{ fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '0.04em', textTransform: 'uppercase', textAlign: 'center' }}>
+                    Log
+                  </span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+                  <span style={{
+                    ...swatch,
+                    backgroundColor: 'var(--accent)',
+                    color: 'var(--on-accent)',
+                  }}>
+                    <DayIcon kind={kind} size={32} color="var(--on-accent)" />
+                  </span>
+                  <span style={{ fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '0.04em', textTransform: 'uppercase', textAlign: 'center' }}>
+                    Home START
+                  </span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+                  <span style={{
+                    width: '40px',
+                    height: '40px',
+                    borderRadius: '10px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--text-primary)',
+                    backgroundColor: 'var(--bg)',
+                    border: '1px solid var(--border)',
+                  }}>
+                    <DayIcon kind={kind} size={28} />
+                  </span>
+                  <span style={{ fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '0.04em', textTransform: 'uppercase', textAlign: 'center' }}>
+                    Size check
+                  </span>
+                </div>
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                {meta.matches.join(' · ')}
               </div>
             </div>
           )
