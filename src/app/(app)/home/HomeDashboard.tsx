@@ -11,7 +11,7 @@ import { advanceIndex, effectiveSequence, nextDay as nextDayFromRotation, overdu
 import { deleteIncompleteSessions } from '@/lib/utils/sessions'
 import { flushQueuedOps, getQueuedOps, clearQueuedOpsForSession } from '@/lib/utils/offlineQueue'
 import { checkAndAwardBadges } from '@/lib/utils/badges'
-import { uncoveredDatesBetween, skipTodayState, type RestDayOpts } from '@/lib/utils/restDays'
+import { uncoveredDatesBetween, skipTodayState, sameDateKeyList, type RestDayOpts } from '@/lib/utils/restDays'
 import WorkoutCalendar from '@/components/WorkoutCalendar'
 import FinishUndoBanner from '@/components/FinishUndoBanner'
 import ToastPill, { TOAST_SLIDE_OUT_MS } from '@/components/ToastPill'
@@ -22,6 +22,7 @@ import { useTour, type TourStep } from '@/components/onboarding/Tour'
 import FlameIcon from '@/components/FlameIcon'
 import DayIcon from '@/components/DayIcon'
 import { markAppDataStale } from '@/lib/cache/appDataCache'
+import { reportError } from '@/lib/utils/reportError'
 import {
   FINISH_UNDO_TTL_MS,
   writeFinishUndoToken,
@@ -226,6 +227,26 @@ export default function HomeDashboard({
     () => skipTodayState(todayKey, recurringRestSet, effectiveRestDateSet, restOpts),
     [todayKey, recurringRestSet, effectiveRestDateSet, restOpts],
   )
+  // Rapid Rest today → undo must not wait on restTodayBusy (that dropped the
+  // second tap) and must not fire overlapping toggle RPCs (unique violation /
+  // permission-denied on steal-row cleanup). Optimistic UI flips immediately;
+  // RPCs drain in order; extra taps coalesce as extra toggles.
+  const pendingRestToggles = useRef(0)
+  const restFlushing = useRef(false)
+  const restTodayOnRef = useRef(skipState.todayIsOneOff)
+  const restDatesRef = useRef(effectiveRestDates)
+
+  useEffect(() => {
+    if (restDatesOverride === null) {
+      restDatesRef.current = restDates
+      restTodayOnRef.current = restDates.includes(todayKey)
+      return
+    }
+    if (sameDateKeyList(restDatesOverride, restDates)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setRestDatesOverride(null)
+    }
+  }, [restDates, restDatesOverride, todayKey])
   const trainedToday = completedAt.includes(todayKey)
   const gapUncoveredDates = useMemo(
     () => lastWorkoutKey ? uncoveredDatesBetween(lastWorkoutKey, todayKey, recurringRestSet, effectiveRestDateSet, restOpts) : [],
@@ -296,26 +317,49 @@ export default function HomeDashboard({
     })
   }
 
-  async function handleToggleRestToday() {
-    if (restTodayBusy || skipState.todayIsScheduled) return
-    if (!skipState.todayIsOneOff && !skipState.canSkip) return
+  async function drainRestToggles() {
+    if (restFlushing.current) return
+    restFlushing.current = true
     setRestTodayBusy(true)
-    const nextDates = skipState.todayIsOneOff
-      ? effectiveRestDates.filter(d => d !== todayKey)
-      : [...effectiveRestDates, todayKey]
-    setRestDatesOverride(nextDates)
     try {
-      const { error } = await supabase.rpc('toggle_rest_today', { p_local_date: todayKey })
-      if (error) throw error
-      toast.show(skipState.todayIsOneOff ? 'Rest day undone' : 'Rest day')
+      while (pendingRestToggles.current > 0) {
+        pendingRestToggles.current -= 1
+        const { error } = await supabase.rpc('toggle_rest_today', { p_local_date: todayKey })
+        if (error) throw error
+      }
+      toast.show(restTodayOnRef.current ? 'Rest day' : 'Rest day undone')
       markAppDataStale('/home')
       router.refresh()
     } catch (err) {
+      pendingRestToggles.current = 0
       setRestDatesOverride(null)
-      flashToast(restBudgetError(err) ? 'No rest days left this week' : 'Could not save. Try again.')
+      reportError(err, { operation: 'toggle_rest_today', route: '/home' })
+      toast.show(
+        restBudgetError(err) ? 'No rest days left this week' : 'Could not save. Try again.',
+        'error',
+      )
+      markAppDataStale('/home')
+      router.refresh()
     } finally {
+      restFlushing.current = false
       setRestTodayBusy(false)
+      if (pendingRestToggles.current > 0) void drainRestToggles()
     }
+  }
+
+  function handleToggleRestToday() {
+    if (skipState.todayIsScheduled && !restTodayOnRef.current) return
+    if (!restTodayOnRef.current && !skipState.canSkip) return
+    const turningOn = !restTodayOnRef.current
+    restTodayOnRef.current = turningOn
+    const current = restDatesRef.current
+    const nextDates = turningOn
+      ? (current.includes(todayKey) ? current : [...current, todayKey])
+      : current.filter(d => d !== todayKey)
+    restDatesRef.current = nextDates
+    setRestDatesOverride(nextDates)
+    pendingRestToggles.current += 1
+    void drainRestToggles()
   }
 
   // ── Active-session controls (resume / save / discard) ──────────────────────
@@ -343,12 +387,18 @@ export default function HomeDashboard({
   const [discardConfirmId, setDiscardConfirmId] = useState<string | null>(null)
   const [actionToast, setActionToast] = useState<string | null>(null)
   const actionToastExit = useExitingValue(actionToast, TOAST_SLIDE_OUT_MS)
+  const actionToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [skippingDay, setSkippingDay] = useState(false)
 
   function flashToast(msg: string) {
     setActionToast(msg)
-    setTimeout(() => setActionToast(null), 4000)
+    if (actionToastTimer.current) clearTimeout(actionToastTimer.current)
+    actionToastTimer.current = setTimeout(() => setActionToast(null), 4000)
   }
+
+  useEffect(() => () => {
+    if (actionToastTimer.current) clearTimeout(actionToastTimer.current)
+  }, [])
 
   function handleResume(session: ActiveSession) {
     router.push(`/log?day=${session.day_type}`)
@@ -1190,8 +1240,8 @@ export default function HomeDashboard({
           type="button"
           className="press"
           data-haptic="medium"
-          onClick={() => void handleToggleRestToday()}
-          disabled={restTodayBusy || skipState.todayIsScheduled || (!skipState.todayIsOneOff && !skipState.canSkip)}
+          onClick={() => handleToggleRestToday()}
+          disabled={skipState.todayIsScheduled || (!skipState.todayIsOneOff && !skipState.canSkip)}
           aria-pressed={skipState.todayIsRest}
           style={{
             ...card,
@@ -1200,7 +1250,7 @@ export default function HomeDashboard({
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: '12px',
-            cursor: restTodayBusy || skipState.todayIsScheduled || (!skipState.todayIsOneOff && !skipState.canSkip)
+            cursor: skipState.todayIsScheduled || (!skipState.todayIsOneOff && !skipState.canSkip)
               ? 'default'
               : 'pointer',
             opacity: restTodayBusy ? 0.7 : 1,
@@ -1532,6 +1582,7 @@ export default function HomeDashboard({
       {/* Passive confirmation for the resume-block actions (save / discard). */}
       {actionToastExit.data && (
         <ToastPill
+          key={actionToastExit.data}
           edge="bottom"
           exiting={actionToastExit.closing}
           role="status"

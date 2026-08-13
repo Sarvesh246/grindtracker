@@ -26,8 +26,9 @@ export function useExitingValue<T>(value: T | null, exitMs: number): { data: T |
 
   useEffect(() => {
     if (value !== null) {
-      // Syncing local state to the `value` prop transitioning non-null —
-      // an external-value sync, not derived render state.
+      // New value while exiting (e.g. Rest today then undo): drop the exit
+      // timeout and show the replacement. Callers should pass a stable
+      // reference, or a new object/`key` when the message actually changes.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setData(value)
       setClosing(false)

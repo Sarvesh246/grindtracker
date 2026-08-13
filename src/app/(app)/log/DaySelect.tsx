@@ -767,6 +767,7 @@ export default function DaySelect() {
 
       {actionToastExit.data && (
         <ToastPill
+          key={actionToastExit.data}
           edge="bottom"
           exiting={actionToastExit.closing}
           role="status"

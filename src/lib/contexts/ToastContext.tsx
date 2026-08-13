@@ -5,7 +5,7 @@ import { useExitingValue } from '@/lib/hooks/useExitingValue'
 import ToastPill, { TOAST_SLIDE_OUT_MS } from '@/components/ToastPill'
 
 type ToastVariant = 'success' | 'error'
-type ToastPayload = { message: string; variant: ToastVariant }
+type ToastPayload = { id: number; message: string; variant: ToastVariant }
 
 interface ToastAPI {
   /** Flash a brief, passive bottom-anchored pill. Defaults to a "saved"-style
@@ -38,11 +38,13 @@ export function useToast(): ToastAPI {
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [payload, setPayload] = useState<ToastPayload | null>(null)
   const timer = useRef<NodeJS.Timeout | null>(null)
+  const idRef = useRef(0)
   const keyboardInset = useKeyboardInset()
   const exit = useExitingValue(payload, TOAST_SLIDE_OUT_MS)
 
   const show = useCallback((msg: string, v: ToastVariant = 'success') => {
-    setPayload({ message: msg, variant: v })
+    idRef.current += 1
+    setPayload({ id: idRef.current, message: msg, variant: v })
     if (timer.current) clearTimeout(timer.current)
     timer.current = setTimeout(() => setPayload(null), 1900)
   }, [])
@@ -57,6 +59,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       {children}
       {exit.data && (
         <ToastPill
+          key={exit.data.id}
           edge="bottom"
           exiting={exit.closing}
           role="status"
