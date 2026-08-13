@@ -869,6 +869,8 @@ export default function CoachSheet() {
           width: preview.width,
           height: preview.height,
         })
+        // Prefer compact chrome while the mini card exits downward.
+        setSize('compact')
         boxH = preview.height
         startY = 0
         // Clear from the locked visual position — not from a full-page height.
@@ -946,7 +948,7 @@ export default function CoachSheet() {
       }
       settleRaf.current = requestAnimationFrame(tick)
     },
-    [cancelSettle, closeCoach, dock, reduceMotion, size, visualSize],
+    [cancelSettle, closeCoach, dock, reduceMotion, setSize, size, visualSize],
   )
 
   /**
