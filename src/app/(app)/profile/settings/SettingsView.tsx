@@ -770,8 +770,8 @@ export default function SettingsView({
               {!standalone
                 ? 'Add to Home Screen to enable alerts'
                 : notifPrefs?.enabled
-                  ? 'Lock-screen rest & streak alerts'
-                  : 'Off — enable for rest & streak pings'}
+                  ? 'Streak reminders + in-page rest alerts'
+                  : 'Off — enable for streak & rest pings'}
             </div>
           </div>
           <Switch
@@ -786,8 +786,8 @@ export default function SettingsView({
           <>
             {(
               [
-                ['rest_complete', 'Rest ended', 'Ping when your rest timer hits zero'] as const,
-                ['rest_warning_10s', 'Rest warning (10s)', 'Optional heads-up before rest ends'] as const,
+                ['rest_complete', 'Rest ended', 'In-page / local timer ping when rest hits zero (not lock-screen-accurate on Hobby cron)'] as const,
+                ['rest_warning_10s', 'Rest warning (10s)', 'Local heads-up before rest ends — use while the app is open; lock-screen timing isn’t gym-accurate'] as const,
                 ['workout_status', 'Workout status', 'One card while the app is in the background'] as const,
                 ['streak_reminder', 'Streak reminder', 'Evening nudge if you have not trained'] as const,
               ] as const

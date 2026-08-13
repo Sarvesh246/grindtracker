@@ -4,6 +4,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -23,6 +24,11 @@ import { useUnit } from '@/lib/contexts/UnitContext'
 import { localDateKey } from '@/lib/utils/formatting'
 import { focusWithoutRing } from '@/lib/utils/haptics'
 import { useRouter } from 'next/navigation'
+import {
+  bindOpenCoachWindowEvent,
+  subscribeOpenCoach,
+  type OpenCoachDetail,
+} from '@/lib/coach/openCoachBus'
 
 export type CoachDockId = 'br' | 'bl' | 'tr' | 'tl'
 /** compact = quick sheet; page = full-screen Coach app */
@@ -207,6 +213,10 @@ export function CoachProvider({ children }: { children: ReactNode }) {
       void refreshConversations()
     }
   }, [quotaLoaded, refreshQuota, refreshConversations])
+
+  const openCoachRef = useRef(openCoach)
+  openCoachRef.current = openCoach
+  const sendMessageRef = useRef<(text: string) => Promise<void>>(async () => {})
 
   const closeCoach = useCallback(() => {
     // Blur the composer before unmount so iOS doesn't leave the layout
@@ -652,6 +662,24 @@ export function CoachProvider({ children }: { children: ReactNode }) {
       activeConversationId,
     ],
   )
+  sendMessageRef.current = sendMessage
+
+  useEffect(() => {
+    const unbind = bindOpenCoachWindowEvent()
+    const unsub = subscribeOpenCoach((detail: OpenCoachDetail) => {
+      openCoachRef.current()
+      const msg = detail.message?.trim()
+      if (msg) {
+        window.setTimeout(() => {
+          void sendMessageRef.current(msg)
+        }, 80)
+      }
+    })
+    return () => {
+      unbind()
+      unsub()
+    }
+  }, [])
 
   const decideProposal = useCallback(
     async (proposalId: string, decision: 'confirm' | 'cancel') => {

@@ -268,3 +268,26 @@ export function FriendsMock() {
     </div>
   )
 }
+
+/** AI Coach sheet mock — lime G + a short chat beat. */
+export function CoachMock() {
+  const ref = useInViewOnce(0.35)
+  return (
+    <DemoFrame demoRef={ref} className="landing-coach-mock">
+      <div className="landing-coach-mock__sheet">
+        <div className="landing-coach-mock__header">
+          <span className="landing-coach-mock__orb" aria-hidden>
+            G
+          </span>
+          <span className="landing-coach-mock__title">Coach</span>
+        </div>
+        <div className="landing-coach-mock__bubble landing-coach-mock__bubble--user">
+          How was today&apos;s push?
+        </div>
+        <div className="landing-coach-mock__bubble landing-coach-mock__bubble--coach">
+          Bench moved — add 5 next time. Keep rest honest on incline.
+        </div>
+      </div>
+    </DemoFrame>
+  )
+}

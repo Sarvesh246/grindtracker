@@ -4,6 +4,7 @@ import { LeaderboardEntry } from '@/lib/types'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { renderShareCardPng } from '@/lib/utils/shareCardImage'
 import { reportError } from '@/lib/utils/reportError'
+import { useFocusTrap } from '@/lib/hooks/useFocusTrap'
 
 /* UI medals follow theme tokens; PNG share is always dark-branded hex. */
 const RANK_COLORS: Record<number, string> = {
@@ -18,43 +19,81 @@ const SHARE_RANK_HEX: Record<number, string> = {
   3: '#CD7F32',
 }
 
+export type ShareCardEntry = Pick<
+  LeaderboardEntry,
+  | 'display_name'
+  | 'username'
+  | 'avatar_url'
+  | 'level'
+  | 'current_streak'
+  | 'total_workouts'
+  | 'xp_total'
+  | 'best_lift'
+>
+
 interface ShareCardProps {
-  entry: LeaderboardEntry
-  rank: number
+  entry: ShareCardEntry
+  rank?: number
   category: string
   onClose: () => void
+  variant?: 'rank' | 'profile'
 }
 
 function initials(name: string) {
   return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
 }
 
-export default function ShareCard({ entry, rank, category, onClose }: ShareCardProps) {
+export default function ShareCard({
+  entry,
+  rank = 0,
+  category,
+  onClose,
+  variant = 'rank',
+}: ShareCardProps) {
   const { unitLabel, fmt } = useUnit()
   const [canShare, setCanShare] = useState(false)
   const [sharing, setSharing] = useState(false)
   const backdropRef = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  useFocusTrap(panelRef, true)
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setCanShare(typeof navigator !== 'undefined' && 'share' in navigator)
   }, [])
   useEffect(() => {
-    backdropRef.current?.focus()
+    const first = panelRef.current?.querySelector<HTMLElement>('button:not([disabled])')
+    ;(first ?? backdropRef.current)?.focus()
   }, [])
-  const categoryLabel = {
-    push: 'PUSH DAY',
-    pull: 'PULL DAY',
-    legs: 'LEG DAY',
-    overall: 'OVERALL',
-  }[category] ?? category.toUpperCase()
 
-  const statLabel = category === 'overall' ? 'XP' : 'BEST LIFT'
-  const statValue = category === 'overall'
-    ? `${entry.xp_total.toLocaleString()} XP`
-    : `${entry.best_lift === 0 ? '—' : `${fmt(entry.best_lift)}${unitLabel}`}`
+  const isProfile = variant === 'profile'
+  const categoryLabel = isProfile
+    ? 'PROFILE'
+    : {
+        push: 'PUSH DAY',
+        pull: 'PULL DAY',
+        legs: 'LEG DAY',
+        overall: 'OVERALL',
+      }[category] ?? category.toUpperCase()
 
-  const rankColor = RANK_COLORS[rank] ?? 'var(--accent)'
-  const shareText = `I'm ranked #${rank} in ${categoryLabel} on GRIND! ${statLabel}: ${statValue} | Level ${entry.level} | ${entry.current_streak} day streak`
+  const statLabel = isProfile
+    ? 'DAY STREAK'
+    : category === 'overall'
+      ? 'XP'
+      : 'BEST LIFT'
+  const statValue = isProfile
+    ? `${entry.current_streak}`
+    : category === 'overall'
+      ? `${entry.xp_total.toLocaleString()} XP`
+      : `${entry.best_lift === 0 ? '—' : `${fmt(entry.best_lift)}${unitLabel}`}`
+
+  const heroText = isProfile ? String(entry.level) : `#${rank}`
+  const heroSub = isProfile ? 'LEVEL' : null
+  const rankColor = isProfile
+    ? 'var(--accent-text)'
+    : (RANK_COLORS[rank] ?? 'var(--accent)')
+  const shareText = isProfile
+    ? `I'm Level ${entry.level} on GRIND — ${entry.current_streak} day streak · ${entry.total_workouts} workouts · ${entry.xp_total.toLocaleString()} XP`
+    : `I'm ranked #${rank} in ${categoryLabel} on GRIND! ${statLabel}: ${statValue} | Level ${entry.level} | ${entry.current_streak} day streak`
 
   async function handleShareImage() {
     if (sharing) return
@@ -66,14 +105,20 @@ export default function ShareCard({ entry, rank, category, onClose }: ShareCardP
         rank,
         categoryLabel,
         statLabel,
-        statValue,
+        statValue: isProfile ? `${entry.current_streak} days` : statValue,
         level: entry.level,
         streak: entry.current_streak,
         workouts: entry.total_workouts,
         avatarUrl: entry.avatar_url,
-        rankColor: SHARE_RANK_HEX[rank] ?? '#c8f135',
+        rankColor: isProfile ? '#c8f135' : (SHARE_RANK_HEX[rank] ?? '#c8f135'),
+        heroText: isProfile ? String(entry.level) : undefined,
+        heroSub: isProfile ? 'LEVEL' : undefined,
       })
-      const file = new File([blob], `grind-rank-${rank}.png`, { type: 'image/png' })
+      const file = new File(
+        [blob],
+        isProfile ? 'grind-profile.png' : `grind-rank-${rank}.png`,
+        { type: 'image/png' },
+      )
       if (typeof navigator !== 'undefined' && navigator.share && navigator.canShare?.({ files: [file] })) {
         await navigator.share({ title: 'GRIND', text: shareText, files: [file] })
       } else if (typeof navigator !== 'undefined' && navigator.share) {
@@ -90,7 +135,7 @@ export default function ShareCard({ entry, rank, category, onClose }: ShareCardP
     } catch (err) {
       // User cancel is not an error worth reporting
       if (err instanceof Error && err.name === 'AbortError') return
-      reportError(err, { operation: 'shareCardImage', route: '/leaderboard' })
+      reportError(err, { operation: 'shareCardImage', route: isProfile ? '/profile' : '/leaderboard' })
     } finally {
       setSharing(false)
     }
@@ -105,9 +150,7 @@ export default function ShareCard({ entry, rank, category, onClose }: ShareCardP
   return (
     <div
       ref={backdropRef}
-      role="dialog"
-      aria-modal="true"
-      aria-label="Share your rank"
+      role="presentation"
       tabIndex={-1}
       onClick={onClose}
       onKeyDown={e => { if (e.key === 'Escape') onClose() }}
@@ -125,7 +168,16 @@ export default function ShareCard({ entry, rank, category, onClose }: ShareCardP
       }}
     >
       <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={isProfile ? 'Share your profile' : 'Share your rank'}
+        tabIndex={-1}
         onClick={e => e.stopPropagation()}
+        onKeyDown={e => { if (e.key === 'Escape') onClose() }}
+        style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', outline: 'none' }}
+      >
+      <div
         className="share-card-dark"
         style={{
           width: '320px',
@@ -185,13 +237,24 @@ export default function ShareCard({ entry, rank, category, onClose }: ShareCardP
           </div>
         </div>
 
-        <div style={{
-          fontFamily: "'Bebas Neue', sans-serif",
-          fontSize: '72px',
-          lineHeight: 1,
-          color: rankColor,
-          letterSpacing: '2px',
-        }}>#{rank}</div>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{
+            fontFamily: "'Bebas Neue', sans-serif",
+            fontSize: '72px',
+            lineHeight: 1,
+            color: rankColor,
+            letterSpacing: '2px',
+          }}>{heroText}</div>
+          {heroSub && (
+            <div style={{
+              fontSize: '11px',
+              fontFamily: "'DM Sans', sans-serif",
+              color: 'var(--text-muted)',
+              letterSpacing: '1px',
+              marginTop: '2px',
+            }}>{heroSub}</div>
+          )}
+        </div>
 
         <div style={{ textAlign: 'center' }}>
           <div style={{

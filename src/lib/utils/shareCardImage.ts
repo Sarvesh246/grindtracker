@@ -16,6 +16,8 @@ export type ShareCardImageInput = {
   workouts: number
   avatarUrl?: string | null
   rankColor?: string
+  heroText?: string
+  heroSub?: string
 }
 
 function initials(name: string) {
@@ -108,14 +110,20 @@ export async function renderShareCardPng(input: ShareCardImageInput): Promise<Bl
 
   ctx.fillStyle = rankColor
   ctx.font = '700 140px Bebas Neue, Impact, sans-serif'
-  ctx.fillText(`#${input.rank}`, w / 2, 520)
+  const hero = input.heroText ?? `#${input.rank}`
+  ctx.fillText(hero, w / 2, 520)
+  if (input.heroSub) {
+    ctx.fillStyle = muted
+    ctx.font = '400 18px DM Sans, sans-serif'
+    ctx.fillText(input.heroSub, w / 2, 552)
+  }
 
   ctx.fillStyle = text
   ctx.font = '700 48px JetBrains Mono, monospace'
-  ctx.fillText(input.statValue, w / 2, 600)
+  ctx.fillText(input.statValue, w / 2, input.heroSub ? 620 : 600)
   ctx.fillStyle = muted
   ctx.font = '400 18px DM Sans, sans-serif'
-  ctx.fillText(input.statLabel, w / 2, 632)
+  ctx.fillText(input.statLabel, w / 2, input.heroSub ? 652 : 632)
 
   ctx.strokeStyle = border
   ctx.beginPath()

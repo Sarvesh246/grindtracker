@@ -9,6 +9,7 @@ import {
   ProgressMock,
   LevelUpMock,
   FriendsMock,
+  CoachMock,
 } from './FeatureDemos'
 import InstallSection, { FinalCta, LandingFooter } from './InstallSection'
 import MobileInstallPill from './MobileInstallPill'
@@ -111,12 +112,20 @@ export default function LandingPage() {
         />
 
         <Section
+          id="coach"
+          eyebrow="AI Coach"
+          title="Ask what to do next"
+          lead="A personal coach that already knows your PRs, streak, and program — quick takes after a session, or a plan when you’re stuck."
+          demo={<CoachMock />}
+          reverse
+        />
+
+        <Section
           id="level-up"
           eyebrow="Level up"
           title="XP, badges, finish moments"
           lead="Every completed session banks XP. PRs hit harder. Badges unlock when the work is real — not when you tap a checkbox."
           demo={<LevelUpMock />}
-          reverse
         />
 
         <Section
