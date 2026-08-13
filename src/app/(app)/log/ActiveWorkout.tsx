@@ -38,8 +38,8 @@ import { useRestTimer, getPauseRestOnExit } from '@/lib/hooks/useRestTimer'
 import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
 import { useExitingValue } from '@/lib/hooks/useExitingValue'
 import RestTimerBar from '@/components/RestTimerBar'
-import PlateCalculator from '@/components/PlateCalculator'
 import { requestOpenCoach } from '@/lib/coach/openCoachBus'
+import PlateCalculator from '@/components/PlateCalculator'
 import CompletionModal from './CompletionModal'
 import { markAppDataStale } from '@/lib/cache/appDataCache'
 import { useFeatureTooltip } from '@/components/onboarding/useFeatureTooltip'
@@ -155,12 +155,13 @@ export default function ActiveWorkout({ day }: { day: string }) {
   // back to this last-session value otherwise — see the `fillWeights` /
   // `fillWeight` computations at each prefill site (initSession, handleAddSet,
   // handleSwapExercise), which read from `previousBests` but don't feed it.
-  // `previousBestVolumes` tracks the session's running best volume (for undo/
-  // edit recomputes / display). Live PR *badges* pin to `baselineBestVolumes`
-  // (prior-session get_exercise_bests only) so later sets that beat the prior
-  // best still badge — matching server grind_recompute_stats (docs/sql/15).
-  // `baselineBests`/`baselineBestVolumes` stay frozen at the DB values from
-  // session start.
+  // `previousBestVolumes` is the live "bar to beat" for PR detection: best
+  // weight x reps EVER on record (get_exercise_bests), which is what actually
+  // decides is_pr (mirrors the server's grind_recompute_stats — see
+  // docs/sql/15-volume-based-prs.sql). Both start from the DB and advance
+  // within this workout as sets are logged. `baselineBests`/`baselineBestVolumes`
+  // keep the original DB values so we can recompute the live bests when sets
+  // are edited or undone.
   const [previousBests, setPreviousBests] = useState<PreviousBest>({})
   const [baselineBests, setBaselineBests] = useState<PreviousBest>({})
   const [previousBestVolumes, setPreviousBestVolumes] = useState<PreviousBest>({})
@@ -720,17 +721,6 @@ export default function ActiveWorkout({ day }: { day: string }) {
     return { total, checked, skipped, percent }
   }, [exercises, logs, extraSets])
 
-  const allSetsProcessed =
-    setCounts.total > 0 && setCounts.checked + setCounts.skipped >= setCounts.total
-
-  // When every set is checked or skipped, stop any running rest so Finish is
-  // primary — don't leave the CTA buried behind a countdown with nothing left to rest for.
-  useEffect(() => {
-    if (!allSetsProcessed || !restTimer.active) return
-    restTimer.stop()
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- stop on completion only
-  }, [allSetsProcessed, restTimer.active])
-
   /** Matches server grind_session_has_working_set: non-warmup, non-skipped, weight+reps. */
   function hasWorkingSet(): boolean {
     return Object.values(logs).some(l => {
@@ -746,38 +736,6 @@ export default function ActiveWorkout({ day }: { day: string }) {
     if (getQueuedOps(sessionId).length > 0) return true
     return Object.values(logs).some(l => l.pendingSync)
   }
-
-  /** Unique sets waiting on the offline queue or still flagged pendingSync. */
-  function pendingSyncCount(): number {
-    if (!sessionId) return 0
-    const keys = new Set<string>()
-    for (const op of getQueuedOps(sessionId)) {
-      keys.add(`${op.exerciseId}-${op.setNumber}`)
-    }
-    for (const [k, l] of Object.entries(logs)) {
-      if (l.pendingSync) keys.add(k)
-    }
-    return keys.size
-  }
-
-  async function retryPendingSync() {
-    if (!sessionId) return
-    const synced = await flushQueuedOps(sessionId, supabase)
-    if (synced.length === 0) {
-      setResumeToast('Still waiting for a connection…')
-      setTimeout(() => setResumeToast(null), 3000)
-      return
-    }
-    setLogs(prev => {
-      const next = { ...prev }
-      for (const { exerciseId, setNumber } of synced) {
-        const key = `${exerciseId}-${setNumber}`
-        if (next[key]) next[key] = { ...next[key], pendingSync: false }
-      }
-      return next
-    })
-  }
-
   function totalSets(): number {
     return setCounts.total
   }
@@ -889,13 +847,13 @@ export default function ActiveWorkout({ day }: { day: string }) {
       const reps = parseInt(repsStr, 10)
       if (!Number.isFinite(reps)) return
 
-      const prevBestVolume = baselineBestVolumes[exerciseId]
+      const prevBestVolume = previousBestVolumes[exerciseId]
       const volume = weight * reps
       // Match server grind_recompute_stats: first-ever volume for an exercise is
       // a PR (prior best treated as -1), not only improvements over a known best.
-      // Badge eligibility pins to prior-session baseline only (not raised mid-
-      // session) so a later set that beats the old PR still badges even if set 1
-      // already did. Client always writes is_pr:false; local isPR is UI-only until finish.
+      // Live bar uses prior-session baseline only (not raised mid-session) so a
+      // later set that beats the old PR still badges even if set 1 already did.
+      // Client always writes is_pr:false; local isPR is UI-only until finish.
       const isPR = computeLocalIsPR(logEntry.isWarmup, weight, reps, prevBestVolume)
       const rpe = parseRpe(logEntry.rpe)
 
@@ -962,14 +920,10 @@ export default function ActiveWorkout({ day }: { day: string }) {
       }))
 
       if (isPR) {
-        // Track session-best volume for undo/edit recomputes; badge decisions
-        // stay pinned to baselineBestVolumes above.
-        setPreviousBestVolumes(prev => {
-          const cur = prev[exerciseId]
-          return cur !== undefined && cur !== null && cur >= volume
-            ? prev
-            : { ...prev, [exerciseId]: volume }
-        })
+        // Raise the live bar so subsequent sets need a new high — still matches
+        // server (prior sessions only) for the first PR of the session; later
+        // intra-session badges are optimistic UX only.
+        setPreviousBestVolumes(prev => ({ ...prev, [exerciseId]: volume }))
         // The weight-only "prev" display should only ever rise to an actual
         // heavier weight — a volume PR at a lower weight (more reps) shouldn't
         // knock the displayed reference weight down.
@@ -1024,10 +978,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         totalSets() > 0 &&
         Object.entries(logsRef.current).every(([k, l]) => (k === key ? true : l.checked || l.skipped))
 
-      if (willAllBeProcessed) {
-        // Finish is next — clear any leftover rest from an earlier set.
-        if (restTimer.active) restTimer.stop()
-      } else if (!logEntry.isWarmup) {
+      if (!logEntry.isWarmup && !willAllBeProcessed) {
         restTimer.start(exerciseId)
       }
     } finally {
@@ -1100,9 +1051,12 @@ export default function ActiveWorkout({ day }: { day: string }) {
       return
     }
 
-    // Badge eligibility pins to prior-session baseline (server volume-PR rules).
-    // Session bests are recomputed below via bestVolumeFromLogs for display/undo.
-    const prevBestVolume = baselineBestVolumes[exerciseId]
+    // Exclude this set from its own "best" — previousBestVolumes[exerciseId]
+    // can equal this same set's own prior (pre-edit) volume when it was the
+    // live PR, which would compare the edit against itself instead of the
+    // true previous best.
+    const otherLogs = Object.fromEntries(Object.entries(logs).filter(([k]) => k !== key))
+    const prevBestVolume = bestVolumeFromLogs(exerciseId, otherLogs)
     // Match server: null prior best ⇒ first lift is a PR. Client writes is_pr:false.
     const isPR =
       reps !== null && computeLocalIsPR(logEntry.isWarmup, weight, reps, prevBestVolume)
@@ -2423,7 +2377,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
           style={{
             position: 'fixed',
             left: '50%',
-            bottom: `calc(${keyboardInset > 0 ? `${keyboardInset}px` : 'env(safe-area-inset-bottom)'} + ${restTimer.active ? '190px' : '92px'})`,
+            bottom: `calc(${keyboardInset > 0 ? `${keyboardInset}px` : 'env(safe-area-inset-bottom)'} + ${restTimer.active ? '104px' : '92px'})`,
             transform: 'translateX(-50%)',
             backgroundColor: 'var(--surface-elevated)',
             border: '1px solid var(--accent)',
@@ -2470,7 +2424,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
             left: '12px',
             right: '12px',
             bottom: restTimer.active
-              ? 'calc(198px + env(safe-area-inset-bottom))'
+              ? 'calc(108px + env(safe-area-inset-bottom))'
               : 'calc(72px + env(safe-area-inset-bottom))',
             zIndex: 55,
             backgroundColor: 'var(--surface-elevated)',
@@ -2548,7 +2502,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         </div>
       )}
 
-      {/* Rest timer — stacked above the always-visible Finish bar. */}
+      {/* Rest timer */}
       {restTimer.active && restTimer.exerciseId && (
         <RestTimerBar
           exerciseId={restTimer.exerciseId}
@@ -2556,9 +2510,6 @@ export default function ActiveWorkout({ day }: { day: string }) {
           remainingMs={restTimer.remainingMs}
           durationMs={restTimer.durationMs}
           paused={restTimer.paused}
-          bottomOffset={hasPendingSync()
-            ? 'calc(126px + env(safe-area-inset-bottom))'
-            : 'calc(110px + env(safe-area-inset-bottom))'}
           onStop={restTimer.stop}
           onAdd={restTimer.addSeconds}
           onPause={restTimer.pause}
@@ -2566,7 +2517,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         />
       )}
 
-      <div className="page page--workout" style={{ paddingBottom: restTimer.active ? 'calc(220px + env(safe-area-inset-bottom))' : 'calc(140px + env(safe-area-inset-bottom))', fontFamily: "'DM Sans', sans-serif" }}>
+      <div className="page page--workout" style={{ paddingBottom: 'calc(140px + env(safe-area-inset-bottom))', fontFamily: "'DM Sans', sans-serif" }}>
        <div className="wo-layout">
 
         {/* Desktop sidebar rail — hidden on mobile via CSS. Mirrors the mobile
@@ -2868,8 +2819,9 @@ export default function ActiveWorkout({ day }: { day: string }) {
        </div>{/* .wo-layout */}
       </div>
 
-      {/* Finish button — always pinned to the viewport bottom (even while rest
-          is active). RestTimerBar stacks above it. Keyboard appears on top. */}
+      {/* Finish button — hidden while the rest bar owns the bottom edge.
+          Always pinned to the viewport bottom; the keyboard appears on top of it. */}
+      {!restTimer.active && (
       <div className="wo-fixed-bar" style={{
         position: 'fixed',
         bottom: 0,
@@ -2883,18 +2835,15 @@ export default function ActiveWorkout({ day }: { day: string }) {
       }}>
         <div className="wo-finish-inner">
         {(() => {
-          const pending = hasPendingSync()
-          const pendingCount = pendingSyncCount()
-          const canFinish = hasWorkingSet() && !pending && !finishing
+          const canFinish = hasWorkingSet() && !hasPendingSync() && !finishing
           return (
-            <>
             <button
               onClick={handleFinish}
               disabled={!canFinish}
               className="wo-finish-btn"
               data-haptic="heavy"
               title={
-                pending
+                hasPendingSync()
                   ? 'Waiting for sets to sync…'
                   : !hasWorkingSet()
                     ? 'Log at least one working set'
@@ -2914,47 +2863,6 @@ export default function ActiveWorkout({ day }: { day: string }) {
             >
               {finishing ? 'SAVING...' : 'FINISH WORKOUT'}
             </button>
-            {pending && (
-              <div
-                role="status"
-                style={{
-                  marginTop: '8px',
-                  fontSize: '12px',
-                  color: 'var(--text-secondary)',
-                  textAlign: 'center',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '4px',
-                  flexWrap: 'wrap',
-                }}
-              >
-                <span>
-                  Waiting to sync {pendingCount} {pendingCount === 1 ? 'set' : 'sets'}
-                </span>
-                <span aria-hidden="true">·</span>
-                <button
-                  type="button"
-                  data-haptic="light"
-                  onClick={() => { void retryPendingSync() }}
-                  className="press"
-                  style={{
-                    position: 'relative',
-                    background: 'none',
-                    border: 'none',
-                    padding: 0,
-                    color: 'var(--accent-text)',
-                    fontSize: '12px',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    fontFamily: 'inherit',
-                  }}
-                >
-                  Retry
-                </button>
-              </div>
-            )}
-            </>
           )
         })()}
         <div className="wo-finish-summary" style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
@@ -2964,6 +2872,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         </div>
         </div>
       </div>
+      )}
     </>
   )
 }
@@ -3196,7 +3105,6 @@ function ExerciseCard({
               key={key}
               setNumber={setNum}
               isBonus={isBonus}
-              setsTarget={exercise.sets_target}
               onboardFirst={firstExercise && setNum === 1 && !isBonus}
               editing={editing}
               logEntry={logEntry}
@@ -3723,8 +3631,6 @@ function ExerciseSwapModal({ currentExerciseId, day, allExercises, currentExerci
 interface SetRowProps {
   setNumber: number
   isBonus: boolean
-  /** Working-set target count — bonus labels use setNumber - setsTarget (+1, +2…). */
-  setsTarget: number
   /** First non-bonus set of the first exercise — carries the one-off hint anchors. */
   onboardFirst?: boolean
   editing: boolean
@@ -3745,7 +3651,7 @@ interface SetRowProps {
 }
 
 function SetRow({
-  setNumber, isBonus, setsTarget, onboardFirst, editing,
+  setNumber, isBonus, onboardFirst, editing,
   logEntry, prevReps,
   onCheck, onSaveEdit, onStartEdit,
   onWeightChange, onRepsChange, onNoteChange, onNoteBlur, onRpeChange,
@@ -3754,7 +3660,6 @@ function SetRow({
   const { fromDisplay, fmt } = useUnit()
   const [justChecked, setJustChecked] = useState(false)
   const [needsReps, setNeedsReps] = useState(false)
-  const [needsWeight, setNeedsWeight] = useState(false)
   // Local unlock flips synchronously on the gesture that enters edit mode, so
   // inputs accept keystrokes before the parent's editingKey re-render lands.
   const [unlocked, setUnlocked] = useState(false)
@@ -3839,14 +3744,6 @@ function SetRow({
 
   function handleCheck() {
     if (logEntry.checked) return
-    // Empty / invalid weight — nudge + focus (mirrors needsReps). BW is stored
-    // as 0 and is a valid committed value; only blank/NaN/negative fail.
-    const weightNum = logEntry.weight !== '' ? parseFloat(logEntry.weight) : NaN
-    if (!Number.isFinite(weightNum) || weightNum < 0) {
-      setNeedsWeight(true)
-      weightRef.current?.focus()
-      return
-    }
     // If reps are empty but a previous set has reps, let the parent auto-fill.
     // Only block + nudge when there is genuinely nothing to copy from.
     if (logEntry.reps.trim() === '' && !prevReps) {
@@ -3855,9 +3752,8 @@ function SetRow({
       return
     }
     // The set is about to be saved (directly or via carried-forward reps) —
-    // any earlier "needs reps/weight" warning no longer applies.
+    // any earlier "needs reps" warning no longer applies.
     if (needsReps) setNeedsReps(false)
-    if (needsWeight) setNeedsWeight(false)
     setJustChecked(true)
     setTimeout(() => setJustChecked(false), 300)
     // On iOS, tapping the check button does NOT blur the input the user just
@@ -3898,7 +3794,6 @@ function SetRow({
 
   function handleWeightChange(v: string) {
     setRawWeight(v)
-    if (needsWeight && v.trim() !== '') setNeedsWeight(false)
     if (v === '') { onWeightChange(''); return }
     // Allow typing 'BW' / 'bw' directly as a shorthand for body weight (stored as 0).
     if (v.trim().toLowerCase() === 'bw') { onWeightChange('0'); return }
@@ -3953,7 +3848,7 @@ function SetRow({
             fontWeight: 500,
             textDecoration: logEntry.skipped ? 'line-through' : 'none',
           }}>
-            {isBonus ? `+${setNumber - setsTarget}` : `SET ${setNumber}`}
+            {isBonus ? `+${setNumber - 1}` : `SET ${setNumber}`}
           </span>
           <svg
             width="12" height="12" viewBox="0 0 24 24" fill="none"
@@ -4062,24 +3957,21 @@ function SetRow({
               else e.target.select()
               ensureVisible(e.currentTarget)
             }}
-            onBlur={() => { setRawWeight(null); setNeedsWeight(false) }}
+            onBlur={() => setRawWeight(null)}
             onKeyDown={handleWeightKeyDown}
             readOnly={inputsLocked}
-            placeholder="—"
+            placeholder="BW"
             aria-label={`Weight for set ${setNumber}`}
-            aria-invalid={needsWeight}
-            title={needsWeight ? 'Enter a weight to complete this set' : undefined}
             style={{
               width: '56px', flexShrink: 0, height: '40px',
               backgroundColor: 'var(--surface-elevated)',
-              border: `1px solid ${needsWeight ? 'var(--danger)' : inputsLocked ? 'var(--border)' : 'var(--border-strong)'}`,
+              border: `1px solid ${inputsLocked ? 'var(--border)' : 'var(--border-strong)'}`,
               borderRadius: '8px',
               color: 'var(--text-primary)',
               fontFamily: "'JetBrains Mono', monospace",
               fontSize: '16px',
               textAlign: 'center',
               outline: 'none',
-              transition: 'border-color 150ms ease',
               cursor: logEntry.skipped ? 'not-allowed' : inputsLocked ? 'pointer' : 'text',
               opacity: logEntry.skipped ? 0.5 : 1,
               pointerEvents: logEntry.skipped ? 'none' : 'auto',
