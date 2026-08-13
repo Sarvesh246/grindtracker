@@ -223,9 +223,12 @@ function nearestScrollParent(
  * `touch-action: pan-y` (the earlier CSS-only fix). For ordinary hosts we set
  * `touch-action: none` on the overlay and forward pans past
  * {@link TAP_DRAG_CANCEL_PX} to the nearest scroll parent, canceling the
- * click — but ONLY when a scroll parent exists. Drag-owned hosts (e.g.
- * `.coach-fab`) and fixed app chrome (`.bottom-nav` / `.top-nav`) skip
- * forwarding so taps navigate instantly and wobble can't eat the click.
+ * click — but ONLY when a scroll parent exists. Horizontal pans with no
+ * scroller call preventDefault so the switch cannot steal them; SwipeNavigator
+ * then steps tabs (it must not treat this overlay as a text `<input>`).
+ * Drag-owned hosts (e.g. `.coach-fab`) and fixed app chrome (`.bottom-nav` /
+ * `.top-nav`) skip forwarding so taps navigate instantly and wobble can't
+ * eat the click.
  */
 export function attachHapticOverlay(el: HTMLElement): () => void {
   if (typeof document === 'undefined') return () => {}
@@ -308,12 +311,22 @@ export function attachHapticOverlay(el: HTMLElement): () => void {
       }
       gesture.axis = Math.abs(dy) >= Math.abs(dx) ? 'y' : 'x'
       gesture.scrollEl = nearestScrollParent(el, gesture.axis)
-      // Only cancel the eventual click when we actually steal the pan for a
-      // scroll parent. No scrollable ancestor → leave the tap alone (chrome
-      // already skipped this path; this guards odd fixed controls).
-      if (!gesture.scrollEl) return
+      if (!gesture.scrollEl) {
+        if (gesture.axis === 'x') {
+          // No horizontal scroller — this is a page-tab swipe. Kill the
+          // switch's slide-to-toggle so SwipeNavigator can see the pan
+          // (it ignores real <input>s, but not [data-haptic-overlay]).
+          gestureDragged = true
+          e.preventDefault()
+        }
+        return
+      }
       gestureDragged = true
     } else if (!gesture.scrollEl) {
+      if (gesture.axis === 'x') {
+        gestureDragged = true
+        e.preventDefault()
+      }
       return
     } else {
       gestureDragged = true
