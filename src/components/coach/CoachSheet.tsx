@@ -738,8 +738,15 @@ export default function CoachSheet() {
 
       setMorphLock(from)
       setSizeMorphing(true)
-      setSize('compact')
-      springMorphBox(from, compactRestRect(dock))
+      // Keep page classes early (mirrors expand); hand off compact chrome
+      // mid-late so interrupt still maps through collapse-preview pullY.
+      springMorphBox(from, compactRestRect(dock), {
+        nearPx: PAGE_CHROME_NEAR_PX,
+        nearProgress: PAGE_CHROME_NEAR_PROGRESS,
+        onNearEnd: () => {
+          setSize('compact')
+        },
+      })
     },
     [
       cancelSettle,
@@ -1025,9 +1032,10 @@ export default function CoachSheet() {
         const rect = sheetRef.current?.getBoundingClientRect()
         if (rect) {
           if (size === 'page') {
-            // Collapse preview / page→compact FLIP: visualTop ≈ page.top + pullY.
+            // Page→compact FLIP / collapse preview: visualTop ≈ page.top + pullY.
             liveY = Math.max(0, rect.top - pageRestRect().top)
           } else {
+            // Compact→page FLIP / expand preview: top tracks upward from rest.
             liveY = rect.top - compactRestRect(dock).top
           }
         }
