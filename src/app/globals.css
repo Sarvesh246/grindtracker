@@ -1159,9 +1159,22 @@ html.reduce-motion .toast-slide--bottom.toast-slide--exiting {
   }
 }
 
+/* Share overlay (ShareCard): hide Coach orb + hard-lock the app scroller.
+   Class toggled on <body> while the portaled share dialog is mounted. */
+body.share-overlay-open .coach-fab {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+body.share-overlay-open .app-main {
+  overflow: hidden !important;
+  touch-action: none !important;
+  overscroll-behavior: none;
+}
+
 /* ---------------------------------------------------------------------------
    Coach FAB + chat sheet
-   z-index: FAB 420 ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ· backdrop 430 ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ· sheet 440 (above nav 100, below wm 500)
+   z-index: FAB 420 · backdrop 430 · sheet 440 (above nav 100, below wm 500)
+   Share overlay sits at 450 so the dimmer covers the FAB when open.
    --------------------------------------------------------------------------- */
 
 .coach-fab {

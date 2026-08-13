@@ -67,13 +67,48 @@ export default function ShareCard({
   }, [])
   useEffect(() => {
     const main = document.querySelector('.app-main') as HTMLElement | null
-    const prevMain = main?.style.overflow
+    const scrollY = main?.scrollTop ?? 0
+    const prevMainOverflow = main?.style.overflow ?? ''
+    const prevMainTouch = main?.style.touchAction ?? ''
     const prevBody = document.body.style.overflow
-    if (main) main.style.overflow = 'hidden'
+
+    // Body class: hide Coach FAB + CSS-lock .app-main (iOS ignores plain
+    // overflow:hidden on -webkit-overflow-scrolling: touch scrollers).
+    document.body.classList.add('share-overlay-open')
     document.body.style.overflow = 'hidden'
+    if (main) {
+      main.style.overflow = 'hidden'
+      main.style.touchAction = 'none'
+    }
+
+    // Block background pan; still allow the overlay itself to scroll when the
+    // share card + actions are taller than the viewport.
+    const onTouchMove = (e: TouchEvent) => {
+      const overlay = backdropRef.current
+      if (!overlay) {
+        e.preventDefault()
+        return
+      }
+      const target = e.target
+      if (!(target instanceof Node) || !overlay.contains(target)) {
+        e.preventDefault()
+        return
+      }
+      if (overlay.scrollHeight <= overlay.clientHeight + 1) {
+        e.preventDefault()
+      }
+    }
+    document.addEventListener('touchmove', onTouchMove, { passive: false })
+
     return () => {
-      if (main) main.style.overflow = prevMain ?? ''
+      document.removeEventListener('touchmove', onTouchMove)
+      document.body.classList.remove('share-overlay-open')
       document.body.style.overflow = prevBody
+      if (main) {
+        main.style.overflow = prevMainOverflow
+        main.style.touchAction = prevMainTouch
+        main.scrollTop = scrollY
+      }
     }
   }, [])
 
@@ -175,10 +210,11 @@ export default function ShareCard({
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        // Above the bottom nav (100). Portaled to <body> so .app-main's
-        // -webkit-overflow-scrolling: touch cannot trap this overlay inside
-        // the scroll pane — otherwise the nav paints over Share text stats.
-        zIndex: 300,
+        // Above bottom nav (100) and Coach FAB (420). Portaled to <body> so
+        // .app-main's -webkit-overflow-scrolling: touch cannot trap this
+        // overlay inside the scroll pane — otherwise the nav paints over
+        // Share text stats. body.share-overlay-open also hides the FAB.
+        zIndex: 450,
         paddingTop: 'max(24px, env(safe-area-inset-top))',
         paddingLeft: '24px',
         paddingRight: '24px',
