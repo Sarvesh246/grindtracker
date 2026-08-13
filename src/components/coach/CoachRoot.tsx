@@ -7,18 +7,20 @@ import CoachFab from './CoachFab'
 import CoachSheet from './CoachSheet'
 
 /**
- * Authenticated-shell coach host. Hidden during ActiveWorkout
- * (`/log?day=…`) — same gate as BottomNav.
+ * Authenticated-shell coach host.
+ *
+ * Mid-workout (`/log?day=…`): stay mounted (sheet can open via Ask Coach /
+ * `requestOpenCoach`) but hide the default FAB — same route gate as BottomNav
+ * for chrome density, without unmounting Coach entirely.
  */
 function CoachGate() {
   const pathname = usePathname()
   const params = useSearchParams()
-
-  if (pathname === '/log' && params.get('day')) return null
+  const workoutSlim = pathname === '/log' && !!params.get('day')
 
   return (
-    <CoachProvider>
-      <CoachFab />
+    <CoachProvider workoutSlim={workoutSlim}>
+      {!workoutSlim ? <CoachFab /> : null}
       <CoachSheet />
     </CoachProvider>
   )

@@ -4,6 +4,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -18,6 +19,12 @@ import {
   type CoachProposalView,
 } from '@/lib/coach'
 import { parseCoachChatStreamLine, rehydrateCoachNdjson, shouldParseCoachNdjson, looksLikeCoachNdjson } from '@/lib/coach/actions'
+import {
+  bindOpenCoachWindowEvent,
+  subscribeOpenCoach,
+  type OpenCoachDetail,
+} from '@/lib/coach/openCoachBus'
+import type { CoachChipHints } from '@/lib/coach/starterChips'
 import { titleFromMessage } from '@/lib/coach/conversations'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { localDateKey } from '@/lib/utils/formatting'
@@ -57,12 +64,16 @@ type CoachContextValue = {
   quota: CoachQuotaState | null
   configured: boolean | null
   quotaLoaded: boolean
+  /** Lightweight empty-state chip context from GET /api/coach/chat. */
+  chipHints: CoachChipHints | null
+  /** Mid-workout: FAB hidden; prefer compact sheet. */
+  workoutSlim: boolean
   conversations: CoachConversationSummary[]
   activeConversationId: string | null
   historyOpen: boolean
   fabRef: React.RefObject<HTMLButtonElement | null>
   setDock: (dock: CoachDockId) => void
-  openCoach: () => void
+  openCoach: (detail?: OpenCoachDetail) => void
   closeCoach: () => void
   expandToPage: () => void
   setSize: (size: CoachSheetSize) => void
@@ -122,7 +133,14 @@ function uid() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
 
-export function CoachProvider({ children }: { children: ReactNode }) {
+export function CoachProvider({
+  children,
+  workoutSlim = false,
+}: {
+  children: ReactNode
+  /** Active workout route — hide FAB chrome; still host the sheet. */
+  workoutSlim?: boolean
+}) {
   const { unitLabel } = useUnit()
   const router = useRouter()
   const [open, setOpen] = useState(false)
@@ -138,6 +156,7 @@ export function CoachProvider({ children }: { children: ReactNode }) {
   const [quota, setQuota] = useState<CoachQuotaState | null>(null)
   const [configured, setConfigured] = useState<boolean | null>(null)
   const [quotaLoaded, setQuotaLoaded] = useState(false)
+  const [chipHints, setChipHints] = useState<CoachChipHints | null>(null)
   const [conversations, setConversations] = useState<CoachConversationSummary[]>(
     [],
   )
@@ -147,6 +166,7 @@ export function CoachProvider({ children }: { children: ReactNode }) {
   const [historyOpen, setHistoryOpen] = useState(false)
   const fabRef = useRef<HTMLButtonElement | null>(null)
   const openedOnce = useRef(false)
+  const sendMessageRef = useRef<(text: string) => Promise<void>>(async () => {})
 
   const setDock = useCallback((next: CoachDockId) => {
     persistDock(next)
@@ -159,6 +179,11 @@ export function CoachProvider({ children }: { children: ReactNode }) {
         quota?: CoachQuotaState
         configured?: boolean
         error?: string
+        chipHints?: {
+          has_active_session?: boolean
+          next_day?: string | null
+          last_pr_exercise?: string | null
+        }
       }
       if (!res.ok) {
         if (res.status === 503) {
@@ -172,6 +197,13 @@ export function CoachProvider({ children }: { children: ReactNode }) {
         return
       }
       if (data.quota) setQuota(data.quota)
+      if (data.chipHints) {
+        setChipHints({
+          hasActiveSession: !!data.chipHints.has_active_session,
+          nextDay: data.chipHints.next_day ?? null,
+          lastPrExercise: data.chipHints.last_pr_exercise ?? null,
+        })
+      }
       setConfigured(data.configured ?? true)
       setQuotaLoaded(true)
     } catch {
@@ -193,20 +225,43 @@ export function CoachProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const openCoach = useCallback(() => {
-    setOpen(true)
-    setSize('compact')
-    setHistoryOpen(false)
-    setError(null)
-    if (!openedOnce.current) {
-      openedOnce.current = true
-      void refreshQuota()
-      void refreshConversations()
-    } else {
-      if (!quotaLoaded) void refreshQuota()
-      void refreshConversations()
+  const openCoach = useCallback(
+    (detail: OpenCoachDetail = {}) => {
+      setOpen(true)
+      // Mid-workout Ask Coach always lands compact; callers may still request page.
+      setSize(
+        detail.size === 'page' && !workoutSlim ? 'page' : 'compact',
+      )
+      setHistoryOpen(false)
+      setError(null)
+      if (!openedOnce.current) {
+        openedOnce.current = true
+        void refreshQuota()
+        void refreshConversations()
+      } else {
+        if (!quotaLoaded) void refreshQuota()
+        void refreshConversations()
+      }
+      const msg = detail.message?.trim()
+      if (msg) {
+        queueMicrotask(() => {
+          void sendMessageRef.current(msg)
+        })
+      }
+    },
+    [quotaLoaded, refreshQuota, refreshConversations, workoutSlim],
+  )
+
+  useEffect(() => {
+    const unbind = bindOpenCoachWindowEvent()
+    const unsub = subscribeOpenCoach(detail => {
+      openCoach(detail)
+    })
+    return () => {
+      unbind()
+      unsub()
     }
-  }, [quotaLoaded, refreshQuota, refreshConversations])
+  }, [openCoach])
 
   const closeCoach = useCallback(() => {
     // Blur the composer before unmount so iOS doesn't leave the layout
@@ -864,6 +919,8 @@ export function CoachProvider({ children }: { children: ReactNode }) {
     [streaming, router],
   )
 
+  sendMessageRef.current = sendMessage
+
   const value = useMemo<CoachContextValue>(
     () => ({
       open,
@@ -875,6 +932,8 @@ export function CoachProvider({ children }: { children: ReactNode }) {
       quota,
       configured,
       quotaLoaded,
+      chipHints,
+      workoutSlim,
       conversations,
       activeConversationId,
       historyOpen,
@@ -904,6 +963,8 @@ export function CoachProvider({ children }: { children: ReactNode }) {
       quota,
       configured,
       quotaLoaded,
+      chipHints,
+      workoutSlim,
       conversations,
       activeConversationId,
       historyOpen,

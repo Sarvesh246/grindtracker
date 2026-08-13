@@ -62,3 +62,10 @@ export {
   titleFromMessage,
   type CoachConversationSummary,
 } from './conversations'
+
+export {
+  requestOpenCoach,
+  GRIND_OPEN_COACH_EVENT,
+  type OpenCoachDetail,
+} from './openCoachBus'
+export { coachStarterChips, type CoachChipHints } from './starterChips'

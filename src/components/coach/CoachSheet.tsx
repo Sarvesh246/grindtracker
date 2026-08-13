@@ -11,7 +11,9 @@ import {
   type KeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react'
+import { usePathname, useSearchParams } from 'next/navigation'
 import { COACH_MAX_MESSAGE_CHARS } from '@/lib/coach'
+import { coachStarterChips } from '@/lib/coach/starterChips'
 import { useMotionPref } from '@/lib/contexts/MotionContext'
 import {
   THEME_COLOR,
@@ -50,12 +52,6 @@ import {
 } from './sheetMorph'
 import { useCoach } from './CoachProvider'
 
-const CHIPS = [
-  "How's my streak?",
-  'Recent PRs?',
-  'What did I do last workout?',
-  'Am I progressing?',
-] as const
 
 /** Matches `.coach-sheet--closing` / backdrop fade duration */
 const EXIT_MS = 560
@@ -257,6 +253,8 @@ export default function CoachSheet() {
     error,
     quota,
     configured,
+    chipHints,
+    workoutSlim,
     historyOpen,
     closeCoach,
     expandToPage,
@@ -268,6 +266,16 @@ export default function CoachSheet() {
     openHistory,
     closeHistory,
   } = useCoach()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const inWorkout =
+    workoutSlim || (pathname === '/log' && !!searchParams.get('day'))
+  const chips = coachStarterChips({
+    inWorkout,
+    hasActiveSession: chipHints?.hasActiveSession,
+    nextDay: chipHints?.nextDay,
+    lastPrExercise: chipHints?.lastPrExercise,
+  })
   const { reduceMotion } = useMotionPref()
   const { theme } = useTheme()
   const {
@@ -1685,7 +1693,9 @@ export default function CoachSheet() {
             {empty ? (
               <div className="coach-sheet__empty">
                 <p className="coach-sheet__empty-line">
-                  Ask about streaks, PRs, or recent workouts.
+                  {inWorkout
+                    ? 'Ask about weights, skips, or this session.'
+                    : 'Ask about streaks, PRs, or recent workouts.'}
                 </p>
                 <p className="coach-sheet__disclaimer">
                   Not medical advice. Uses your GRIND log.
@@ -1707,7 +1717,7 @@ export default function CoachSheet() {
                   </div>
                 ) : (
                   <div className="coach-sheet__chips">
-                    {CHIPS.map(chip => (
+                    {chips.map(chip => (
                       <button
                         key={chip}
                         type="button"

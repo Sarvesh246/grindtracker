@@ -135,6 +135,13 @@ export interface CoachContext {
     day_type: string
     started_at: string
     logged_working_sets: number
+    /** Day catalog + any logged exercises; lean per-exercise progress. */
+    exercises: {
+      name: string
+      working_sets: number
+      last_weight_lbs: number | null
+      last_reps: number | null
+    }[]
   } | null
   photos: {
     group_count: number
@@ -519,16 +526,91 @@ export async function buildCoachContext(
 
   let active_session: CoachContext['active_session'] = null
   if (activeRow) {
-    const { count } = await supabase
+    const { data: activeLogRows } = await supabase
       .from('session_logs')
-      .select('id', { count: 'exact', head: true })
+      .select(
+        'weight, reps, is_warmup, is_skipped, created_at, exercises(name)',
+      )
       .eq('session_id', activeRow.id)
-      .eq('is_skipped', false)
-      .not('weight', 'is', null)
+      .order('created_at', { ascending: true })
+
+    type ActiveLog = {
+      weight: number | null
+      reps: number | null
+      is_warmup: boolean | null
+      is_skipped: boolean | null
+      created_at: string
+      exercises: LogRow['exercises']
+    }
+
+    type ActiveExAcc = {
+      name: string
+      working_sets: number
+      last_weight_lbs: number | null
+      last_reps: number | null
+      order: number
+    }
+
+    const byName = new Map<string, ActiveExAcc>()
+    let logged_working_sets = 0
+    let order = 0
+
+    // Seed with today's catalog so the model sees planned exercises, not only
+    // ones already logged (helps "what to skip" / mid-session advice).
+    for (const e of activeExercises.filter(
+      x => x.day_type === activeRow.day_type,
+    )) {
+      if (byName.has(e.name)) continue
+      byName.set(e.name, {
+        name: e.name,
+        working_sets: 0,
+        last_weight_lbs: null,
+        last_reps: null,
+        order: e.sort_order,
+      })
+    }
+
+    for (const log of (activeLogRows ?? []) as ActiveLog[]) {
+      const name = exerciseName(log.exercises)
+      let entry = byName.get(name)
+      if (!entry) {
+        entry = {
+          name,
+          working_sets: 0,
+          last_weight_lbs: null,
+          last_reps: null,
+          // Logged-only extras (swaps) after catalog order.
+          order: 10_000 + order++,
+        }
+        byName.set(name, entry)
+      }
+      if (log.is_skipped) continue
+      if (log.weight == null) continue
+      if (!log.is_warmup) {
+        logged_working_sets += 1
+        entry.working_sets += 1
+        entry.last_weight_lbs = log.weight
+        entry.last_reps = log.reps
+      } else if (entry.last_weight_lbs == null) {
+        // Warm-up-only so far — still useful as a last-seen load.
+        entry.last_weight_lbs = log.weight
+        entry.last_reps = log.reps
+      }
+    }
+
     active_session = {
       day_type: activeRow.day_type,
       started_at: activeRow.started_at,
-      logged_working_sets: count ?? 0,
+      logged_working_sets,
+      exercises: [...byName.values()]
+        .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name))
+        .slice(0, 24)
+        .map(({ name, working_sets, last_weight_lbs, last_reps }) => ({
+          name,
+          working_sets,
+          last_weight_lbs,
+          last_reps,
+        })),
     }
   }
 
