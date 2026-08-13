@@ -83,9 +83,17 @@ type PhotoSummary = {
   thumb: string | null
 }
 
+function dayRank(dayType: string): number {
+  return DAY_ORDER[dayType] ?? 9
+}
+
+function orderedDayTypes(exercises: Exercise[]): string[] {
+  return [...new Set(exercises.map(e => e.day_type))].sort((a, b) => dayRank(a) - dayRank(b))
+}
+
 function sortExercises(data: Exercise[]): Exercise[] {
   return [...data].sort((a, b) => {
-    const dayDiff = (DAY_ORDER[a.day_type] ?? 0) - (DAY_ORDER[b.day_type] ?? 0)
+    const dayDiff = dayRank(a.day_type) - dayRank(b.day_type)
     if (dayDiff !== 0) return dayDiff
     return a.sort_order - b.sort_order
   })
@@ -210,21 +218,21 @@ export default function ProgressPage() {
     if (exercises.length === 0) return
     if (selectedId && exercises.some(e => e.id === selectedId)) {
       if (!selectedDay) {
-        // Restore the day pill to match a cached exercise selection.
+        // Keep the day pill in sync if an exercise is already chosen.
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setSelectedDay(exercises.find(e => e.id === selectedId)?.day_type ?? null)
       }
       return
     }
+    // Always land on the first day pill (Push, then Pull, Legs, then custom).
+    // Metric is the only selection restored across visits — picking another
+    // day is what the top row is for.
     const saved = getUiState<ProgressSelection>(CACHE_KEYS.progressSelection)
-    if (saved?.selectedId && exercises.some(e => e.id === saved.selectedId)) {
-      setSelectedId(saved.selectedId)
-      setSelectedDay(saved.selectedDay ?? exercises.find(e => e.id === saved.selectedId)?.day_type ?? null)
-      if (saved.metric) setMetric(saved.metric)
-      return
-    }
-    setSelectedId(exercises[0].id)
-    setSelectedDay(exercises[0].day_type)
+    if (saved?.metric) setMetric(saved.metric)
+    const firstDay = orderedDayTypes(exercises)[0] ?? exercises[0].day_type
+    const firstEx = exercises.find(e => e.day_type === firstDay) ?? exercises[0]
+    setSelectedId(firstEx.id)
+    setSelectedDay(firstDay)
   }, [exercises, selectedId, selectedDay])
 
   useEffect(() => {
@@ -368,9 +376,7 @@ export default function ProgressPage() {
   }, [rawLogs, metric, unitLabel, recomputeForMetric])
 
   const selectedExercise = exercises.find(e => e.id === selectedId)
-  const dayTypes = [...new Set(exercises.map(e => e.day_type))].sort(
-    (a, b) => (DAY_ORDER[a] ?? 9) - (DAY_ORDER[b] ?? 9),
-  )
+  const dayTypes = orderedDayTypes(exercises)
   const exercisesForDay = selectedDay ? exercises.filter(e => e.day_type === selectedDay) : exercises
 
   // Two-step walkthrough (hook must run before the early returns below). Only

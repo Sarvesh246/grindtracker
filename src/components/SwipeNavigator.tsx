@@ -82,11 +82,16 @@ export default function SwipeNavigator({ children }: { children: React.ReactNode
     // starts on a sheet's button can't be read as a page-swipe.
     // Horizontal pill/tab strips opt into pan-x (and often .scrollbar-hide);
     // without excluding them, a day-pill or category-tab drag becomes a page swipe.
-    if (
-      target.closest(
-        'input, textarea, select, [contenteditable="true"], .recharts-wrapper, [role="dialog"], [role="alertdialog"], [data-swipe-ignore], .scrollbar-hide',
-      )
-    ) {
+    //
+    // iOS haptic overlays are a real <input switch> covering [data-haptic]
+    // hosts. Treating that input like a text field blocked tab swipes that
+    // started on a button (vertical scroll is JS-forwarded by the overlay;
+    // horizontal page-swipe has to come from this navigator). Still honor
+    // strip/dialog/chart exclusions so a day-pill drag scrolls the row.
+    const ignoreSel = target.closest('[data-haptic-overlay]')
+      ? '.recharts-wrapper, [role="dialog"], [role="alertdialog"], [data-swipe-ignore], .scrollbar-hide'
+      : 'input, textarea, select, [contenteditable="true"], .recharts-wrapper, [role="dialog"], [role="alertdialog"], [data-swipe-ignore], .scrollbar-hide'
+    if (target.closest(ignoreSel)) {
       return
     }
     dragRef.current = { startX: e.clientX, startY: e.clientY, axis: null }
