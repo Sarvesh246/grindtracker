@@ -22,7 +22,17 @@ function getYesterdayString(): string {
   return localDateKey(d)
 }
 
-type SetInput = { weight: string; reps: string }
+type SetInput = {
+  weight: string
+  reps: string
+  isWarmup: boolean
+  isSkipped: boolean
+  note: string
+}
+
+function blankSet(repsDefault: string): SetInput {
+  return { weight: '', reps: repsDefault, isWarmup: false, isSkipped: false, note: '' }
+}
 
 type ExistingSession = { id: string; day_type: string; xp_earned: number }
 
@@ -54,6 +64,8 @@ function LogPastContent() {
   const [exercises, setExercises] = useState<Exercise[]>([])
   const [setInputs, setSetInputs] = useState<Record<string, SetInput[]>>({})
   const [skippedExercises, setSkippedExercises] = useState<Set<string>>(new Set())
+  /** Keys `${exerciseId}:${setIdx}` — which note drawers are open. */
+  const [openNotes, setOpenNotes] = useState<Set<string>>(new Set())
   const [loadingExercises, setLoadingExercises] = useState(false)
   const [checkingDate, setCheckingDate] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -108,6 +120,7 @@ function LogPastContent() {
     setExercises([])
     setSetInputs({})
     setSkippedExercises(new Set())
+    setOpenNotes(new Set())
     setDuplicateWarning(false)
     setConfirmDelete(false)
     existingSessionRef.current = null
@@ -164,11 +177,19 @@ function LogPastContent() {
       .order('sort_order', { ascending: true })
 
     let existingLogsError = null
-    let existingLogs: { exercise_id: string; set_number: number; weight: number | null; reps: number | null }[] = []
+    let existingLogs: {
+      exercise_id: string
+      set_number: number
+      weight: number | null
+      reps: number | null
+      is_warmup: boolean | null
+      is_skipped: boolean | null
+      note: string | null
+    }[] = []
     if (existingSessionId) {
       const res = await supabase
         .from('session_logs')
-        .select('exercise_id, set_number, weight, reps')
+        .select('exercise_id, set_number, weight, reps, is_warmup, is_skipped, note')
         .eq('session_id', existingSessionId)
       existingLogsError = res.error
       existingLogs = res.data ?? []
@@ -211,30 +232,48 @@ function LogPastContent() {
     }
 
     const inputs: Record<string, SetInput[]> = {}
+    const noteKeys = new Set<string>()
     for (const ex of exs) {
       const length = Math.max(ex.sets_target, maxSetByExercise.get(ex.id) ?? 0)
-      inputs[ex.id] = Array.from({ length }, () => ({
-        weight: '',
-        reps: parseDefaultReps(ex.reps_target),
-      }))
+      const repsDefault = parseDefaultReps(ex.reps_target)
+      inputs[ex.id] = Array.from({ length }, () => blankSet(repsDefault))
     }
 
     for (const log of existingLogs) {
       if (inputs[log.exercise_id]?.[log.set_number - 1]) {
+        const skipped = !!log.is_skipped
         inputs[log.exercise_id][log.set_number - 1] = {
-          weight: log.weight !== null ? fmt(log.weight) : '',
-          reps: log.reps !== null ? String(log.reps) : '',
+          weight: !skipped && log.weight !== null ? fmt(log.weight) : '',
+          reps: !skipped && log.reps !== null ? String(log.reps) : '',
+          isWarmup: !skipped && !!log.is_warmup,
+          isSkipped: skipped,
+          note: log.note ?? '',
         }
+        if (log.note) noteKeys.add(`${log.exercise_id}:${log.set_number - 1}`)
+      }
+    }
+
+    // Collapse an exercise to the exercise-level SKIPPED chip when every
+    // logged slot is a skip marker (matches live ActiveWorkout exercise skip).
+    const autoSkipped = new Set<string>()
+    for (const ex of exs) {
+      const sets = inputs[ex.id] ?? []
+      const logged = existingLogs.filter(l => l.exercise_id === ex.id)
+      if (logged.length > 0 && logged.every(l => l.is_skipped) && sets.every(s => s.isSkipped)) {
+        autoSkipped.add(ex.id)
       }
     }
 
     setSetInputs(inputs)
+    setSkippedExercises(autoSkipped)
+    setOpenNotes(noteKeys)
     setLoadingExercises(false)
   }
 
   function handleDayTypeSelect(type: string) {
     setDuplicateWarning(false)
     setSkippedExercises(new Set())
+    setOpenNotes(new Set())
     setConfirmDelete(false)
     setSelectedDayType(type)
     const existing = sessionsOnDateRef.current.find(s => s.day_type === type) ?? null
@@ -243,10 +282,65 @@ function LogPastContent() {
     loadExercises(type, existing?.id)
   }
 
-  function updateSet(exerciseId: string, setIdx: number, field: 'weight' | 'reps', value: string) {
+  function updateSet(exerciseId: string, setIdx: number, field: 'weight' | 'reps' | 'note', value: string) {
     setSetInputs(prev => {
       const updated = prev[exerciseId].map((s, i) => i === setIdx ? { ...s, [field]: value } : s)
       return { ...prev, [exerciseId]: updated }
+    })
+  }
+
+  function toggleWarmup(exerciseId: string, setIdx: number) {
+    setSetInputs(prev => {
+      const updated = prev[exerciseId].map((s, i) => {
+        if (i !== setIdx || s.isSkipped) return s
+        return { ...s, isWarmup: !s.isWarmup }
+      })
+      return { ...prev, [exerciseId]: updated }
+    })
+  }
+
+  function toggleSetSkip(exerciseId: string, setIdx: number) {
+    setSetInputs(prev => {
+      const updated = prev[exerciseId].map((s, i) => {
+        if (i !== setIdx) return s
+        if (s.isSkipped) {
+          return { ...s, isSkipped: false }
+        }
+        return { ...s, isSkipped: true, isWarmup: false, weight: '', reps: '' }
+      })
+      return { ...prev, [exerciseId]: updated }
+    })
+  }
+
+  function toggleExerciseSkip(exerciseId: string) {
+    setSkippedExercises(prev => {
+      const next = new Set(prev)
+      const skipping = !next.has(exerciseId)
+      if (skipping) next.add(exerciseId)
+      else next.delete(exerciseId)
+
+      setSetInputs(inputs => {
+        const sets = inputs[exerciseId]
+        if (!sets) return inputs
+        return {
+          ...inputs,
+          [exerciseId]: sets.map(s =>
+            skipping
+              ? { ...s, isSkipped: true, isWarmup: false, weight: '', reps: '' }
+              : { ...s, isSkipped: false },
+          ),
+        }
+      })
+      return next
+    })
+  }
+
+  function toggleNoteOpen(key: string) {
+    setOpenNotes(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
     })
   }
 
@@ -291,15 +385,33 @@ function LogPastContent() {
     const logsPayload: {
       exercise_id: string
       set_number: number
-      weight: number
-      reps: number
+      weight: number | null
+      reps: number | null
+      is_warmup: boolean
+      is_skipped: boolean
+      note: string | null
     }[] = []
 
     for (const ex of exercises) {
-      if (skippedExercises.has(ex.id)) continue
       const sets = setInputs[ex.id] ?? []
+      const exerciseSkipped = skippedExercises.has(ex.id)
       for (let i = 0; i < sets.length; i++) {
         const s = sets[i]
+        const note = s.note.trim() || null
+
+        if (exerciseSkipped || s.isSkipped) {
+          logsPayload.push({
+            exercise_id: ex.id,
+            set_number: i + 1,
+            weight: null,
+            reps: null,
+            is_warmup: false,
+            is_skipped: true,
+            note,
+          })
+          continue
+        }
+
         if (s.weight === '' || s.reps === '') continue
         const weight = fromDisplay(parseFloat(s.weight))
         const reps = parseInt(s.reps)
@@ -309,12 +421,18 @@ function LogPastContent() {
           set_number: i + 1,
           weight,
           reps,
+          is_warmup: !!s.isWarmup,
+          is_skipped: false,
+          note,
         })
       }
     }
 
-    if (logsPayload.length === 0) {
-      setError('Log at least one set with weight and reps before saving.')
+    const hasWorking = logsPayload.some(
+      l => !l.is_skipped && !l.is_warmup && l.weight !== null && l.reps !== null,
+    )
+    if (!hasWorking) {
+      setError('Log at least one working set with weight and reps before saving.')
       setSubmitting(false)
       return
     }
@@ -809,12 +927,9 @@ function LogPastContent() {
                         </span>
                       )}
                       <button
-                        onClick={() => setSkippedExercises(prev => {
-                          const next = new Set(prev)
-                          if (next.has(ex.id)) next.delete(ex.id)
-                          else next.add(ex.id)
-                          return next
-                        })}
+                        type="button"
+                        data-haptic="light"
+                        onClick={() => toggleExerciseSkip(ex.id)}
                         style={{
                           background: 'none', border: 'none', cursor: 'pointer',
                           display: 'flex', alignItems: 'center', gap: '3px',
@@ -846,83 +961,245 @@ function LogPastContent() {
                   {/* Set rows */}
                   {!skippedExercises.has(ex.id) && (
                     <div style={{ padding: '8px 0' }}>
-                      {(setInputs[ex.id] ?? []).map((s, idx) => (
-                        <div
-                          key={idx}
-                          style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 16px' }}
-                        >
-                          <span style={{
-                            fontSize: '12px', color: 'var(--text-muted)',
-                            width: '40px', flexShrink: 0,
-                            fontFamily: "'Bebas Neue', sans-serif", letterSpacing: '0.5px',
-                          }}>
-                            SET {idx + 1}
-                          </span>
-
-                          <div style={{ flex: 1, position: 'relative' }}>
-                            <input
-                              type="number"
-                              inputMode="decimal"
-                              placeholder="—"
-                              value={s.weight}
-                              onChange={e => updateSet(ex.id, idx, 'weight', e.target.value)}
+                      {(setInputs[ex.id] ?? []).map((s, idx) => {
+                        const noteKey = `${ex.id}:${idx}`
+                        const noteOpen = openNotes.has(noteKey)
+                        return (
+                        <div key={idx} style={{ opacity: s.isSkipped ? 0.55 : 1, transition: 'opacity 150ms ease' }}>
+                          <div
+                            style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px 6px 16px' }}
+                          >
+                            {/* Set label + note chevron */}
+                            <button
+                              type="button"
+                              onClick={() => toggleNoteOpen(noteKey)}
+                              aria-expanded={noteOpen}
+                              aria-label={noteOpen ? `Hide note for set ${idx + 1}` : `Show note for set ${idx + 1}`}
                               style={{
-                                width: '100%',
-                                backgroundColor: 'var(--surface-elevated)',
-                                border: '1px solid var(--border)',
-                                borderRadius: '8px',
-                                padding: '8px 36px 8px 10px',
-                                color: 'var(--text-primary)',
-                                fontSize: '16px', // ≥16px — anything smaller makes iOS auto-zoom on focus
-                                fontFamily: "'JetBrains Mono', monospace",
-                                outline: 'none',
-                                boxSizing: 'border-box',
-                                textAlign: 'right',
+                                background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                                display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px',
+                                minWidth: '36px', flexShrink: 0,
                               }}
-                              onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
-                              onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
-                            />
-                            <span style={{
-                              position: 'absolute', right: '8px', top: '50%',
-                              transform: 'translateY(-50%)', fontSize: '11px',
-                              color: 'var(--text-muted)', pointerEvents: 'none',
+                            >
+                              <span style={{
+                                fontSize: '12px', color: 'var(--text-muted)',
+                                fontFamily: "'Bebas Neue', sans-serif", letterSpacing: '0.5px',
+                                textDecoration: s.isSkipped ? 'line-through' : 'none',
+                              }}>
+                                SET {idx + 1}
+                              </span>
+                              <svg
+                                width="12" height="12" viewBox="0 0 24 24" fill="none"
+                                stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                                style={{
+                                  color: s.note ? 'var(--accent-text)' : 'var(--text-muted)',
+                                  transform: noteOpen ? 'rotate(180deg)' : 'none',
+                                  transition: 'transform 150ms ease',
+                                  marginLeft: '6px',
+                                }}
+                              >
+                                <polyline points="6 9 12 15 18 9" />
+                              </svg>
+                            </button>
+
+                            {/* Warm-up W pill — matches ActiveWorkout compact language */}
+                            <div style={{
+                              width: '36px', flexShrink: 0,
+                              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px',
                             }}>
-                              {unitLabel}
-                            </span>
+                              <button
+                                type="button"
+                                data-haptic="light"
+                                onClick={() => toggleWarmup(ex.id, idx)}
+                                disabled={s.isSkipped}
+                                aria-pressed={s.isWarmup}
+                                aria-label={s.isWarmup ? `Unmark set ${idx + 1} as warm-up` : `Mark set ${idx + 1} as warm-up`}
+                                title={s.isWarmup ? 'Warm-up set (excluded from PRs)' : 'Mark as warm-up'}
+                                style={{
+                                  position: 'relative',
+                                  width: '44px', height: '44px',
+                                  backgroundColor: 'transparent', border: 'none',
+                                  cursor: s.isSkipped ? 'default' : 'pointer',
+                                  flexShrink: 0,
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  opacity: s.isSkipped ? 0.35 : 1,
+                                }}
+                              >
+                                <span style={{
+                                  width: '28px', height: '28px',
+                                  borderRadius: '999px',
+                                  border: `1px solid ${s.isWarmup ? 'var(--accent-dim)' : 'var(--border)'}`,
+                                  backgroundColor: s.isWarmup ? 'color-mix(in srgb, var(--accent-dim) 18%, transparent)' : 'transparent',
+                                  color: s.isWarmup ? 'var(--accent-dim)' : 'var(--text-muted)',
+                                  fontFamily: "'DM Sans', sans-serif",
+                                  fontSize: '11px',
+                                  fontWeight: 700,
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                }}>
+                                  W
+                                </span>
+                              </button>
+                              {idx === 0 && (
+                                <span style={{
+                                  fontFamily: "'DM Sans', sans-serif",
+                                  fontSize: '8px', fontWeight: 600, lineHeight: 1,
+                                  letterSpacing: '0.3px', textTransform: 'uppercase',
+                                  whiteSpace: 'nowrap',
+                                  color: s.isWarmup ? 'var(--accent-dim)' : 'var(--text-muted)',
+                                }}>
+                                  warm-up
+                                </span>
+                              )}
+                            </div>
+
+                            {s.isSkipped ? (
+                              <div style={{
+                                flex: 1, minWidth: 0,
+                                display: 'flex', alignItems: 'center',
+                                height: '40px',
+                                padding: '0 10px',
+                                borderRadius: '8px',
+                                backgroundColor: 'rgba(239,68,68,0.06)',
+                                border: '1px solid rgba(239,68,68,0.2)',
+                                fontSize: '12px',
+                                color: 'var(--danger)',
+                                fontFamily: "'Bebas Neue', sans-serif",
+                                letterSpacing: '0.5px',
+                              }}>
+                                SKIPPED
+                              </div>
+                            ) : (
+                              <>
+                                <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
+                                  <input
+                                    type="number"
+                                    inputMode="decimal"
+                                    placeholder="—"
+                                    value={s.weight}
+                                    onChange={e => updateSet(ex.id, idx, 'weight', e.target.value)}
+                                    aria-label={`Weight for set ${idx + 1}`}
+                                    style={{
+                                      width: '100%',
+                                      backgroundColor: 'var(--surface-elevated)',
+                                      border: '1px solid var(--border)',
+                                      borderRadius: '8px',
+                                      padding: '8px 36px 8px 10px',
+                                      color: 'var(--text-primary)',
+                                      fontSize: '16px',
+                                      fontFamily: "'JetBrains Mono', monospace",
+                                      outline: 'none',
+                                      boxSizing: 'border-box',
+                                      textAlign: 'right',
+                                    }}
+                                    onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+                                    onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+                                  />
+                                  <span style={{
+                                    position: 'absolute', right: '8px', top: '50%',
+                                    transform: 'translateY(-50%)', fontSize: '11px',
+                                    color: 'var(--text-muted)', pointerEvents: 'none',
+                                  }}>
+                                    {unitLabel}
+                                  </span>
+                                </div>
+
+                                <div style={{ width: '68px', flexShrink: 0, position: 'relative' }}>
+                                  <input
+                                    type="number"
+                                    inputMode="numeric"
+                                    value={s.reps}
+                                    onChange={e => updateSet(ex.id, idx, 'reps', e.target.value)}
+                                    aria-label={`Reps for set ${idx + 1}`}
+                                    style={{
+                                      width: '100%',
+                                      backgroundColor: 'var(--surface-elevated)',
+                                      border: '1px solid var(--border)',
+                                      borderRadius: '8px',
+                                      padding: '8px 32px 8px 10px',
+                                      color: 'var(--text-primary)',
+                                      fontSize: '16px',
+                                      fontFamily: "'JetBrains Mono', monospace",
+                                      outline: 'none',
+                                      boxSizing: 'border-box',
+                                      textAlign: 'right',
+                                    }}
+                                    onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+                                    onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+                                  />
+                                  <span style={{
+                                    position: 'absolute', right: '7px', top: '50%',
+                                    transform: 'translateY(-50%)', fontSize: '11px',
+                                    color: 'var(--text-muted)', pointerEvents: 'none',
+                                  }}>
+                                    reps
+                                  </span>
+                                </div>
+                              </>
+                            )}
+
+                            {/* Per-set skip / unskip */}
+                            <button
+                              type="button"
+                              className="press"
+                              data-haptic="light"
+                              onClick={() => toggleSetSkip(ex.id, idx)}
+                              title={s.isSkipped ? 'Undo skip' : 'Skip this set'}
+                              aria-label={s.isSkipped ? `Undo skip on set ${idx + 1}` : `Skip set ${idx + 1}`}
+                              style={{
+                                width: '40px', height: '40px', minWidth: '40px',
+                                borderRadius: '9999px',
+                                border: `2px solid ${s.isSkipped ? 'rgba(239,68,68,0.5)' : 'var(--border)'}`,
+                                backgroundColor: s.isSkipped ? 'rgba(239,68,68,0.1)' : 'transparent',
+                                cursor: 'pointer',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                flexShrink: 0,
+                                transition: 'border-color 150ms ease, background-color 150ms ease',
+                              }}
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                                style={{ color: s.isSkipped ? 'var(--danger)' : 'var(--border-strong)' }}>
+                                <line x1="5" y1="12" x2="19" y2="12" />
+                              </svg>
+                            </button>
                           </div>
 
-                          <div style={{ width: '68px', flexShrink: 0, position: 'relative' }}>
-                            <input
-                              type="number"
-                              inputMode="numeric"
-                              value={s.reps}
-                              onChange={e => updateSet(ex.id, idx, 'reps', e.target.value)}
-                              style={{
-                                width: '100%',
-                                backgroundColor: 'var(--surface-elevated)',
-                                border: '1px solid var(--border)',
-                                borderRadius: '8px',
-                                padding: '8px 32px 8px 10px',
-                                color: 'var(--text-primary)',
-                                fontSize: '16px', // ≥16px — anything smaller makes iOS auto-zoom on focus
-                                fontFamily: "'JetBrains Mono', monospace",
-                                outline: 'none',
-                                boxSizing: 'border-box',
-                                textAlign: 'right',
-                              }}
-                              onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
-                              onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
-                            />
-                            <span style={{
-                              position: 'absolute', right: '7px', top: '50%',
-                              transform: 'translateY(-50%)', fontSize: '11px',
-                              color: 'var(--text-muted)', pointerEvents: 'none',
-                            }}>
-                              reps
-                            </span>
+                          {/* Per-set note drawer */}
+                          <div className="drawer" data-open={noteOpen}>
+                            <div>
+                              <div
+                                inert={!noteOpen}
+                                style={{ padding: '4px 16px 8px' }}
+                              >
+                                <input
+                                  type="text"
+                                  value={s.note}
+                                  onChange={e => updateSet(ex.id, idx, 'note', e.target.value)}
+                                  placeholder="Note (optional)"
+                                  maxLength={200}
+                                  aria-label={`Note for set ${idx + 1}`}
+                                  style={{
+                                    width: '100%',
+                                    backgroundColor: 'var(--surface-elevated)',
+                                    border: '1px solid var(--border)',
+                                    borderRadius: '8px',
+                                    padding: '8px 10px',
+                                    color: 'var(--text-primary)',
+                                    fontSize: '14px',
+                                    fontFamily: "'DM Sans', sans-serif",
+                                    outline: 'none',
+                                    boxSizing: 'border-box',
+                                  }}
+                                  onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+                                  onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+                                />
+                              </div>
+                            </div>
                           </div>
                         </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   )}
                 </div>
