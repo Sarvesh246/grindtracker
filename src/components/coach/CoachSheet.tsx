@@ -1531,6 +1531,7 @@ export default function CoachSheet() {
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        tabIndex={-1}
         style={{
           transformOrigin: origin,
           transition: sheetTransition,

@@ -202,7 +202,7 @@ begin
     'total_workouts', v_row.total_workouts,
     'pr_count',       (select count(*) from session_logs
                         where session_id = v_session and is_pr = true),
-    'is_edit',        v_editing or true
+    'is_edit',        v_editing
   );
 end;
 $$;

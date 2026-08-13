@@ -25,7 +25,7 @@ export default async function HomePage() {
   const [
     { data: profile },
     { data: stats },
-    { data: activeRow },
+    { data: activeRows },
     { data: lastSession },
     { data: dayTypeRows },
     { data: rotationRow },
@@ -44,8 +44,7 @@ export default async function HomePage() {
       .eq('user_id', user.id)
       .is('completed_at', null)
       .order('started_at', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
+      .limit(10),
     supabase
       .from('sessions')
       .select('*')
@@ -77,23 +76,28 @@ export default async function HomePage() {
     : fullName.split(/\s+/)[0] || profile?.username || 'there'
 
   // Working-set count only (skip markers never count toward save eligibility).
-  let activeSession:
-    | { id: string; day_type: string; started_at: string; loggedSets: number }
-    | null = null
-  if (activeRow) {
+  // Fetch every open session (cap 10) so overnight orphans aren't hidden when
+  // another day-type session is also incomplete.
+  const activeSessions: {
+    id: string
+    day_type: string
+    started_at: string
+    loggedSets: number
+  }[] = []
+  for (const row of activeRows ?? []) {
     const { count } = await supabase
       .from('session_logs')
       .select('id', { count: 'exact', head: true })
-      .eq('session_id', activeRow.id)
+      .eq('session_id', row.id)
       .eq('is_skipped', false)
       .eq('is_warmup', false)
       .not('weight', 'is', null)
-    activeSession = {
-      id: activeRow.id,
-      day_type: activeRow.day_type,
-      started_at: activeRow.started_at,
+    activeSessions.push({
+      id: row.id,
+      day_type: row.day_type,
+      started_at: row.started_at,
       loggedSets: count ?? 0,
-    }
+    })
   }
 
   let lastSessionLogs: { exercise_name: string; weight: number | null; sets: number; reps: number | null }[] = []
@@ -181,7 +185,7 @@ export default async function HomePage() {
   // and recent activity — never the real ones. Day/rotation/exercise
   // structure (nextDay, rotationSeq, lastTrainedByDay, rest days) stays real:
   // it's app configuration, not personal identity or performance data.
-  // activeSession is forced null so the resume banner (and its real writes,
+  // activeSessions is forced empty so the resume banner (and its real writes,
   // see HomeDashboard.handleSaveActive/handleExitActive) never renders.
   return (
     <HomeDashboard
@@ -194,7 +198,7 @@ export default async function HomePage() {
           .filter(r => r.effective_from && r.effective_from !== '1970-01-01')
           .map(r => [r.day_of_week, r.effective_from as string]),
       )}
-      activeSession={demoMode ? null : activeSession}
+      activeSessions={demoMode ? [] : activeSessions}
       lastSession={demoMode ? demoLastSession() : (lastSession ?? null)}
       lastSessionLogs={demoMode ? DEMO_LAST_SESSION_LOGS : lastSessionLogs}
       nextDay={nextDay}

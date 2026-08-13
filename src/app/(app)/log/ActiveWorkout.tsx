@@ -2132,8 +2132,11 @@ export default function ActiveWorkout({ day }: { day: string }) {
     preferred: ['top', 'bottom'],
   })
   // The rest-timer hint is the one exception that may show during a countdown.
+  // Suppress during REST DONE flash (adjust controls unmounted).
   const hintRest = useFeatureTooltip('aw-rest-adjust', {
-    when: restTimer.active, suppressed: anyModalOpen, getEl: () => onboardTarget('aw-rest-adjust'),
+    when: restTimer.active && restTimer.remainingMs > 0,
+    suppressed: anyModalOpen,
+    getEl: () => onboardTarget('aw-rest-adjust'),
     body: 'Adjust your rest on the fly, or tap the timer to set a new default for this exercise.',
     preferred: ['top'],
   })
@@ -3960,7 +3963,7 @@ function SetRow({
             fontWeight: 500,
             textDecoration: logEntry.skipped ? 'line-through' : 'none',
           }}>
-            {isBonus ? `+${setNumber - setsTarget}` : `SET ${setNumber}`}
+            {isBonus && setsTarget > 0 ? `+${setNumber - setsTarget}` : `SET ${setNumber}`}
           </span>
           <svg
             width="12" height="12" viewBox="0 0 24 24" fill="none"

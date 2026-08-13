@@ -90,7 +90,7 @@ interface ActiveSession {
 
 interface Props {
   stats: UserStats | null
-  activeSession: ActiveSession | null
+  activeSessions: ActiveSession[]
   lastSession: Session | null
   lastSessionLogs: { exercise_name: string; weight: number | null; sets: number; reps: number | null }[]
   nextDay: string
@@ -153,7 +153,7 @@ export default function HomeDashboard({
   // `userId` is gone: the stale-streak reset now calls the `refresh_stats` RPC,
   // which resolves the caller from the session rather than a passed-in id.
   stats,
-  activeSession,
+  activeSessions,
   lastSession,
   lastSessionLogs,
   nextDay,
@@ -176,7 +176,7 @@ export default function HomeDashboard({
   // stale-streak refresh_stats) becomes a local no-op in Demo Mode — see
   // src/lib/demoMode/demoSafeSupabase.ts. The resume-active-session banner
   // (handleSaveActive/handleExitActive) never even renders in Demo Mode since
-  // home/page.tsx always passes activeSession={null} there.
+  // home/page.tsx always passes activeSessions={[]} there.
   const supabase = useMemo(
     () => (demoMode ? demoSafeClient(createClient()) : createClient()),
     [demoMode],
@@ -327,31 +327,28 @@ export default function HomeDashboard({
   }
 
   // ── Active-session controls (resume / save / discard) ──────────────────────
-  // Surface ANY in-progress session — today's or a prior-day orphan left open
-  // overnight. start_or_resume_session resumes by day_type regardless of when
-  // it started, so Resume continues the same row rather than forking a fresh
-  // one. Stale sessions get slightly different chrome ("Incomplete").
-  const activeIsToday = useMemo(() => {
-    if (!activeSession) return false
-    const started = new Date(activeSession.started_at)
+  // Surface EVERY in-progress session — today's and prior-day orphans. Multiple
+  // day-types can be open at once; hiding all but the newest left orphans
+  // unreachable from Home.
+  function sessionIsToday(startedAt: string): boolean {
+    const started = new Date(startedAt)
     started.setHours(0, 0, 0, 0)
     const today = new Date()
     today.setHours(0, 0, 0, 0)
     return started.getTime() === today.getTime()
-  }, [activeSession])
+  }
 
   // Defer resume chrome to after mount so local-clock "today?" labels don't
   // disagree across the SSR/client hydration boundary.
   const [mounted, setMounted] = useState(false)
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setMounted(true) }, [])
-  const showResume = !!activeSession && mounted
+  const showResume = activeSessions.length > 0 && mounted
   // Hide start/welcome CTAs whenever an open session exists (even before mount).
-  const noActiveForUi = !activeSession
+  const noActiveForUi = activeSessions.length === 0
 
-  const [savingActive, setSavingActive] = useState(false)
-  const [exiting, setExiting] = useState(false)
-  const [exitConfirm, setExitConfirm] = useState(false)
+  const [busySessionId, setBusySessionId] = useState<string | null>(null)
+  const [discardConfirmId, setDiscardConfirmId] = useState<string | null>(null)
   const [actionToast, setActionToast] = useState<string | null>(null)
   const [skippingDay, setSkippingDay] = useState(false)
 
@@ -360,22 +357,18 @@ export default function HomeDashboard({
     setTimeout(() => setActionToast(null), 4000)
   }
 
-  function handleResume() {
-    if (!activeSession) return
-    router.push(`/log?day=${activeSession.day_type}`)
+  function handleResume(session: ActiveSession) {
+    router.push(`/log?day=${session.day_type}`)
   }
 
-  // Quick-save from the dashboard. This is the same authoritative finish path as
-  // ActiveWorkout — `complete_session` derives XP/streak/PRs server-side — plus
-  // the two best-effort follow-ups a live finish also does (advance the rotation
-  // pointer, award badges). It skips the celebratory modal but still writes the
-  // 10-minute undo token so a mis-tap can be reversed via FinishUndoBanner.
-  async function handleSaveActive() {
-    if (!activeSession || savingActive) return
-    if (activeSession.loggedSets === 0) return
-    setSavingActive(true)
-    const dayType = activeSession.day_type
-    const sessionId = activeSession.id
+  // Quick-save from the dashboard. Same authoritative finish path as
+  // ActiveWorkout, without the celebratory modal — still writes the 10-minute
+  // undo token for FinishUndoBanner.
+  async function handleSaveActive(session: ActiveSession) {
+    if (busySessionId || session.loggedSets === 0) return
+    setBusySessionId(session.id)
+    const dayType = session.day_type
+    const sessionId = session.id
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
@@ -390,7 +383,7 @@ export default function HomeDashboard({
         p_session_id: sessionId,
         p_local_date: localDateKey(new Date()),
         p_note: null,
-        p_start_hour: new Date(activeSession.started_at).getHours(),
+        p_start_hour: new Date(session.started_at).getHours(),
       })
       if (error || !data) throw error ?? new Error('Save failed')
       const result = data as CompleteSessionResult
@@ -446,32 +439,34 @@ export default function HomeDashboard({
         )
       } catch { /* non-critical */ }
 
+      setDiscardConfirmId(null)
+      flashToast('Workout saved')
       markAppDataStale('/home')
       router.refresh()
     } catch {
       flashToast('Could not save workout. Check your connection and try again.')
     } finally {
-      setSavingActive(false)
+      setBusySessionId(null)
     }
   }
 
-  async function handleExitActive() {
-    if (!activeSession || exiting) return
-    setExiting(true)
+  async function handleExitActive(session: ActiveSession) {
+    if (busySessionId) return
+    setBusySessionId(session.id)
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
-      const result = await deleteIncompleteSessions(supabase, user.id, activeSession.day_type)
+      const result = await deleteIncompleteSessions(supabase, user.id, session.day_type)
       if (!result.ok) throw new Error(result.error)
-      clearQueuedOpsForSession(activeSession.id)
-      setExitConfirm(false)
+      clearQueuedOpsForSession(session.id)
+      setDiscardConfirmId(null)
       flashToast('Workout discarded')
       markAppDataStale('/home')
       router.refresh()
     } catch {
       flashToast('Could not discard. Try again.')
     } finally {
-      setExiting(false)
+      setBusySessionId(null)
     }
   }
 
@@ -585,7 +580,7 @@ export default function HomeDashboard({
   // Don't fire over the resume/exit flow; wait for mount so the active-session
   // state is real.
   const homeTour = useTour('home', homeSteps, {
-    active: mounted && noActiveForUi && !exitConfirm,
+    active: mounted && noActiveForUi && !discardConfirmId,
   })
 
   return (
@@ -963,16 +958,17 @@ export default function HomeDashboard({
         </div>
       )}
 
-      {/* Resume block — takes the primary-action slot whenever a workout is in
-          progress today. One tap continues it; below, a quick Save banks it (same
-          server-authoritative finish as ActiveWorkout) and Exit discards it, each
-          without having to re-enter the session first. */}
-      {showResume && activeSession && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      {/* Resume blocks — one card per open session (today + overnight orphans). */}
+      {showResume && activeSessions.map(session => {
+        const today = sessionIsToday(session.started_at)
+        const busy = busySessionId === session.id
+        const confirming = discardConfirmId === session.id
+        return (
+        <div key={session.id} style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '10px' }}>
           <button
             data-haptic="medium"
-            onClick={handleResume}
-            title={DAY_MUSCLES[activeSession.day_type]}
+            onClick={() => handleResume(session)}
+            title={DAY_MUSCLES[session.day_type]}
             style={{
               position: 'relative',
               width: '100%',
@@ -1011,7 +1007,7 @@ export default function HomeDashboard({
                   fontSize: '10px', fontWeight: 700, letterSpacing: '1.5px',
                   textTransform: 'uppercase', color: 'var(--on-accent)', opacity: 0.75,
                 }}>
-                  {activeIsToday ? 'In progress' : 'Incomplete'}
+                  {today ? 'In progress' : 'Incomplete'}
                 </span>
               </span>
               <span style={{
@@ -1020,7 +1016,7 @@ export default function HomeDashboard({
                 letterSpacing: '1px',
                 lineHeight: 1,
               }}>
-                RESUME {dayLabel(activeSession.day_type)}
+                RESUME {dayLabel(session.day_type)}
               </span>
               <span style={{
                 fontSize: '12px',
@@ -1029,13 +1025,13 @@ export default function HomeDashboard({
                 opacity: 0.7,
                 lineHeight: 1.2,
               }}>
-                {activeIsToday
-                  ? (activeSession.loggedSets > 0
-                    ? `${activeSession.loggedSets} set${activeSession.loggedSets === 1 ? '' : 's'} logged`
+                {today
+                  ? (session.loggedSets > 0
+                    ? `${session.loggedSets} set${session.loggedSets === 1 ? '' : 's'} logged`
                     : 'No sets logged yet')
-                  : `${formatShortDate(activeSession.started_at)}${
-                      activeSession.loggedSets > 0
-                        ? ` · ${activeSession.loggedSets} set${activeSession.loggedSets === 1 ? '' : 's'}`
+                  : `${formatShortDate(session.started_at)}${
+                      session.loggedSets > 0
+                        ? ` · ${session.loggedSets} set${session.loggedSets === 1 ? '' : 's'}`
                         : ' · no sets yet'
                     }`}
               </span>
@@ -1043,15 +1039,13 @@ export default function HomeDashboard({
             <span style={{ flexShrink: 0 }}><ChevronRight color="var(--on-accent)" /></span>
           </button>
 
-          {/* Save / Exit row — collapses into a discard confirmation when Exit is
-              tapped, so a logged workout can't be thrown away on a single mis-tap. */}
-          {!exitConfirm ? (
+          {!confirming ? (
             <div style={{ display: 'flex', gap: '10px' }}>
               <button
                 data-haptic="medium"
-                onClick={handleSaveActive}
-                disabled={savingActive || exiting || activeSession.loggedSets === 0}
-                title={activeSession.loggedSets === 0 ? 'Log a set before saving' : undefined}
+                onClick={() => handleSaveActive(session)}
+                disabled={busy || session.loggedSets === 0}
+                title={session.loggedSets === 0 ? 'Log a set before saving' : undefined}
                 style={{
                   position: 'relative',
                   flex: 1,
@@ -1059,12 +1053,12 @@ export default function HomeDashboard({
                   backgroundColor: 'var(--surface)',
                   border: '1px solid var(--border)',
                   borderRadius: '14px',
-                  color: activeSession.loggedSets === 0 ? 'var(--text-muted)' : 'var(--accent-text)',
+                  color: session.loggedSets === 0 ? 'var(--text-muted)' : 'var(--accent-text)',
                   fontFamily: "'DM Sans', sans-serif",
                   fontSize: '14px',
                   fontWeight: 700,
-                  cursor: (savingActive || exiting || activeSession.loggedSets === 0) ? 'default' : 'pointer',
-                  opacity: (savingActive || exiting) ? 0.6 : 1,
+                  cursor: (busy || session.loggedSets === 0) ? 'default' : 'pointer',
+                  opacity: busy ? 0.6 : 1,
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                   transition: 'border-color 150ms ease',
                 }}
@@ -1073,12 +1067,12 @@ export default function HomeDashboard({
                   <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
                   <polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" />
                 </svg>
-                {savingActive ? 'Saving…' : 'Save workout'}
+                {busy && busySessionId === session.id ? 'Saving…' : 'Save workout'}
               </button>
               <button
                 data-haptic="light"
-                onClick={() => setExitConfirm(true)}
-                disabled={savingActive || exiting}
+                onClick={() => setDiscardConfirmId(session.id)}
+                disabled={busy}
                 style={{
                   position: 'relative',
                   flex: 1,
@@ -1090,8 +1084,8 @@ export default function HomeDashboard({
                   fontFamily: "'DM Sans', sans-serif",
                   fontSize: '14px',
                   fontWeight: 600,
-                  cursor: (savingActive || exiting) ? 'default' : 'pointer',
-                  opacity: (savingActive || exiting) ? 0.6 : 1,
+                  cursor: busy ? 'default' : 'pointer',
+                  opacity: busy ? 0.6 : 1,
                 }}
               >
                 Exit without saving
@@ -1111,8 +1105,8 @@ export default function HomeDashboard({
               <div style={{ display: 'flex', gap: '10px' }}>
                 <button
                   data-haptic="light"
-                  onClick={() => setExitConfirm(false)}
-                  disabled={exiting}
+                  onClick={() => setDiscardConfirmId(null)}
+                  disabled={busy}
                   style={{
                     position: 'relative',
                     flex: 1, height: '44px',
@@ -1126,8 +1120,8 @@ export default function HomeDashboard({
                 </button>
                 <button
                   data-haptic="heavy"
-                  onClick={handleExitActive}
-                  disabled={exiting}
+                  onClick={() => handleExitActive(session)}
+                  disabled={busy}
                   style={{
                     position: 'relative',
                     flex: 1, height: '44px',
@@ -1135,16 +1129,17 @@ export default function HomeDashboard({
                     border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px',
                     color: 'var(--danger)', fontFamily: "'DM Sans', sans-serif",
                     fontSize: '14px', fontWeight: 700,
-                    cursor: exiting ? 'default' : 'pointer',
+                    cursor: busy ? 'default' : 'pointer',
                   }}
                 >
-                  {exiting ? 'Discarding…' : 'Discard'}
+                  {busy ? 'Discarding…' : 'Discard'}
                 </button>
               </div>
             </div>
           )}
         </div>
-      )}
+        )
+      })}
 
       {/* Primary CTA — start the suggested day. Hidden for a zero-workout user,
           whose single primary action is the welcome hero above, and hidden while
