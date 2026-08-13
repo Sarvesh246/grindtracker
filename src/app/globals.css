@@ -2755,8 +2755,11 @@ ol.coach-md__list,
   flex: 1;
   min-width: 0;
   resize: none;
-  max-height: calc(1.4em * 3 + 20px);
+  /* ~8 lines then scroll — JS sets height to scrollHeight each keystroke.
+     Unbounded growth would eat the thread (page mode must keep the header). */
+  max-height: calc(1.4em * 8 + 20px);
   min-height: 40px;
+  overflow-y: auto;
   padding: 10px 12px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border);

@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
@@ -300,6 +301,17 @@ export default function CoachSheet() {
 
   const exit = useExitingValue(open ? true : null, EXIT_MS)
   const mounted = exit.data != null
+
+  // Grow with each wrapped line up to the CSS max-height, then scroll inside.
+  // `mounted` is a dep because the textarea is unmounted while the sheet is
+  // closed, so a leftover draft wouldn't resize until the next keystroke.
+  useLayoutEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [draft, mounted])
+
   // useExitingValue flips `closing` in an effect — one frame too late for
   // gesture dismiss, where clearing pullY before this flag lands snaps the
   // sheet back to translateY(0) (middle flash). Derive synchronously.
@@ -522,6 +534,7 @@ export default function CoachSheet() {
     keyboardOpen,
     vvHeight,
     composerFocused,
+    draft,
   ])
 
   // When the keyboard opens, pin the transcript to the latest message so the

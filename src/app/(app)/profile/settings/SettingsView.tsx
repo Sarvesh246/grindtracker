@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useMemo, type CSSProperties, type ReactNode } from 'react'
+import { useState, useEffect, useId, useMemo, useRef, type CSSProperties, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -22,6 +22,8 @@ import {
   type GrindExportPayload,
 } from '@/lib/utils/exportData'
 import { reportError } from '@/lib/utils/reportError'
+import Dialog from '@/components/ui/Dialog'
+import Input from '@/components/ui/Input'
 import { useTour, type TourStep } from '@/components/onboarding/Tour'
 import { useOnboarding } from '@/lib/contexts/OnboardingContext'
 import {
@@ -37,6 +39,8 @@ import {
 
 const REST_DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'] // 0=Sun..6=Sat
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+/** Typed confirmation for wiping the account — case-insensitive. */
+const DELETE_DATA_PHRASE = 'DELETE'
 
 const sectionLabelStyle: CSSProperties = {
   fontSize: '12px',
@@ -228,7 +232,11 @@ export default function SettingsView({
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [deletingData, setDeletingData] = useState(false)
-  const [deleteConfirm, setDeleteConfirm] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deleteTyped, setDeleteTyped] = useState('')
+  const deleteInputRef = useRef<HTMLInputElement>(null)
+  const deleteDescId = useId()
+  const deletePhraseOk = deleteTyped.trim().toUpperCase() === DELETE_DATA_PHRASE
 
   const [restMin, setRestMin] = useState(2)
   const [restSec, setRestSec] = useState(0)
@@ -447,12 +455,14 @@ export default function SettingsView({
     }
   }
 
-  async function handleDeleteMyData() {
+  function closeDeleteDialog() {
     if (deletingData) return
-    if (!deleteConfirm) {
-      setDeleteConfirm(true)
-      return
-    }
+    setDeleteOpen(false)
+    setDeleteTyped('')
+  }
+
+  async function handleDeleteMyData() {
+    if (deletingData || !deletePhraseOk) return
     setDeletingData(true)
     try {
       const { error } = await supabase.rpc('delete_my_grind_data')
@@ -463,7 +473,6 @@ export default function SettingsView({
       reportError(err, { operation: 'deleteMyData', route: '/profile/settings' })
       toast.show('Could not delete data — apply migration 29, then try again')
       setDeletingData(false)
-      setDeleteConfirm(false)
     }
   }
 
@@ -472,7 +481,7 @@ export default function SettingsView({
     { target: 'profile-rest', title: 'Default rest time', body: 'Set your default rest between sets — override per-exercise from the rest timer during a workout.' },
   ]
   const settingsTour = useTour('settings', settingsSteps, {
-    active: !feedbackOpen && !deleteConfirm,
+    active: !feedbackOpen && !deleteOpen,
   })
 
   const { resetAllTours } = useOnboarding()
@@ -920,8 +929,11 @@ export default function SettingsView({
         </button>
         <button
           type="button"
-          data-haptic={deleteConfirm ? 'heavy' : 'light'}
-          onClick={() => void handleDeleteMyData()}
+          data-haptic="light"
+          onClick={() => {
+            setDeleteTyped('')
+            setDeleteOpen(true)
+          }}
           disabled={deletingData}
           style={{
             position: 'relative',
@@ -929,7 +941,7 @@ export default function SettingsView({
             backgroundColor: 'transparent',
             border: '1px solid var(--border)',
             borderRadius: '12px',
-            color: deleteConfirm ? 'var(--danger)' : 'var(--text-muted)',
+            color: 'var(--text-muted)',
             fontFamily: "'DM Sans', sans-serif",
             fontSize: '13px', fontWeight: 600,
             cursor: deletingData ? 'default' : 'pointer',
@@ -937,11 +949,7 @@ export default function SettingsView({
             opacity: deletingData ? 0.7 : 1,
           }}
         >
-          {deletingData
-            ? 'DELETING…'
-            : deleteConfirm
-              ? 'TAP AGAIN TO CONFIRM DELETE ALL DATA'
-              : 'DELETE MY DATA'}
+          DELETE MY DATA
         </button>
       </Section>
 
@@ -993,6 +1001,133 @@ export default function SettingsView({
       )}
 
       {feedbackOpen && <FeedbackModal onClose={() => setFeedbackOpen(false)} />}
+
+      <Dialog
+        open={deleteOpen}
+        onClose={deletingData ? undefined : closeDeleteDialog}
+        title="Delete all data"
+        describedBy={deleteDescId}
+        role="alertdialog"
+        initialFocusRef={deleteInputRef}
+        closeOnBackdrop={!deletingData}
+        avoidKeyboard
+        panelStyle={{ maxWidth: '480px' }}
+      >
+        <div
+          style={{
+            width: '100%',
+            backgroundColor: 'var(--surface)',
+            border: '1px solid var(--border)',
+            borderBottom: 'none',
+            borderRadius: '20px 20px 0 0',
+            padding: '20px 20px calc(28px + env(safe-area-inset-bottom))',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '14px',
+            maxHeight: 'calc(92dvh - var(--grind-keyboard-inset, 0px))',
+            overflowY: 'auto',
+            animation: 'sheet-up 220ms ease',
+          }}
+        >
+          <div
+            style={{
+              fontFamily: 'var(--font-display)',
+              fontSize: '20px',
+              color: 'var(--danger)',
+              letterSpacing: '1px',
+            }}
+          >
+            DELETE ALL DATA?
+          </div>
+          <p
+            id={deleteDescId}
+            style={{
+              margin: 0,
+              fontSize: '14px',
+              lineHeight: 1.5,
+              color: 'var(--text-secondary)',
+              fontFamily: 'var(--font-sans)',
+            }}
+          >
+            This permanently erases your workouts, PRs, streak, badges, and profile,
+            then signs you out. It cannot be undone.
+          </p>
+          <label
+            htmlFor="delete-data-confirm"
+            style={{
+              fontSize: '12px',
+              color: 'var(--text-muted)',
+              letterSpacing: '0.4px',
+            }}
+          >
+            Type {DELETE_DATA_PHRASE} to confirm
+          </label>
+          <Input
+            ref={deleteInputRef}
+            id="delete-data-confirm"
+            value={deleteTyped}
+            style={{ width: '100%' }}
+            onChange={e => setDeleteTyped(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                void handleDeleteMyData()
+              }
+            }}
+            autoCapitalize="characters"
+            autoCorrect="off"
+            spellCheck={false}
+            autoComplete="off"
+            disabled={deletingData}
+            placeholder={DELETE_DATA_PHRASE}
+            aria-describedby={deleteDescId}
+          />
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              type="button"
+              className="press"
+              onClick={closeDeleteDialog}
+              disabled={deletingData}
+              style={{
+                flex: 1,
+                height: '46px',
+                borderRadius: 'var(--radius-sm)',
+                backgroundColor: 'var(--surface-elevated)',
+                border: '1px solid var(--border)',
+                color: 'var(--text-primary)',
+                fontFamily: 'var(--font-sans)',
+                fontSize: '14px',
+                fontWeight: 600,
+                cursor: deletingData ? 'default' : 'pointer',
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="press"
+              data-haptic="heavy"
+              onClick={() => void handleDeleteMyData()}
+              disabled={deletingData || !deletePhraseOk}
+              style={{
+                flex: 1,
+                height: '46px',
+                borderRadius: 'var(--radius-sm)',
+                border: 'none',
+                backgroundColor: deletePhraseOk ? 'var(--danger)' : 'var(--surface-elevated)',
+                color: deletePhraseOk ? '#fff' : 'var(--text-muted)',
+                fontFamily: 'var(--font-sans)',
+                fontSize: '14px',
+                fontWeight: 600,
+                cursor: deletingData || !deletePhraseOk ? 'default' : 'pointer',
+                opacity: deletingData ? 0.7 : 1,
+              }}
+            >
+              {deletingData ? 'DELETING…' : 'DELETE EVERYTHING'}
+            </button>
+          </div>
+        </div>
+      </Dialog>
     </div>
   )
 }
