@@ -27,6 +27,8 @@ import {
   emptySetState,
   findCarryReps,
   computeLocalIsPR,
+  liveSetIsPR,
+  normalizePriorVolume,
   parseRpe,
   overlayQueuedOps,
   extraSetsFromLogs,
@@ -156,6 +158,10 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const [baselineBests, setBaselineBests] = useState<PreviousBest>({})
   const [previousBestVolumes, setPreviousBestVolumes] = useState<PreviousBest>({})
   const [baselineBestVolumes, setBaselineBestVolumes] = useState<PreviousBest>({})
+  // handleCheck/saveEdit read this so a stale render can't treat a missing
+  // prior as "not a PR" (undefined fails `=== null` and `n > undefined`).
+  const baselineBestVolumesRef = useRef(baselineBestVolumes)
+  baselineBestVolumesRef.current = baselineBestVolumes
   const [startedAt, setStartedAt] = useState<Date>(new Date())
   const [elapsed, setElapsed] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -496,15 +502,15 @@ export default function ActiveWorkout({ day }: { day: string }) {
         exercise_id: string
         last_weight: number | null
       }[]) {
-        bests[row.exercise_id] = row.last_weight
+        bests[row.exercise_id] = normalizePriorVolume(row.last_weight)
       }
       for (const row of (bestRows ?? []) as {
         exercise_id: string
         max_weight: number | null
         max_volume: number | null
       }[]) {
-        if (lastWeightError) bests[row.exercise_id] = row.max_weight
-        bestVolumes[row.exercise_id] = row.max_volume
+        if (lastWeightError) bests[row.exercise_id] = normalizePriorVolume(row.max_weight)
+        bestVolumes[row.exercise_id] = normalizePriorVolume(row.max_volume)
       }
     }
     for (const ex of exs) {
@@ -902,7 +908,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       const reps = parseInt(repsStr, 10)
       if (!Number.isFinite(reps)) return
 
-      const prevBestVolume = baselineBestVolumes[exerciseId]
+      const prevBestVolume = normalizePriorVolume(baselineBestVolumesRef.current[exerciseId])
       const volume = weight * reps
       // Match server grind_recompute_stats: first-ever volume for an exercise is
       // a PR (prior best treated as -1), not only improvements over a known best.
@@ -1125,7 +1131,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
 
     // Badge eligibility pins to prior-session baseline (server volume-PR rules).
     // Session bests are recomputed below via bestVolumeFromLogs for display/undo.
-    const prevBestVolume = baselineBestVolumes[exerciseId]
+    const prevBestVolume = normalizePriorVolume(baselineBestVolumesRef.current[exerciseId])
     // Match server: null prior best ⇒ first lift is a PR. Client writes is_pr:false.
     const isPR =
       reps !== null && computeLocalIsPR(logEntry.isWarmup, weight, reps, prevBestVolume)
@@ -1698,8 +1704,10 @@ export default function ActiveWorkout({ day }: { day: string }) {
         }
         const lastWeightRow = (lastWeightRows ?? [])[0] as { last_weight: number | null } | undefined
         const bestRow = (bestRows ?? [])[0] as { max_weight: number | null; max_volume: number | null } | undefined
-        prevBest = lastWeightError ? (bestRow?.max_weight ?? null) : (lastWeightRow?.last_weight ?? null)
-        prevBestVolume = bestRow?.max_volume ?? null
+        prevBest = lastWeightError
+          ? normalizePriorVolume(bestRow?.max_weight)
+          : normalizePriorVolume(lastWeightRow?.last_weight)
+        prevBestVolume = normalizePriorVolume(bestRow?.max_volume)
         setPreviousBests(prev => ({ ...prev, [newExercise.id]: prevBest }))
         setPreviousBestVolumes(prev => ({ ...prev, [newExercise.id]: prevBestVolume }))
       }
@@ -2125,7 +2133,10 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const restCounting = restTimer.active && !restTimer.paused
   const hintsBlocked = anyModalOpen || restCounting
   const workoutReady = !loading && exercises.length > 0
-  const hasAnyPR = Object.values(logs).some(l => l.isPR)
+  const hasAnyPR = Object.entries(logs).some(([key, l]) => {
+    const exId = key.slice(0, key.lastIndexOf('-'))
+    return liveSetIsPR(l, baselineBestVolumes[exId])
+  })
 
   const hintCheck = useFeatureTooltip('aw-check', {
     when: workoutReady, suppressed: hintsBlocked, getEl: () => onboardTarget('aw-check'),
@@ -2835,6 +2846,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
               extraSets={extraSets[ex.id] ?? 0}
               logs={logs}
               previousBest={previousBests[ex.id] ?? null}
+              priorVolume={baselineBestVolumes[ex.id]}
               editingKey={editingKey}
               onCheck={handleCheck}
               onUpdate={updateLog}
@@ -3014,6 +3026,8 @@ interface ExerciseCardProps {
   extraSets: number
   logs: LogMap
   previousBest: number | null
+  /** Prior-session best volume (lbs×reps). Live PR chips derive from this. */
+  priorVolume: number | null | undefined
   editingKey: string | null
   onCheck: (exerciseId: string, setNumber: number) => void
   onUpdate: (key: string, field: 'weight' | 'reps' | 'note' | 'rpe', value: string) => void
@@ -3033,7 +3047,7 @@ interface ExerciseCardProps {
 }
 
 function ExerciseCard({
-  exercise, firstExercise, extraSets, logs, previousBest, editingKey,
+  exercise, firstExercise, extraSets, logs, previousBest, priorVolume, editingKey,
   onCheck, onUpdate, onSwap,
   onSkipSet, onUnskipSet, onDeleteSet,
   onSkipExercise, onUnskipExercise,
@@ -3053,7 +3067,10 @@ function ExerciseCard({
       backgroundColor: 'var(--surface)',
       border: `1px solid ${anySkipped ? 'rgba(239,68,68,0.2)' : 'var(--border)'}`,
       borderRadius: '12px',
-      overflow: 'hidden',
+      // Visible so the reps PR chip (hangs 8px outside the input) isn't clipped
+      // — overflow:hidden made live PRs vanish on the first set / card edge
+      // while the finish screen still listed them.
+      overflow: 'visible',
       opacity: allSkipped ? 0.65 : 1,
       transition: 'opacity 150ms ease, border-color 150ms ease',
       scrollMarginTop: 'calc(var(--nav-h) + 16px)',
@@ -3236,6 +3253,7 @@ function ExerciseCard({
               setsTarget={exercise.sets_target}
               onboardFirst={firstExercise && setNum === 1 && !isBonus}
               editing={editing}
+              showPR={liveSetIsPR(logEntry, priorVolume)}
               logEntry={logEntry}
               prevReps={prevReps}
               onCheck={() => onCheck(exercise.id, setNum)}
@@ -3765,6 +3783,8 @@ interface SetRowProps {
   /** First non-bonus set of the first exercise — carries the one-off hint anchors. */
   onboardFirst?: boolean
   editing: boolean
+  /** Derived each render from prior-session volume — not the stored isPR flag. */
+  showPR: boolean
   logEntry: SetState
   prevReps: string
   onCheck: () => void
@@ -3783,7 +3803,7 @@ interface SetRowProps {
 
 function SetRow({
   setNumber, isBonus, setsTarget, onboardFirst, editing,
-  logEntry, prevReps,
+  showPR, logEntry, prevReps,
   onCheck, onSaveEdit, onStartEdit,
   onWeightChange, onRepsChange, onNoteChange, onNoteBlur, onRpeChange,
   onToggleWarmup, onSkip, onUnskip, onDelete,
@@ -4122,7 +4142,7 @@ function SetRow({
               pointerEvents: logEntry.skipped ? 'none' : 'auto',
             }}
           />
-          <div style={{ position: 'relative', width: '56px', flexShrink: 0 }}>
+          <div style={{ position: 'relative', width: '56px', flexShrink: 0, overflow: 'visible' }}>
           <input
             ref={repsRef}
             type="number"
@@ -4167,7 +4187,7 @@ function SetRow({
               pointerEvents: logEntry.skipped ? 'none' : 'auto',
             }}
           />
-          {logEntry.isPR && (
+          {showPR && (
             <span data-onboard="aw-pr" style={{
               position: 'absolute',
               top: '-8px',
@@ -4180,7 +4200,7 @@ function SetRow({
               letterSpacing: '0.5px',
               lineHeight: 1.2,
               pointerEvents: 'none',
-              zIndex: 1,
+              zIndex: 2,
             }}>
               PR
             </span>

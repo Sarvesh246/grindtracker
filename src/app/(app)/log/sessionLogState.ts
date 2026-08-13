@@ -47,20 +47,51 @@ export function findCarryReps(logs: LogMap, exerciseId: string, setNumber: numbe
 }
 
 /**
+ * Coerce a get_exercise_bests / state volume to a finite number.
+ * PostgREST often returns Postgres `numeric` as a string; missing / invalid
+ * priors must be null so the first lift is a PR (not `undefined > n` → false).
+ */
+export function normalizePriorVolume(value: unknown): number | null {
+  if (value == null || value === '') return null
+  const n = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
+/**
  * Local volume-PR hint for open sessions (server recomputes on finish).
- * Null prior best ⇒ first lift is a PR (matches grind_recompute_stats).
+ * Matches grind_recompute_stats: volume > coalesce(prior_best, -1).
+ * Null / undefined / non-numeric prior ⇒ first lift is a PR.
  */
 export function computeLocalIsPR(
   isWarmup: boolean,
   weight: number | null,
   reps: number,
-  prevBestVolume: number | null,
+  prevBestVolume?: number | null | string,
 ): boolean {
-  return (
-    !isWarmup &&
-    weight !== null &&
-    (prevBestVolume === null || weight * reps > prevBestVolume)
-  )
+  if (isWarmup || weight === null || !Number.isFinite(weight) || !Number.isFinite(reps)) {
+    return false
+  }
+  const prior = normalizePriorVolume(prevBestVolume)
+  return weight * reps > (prior ?? -1)
+}
+
+/** Live reps-box badge: checked working set that beats the prior-session baseline. */
+export function liveSetIsPR(
+  entry: {
+    checked: boolean
+    skipped: boolean
+    isWarmup: boolean
+    weight: string
+    reps: string
+  },
+  prevBestVolume: unknown,
+): boolean {
+  if (!entry.checked || entry.skipped) return false
+  if (entry.weight === '' || entry.reps === '') return false
+  const weight = parseFloat(entry.weight)
+  const reps = parseInt(entry.reps, 10)
+  if (!Number.isFinite(weight) || !Number.isFinite(reps)) return false
+  return computeLocalIsPR(entry.isWarmup, weight, reps, normalizePriorVolume(prevBestVolume))
 }
 
 export function parseRpe(raw: string): number | null {
