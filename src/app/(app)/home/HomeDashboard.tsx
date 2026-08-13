@@ -836,59 +836,6 @@ export default function HomeDashboard({
         </div>
       )}
 
-      {/* Rest today — one-off skip that spends a configured rest-day slot this
-          week. Tap again to undo. Scheduled weekdays (Settings) are shown but
-          not undone here. Hidden until rest days are configured. */}
-      {currentStreak > 0 && (skipState.budget > 0 || skipState.todayIsOneOff) && (!trainedToday || skipState.todayIsOneOff) && (
-        <button
-          type="button"
-          className="press"
-          data-haptic="medium"
-          onClick={() => void handleToggleRestToday()}
-          disabled={restTodayBusy || skipState.todayIsScheduled || (!skipState.todayIsOneOff && !skipState.canSkip)}
-          aria-pressed={skipState.todayIsRest}
-          style={{
-            ...card,
-            width: '100%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '12px',
-            cursor: restTodayBusy || skipState.todayIsScheduled || (!skipState.todayIsOneOff && !skipState.canSkip)
-              ? 'default'
-              : 'pointer',
-            opacity: restTodayBusy ? 0.7 : 1,
-            borderColor: skipState.todayIsRest ? 'var(--accent)' : 'var(--border)',
-          }}
-        >
-          <div style={{ textAlign: 'left' }}>
-            <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)' }}>
-              {skipState.todayIsRest ? 'Rest day' : skipState.canSkip ? 'Rest today' : 'No rest days left'}
-            </div>
-            <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-              {skipState.todayIsOneOff
-                ? 'Tap again to undo'
-                : skipState.todayIsScheduled
-                  ? 'Scheduled in Settings'
-                  : skipState.canSkip
-                    ? 'Won’t break your streak'
-                    : 'Used this week’s rest days'}
-            </div>
-          </div>
-          <div
-            aria-hidden
-            style={{
-              width: '22px',
-              height: '22px',
-              borderRadius: '9999px',
-              border: `2px solid ${skipState.todayIsRest ? 'var(--accent)' : 'var(--border-strong)'}`,
-              backgroundColor: skipState.todayIsRest ? 'var(--accent)' : 'transparent',
-              flexShrink: 0,
-            }}
-          />
-        </button>
-      )}
-
       {/* Rest-day banner — offered only for a small, plausibly-a-rest-day gap
           (see gapEligibleForPrompt above); a bigger gap is just a broken
           streak and gets no prompt. Confirming marks each missed day a
@@ -1229,6 +1176,60 @@ export default function HomeDashboard({
         </button>
       )}
       </div>
+      )}
+
+      {/* Rest today — secondary to Start. One-off skip that spends a configured
+          rest-day slot this week. Tap again to undo. Scheduled weekdays
+          (Settings) are shown but not undone here. Hidden until rest days
+          are configured. */}
+      {currentStreak > 0 && (skipState.budget > 0 || skipState.todayIsOneOff) && (!trainedToday || skipState.todayIsOneOff) && (
+        <button
+          type="button"
+          className="press"
+          data-haptic="medium"
+          onClick={() => void handleToggleRestToday()}
+          disabled={restTodayBusy || skipState.todayIsScheduled || (!skipState.todayIsOneOff && !skipState.canSkip)}
+          aria-pressed={skipState.todayIsRest}
+          style={{
+            ...card,
+            width: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px',
+            cursor: restTodayBusy || skipState.todayIsScheduled || (!skipState.todayIsOneOff && !skipState.canSkip)
+              ? 'default'
+              : 'pointer',
+            opacity: restTodayBusy ? 0.7 : 1,
+            borderColor: skipState.todayIsRest ? 'var(--accent)' : 'var(--border)',
+          }}
+        >
+          <div style={{ textAlign: 'left' }}>
+            <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)' }}>
+              {skipState.todayIsRest ? 'Rest day' : skipState.canSkip ? 'Rest today' : 'No rest days left'}
+            </div>
+            <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+              {skipState.todayIsOneOff
+                ? 'Tap again to undo'
+                : skipState.todayIsScheduled
+                  ? 'Scheduled in Settings'
+                  : skipState.canSkip
+                    ? 'Won’t break your streak'
+                    : 'Used this week’s rest days'}
+            </div>
+          </div>
+          <div
+            aria-hidden
+            style={{
+              width: '22px',
+              height: '22px',
+              borderRadius: '9999px',
+              border: `2px solid ${skipState.todayIsRest ? 'var(--accent)' : 'var(--border-strong)'}`,
+              backgroundColor: skipState.todayIsRest ? 'var(--accent)' : 'transparent',
+              flexShrink: 0,
+            }}
+          />
+        </button>
       )}
 
       {/* Overdue nudge — a slim, dismissible line that surfaces a day the rotation
