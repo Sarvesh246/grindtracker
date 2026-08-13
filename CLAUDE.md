@@ -295,16 +295,18 @@ to steal, Postgres raises `REST_BUDGET_EXCEEDED`. Example: Sunday is the
 configured rest day; Rest today on Wednesday cancels this week's Sunday.
 
 The missed-day banner still offers to confirm a small gap as rest, but only
-when the gap fits the same weekly budget (`1 <= uncovered.length <= N`).
-Server-side, `grind_dates_connected(user, from, to)` tests whether every day
-strictly between two dates is a rest day (`grind_is_rest_day`, which honors
-one-offs, cancels, and `effective_from`); `grind_recompute_stats()` uses it
-to group workout dates into rest-day-aware "runs". `restDays.ts` mirrors the
-same logic in TS (`Date.getDay()` matches `extract(dow)`, 0=Sun..6=Sat) so
-the client can compute gaps and Rest today eligibility using the viewer's
-own local "today" — never the server's, per Dates & timezones below. Mutate
-through `toggle_rest_today` / `set_rest_weekday`; do not UPDATE
-`user_rest_days.effective_from` from the client.
+when the gap fits **remaining** weekly slots (`uncovered.length <= N - used`).
+Once N rest days are used this week — configured weekdays or Rest today skips
+— another miss breaks the streak. Server-side, `grind_dates_connected(user,
+from, to)` tests whether every day strictly between two dates is a rest day
+(`grind_is_rest_day`, which honors one-offs, cancels, and `effective_from`);
+`grind_recompute_stats()` uses it to group workout dates into rest-day-aware
+"runs". `restDays.ts` mirrors the same logic in TS (`Date.getDay()` matches
+`extract(dow)`, 0=Sun..6=Sat) so the client can compute gaps and Rest today
+eligibility using the viewer's own local "today" — never the server's, per
+Dates & timezones below. Mutate through `toggle_rest_today` /
+`set_rest_weekday`; do not UPDATE `user_rest_days.effective_from` from the
+client.
 
 ### Skip persistence (migration `18-skip-persistence.sql`)
 Skipping a set/exercise in ActiveWorkout is optimistic in React state

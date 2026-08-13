@@ -184,8 +184,8 @@ export default function HomeDashboard({
     for (const [k, v] of Object.entries(restEffectiveFrom)) {
       effectiveFrom.set(Number(k), v)
     }
-    return { cancels: new Set(restCancels), effectiveFrom }
-  }, [restCancels, restEffectiveFrom])
+    return { cancels: new Set(restCancels), effectiveFrom, trainedDates: new Set(completedAt) }
+  }, [restCancels, restEffectiveFrom, completedAt])
 
   const xpTotal = stats?.xp_total ?? 0
   const level = getLevel(xpTotal)
@@ -235,10 +235,10 @@ export default function HomeDashboard({
     [lastWorkoutKey, todayKey, recurringRestSet, effectiveRestDateSet, restOpts],
   )
   // Confirming a missed-day gap spends the same weekly rest budget as Rest today.
+  // Remaining slots = N minus rest days already used this week (on or before today).
+  const restRemaining = Math.max(0, skipState.budget - skipState.used)
   const gapEligibleForPrompt =
-    gapUncoveredDates.length > 0 &&
-    recurringRestSet.size > 0 &&
-    gapUncoveredDates.length <= recurringRestSet.size
+    gapUncoveredDates.length > 0 && gapUncoveredDates.length <= restRemaining
   const restBannerSig = gapUncoveredDates.join(',')
   const restBannerDismissedSig = useSyncExternalStore(restDismissStore.subscribe, restDismissStore.read, () => null)
   const showRestBanner =

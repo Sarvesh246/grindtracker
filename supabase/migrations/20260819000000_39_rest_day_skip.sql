@@ -11,7 +11,7 @@
 --      configured rest weekdays. Extra one-off rest days steal a later
 --      scheduled rest day that week, or fail with REST_BUDGET_EXCEEDED.
 --   3. toggle_rest_today(p_local_date) — Home "Rest today" / undo.
---   4. Streak reminder copy: rotating variants; body points at Home, not Settings.
+--   4. Streak reminder copy: rotating motivating variants (no rest-day CTA).
 
 begin;
 
@@ -127,13 +127,21 @@ stable
 strict
 set search_path = public
 as $$
+  -- Days off this week that count against the budget: rest-marked and no
+  -- completed workout. Training on a scheduled rest day does not spend a skip.
   select count(*)::int
     from generate_series(
            public.grind_week_start(p_date),
            public.grind_week_start(p_date) + 6,
            interval '1 day'
          ) as gs(d)
-   where public.grind_is_rest_day(p_user, gs.d::date);
+   where public.grind_is_rest_day(p_user, gs.d::date)
+     and not exists (
+       select 1 from public.sessions s
+        where s.user_id = p_user
+          and s.completed_at is not null
+          and s.local_date = gs.d::date
+     );
 $$;
 
 create or replace function public.grind_rest_budget(p_user uuid)
@@ -212,6 +220,7 @@ declare
   v_count  int;
   v_week_start date;
   v_week_end date;
+  v_today date := grind_safe_local_date(null);
   v_steal date;
 begin
   v_budget := public.grind_rest_budget(new.user_id);
@@ -227,13 +236,25 @@ begin
     return new;
   end if;
 
+  -- Give up a later unused rest day this week (not one already elapsed,
+  -- and not a day they already trained).
   select gs.d::date
     into v_steal
-    from generate_series(new.rest_date + 1, v_week_end, interval '1 day') as gs(d)
+    from generate_series(
+           greatest(new.rest_date + 1, v_today),
+           v_week_end,
+           interval '1 day'
+         ) as gs(d)
    where public.grind_is_rest_day(new.user_id, gs.d::date)
      and not exists (
        select 1 from public.user_rest_dates d
         where d.user_id = new.user_id and d.rest_date = gs.d::date
+     )
+     and not exists (
+       select 1 from public.sessions s
+        where s.user_id = new.user_id
+          and s.completed_at is not null
+          and s.local_date = gs.d::date
      )
    order by gs.d
    limit 1;
@@ -508,14 +529,14 @@ begin
   ),
   variants as (
     select * from (values
-      (0, 'Still time.', 'Your streak''s waiting. Log a session, or tap Rest today on Home.'),
-      (1, 'The bar isn''t going to lift itself.', 'One workout keeps it honest. Or Rest today on Home.'),
-      (2, 'Don''t ghost the gym.', 'You''re still in it. Log something, or tap Rest today.'),
-      (3, 'G checked the board.', 'No session yet. Finish one, or Rest today on Home.'),
-      (4, 'Streak''s in overtime.', 'Evening''s the easy save. Train, or Rest today on Home.'),
-      (5, 'Same you as yesterday.', 'That''s the whole trick. Log it, or tap Rest today.'),
-      (6, 'Unfinished business.', 'The day''s still open. Knock out a session or Rest today.'),
-      (7, 'Keep GRINDing.', 'A short one counts. Log it, or Rest today on Home.')
+      (0, 'Still time.', 'Your streak''s waiting. Log a session before the day closes.'),
+      (1, 'The bar isn''t going to lift itself.', 'One workout keeps it honest.'),
+      (2, 'Don''t ghost the gym.', 'You''re still in it. Get something logged.'),
+      (3, 'G checked the board.', 'No session yet. Finish one and it counts.'),
+      (4, 'Streak''s in overtime.', 'Evening''s the easy save. Get in, get it done.'),
+      (5, 'Same you as yesterday.', 'That''s the whole trick. Log it.'),
+      (6, 'Unfinished business.', 'The day''s still open. Knock out a session.'),
+      (7, 'Keep GRINDing.', 'A short one counts. Get it logged.')
     ) as v(idx, title, body)
   ),
   inserted as (

@@ -175,6 +175,48 @@ describe('skipTodayState', () => {
     assert.equal(state.canSkip, false)
     assert.equal(state.budget, 0)
   })
+
+  it('with 2 rest days, allows two skips on other weekdays then blocks a third', () => {
+    const satSun = new Set([0, 6])
+    assert.equal(skipTodayState('2026-08-10', satSun, new Set()).canSkip, true)
+    assert.equal(skipTodayState('2026-08-10', satSun, new Set()).used, 0)
+
+    const afterTwoSkips = skipTodayState(
+      '2026-08-12',
+      satSun,
+      new Set(['2026-08-10', '2026-08-11']),
+      { cancels: new Set(['2026-08-15', '2026-08-16']) },
+    )
+    assert.equal(afterTwoSkips.used, 2)
+    assert.equal(afterTwoSkips.canSkip, false)
+    assert.equal(afterTwoSkips.budget, 2)
+  })
+
+  it('with 2 rest days, still allows a second skip after one midweek skip', () => {
+    const state = skipTodayState(
+      '2026-08-11',
+      new Set([0, 6]),
+      new Set(['2026-08-10']),
+      { cancels: new Set(['2026-08-15']) },
+    )
+    assert.equal(state.used, 1)
+    assert.equal(state.canSkip, true)
+  })
+
+  it('blocks a skip once the configured rest days this week have already passed', () => {
+    // Mon + Tue scheduled; Friday cannot skip — those 2 slots are spent.
+    const state = skipTodayState('2026-08-14', new Set([1, 2]), new Set())
+    assert.equal(state.used, 2)
+    assert.equal(state.canSkip, false)
+  })
+
+  it('does not spend a skip slot when they trained on a scheduled rest day', () => {
+    const state = skipTodayState('2026-08-14', new Set([1, 2]), new Set(), {
+      trainedDates: new Set(['2026-08-10', '2026-08-11']),
+    })
+    assert.equal(state.used, 0)
+    assert.equal(state.canSkip, true)
+  })
 })
 
 describe('gamification display helpers', () => {

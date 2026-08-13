@@ -49,9 +49,9 @@ Each invocation:
 matching UTC-hour job picks you up that day; later hours catch up if that job
 failed. Hobby may fire anywhere in that UTC hour (±59 min).
 `unique(dedupe_key)` keeps it to one ping per local day. Copy is a rotating
-pool of 8 variants (stable per user+local date) pointing at **Rest today on
-Home**, not Settings — applied in migration **39**. Rest days use
-`grind_is_rest_day` so a configured rest day does not get the ping.
+pool of 8 motivating variants (stable per user+local date) — applied in
+migration **39**. No rest-day CTA; the ping is a nudge to train. Rest days
+use `grind_is_rest_day` so a day that's already rest does not get the ping.
 
 **Rest-end:** still primarily **page timers** while the PWA can run. The hourly
 Hobby fan-out is only a locked-phone fallback (up to ~1 hour late — not useful

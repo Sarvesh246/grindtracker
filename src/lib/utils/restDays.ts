@@ -26,6 +26,8 @@ export type RestDayOpts = {
   cancels?: Set<string>
   /** day_of_week → YYYY-MM-DD first date that weekday counts (39). Missing = always. */
   effectiveFrom?: Map<number, string>
+  /** Completed-workout dates — training on a scheduled rest day does not spend a skip. */
+  trainedDates?: Set<string>
 }
 
 /** True if `dateKey` is a rest day: one-off confirmed date, or a recurring
@@ -112,18 +114,35 @@ export function restDaysInWeek(
   return datesInWeek(dateKey).filter(k => isRestDay(k, recurringDaysOfWeek, oneOffDates, opts))
 }
 
+export function restDaysUsedThrough(
+  todayKey: string,
+  recurringDaysOfWeek: Set<number>,
+  oneOffDates: Set<string>,
+  opts?: RestDayOpts,
+): number {
+  return datesInWeek(todayKey).filter(
+    k =>
+      k <= todayKey &&
+      isRestDay(k, recurringDaysOfWeek, oneOffDates, opts) &&
+      !opts?.trainedDates?.has(k),
+  ).length
+}
+
 export type SkipTodayState = {
   todayIsRest: boolean
   todayIsOneOff: boolean
   todayIsScheduled: boolean
   canSkip: boolean
   budget: number
+  used: number
 }
 
 /**
  * Whether Home can mark `todayKey` as a one-off rest day without exceeding
- * the weekly budget (number of configured rest weekdays). If the week is
- * already full, a later scheduled rest day this week can be stolen.
+ * the weekly budget (number of configured rest weekdays). Spent slots are
+ * rest days already on or before today — future scheduled days can still
+ * be given up by skipping today, but once N days this week are rest, no
+ * more skips (and another miss breaks the streak).
  */
 export function skipTodayState(
   todayKey: string,
@@ -135,12 +154,7 @@ export function skipTodayState(
   const todayIsOneOff = oneOffDates.has(todayKey)
   const todayIsRest = isRestDay(todayKey, recurringDaysOfWeek, oneOffDates, opts)
   const todayIsScheduled = todayIsRest && !todayIsOneOff
-  const weekRest = restDaysInWeek(todayKey, recurringDaysOfWeek, oneOffDates, opts)
-  const hasSteal = datesInWeek(todayKey).some(k => {
-    if (k <= todayKey) return false
-    if (oneOffDates.has(k)) return false
-    return isRestDay(k, recurringDaysOfWeek, oneOffDates, opts)
-  })
-  const canSkip = !todayIsRest && budget > 0 && (weekRest.length < budget || hasSteal)
-  return { todayIsRest, todayIsOneOff, todayIsScheduled, canSkip, budget }
+  const used = restDaysUsedThrough(todayKey, recurringDaysOfWeek, oneOffDates, opts)
+  const canSkip = !todayIsRest && budget > 0 && used < budget
+  return { todayIsRest, todayIsOneOff, todayIsScheduled, canSkip, budget, used }
 }
