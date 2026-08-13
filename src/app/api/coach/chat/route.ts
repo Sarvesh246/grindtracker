@@ -254,10 +254,34 @@ export async function POST(request: Request) {
   const unit = parseUnit(body.unit, cookieStore.get('grind_unit_pref')?.value)
   const { localDate, timeZone } = resolveAsOfLocalDate(body)
 
-  // Short TTL cache (~60s) keyed by user + local day + unit so multi-turn
-  // chats in the same session skip rebuilding the full USER_DATA payload.
-  // Streaming is unchanged — only the context JSON is reused.
-  const contextKey = coachContextCacheKey(user.id, localDate, unit)
+  // Fingerprint open session + working-set count so finishing (or logging more
+  // sets) cannot reuse a stale USER_DATA payload for ~60s. Two cheap queries;
+  // cache still wins on multi-turn chats within an unchanged session state.
+  let sessionFp = 'none'
+  try {
+    const { data: openRow } = await supabase
+      .from('sessions')
+      .select('id')
+      .eq('user_id', user.id)
+      .is('completed_at', null)
+      .order('started_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (openRow?.id) {
+      const { count } = await supabase
+        .from('session_logs')
+        .select('id', { count: 'exact', head: true })
+        .eq('session_id', openRow.id)
+        .eq('is_skipped', false)
+        .eq('is_warmup', false)
+        .not('weight', 'is', null)
+      sessionFp = `${openRow.id}:${count ?? 0}`
+    }
+  } catch (err) {
+    console.error('[grind] coach context fingerprint', err)
+  }
+
+  const contextKey = coachContextCacheKey(user.id, localDate, unit, sessionFp)
   let contextJson = getCachedCoachContext(contextKey)
   if (!contextJson) {
     try {

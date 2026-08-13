@@ -94,12 +94,13 @@ Sanity checks:
 - Direct `DELETE` of a completed session is rejected by RLS
 - `select proname from pg_proc where proname = 'grind_insert_coach_assistant';`
 
-**Past-edit skip fidelity (41):** paste and run `docs/sql/41-upsert-past-session-skip.sql`
-**before** (or with) the `/log/past` edit UI that round-trips warm-ups, skip
-markers, and per-set notes. Signature of `upsert_past_session` is unchanged;
-only the JSON row shape gains `is_skipped`. Sanity check: saving a past edit
-that includes a skip-marker row (`is_skipped: true`, null weight/reps) keeps
-that row after reload.
+**Past-edit skip + RPE fidelity (41):** paste and run `docs/sql/41-upsert-past-session-skip.sql`
+**before** (or with) the app that round-trips warm-ups, skip markers, notes, and RPE on
+`/log/past` edits. Without it, skip markers and RPE are silently dropped on save.
+Signature of `upsert_past_session` is unchanged; JSON row shape gains `is_skipped` and
+optional `rpe`. Sanity check: saving a past edit that includes a skip-marker row
+(`is_skipped: true`, null weight/reps) keeps that row after reload, and existing
+RPE values survive a weight-only edit.
 
 ## Deploying 20
 

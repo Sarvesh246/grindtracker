@@ -14,8 +14,10 @@ export function coachContextCacheKey(
   userId: string,
   localDate: string,
   unit: string,
+  /** Open-session fingerprint so finish/start/log changes miss the cache. */
+  sessionFp = 'none',
 ): string {
-  return `${userId}|${localDate}|${unit}`
+  return `${userId}|${localDate}|${unit}|${sessionFp}`
 }
 
 export function getCachedCoachContext(key: string): string | null {

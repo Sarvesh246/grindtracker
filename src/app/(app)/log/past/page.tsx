@@ -28,10 +28,12 @@ type SetInput = {
   isWarmup: boolean
   isSkipped: boolean
   note: string
+  /** Preserved on edit even though past UI has no RPE control (migration 31). */
+  rpe: number | null
 }
 
 function blankSet(repsDefault: string): SetInput {
-  return { weight: '', reps: repsDefault, isWarmup: false, isSkipped: false, note: '' }
+  return { weight: '', reps: repsDefault, isWarmup: false, isSkipped: false, note: '', rpe: null }
 }
 
 type ExistingSession = { id: string; day_type: string; xp_earned: number }
@@ -185,11 +187,12 @@ function LogPastContent() {
       is_warmup: boolean | null
       is_skipped: boolean | null
       note: string | null
+      rpe: number | null
     }[] = []
     if (existingSessionId) {
       const res = await supabase
         .from('session_logs')
-        .select('exercise_id, set_number, weight, reps, is_warmup, is_skipped, note')
+        .select('exercise_id, set_number, weight, reps, is_warmup, is_skipped, note, rpe')
         .eq('session_id', existingSessionId)
       existingLogsError = res.error
       existingLogs = res.data ?? []
@@ -242,12 +245,17 @@ function LogPastContent() {
     for (const log of existingLogs) {
       if (inputs[log.exercise_id]?.[log.set_number - 1]) {
         const skipped = !!log.is_skipped
+        const rpe =
+          !skipped && typeof log.rpe === 'number' && log.rpe >= 1 && log.rpe <= 10
+            ? log.rpe
+            : null
         inputs[log.exercise_id][log.set_number - 1] = {
           weight: !skipped && log.weight !== null ? fmt(log.weight) : '',
           reps: !skipped && log.reps !== null ? String(log.reps) : '',
           isWarmup: !skipped && !!log.is_warmup,
           isSkipped: skipped,
           note: log.note ?? '',
+          rpe,
         }
         if (log.note) noteKeys.add(`${log.exercise_id}:${log.set_number - 1}`)
       }
@@ -390,6 +398,7 @@ function LogPastContent() {
       is_warmup: boolean
       is_skipped: boolean
       note: string | null
+      rpe: number | null
     }[] = []
 
     for (const ex of exercises) {
@@ -398,6 +407,8 @@ function LogPastContent() {
       for (let i = 0; i < sets.length; i++) {
         const s = sets[i]
         const note = s.note.trim() || null
+        const rpe =
+          typeof s.rpe === 'number' && s.rpe >= 1 && s.rpe <= 10 ? s.rpe : null
 
         if (exerciseSkipped || s.isSkipped) {
           logsPayload.push({
@@ -408,6 +419,7 @@ function LogPastContent() {
             is_warmup: false,
             is_skipped: true,
             note,
+            rpe: null,
           })
           continue
         }
@@ -424,6 +436,7 @@ function LogPastContent() {
           is_warmup: !!s.isWarmup,
           is_skipped: false,
           note,
+          rpe,
         })
       }
     }

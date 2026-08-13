@@ -223,8 +223,12 @@ export default function DaySelect() {
   const load = useCallback(() => refetch(), [refetch])
 
   // Open incomplete sessions (incl. prior-day orphans) from the catalog.
-  // Local override lets Save/Discard update the banner immediately.
+  // Local override lets Save/Discard update the banner immediately; clear it
+  // once a fresh catalog arrives so we don't shadow server truth forever.
   const [openSessionsOverride, setOpenSessionsOverride] = useState<OpenSession[] | null>(null)
+  useEffect(() => {
+    setOpenSessionsOverride(null)
+  }, [catalog?.openSessions])
   const openSessions = useMemo(
     () => openSessionsOverride ?? catalog?.openSessions ?? [],
     [openSessionsOverride, catalog?.openSessions],

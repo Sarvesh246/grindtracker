@@ -44,6 +44,7 @@ import CompletionModal from './CompletionModal'
 import {
   writeFinishUndoToken,
   performFinishUndo,
+  FINISH_UNDO_TTL_MS,
 } from '@/lib/utils/finishUndo'
 import { markAppDataStale } from '@/lib/cache/appDataCache'
 import { useFeatureTooltip } from '@/components/onboarding/useFeatureTooltip'
@@ -361,6 +362,16 @@ export default function ActiveWorkout({ day }: { day: string }) {
   // own closure would be stale. The ref always reflects the latest committed state.
   const logsRef = useRef<LogMap>(logs)
   useEffect(() => { logsRef.current = logs }, [logs])
+
+  /** Keep logsRef in sync inside setState updaters so rest/completion checks
+   *  don't race on a stale ref between paint and the effect above. */
+  function commitLogs(updater: (prev: LogMap) => LogMap) {
+    setLogs(prev => {
+      const next = updater(prev)
+      logsRef.current = next
+      return next
+    })
+  }
 
   // Replay anything queued by the offline fallbacks below (check, edit, skip/
   // unskip, delete) — once on mount (in case the connection was already back
@@ -709,8 +720,17 @@ export default function ActiveWorkout({ day }: { day: string }) {
     return { total, checked, skipped, percent }
   }, [exercises, logs, extraSets])
 
-  const allSetsProcessed =
-    setCounts.total > 0 && setCounts.checked + setCounts.skipped >= setCounts.total
+  const allSetsProcessed = useMemo(() => {
+    if (exercises.length === 0) return false
+    for (const ex of exercises) {
+      const n = ex.sets_target + (extraSets[ex.id] ?? 0)
+      for (let s = 1; s <= n; s++) {
+        const l = logs[`${ex.id}-${s}`]
+        if (!l || (!l.checked && !l.skipped)) return false
+      }
+    }
+    return true
+  }, [exercises, logs, extraSets])
 
   // When every set is checked or skipped, stop any running rest so Finish is
   // primary — don't leave the CTA buried behind a countdown with nothing left to rest for.
@@ -936,7 +956,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         removeQueuedOp(sessionId, exerciseId, setNumber)
       }
 
-      setLogs(prev => ({
+      commitLogs(prev => ({
         ...prev,
         [key]: {
           ...(prev[key] ?? logEntry),
@@ -1005,13 +1025,23 @@ export default function ActiveWorkout({ day }: { day: string }) {
       }
 
       // Don't start a rest countdown when this check completes the whole workout —
-      // there's nothing left to rest for. Read from the ref (latest committed state)
-      // rather than the `logs` closed over at call time — another set may have been
-      // checked while this one's upsert was in flight above. The pre-check state
-      // still needs the just-checked key treated as processed when projecting completion.
-      const willAllBeProcessed =
-        totalSets() > 0 &&
-        Object.entries(logsRef.current).every(([k, l]) => (k === key ? true : l.checked || l.skipped))
+      // there's nothing left to rest for. Prefer slot-complete over counting
+      // Object.entries (stale keys / missing slots). logsRef was sync-updated by
+      // commitLogs above so concurrent checks see each other.
+      let willAllBeProcessed = exercises.length > 0
+      if (willAllBeProcessed) {
+        for (const ex of exercises) {
+          const n = ex.sets_target + (extraSets[ex.id] ?? 0)
+          for (let s = 1; s <= n; s++) {
+            const slot = logsRef.current[`${ex.id}-${s}`]
+            if (!slot || (!slot.checked && !slot.skipped)) {
+              willAllBeProcessed = false
+              break
+            }
+          }
+          if (!willAllBeProcessed) break
+        }
+      }
 
       if (willAllBeProcessed) {
         // Finish is next — clear any leftover rest from an earlier set.
@@ -2001,7 +2031,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         userId: user.id,
         xpEarned,
         prevRotationIndex,
-        expiresAt: Date.now() + 10 * 60 * 1000,
+        expiresAt: Date.now() + FINISH_UNDO_TTL_MS,
       })
 
       // Badge awards are a bonus — never fail an already-saved finish over them.
@@ -2193,10 +2223,9 @@ export default function ActiveWorkout({ day }: { day: string }) {
           onAskCoach={() => {
             const message =
               "How was that workout? Give me a quick take on today’s session — what went well and what to watch next time."
+            // Queue via the bus (survives CoachRootLazy mount) before navigating.
+            requestOpenCoach({ message, size: 'compact' })
             router.push('/home')
-            window.dispatchEvent(
-              new CustomEvent('grind:open-coach', { detail: { message } }),
-            )
           }}
         />
       )}
@@ -2528,8 +2557,8 @@ export default function ActiveWorkout({ day }: { day: string }) {
           durationMs={restTimer.durationMs}
           paused={restTimer.paused}
           bottomOffset={hasPendingSync()
-            ? 'calc(126px + env(safe-area-inset-bottom))'
-            : 'calc(110px + env(safe-area-inset-bottom))'}
+            ? 'calc(168px + env(safe-area-inset-bottom))'
+            : 'calc(132px + env(safe-area-inset-bottom))'}
           onStop={restTimer.stop}
           onAdd={restTimer.addSeconds}
           onPause={restTimer.pause}
@@ -2709,6 +2738,13 @@ export default function ActiveWorkout({ day }: { day: string }) {
               fontFamily: "'Bebas Neue', sans-serif",
               fontSize: '22px', color: 'var(--text-primary)', letterSpacing: '1px',
               fontWeight: 'normal',
+              minWidth: 0,
+              flex: 1,
+              textAlign: 'center',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              padding: '0 4px',
             }}>
               {dayLabel(day)}
             </h1>

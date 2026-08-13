@@ -38,7 +38,7 @@ export default function RestTimerBar({
   remainingMs,
   durationMs,
   paused,
-  bottomOffset = 'calc(110px + env(safe-area-inset-bottom))',
+  bottomOffset = 'calc(132px + env(safe-area-inset-bottom))',
   onStop,
   onAdd,
   onPause,
@@ -58,6 +58,14 @@ export default function RestTimerBar({
   const pct = durationMs > 0 ? Math.min(100, (remainingMs / durationMs) * 100) : 0
   const done = !paused && remainingMs <= 0
   const lowTime = !paused && !done && remainingMs <= 10_000
+
+  // Collapse expanders while flashing REST DONE so a new start() doesn't
+  // remount with presets still open.
+  useEffect(() => {
+    if (!done) return
+    setOpen(false)
+    setAddOpen(false)
+  }, [done])
 
   return (
     <div

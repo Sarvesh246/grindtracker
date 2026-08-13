@@ -248,7 +248,8 @@ export async function executeCorrectWeights(
     )
 
     // In-place weight update (migration 37) — preserves is_skipped markers and RPE.
-    // Do NOT rewrite via upsert_past_session (that drops skips and never stores RPE).
+    // Prefer this over upsert_past_session for Coach corrections (full replace).
+    // Past-edit path (migration 41) now round-trips skips + RPE when the client sends them.
     const { error } = await supabase.rpc('coach_correct_session_weights', {
       p_session_id: session.sessionId,
       p_exercise_id: execute.exerciseId,

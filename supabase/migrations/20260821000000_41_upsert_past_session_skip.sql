@@ -1,5 +1,5 @@
--- Mirror of docs/sql/41-upsert-past-session-skip.sql for CLI-linked environments.
--- Past-workout edits must round-trip warm-ups, skip markers, and per-set notes.
+-- Migration: 41 upsert_past_session skip + note + rpe fidelity
+-- Source of truth: docs/sql/41-upsert-past-session-skip.sql
 
 begin;
 
@@ -38,6 +38,7 @@ begin
     raise exception 'LOGS_REQUIRED' using errcode = '22023';
   end if;
 
+  -- Count real working sets (exclude warm-ups and skip markers).
   select count(*)::int into v_working
     from json_array_elements(p_logs) e
    where coalesce((e->>'is_skipped')::boolean, false) = false
@@ -71,6 +72,8 @@ begin
      where id = v_session;
     delete from session_logs where session_id = v_session;
   else
+    -- Edit-in-place if a completed session already exists for this slot
+    -- (enforces uniqueness; "LOG ANYWAY" path should not create duplicates).
     select id into v_session
       from sessions
      where user_id = v_user
@@ -102,6 +105,7 @@ begin
     end if;
   end if;
 
+  -- Insert payload logs. is_pr is recomputed by grind_recompute_stats.
   for v_log in select * from json_array_elements(p_logs)
   loop
     if (v_log->>'exercise_id') is null or (v_log->>'set_number') is null then
@@ -110,10 +114,26 @@ begin
 
     v_skipped := coalesce((v_log->>'is_skipped')::boolean, false);
 
+    -- Preserve RPE on past edits when the client round-trips it (migration 31).
+    -- Clamp to 1–10; invalid/missing → null (same as session_logs_rpe_range).
+    v_rpe := null;
+    if (v_log->>'rpe') is not null and (v_log->>'rpe') <> '' then
+      begin
+        v_rpe := (v_log->>'rpe')::smallint;
+        if v_rpe < 1 or v_rpe > 10 then
+          v_rpe := null;
+        end if;
+      exception when others then
+        v_rpe := null;
+      end;
+    end if;
+
     if v_skipped then
+      -- Skip marker: weight/reps always null (CHECK on session_logs). RPE must
+      -- also be null — a skip isn't a logged set.
       insert into session_logs (
         session_id, exercise_id, set_number, weight, reps,
-        is_pr, is_warmup, note, is_skipped
+        is_pr, is_warmup, note, is_skipped, rpe
       ) values (
         v_session,
         (v_log->>'exercise_id')::uuid,
@@ -123,19 +143,21 @@ begin
         false,
         false,
         nullif(v_log->>'note', ''),
-        true
+        true,
+        null
       );
       continue;
     end if;
 
     if (v_log->>'weight') is null or (v_log->>'weight') = ''
        or (v_log->>'reps') is null or (v_log->>'reps') = '' then
+      -- Skip empty placeholder rows (client may send the full set grid).
       continue;
     end if;
 
     insert into session_logs (
       session_id, exercise_id, set_number, weight, reps,
-      is_pr, is_warmup, note, is_skipped
+      is_pr, is_warmup, note, is_skipped, rpe
     ) values (
       v_session,
       (v_log->>'exercise_id')::uuid,
@@ -145,7 +167,8 @@ begin
       false,
       coalesce((v_log->>'is_warmup')::boolean, false),
       nullif(v_log->>'note', ''),
-      false
+      false,
+      v_rpe
     );
   end loop;
 

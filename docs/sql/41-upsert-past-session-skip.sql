@@ -1,19 +1,21 @@
 -- 41-upsert-past-session-skip.sql
 --
--- Past-workout edits must round-trip warm-ups, skip markers, and per-set notes.
+-- Past-workout edits must round-trip warm-ups, skip markers, per-set notes, and RPE.
 -- upsert_past_session (20) already accepted is_warmup + note in p_logs JSON, but:
 --   1. Empty weight/reps rows were dropped, so is_skipped markers never persisted
 --   2. is_skipped was hardcoded false on insert
 --   3. The early working-set count treated warm-ups as working sets
+--   4. RPE (migration 31) was dropped on every past save (delete+reinsert without rpe)
 --
 -- Apply after 40. Idempotent (create or replace). Signature unchanged.
+-- p_logs row shape: {exercise_id, set_number, weight?, reps?, is_warmup?, is_skipped?, note?, rpe?}
 
 begin;
 
 create or replace function upsert_past_session(
   p_day_type   text,
   p_local_date date,
-  p_logs       json,          -- [{exercise_id, set_number, weight?, reps?, is_warmup?, is_skipped?, note?}]
+  p_logs       json,          -- [{exercise_id, set_number, weight?, reps?, is_warmup?, is_skipped?, note?, rpe?}]
   p_session_id uuid default null,
   p_note       text default null
 )
@@ -32,6 +34,7 @@ declare
   v_xp       int := 0;
   v_editing  boolean := p_session_id is not null;
   v_skipped  boolean;
+  v_rpe      smallint;
 begin
   if v_user is null then
     raise exception 'AUTH_REQUIRED' using errcode = '28000';
@@ -121,11 +124,26 @@ begin
 
     v_skipped := coalesce((v_log->>'is_skipped')::boolean, false);
 
+    -- Preserve RPE on past edits when the client round-trips it (migration 31).
+    -- Clamp to 1–10; invalid/missing → null (same as session_logs_rpe_range).
+    v_rpe := null;
+    if (v_log->>'rpe') is not null and (v_log->>'rpe') <> '' then
+      begin
+        v_rpe := (v_log->>'rpe')::smallint;
+        if v_rpe < 1 or v_rpe > 10 then
+          v_rpe := null;
+        end if;
+      exception when others then
+        v_rpe := null;
+      end;
+    end if;
+
     if v_skipped then
-      -- Skip marker: weight/reps always null (CHECK on session_logs).
+      -- Skip marker: weight/reps always null (CHECK on session_logs). RPE must
+      -- also be null — a skip isn't a logged set.
       insert into session_logs (
         session_id, exercise_id, set_number, weight, reps,
-        is_pr, is_warmup, note, is_skipped
+        is_pr, is_warmup, note, is_skipped, rpe
       ) values (
         v_session,
         (v_log->>'exercise_id')::uuid,
@@ -135,7 +153,8 @@ begin
         false,
         false,
         nullif(v_log->>'note', ''),
-        true
+        true,
+        null
       );
       continue;
     end if;
@@ -148,7 +167,7 @@ begin
 
     insert into session_logs (
       session_id, exercise_id, set_number, weight, reps,
-      is_pr, is_warmup, note, is_skipped
+      is_pr, is_warmup, note, is_skipped, rpe
     ) values (
       v_session,
       (v_log->>'exercise_id')::uuid,
@@ -158,7 +177,8 @@ begin
       false,
       coalesce((v_log->>'is_warmup')::boolean, false),
       nullif(v_log->>'note', ''),
-      false
+      false,
+      v_rpe
     );
   end loop;
 

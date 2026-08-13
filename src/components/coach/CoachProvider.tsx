@@ -234,14 +234,11 @@ export function CoachProvider({
       )
       setHistoryOpen(false)
       setError(null)
-      if (!openedOnce.current) {
-        openedOnce.current = true
-        void refreshQuota()
-        void refreshConversations()
-      } else {
-        if (!quotaLoaded) void refreshQuota()
-        void refreshConversations()
-      }
+      // Always refresh quota + chipHints on open so mid-workout → finish → home
+      // doesn't keep stale "active session" chips.
+      openedOnce.current = true
+      void refreshQuota()
+      void refreshConversations()
       const msg = detail.message?.trim()
       if (msg) {
         queueMicrotask(() => {
@@ -249,7 +246,7 @@ export function CoachProvider({
         })
       }
     },
-    [quotaLoaded, refreshQuota, refreshConversations, workoutSlim],
+    [refreshQuota, refreshConversations, workoutSlim],
   )
 
   useEffect(() => {
