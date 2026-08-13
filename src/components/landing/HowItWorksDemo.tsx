@@ -3,14 +3,16 @@
 import { useEffect, useRef, useState } from 'react'
 import DayIcon from '@/components/DayIcon'
 import FlameIcon from '@/components/FlameIcon'
+import CoachFabIcon from '@/components/coach/CoachFabIcon'
 
 /** Must match the CSS loop length on `.landing-how__scene`. */
-const LOOP_MS = 10_000
+const LOOP_MS = 16_000
 /** Log scene is on-screen; rest bar is visible until finish swaps in. */
-const REST_START_MS = 2_200
+const REST_START_MS = 2_560
 /** Hits 0:00 / REST DONE just before the finish bar takes the bottom edge. */
-const REST_ZERO_MS = 5_000
-const REST_DURATION_MS = 6_000
+const REST_ZERO_MS = 10_560
+const REST_DURATION_MS = 8_000
+const REST_LOW_MS = 2_000
 
 function prefersReducedMotion(): boolean {
   if (typeof window === 'undefined') return false
@@ -54,26 +56,6 @@ function BackIcon() {
   return (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <polyline points="15 18 9 12 15 6" />
-    </svg>
-  )
-}
-
-function CoachG() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.75" />
-      <text
-        x="12"
-        y="12.5"
-        textAnchor="middle"
-        dominantBaseline="middle"
-        fill="currentColor"
-        fontFamily="var(--font-display, 'Bebas Neue', sans-serif)"
-        fontSize="11"
-        fontWeight="700"
-      >
-        G
-      </text>
     </svg>
   )
 }
@@ -217,7 +199,7 @@ function SetRow({
 }
 
 /**
- * ~10s loop that mirrors the real app: home → log a set → PR → completion sheet.
+ * ~16s loop that mirrors the real app: home → log a set → PR → completion sheet.
  * Bottom chrome (nav, rest, finish, sheet) is pinned to the phone screen edge.
  * Reduce-motion holds on the home screen.
  */
@@ -255,19 +237,25 @@ export default function HowItWorksDemo() {
     }
 
     let start = performance.now()
-    let timer = 0
-    const tick = () => {
-      const elapsed = (performance.now() - start) % LOOP_MS
-      setRestMs(restMsAt(elapsed))
-      timer = window.setTimeout(tick, 250)
+    let raf = 0
+    let lastShown = -1
+    const tick = (now: number) => {
+      const elapsed = (now - start) % LOOP_MS
+      const ms = restMsAt(elapsed)
+      // Digits change once per second, like the live RestTimerBar — not every frame.
+      const shown = Math.ceil(ms / 1000) * 1000
+      if (shown !== lastShown) {
+        lastShown = shown
+        setRestMs(shown)
+      }
+      raf = requestAnimationFrame(tick)
     }
-    tick()
-    return () => window.clearTimeout(timer)
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
   }, [active, reduceMotion])
 
   const restDone = active && !reduceMotion && restMs <= 0
-  const restLow = active && !reduceMotion && !restDone && restMs <= 2_000
-  const restPct = restDone ? 0 : Math.min(100, (restMs / REST_DURATION_MS) * 100)
+  const restLow = active && !reduceMotion && !restDone && restMs <= REST_LOW_MS
 
   return (
     <div ref={rootRef} className="landing-how" aria-hidden="true">
@@ -352,9 +340,9 @@ export default function HowItWorksDemo() {
                   <span className="landing-how-wo__day">PUSH DAY</span>
                   <span className="landing-how-wo__meta">
                     <span className="landing-how-wo__g">
-                      <CoachG />
+                      <CoachFabIcon size={22} />
                     </span>
-                    <span className="landing-how-wo__clock">8:12</span>
+                    <span className="landing-how-wo__clock">32:14</span>
                   </span>
                 </div>
                 <div className="landing-how-wo__progress">
@@ -362,25 +350,48 @@ export default function HowItWorksDemo() {
                 </div>
 
                 <div className="landing-how-wo__body">
-                  <div className="landing-how-wo__card">
-                    <div className="landing-how-wo__ex">
-                      <div className="landing-how-wo__ex-name">Bench Press</div>
-                      <div className="landing-how-wo__ex-meta">
-                        <span>3 sets × 8 reps</span>
-                        <span>prev: 185 lbs</span>
+                  <div className="landing-how-wo__stack">
+                    <div className="landing-how-wo__card landing-how-wo__card--prior">
+                      <div className="landing-how-wo__ex">
+                        <div className="landing-how-wo__ex-name">Incline Dumbbell Press</div>
+                        <div className="landing-how-wo__ex-meta">
+                          <span>3 sets × 10 reps</span>
+                          <span>prev: 70 lbs</span>
+                        </div>
+                      </div>
+                      <div className="landing-how-wo__rule" />
+                      <div className="landing-how-set__cols">
+                        <span />
+                        <span>lbs</span>
+                        <span>reps</span>
+                        <span />
+                      </div>
+                      <div className="landing-how-set__list">
+                        <SetRow n={1} weight="70" reps="10" state="done" />
+                        <SetRow n={2} weight="70" reps="10" state="done" />
+                        <SetRow n={3} weight="70" reps="10" state="done" />
                       </div>
                     </div>
-                    <div className="landing-how-wo__rule" />
-                    <div className="landing-how-set__cols">
-                      <span />
-                      <span>lbs</span>
-                      <span>reps</span>
-                      <span />
-                    </div>
-                    <div className="landing-how-set__list">
-                      <SetRow n={1} weight="185" reps="8" state="done" />
-                      <SetRow n={2} weight="185" reps="8" state="done" />
-                      <SetRow n={3} weight="190" reps="8" state="live" />
+                    <div className="landing-how-wo__card">
+                      <div className="landing-how-wo__ex">
+                        <div className="landing-how-wo__ex-name">Bench Press</div>
+                        <div className="landing-how-wo__ex-meta">
+                          <span>3 sets × 8 reps</span>
+                          <span>prev: 185 lbs</span>
+                        </div>
+                      </div>
+                      <div className="landing-how-wo__rule" />
+                      <div className="landing-how-set__cols">
+                        <span />
+                        <span>lbs</span>
+                        <span>reps</span>
+                        <span />
+                      </div>
+                      <div className="landing-how-set__list">
+                        <SetRow n={1} weight="185" reps="8" state="done" />
+                        <SetRow n={2} weight="185" reps="8" state="done" />
+                        <SetRow n={3} weight="190" reps="8" state="live" />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -389,10 +400,7 @@ export default function HowItWorksDemo() {
                   className={`landing-how-wo__rest${restLow ? ' landing-how-wo__rest--low' : ''}${restDone ? ' landing-how-wo__rest--done' : ''}`}
                 >
                   <div className="landing-how-wo__rest-bar">
-                    <div
-                      className="landing-how-wo__rest-fill"
-                      style={{ width: `${restPct}%` }}
-                    />
+                    <div className="landing-how-wo__rest-fill" />
                   </div>
                   <div className="landing-how-wo__rest-row">
                     <span className="landing-how-wo__rest-time">
@@ -419,7 +427,7 @@ export default function HowItWorksDemo() {
                 </div>
                 <div className="landing-how-wo__finish">
                   <span>FINISH WORKOUT</span>
-                  <div className="landing-how-wo__finish-sum">3 / 3 sets</div>
+                  <div className="landing-how-wo__finish-sum">6 / 6 sets</div>
                 </div>
               </div>
             </div>
@@ -437,8 +445,8 @@ export default function HowItWorksDemo() {
                   </div>
                   <div className="landing-how-done__stats">
                     {[
-                      ['8m 12s', 'Duration'],
-                      ['3', 'Sets'],
+                      ['32m 14s', 'Duration'],
+                      ['6', 'Sets'],
                       ['1', 'PRs'],
                       ['12', 'Streak'],
                     ].map(([value, label]) => (

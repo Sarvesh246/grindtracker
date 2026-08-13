@@ -2915,7 +2915,7 @@ html.light .landing-atmosphere {
   justify-content: flex-start;
   /* Compact on mobile — no phone here, How it works is the mock */
   min-height: 0;
-  padding: 36px 20px 56px;
+  padding: 36px 20px 20px;
   box-sizing: border-box;
 }
 
@@ -3062,15 +3062,16 @@ html.light .landing-atmosphere {
   min-height: 0;
 }
 
-/* Scroll-down cue ÃÂ¢ÃÂÃÂ centered bottom of hero, soft lime, ~44px target */
+/* Scroll-down cue — in flow on mobile so it sits under the CTAs, not on them */
 .landing-hero__scroll {
-  position: absolute;
-  left: 50%;
-  bottom: max(10px, env(safe-area-inset-bottom));
-  transform: translateX(-50%);
+  position: relative;
+  left: auto;
+  bottom: auto;
+  transform: none;
   z-index: 2;
   width: 44px;
   height: 44px;
+  margin: 22px auto 4px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3151,6 +3152,13 @@ html.light .landing-atmosphere {
     /* Match sticky header (60px) */
     min-height: calc(100svh - 60px - env(safe-area-inset-top));
     padding: 34px 48px 67px;
+  }
+  .landing-hero__scroll {
+    position: absolute;
+    left: 50%;
+    bottom: max(10px, env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    margin: 0;
   }
   /*
    * Restore the original two-column split (copy ~48% / demo ~44%).
@@ -3507,8 +3515,8 @@ html.light .landing-atmosphere {
   84%, 100% { opacity: 0; transform: scale(0.85); }
 }
 
-/* How it works — 10s home → workout → PR → completion sheet.
-   One shared 10s clock (no animation-delay) so infinite loops stay in sync. */
+/* How it works — 16s home → workout → PR → completion sheet.
+   One shared 16s clock (no animation-delay) so infinite loops stay in sync. */
 .landing-how {
   display: flex;
   flex-direction: column;
@@ -3584,30 +3592,30 @@ html.light .landing-atmosphere {
 }
 
 .landing-demo--active .landing-how__scene--home {
-  animation: landing-how-home 10s cubic-bezier(0.32, 0.72, 0, 1) infinite;
+  animation: landing-how-home 16s cubic-bezier(0.32, 0.72, 0, 1) infinite;
 }
 .landing-demo--active .landing-how__scene--log {
-  animation: landing-how-log 10s cubic-bezier(0.32, 0.72, 0, 1) infinite;
+  animation: landing-how-log 16s cubic-bezier(0.32, 0.72, 0, 1) infinite;
 }
 .landing-demo--active .landing-how__scene--done {
-  animation: landing-how-done 10s cubic-bezier(0.32, 0.72, 0, 1) infinite;
+  animation: landing-how-done 16s cubic-bezier(0.32, 0.72, 0, 1) infinite;
 }
 
 @keyframes landing-how-home {
-  0%, 18% { opacity: 1; transform: none; }
-  24%, 90% { opacity: 0; transform: translate3d(0, -8px, 0) scale(0.985); }
-  96%, 100% { opacity: 1; transform: none; }
+  0%, 12% { opacity: 1; transform: none; }
+  18%, 88% { opacity: 0; transform: translate3d(0, -8px, 0) scale(0.985); }
+  94%, 100% { opacity: 1; transform: none; }
 }
 
 @keyframes landing-how-log {
-  0%, 16% { opacity: 0; transform: translate3d(0, 14px, 0); }
-  22%, 90% { opacity: 1; transform: none; }
-  96%, 100% { opacity: 0; transform: none; }
+  0%, 12% { opacity: 0; transform: translate3d(0, 14px, 0); }
+  16%, 88% { opacity: 1; transform: none; }
+  94%, 100% { opacity: 0; transform: none; }
 }
 
 @keyframes landing-how-done {
-  0%, 66% { opacity: 0; }
-  72%, 90% { opacity: 1; }
+  0%, 72% { opacity: 0; }
+  78%, 90% { opacity: 1; }
   96%, 100% { opacity: 0; }
 }
 
@@ -3755,13 +3763,13 @@ html.light .landing-atmosphere {
 }
 
 .landing-demo--active .landing-how-home__cta {
-  animation: landing-how-press 10s cubic-bezier(0.32, 0.72, 0, 1) infinite;
+  animation: landing-how-press 16s cubic-bezier(0.32, 0.72, 0, 1) infinite;
 }
 
 @keyframes landing-how-press {
-  0%, 14% { transform: none; }
-  17% { transform: scale(0.96); }
-  21%, 100% { transform: none; }
+  0%, 8% { transform: none; }
+  11% { transform: scale(0.96); }
+  15%, 100% { transform: none; }
 }
 
 .landing-how-home__cta-copy {
@@ -3945,7 +3953,15 @@ html.light .landing-atmosphere {
 
 .landing-how-wo__g {
   display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
   color: var(--accent-text);
+  flex-shrink: 0;
+}
+.landing-how-wo__g svg {
+  display: block;
 }
 
 .landing-how-wo__clock {
@@ -3965,17 +3981,17 @@ html.light .landing-atmosphere {
 
 .landing-how-wo__progress-fill {
   height: 100%;
-  width: 66%;
+  width: 80%;
   background: var(--accent);
 }
 
 .landing-demo--active .landing-how-wo__progress-fill {
-  animation: landing-how-progress 10s cubic-bezier(0.32, 0.72, 0, 1) infinite;
+  animation: landing-how-progress 16s cubic-bezier(0.32, 0.72, 0, 1) infinite;
 }
 
 @keyframes landing-how-progress {
-  0%, 46% { width: 66%; }
-  54%, 100% { width: 100%; }
+  0%, 38% { width: 80%; }
+  46%, 100% { width: 100%; }
 }
 
 .landing-how-wo__body {
@@ -3985,10 +4001,22 @@ html.light .landing-atmosphere {
   overflow: hidden;
 }
 
+.landing-how-wo__stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* Prior exercise is already logged — peek it as if the list was scrolled. */
+  margin-top: -96px;
+}
+
 .landing-how-wo__card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
+}
+
+.landing-how-wo__card--prior {
+  opacity: 0.7;
 }
 
 .landing-how-wo__ex {
@@ -4138,29 +4166,29 @@ html.light .landing-atmosphere {
 }
 
 .landing-how.landing-demo--active .landing-how-set--live .landing-how-set__check {
-  animation: landing-how-check 10s cubic-bezier(0.32, 0.72, 0, 1) infinite;
+  animation: landing-how-check 16s cubic-bezier(0.32, 0.72, 0, 1) infinite;
 }
 
 .landing-how.landing-demo--active .landing-how-set--live .landing-how-set__pr {
-  animation: landing-how-pr 10s cubic-bezier(0.32, 0.72, 0, 1) infinite;
+  animation: landing-how-pr 16s cubic-bezier(0.32, 0.72, 0, 1) infinite;
 }
 
 @keyframes landing-how-check {
-  0%, 44% {
+  0%, 38% {
     opacity: 0;
     transform: scale(0.75);
     border-color: var(--border-strong);
     background: transparent;
     color: var(--text-muted);
   }
-  50% {
+  42% {
     opacity: 1;
     transform: scale(1.18);
     border-color: var(--accent);
     background: var(--accent-wash);
     color: var(--accent-text);
   }
-  54%, 100% {
+  46%, 100% {
     opacity: 1;
     transform: scale(1);
     border-color: var(--accent);
@@ -4170,8 +4198,8 @@ html.light .landing-atmosphere {
 }
 
 @keyframes landing-how-pr {
-  0%, 50% { opacity: 0; transform: scale(0.85); }
-  58%, 100% { opacity: 1; transform: scale(1); }
+  0%, 42% { opacity: 0; transform: scale(0.85); }
+  50%, 100% { opacity: 1; transform: scale(1); }
 }
 
 .landing-how-wo__rest,
@@ -4201,7 +4229,19 @@ html.light .landing-atmosphere {
   height: 100%;
   width: 100%;
   background: var(--accent);
-  transition: width 100ms linear, background-color 200ms ease;
+  transform-origin: left center;
+}
+
+.landing-demo--active .landing-how-wo__rest-fill {
+  /* Linear drain over the rest window — same feel as the live bar, no 250ms jumps. */
+  animation: landing-how-rest-drain 16s linear infinite;
+}
+
+@keyframes landing-how-rest-drain {
+  0%, 16% { transform: scaleX(1); background: var(--accent); }
+  54% { transform: scaleX(0.25); background: var(--accent); }
+  55% { transform: scaleX(0.23); background: var(--danger); }
+  66%, 100% { transform: scaleX(0); background: var(--danger); }
 }
 
 .landing-how-wo__rest--low .landing-how-wo__rest-fill {
@@ -4209,7 +4249,6 @@ html.light .landing-atmosphere {
 }
 
 .landing-how-wo__rest--done .landing-how-wo__rest-fill {
-  width: 0;
   background: var(--accent);
 }
 
@@ -4328,21 +4367,21 @@ html.light .landing-atmosphere {
 }
 
 .landing-demo--active .landing-how-wo__rest {
-  animation: landing-how-rest-swap 10s cubic-bezier(0.32, 0.72, 0, 1) infinite;
+  animation: landing-how-rest-swap 16s cubic-bezier(0.32, 0.72, 0, 1) infinite;
 }
 
 .landing-demo--active .landing-how-wo__finish {
-  animation: landing-how-finish-swap 10s cubic-bezier(0.32, 0.72, 0, 1) infinite;
+  animation: landing-how-finish-swap 16s cubic-bezier(0.32, 0.72, 0, 1) infinite;
 }
 
 @keyframes landing-how-rest-swap {
-  0%, 50% { opacity: 1; }
-  54%, 100% { opacity: 0; }
+  0%, 64% { opacity: 1; }
+  70%, 100% { opacity: 0; }
 }
 
 @keyframes landing-how-finish-swap {
-  0%, 50% { opacity: 0; transform: translate3d(0, 110%, 0); }
-  54%, 86% { opacity: 1; transform: none; }
+  0%, 64% { opacity: 0; transform: translate3d(0, 110%, 0); }
+  70%, 86% { opacity: 1; transform: none; }
   92%, 100% { opacity: 0; transform: translate3d(0, 12px, 0); }
 }
 
@@ -4374,12 +4413,12 @@ html.light .landing-atmosphere {
 }
 
 .landing-demo--active .landing-how-done__sheet {
-  animation: landing-how-sheet 10s cubic-bezier(0.32, 0.72, 0, 1) infinite;
+  animation: landing-how-sheet 16s cubic-bezier(0.32, 0.72, 0, 1) infinite;
 }
 
 @keyframes landing-how-sheet {
-  0%, 66% { transform: translate3d(0, 110%, 0); }
-  74%, 90% { transform: none; }
+  0%, 72% { transform: translate3d(0, 110%, 0); }
+  80%, 90% { transform: none; }
   96%, 100% { transform: translate3d(0, 16px, 0); }
 }
 
@@ -4523,16 +4562,16 @@ html.light .landing-atmosphere {
 }
 
 .landing-demo--active .landing-how__step--home {
-  animation: landing-how-step 10s cubic-bezier(0.32, 0.72, 0, 1) infinite;
+  animation: landing-how-step 16s cubic-bezier(0.32, 0.72, 0, 1) infinite;
 }
 .landing-demo--active .landing-how__step--log {
-  animation: landing-how-step 10s cubic-bezier(0.32, 0.72, 0, 1) infinite;
+  animation: landing-how-step 16s cubic-bezier(0.32, 0.72, 0, 1) infinite;
 }
 .landing-demo--active .landing-how__step--pr {
-  animation: landing-how-step 10s cubic-bezier(0.32, 0.72, 0, 1) infinite;
+  animation: landing-how-step 16s cubic-bezier(0.32, 0.72, 0, 1) infinite;
 }
 .landing-demo--active .landing-how__step--done {
-  animation: landing-how-step 10s cubic-bezier(0.32, 0.72, 0, 1) infinite;
+  animation: landing-how-step 16s cubic-bezier(0.32, 0.72, 0, 1) infinite;
 }
 
 .landing-demo--active .landing-how__step--log {
@@ -4546,12 +4585,12 @@ html.light .landing-atmosphere {
 }
 
 @keyframes landing-how-step {
-  0%, 18% {
+  0%, 14% {
     opacity: 1;
     color: var(--accent-text);
     background: var(--accent-wash);
   }
-  24%, 100% {
+  18%, 100% {
     opacity: 0.5;
     color: var(--text-muted);
     background: transparent;
@@ -4559,20 +4598,20 @@ html.light .landing-atmosphere {
 }
 
 @keyframes landing-how-step-log {
-  0%, 18% { opacity: 0.5; color: var(--text-muted); background: transparent; }
-  22%, 44% { opacity: 1; color: var(--accent-text); background: var(--accent-wash); }
-  50%, 100% { opacity: 0.5; color: var(--text-muted); background: transparent; }
+  0%, 14% { opacity: 0.5; color: var(--text-muted); background: transparent; }
+  16%, 38% { opacity: 1; color: var(--accent-text); background: var(--accent-wash); }
+  42%, 100% { opacity: 0.5; color: var(--text-muted); background: transparent; }
 }
 
 @keyframes landing-how-step-pr {
-  0%, 46% { opacity: 0.5; color: var(--text-muted); background: transparent; }
-  50%, 66% { opacity: 1; color: var(--accent-text); background: var(--accent-wash); }
-  72%, 100% { opacity: 0.5; color: var(--text-muted); background: transparent; }
+  0%, 40% { opacity: 0.5; color: var(--text-muted); background: transparent; }
+  42%, 64% { opacity: 1; color: var(--accent-text); background: var(--accent-wash); }
+  70%, 100% { opacity: 0.5; color: var(--text-muted); background: transparent; }
 }
 
 @keyframes landing-how-step-done {
-  0%, 68% { opacity: 0.5; color: var(--text-muted); background: transparent; }
-  72%, 90% { opacity: 1; color: var(--accent-text); background: var(--accent-wash); }
+  0%, 72% { opacity: 0.5; color: var(--text-muted); background: transparent; }
+  78%, 90% { opacity: 1; color: var(--accent-text); background: var(--accent-wash); }
   96%, 100% { opacity: 0.5; color: var(--text-muted); background: transparent; }
 }
 
@@ -4737,12 +4776,18 @@ html.light .landing-atmosphere {
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: 6px 8px;
+  gap: 10px 18px;
   font-size: 12px;
   line-height: 1.4;
   color: var(--text-secondary);
   text-align: center;
-  max-width: 18rem;
+}
+
+.landing-timer-demo__key {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
 }
 
 .landing-timer-demo__swatch {
@@ -4997,18 +5042,18 @@ html.light .landing-atmosphere {
   margin-bottom: 4px;
 }
 .landing-coach-mock__orb {
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   border-radius: 9999px;
   background: var(--accent);
   color: var(--on-accent);
-  font-family: var(--font-display);
-  font-size: 20px;
-  letter-spacing: 0.5px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+}
+.landing-coach-mock__orb svg {
+  display: block;
 }
 .landing-demo--active .landing-coach-mock__orb {
   animation: landing-coach-pulse 1.6s ease-in-out 1;

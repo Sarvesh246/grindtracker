@@ -8,6 +8,7 @@ import {
   type RefObject,
 } from 'react'
 import BadgeIcon from '@/components/BadgeIcon'
+import CoachFabIcon from '@/components/coach/CoachFabIcon'
 import { ALL_BADGES } from '@/lib/utils/badges'
 
 function useInViewOnce(threshold = 0.35) {
@@ -93,9 +94,11 @@ function fmtRest(secs: number): string {
 /** Rest-timer ring — real countdown; loops while in view. */
 export function RestTimerDemo() {
   const { ref, active } = useInViewLoop()
-  const [remaining, setRemaining] = useState(TIMER_SECONDS)
+  const [displaySec, setDisplaySec] = useState(TIMER_SECONDS)
   const [reduceMotion, setReduceMotion] = useState(false)
   const startRef = useRef<number | null>(null)
+  const ringRef = useRef<SVGCircleElement>(null)
+  const lastSecRef = useRef(-1)
 
   useEffect(() => {
     // Client-only motion preference (SSR shows animated-capable markup).
@@ -104,11 +107,17 @@ export function RestTimerDemo() {
   }, [])
 
   useEffect(() => {
+    const ring = ringRef.current
     if (reduceMotion || !active) {
       startRef.current = null
+      lastSecRef.current = -1
+      if (ring) ring.style.strokeDashoffset = String(TIMER_CIRC)
+      setDisplaySec(0)
       return
     }
 
+    lastSecRef.current = TIMER_SECONDS
+    setDisplaySec(TIMER_SECONDS)
     startRef.current = null
     let raf = 0
     const tick = (now: number) => {
@@ -117,10 +126,14 @@ export function RestTimerDemo() {
       // Loop: count 15→0, brief hold, restart.
       const cycle = TIMER_SECONDS + 1.2
       const t = elapsed % cycle
-      if (t <= TIMER_SECONDS) {
-        setRemaining(TIMER_SECONDS - t)
-      } else {
-        setRemaining(0)
+      const remaining = t <= TIMER_SECONDS ? TIMER_SECONDS - t : 0
+      if (ring) {
+        ring.style.strokeDashoffset = String(TIMER_CIRC * (1 - remaining / TIMER_SECONDS))
+      }
+      const sec = Math.ceil(remaining)
+      if (sec !== lastSecRef.current) {
+        lastSecRef.current = sec
+        setDisplaySec(sec)
       }
       raf = requestAnimationFrame(tick)
     }
@@ -129,9 +142,7 @@ export function RestTimerDemo() {
   }, [active, reduceMotion])
 
   // Reduce-motion: static completed end-state (empty ring + 0:00).
-  const shown = reduceMotion ? 0 : remaining
-  const progress = shown / TIMER_SECONDS
-  const dashOffset = TIMER_CIRC * (1 - progress)
+  const shown = reduceMotion ? 0 : displaySec
   const low = !reduceMotion && shown <= 5 && shown > 0
   const phase = shown <= 0 ? 'DONE' : low ? 'UP SOON' : 'REST'
 
@@ -141,13 +152,14 @@ export function RestTimerDemo() {
         <svg viewBox="0 0 100 100" className="landing-timer-demo__svg">
           <circle cx="50" cy="50" r={TIMER_RADIUS} className="landing-timer-demo__track" />
           <circle
+            ref={ringRef}
             cx="50"
             cy="50"
             r={TIMER_RADIUS}
             className="landing-timer-demo__progress"
             style={{
               strokeDasharray: TIMER_CIRC,
-              strokeDashoffset: dashOffset,
+              strokeDashoffset: reduceMotion ? TIMER_CIRC : 0,
             }}
           />
         </svg>
@@ -157,10 +169,14 @@ export function RestTimerDemo() {
         </div>
       </div>
       <p className="landing-timer-demo__legend">
-        <span className="landing-timer-demo__swatch landing-timer-demo__swatch--rest" aria-hidden />
-        Lime is rest.
-        <span className="landing-timer-demo__swatch landing-timer-demo__swatch--low" aria-hidden />
-        Red is the last seconds — then you&apos;re up.
+        <span className="landing-timer-demo__key">
+          <span className="landing-timer-demo__swatch landing-timer-demo__swatch--rest" aria-hidden />
+          Break ongoing
+        </span>
+        <span className="landing-timer-demo__key">
+          <span className="landing-timer-demo__swatch landing-timer-demo__swatch--low" aria-hidden />
+          Break ending
+        </span>
       </p>
       <div className="landing-timer-demo__hints">
         <span>Prefill last weight</span>
@@ -284,7 +300,7 @@ export function CoachMock() {
       <div className="landing-coach-mock__sheet">
         <div className="landing-coach-mock__header">
           <span className="landing-coach-mock__orb" aria-hidden>
-            G
+            <CoachFabIcon size={30} />
           </span>
           <span className="landing-coach-mock__title">Coach</span>
         </div>
@@ -292,7 +308,7 @@ export function CoachMock() {
           How was today&apos;s push?
         </div>
         <div className="landing-coach-mock__bubble landing-coach-mock__bubble--coach">
-          Bench moved — add 5 next time. Keep rest honest on incline.
+          Pretty good. Add 5 on bench next time. Incline needs the full rest — that&apos;s where it fell off.
         </div>
       </div>
     </DemoFrame>
