@@ -58,6 +58,8 @@ interface TimerState {
 
 const ZERO: TimerState = { exerciseId: null, startedAt: 0, durationMs: 0, remainingMs: 0, paused: false }
 const ACTIVE_TIMER_KEY = 'grind.rest.active_timer'
+/** Brief "REST DONE" hold after hitting 0 before clearing active state. */
+const DONE_FLASH_MS = 1250
 
 /** Restore a persisted timer from localStorage on page remount (e.g. after navigating away and back).
  *  A RUNNING timer uses startedAt + durationMs to recompute remaining so the countdown is
@@ -188,6 +190,15 @@ export function useRestTimer() {
     }
   }, [state.exerciseId, state.startedAt, state.durationMs, state.paused])
 
+  // After a natural zero, keep the bar mounted briefly for "REST DONE", then clear.
+  // Manual stop()/start() cancel this via cleanup. reduce-motion still gets the
+  // brief label (CSS transitions are zeroed elsewhere; this is a timed unmount).
+  useEffect(() => {
+    if (!state.exerciseId || state.paused || state.remainingMs > 0) return
+    const id = window.setTimeout(() => setState(ZERO), DONE_FLASH_MS)
+    return () => clearTimeout(id)
+  }, [state.exerciseId, state.remainingMs, state.paused])
+
   function start(exerciseId: string, durationSec?: number) {
     const seconds = durationSec ?? getExerciseRest(exerciseId)
     tenSecFired.current = false
@@ -246,8 +257,12 @@ export function useRestTimer() {
     )
   }
 
+  // Stay "active" through the post-zero flash so RestTimerBar can show REST DONE
+  // before unmounting. Auto-clear (above) or stop() ends the flash.
+  const done = state.exerciseId !== null && !state.paused && state.remainingMs <= 0
   return {
-    active: state.exerciseId !== null && (state.remainingMs > 0 || state.paused),
+    active: state.exerciseId !== null && (state.remainingMs > 0 || state.paused || done),
+    done,
     paused: state.paused,
     exerciseId: state.exerciseId,
     remainingMs: state.remainingMs,

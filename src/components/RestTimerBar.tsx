@@ -8,6 +8,8 @@ interface Props {
   remainingMs: number
   durationMs: number
   paused: boolean
+  /** Distance from viewport bottom so the bar can sit above Finish. */
+  bottomOffset?: string
   onStop: () => void
   onAdd: (sec: number) => void
   onPause: () => void
@@ -36,6 +38,7 @@ export default function RestTimerBar({
   remainingMs,
   durationMs,
   paused,
+  bottomOffset = 'calc(110px + env(safe-area-inset-bottom))',
   onStop,
   onAdd,
   onPause,
@@ -53,7 +56,8 @@ export default function RestTimerBar({
   }, [exerciseId])
 
   const pct = durationMs > 0 ? Math.min(100, (remainingMs / durationMs) * 100) : 0
-  const lowTime = !paused && remainingMs <= 10_000
+  const done = !paused && remainingMs <= 0
+  const lowTime = !paused && !done && remainingMs <= 10_000
 
   return (
     <div
@@ -62,11 +66,10 @@ export default function RestTimerBar({
       className="wo-fixed-bar"
       style={{
         position: 'fixed',
-        bottom: 0,
-        // Bar background fills through the home-indicator safe area to the true
-        // bottom; controls stay clear of the indicator. (env is real now that the
-        // app declares apple-mobile-web-app-capable — see layout.tsx.)
-        paddingBottom: 'max(8px, env(safe-area-inset-bottom))',
+        // Sit above the Finish bar when both are mounted (Finish stays at bottom: 0).
+        bottom: bottomOffset,
+        // Safe-area is already on the Finish bar below — keep a normal pad here.
+        paddingBottom: '8px',
         backgroundColor: 'var(--surface-elevated)',
         borderTop: '1px solid var(--border)',
         boxShadow: '0 -4px 16px rgba(0,0,0,0.4)',
@@ -85,8 +88,8 @@ export default function RestTimerBar({
         <div
           style={{
             height: '100%',
-            width: `${pct}%`,
-            backgroundColor: lowTime ? 'var(--danger)' : 'var(--accent)',
+            width: `${done ? 0 : pct}%`,
+            backgroundColor: done ? 'var(--accent)' : lowTime ? 'var(--danger)' : 'var(--accent)',
             opacity: paused ? 0.4 : 1,
             // Shorter than the 250ms tick so the bar doesn't lag a full frame behind.
             transition: 'width 100ms linear, background-color 200ms ease, opacity 200ms ease',
@@ -100,11 +103,12 @@ export default function RestTimerBar({
           onClick={() => setOpen(o => !o)}
           aria-label={open ? 'Collapse rest timer' : 'Expand rest timer'}
           aria-expanded={open}
+          disabled={done}
           style={{
             position: 'relative',
             background: 'none',
             border: 'none',
-            cursor: 'pointer',
+            cursor: done ? 'default' : 'pointer',
             display: 'flex',
             alignItems: 'center',
             gap: '10px',
@@ -117,30 +121,42 @@ export default function RestTimerBar({
             style={{
               fontFamily: 'var(--font-mono)',
               fontSize: '20px',
-              color: paused ? 'var(--text-muted)' : lowTime ? 'var(--danger)' : 'var(--text-primary)',
+              color: paused
+                ? 'var(--text-muted)'
+                : done
+                  ? 'var(--accent-text)'
+                  : lowTime
+                    ? 'var(--danger)'
+                    : 'var(--text-primary)',
               minWidth: '58px',
               textAlign: 'left',
               fontVariantNumeric: 'tabular-nums',
             }}
           >
-            {fmt(remainingMs)}
+            {done ? '0:00' : fmt(remainingMs)}
           </span>
           <span
             style={{
               fontSize: '11px',
-              color: paused ? 'var(--accent-dim)' : 'var(--text-muted)',
+              color: done
+                ? 'var(--accent-text)'
+                : paused
+                  ? 'var(--accent-dim)'
+                  : 'var(--text-muted)',
               letterSpacing: 'var(--tracking-label)',
               textTransform: 'uppercase',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
+              fontWeight: done ? 700 : undefined,
             }}
           >
-            {paused ? 'PAUSED' : `REST · ${exerciseName}`}
+            {done ? 'REST DONE' : paused ? 'PAUSED' : `REST · ${exerciseName}`}
           </span>
         </button>
 
-        {/* Pause / Resume */}
+        {/* Pause / Resume — hidden once rest hits 0 (flash before unmount). */}
+        {!done && (
         <button
           data-haptic="light"
           onClick={paused ? onResume : onPause}
@@ -171,8 +187,10 @@ export default function RestTimerBar({
             </svg>
           )}
         </button>
+        )}
 
         {/* Adjust time (popover) — add or subtract from the countdown */}
+        {!done && (
         <div style={{ position: 'relative', flexShrink: 0 }}>
           <button
             data-onboard="aw-rest-adjust"
@@ -201,11 +219,6 @@ export default function RestTimerBar({
             ±
           </button>
           {addOpen && (
-            // 3x2 grid (add row, then subtract row) instead of one 6-wide row —
-            // six inline pill buttons don't fit a narrow phone (≤375px) without
-            // either overflowing the viewport or getting clipped by the popover's
-            // own edge. A fixed-width grid stays compact and never overflows
-            // regardless of where the ± button sits in the bar.
             <div
               style={{
                 position: 'absolute',
@@ -252,11 +265,12 @@ export default function RestTimerBar({
             </div>
           )}
         </div>
+        )}
 
         <button
           data-haptic="light"
           onClick={onStop}
-          aria-label="Skip rest"
+          aria-label={done ? 'Dismiss rest' : 'Skip rest'}
           style={{
             position: 'relative',
             backgroundColor: 'transparent',
@@ -272,13 +286,11 @@ export default function RestTimerBar({
             flexShrink: 0,
           }}
         >
-          SKIP
+          {done ? 'OK' : 'SKIP'}
         </button>
       </div>
 
-      {/* Small centered chevron — the only visual cue (besides tapping the time)
-          that this bar expands to reveal the default-rest presets. Flips to
-          point down once expanded. */}
+      {!done && (
       <button
         data-haptic="light"
         onClick={() => setOpen(o => !o)}
@@ -316,8 +328,9 @@ export default function RestTimerBar({
           <polyline points="18 15 12 9 6 15" />
         </svg>
       </button>
+      )}
 
-      {open && (
+      {open && !done && (
         <div
           style={{
             padding: '8px 16px 12px',
