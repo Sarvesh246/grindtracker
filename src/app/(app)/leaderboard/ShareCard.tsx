@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { LeaderboardEntry } from '@/lib/types'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { renderShareCardPng } from '@/lib/utils/shareCardImage'
@@ -63,6 +64,17 @@ export default function ShareCard({
   useEffect(() => {
     const first = panelRef.current?.querySelector<HTMLElement>('button:not([disabled])')
     ;(first ?? backdropRef.current)?.focus()
+  }, [])
+  useEffect(() => {
+    const main = document.querySelector('.app-main') as HTMLElement | null
+    const prevMain = main?.style.overflow
+    const prevBody = document.body.style.overflow
+    if (main) main.style.overflow = 'hidden'
+    document.body.style.overflow = 'hidden'
+    return () => {
+      if (main) main.style.overflow = prevMain ?? ''
+      document.body.style.overflow = prevBody
+    }
   }, [])
 
   const isProfile = variant === 'profile'
@@ -147,7 +159,9 @@ export default function ShareCard({
     }
   }
 
-  return (
+  if (typeof document === 'undefined') return null
+
+  return createPortal(
     <div
       ref={backdropRef}
       role="presentation"
@@ -161,9 +175,16 @@ export default function ShareCard({
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 200,
-        padding: '24px',
+        // Above the bottom nav (100). Portaled to <body> so .app-main's
+        // -webkit-overflow-scrolling: touch cannot trap this overlay inside
+        // the scroll pane — otherwise the nav paints over Share text stats.
+        zIndex: 300,
+        paddingTop: 'max(24px, env(safe-area-inset-top))',
+        paddingLeft: '24px',
+        paddingRight: '24px',
+        paddingBottom: 'max(24px, env(safe-area-inset-bottom))',
+        overflowY: 'auto',
+        overscrollBehavior: 'contain',
         outline: 'none',
       }}
     >
@@ -175,12 +196,23 @@ export default function ShareCard({
         tabIndex={-1}
         onClick={e => e.stopPropagation()}
         onKeyDown={e => { if (e.key === 'Escape') onClose() }}
-        style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', outline: 'none' }}
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          // margin:auto centers when the card fits, and still lets the
+          // backdrop scroll when it doesn't (justify-content:center would
+          // clip the top of an overflowing column).
+          margin: 'auto',
+          width: '100%',
+          maxWidth: '320px',
+          outline: 'none',
+        }}
       >
       <div
         className="share-card-dark"
         style={{
-          width: '320px',
+          width: '100%',
           backgroundColor: '#0f0f0f',
           border: `2px solid var(--accent)`,
           borderRadius: '16px',
@@ -368,6 +400,7 @@ export default function ShareCard({
         Close
       </button>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
