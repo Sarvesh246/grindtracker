@@ -39,6 +39,15 @@ import {
   sheetExpandThreshold,
   sheetMinimizeThreshold,
 } from './coachMotion'
+import {
+  collapseMorphTravelPx,
+  collapsePreviewRect,
+  collapsePreviewVisualTop,
+  expandPreviewRect,
+  expandTravelPx,
+  lerp,
+  type SheetRect,
+} from './sheetMorph'
 import { useCoach } from './CoachProvider'
 
 const CHIPS = [
@@ -193,12 +202,7 @@ function compactRestRect(dock: 'tl' | 'tr' | 'bl' | 'br'): {
 }
 
 /** Full-page sheet resting box — mirrors `.coach-sheet--page` (inset 0). */
-function pageRestRect(): {
-  top: number
-  left: number
-  width: number
-  height: number
-} {
+function pageRestRect(): SheetRect {
   return {
     top: 0,
     left: 0,
@@ -207,71 +211,30 @@ function pageRestRect(): {
   }
 }
 
-type SheetRect = {
-  top: number
-  left: number
-  width: number
-  height: number
-}
-
-/** Upward pull (px) from compact rest height to full-page rest height. */
-function expandSpanPx(dock: 'tl' | 'tr' | 'bl' | 'br'): number {
-  const rest = compactRestRect(dock)
-  const page = pageRestRect()
-  return Math.max(1, page.height - rest.height)
-}
-
-/**
- * Live compact→page drag preview. Grows the sheet upward from the compact
- * bottom edge so the grabber tracks the finger (translate-only looked like
- * the card sliding off-screen, and never changed height). Once the top hits
- * the page edge, further pull expands the bottom until full page height —
- * rubber only applies past that span.
- */
-function expandPreviewRect(
+function liveExpandPreview(
   dock: 'tl' | 'tr' | 'bl' | 'br',
   pullY: number,
 ): SheetRect {
-  const rest = compactRestRect(dock)
-  const page = pageRestRect()
-  const up = Math.max(0, -pullY)
-  const span = Math.max(1, page.height - rest.height)
-  const p = Math.min(1, up / span)
+  return expandPreviewRect(compactRestRect(dock), pageRestRect(), pullY)
+}
 
-  // 1:1 height growth with upward pull. Top follows until page.top, then
-  // stays pinned while the bottom expands to reach page.height.
-  let height = Math.min(page.height, rest.height + up)
-  let top = rest.top + rest.height - height
-  if (top < page.top) {
-    top = page.top
-    height = Math.min(page.height, rest.height + up)
-  }
-  if (height >= page.height) {
-    height = page.height
-    top = page.top
-  }
+function liveCollapsePreview(
+  dock: 'tl' | 'tr' | 'bl' | 'br',
+  pullY: number,
+) {
+  return collapsePreviewRect(pageRestRect(), compactRestRect(dock), pullY)
+}
 
-  let left = rest.left + (page.left - rest.left) * p
-  let width = rest.width + (page.width - rest.width) * p
-
-  if (width > page.width) {
-    width = page.width
-    left = page.left
-  } else {
-    left = Math.min(
-      Math.max(left, page.left),
-      page.left + page.width - width,
-    )
-  }
-
-  return { top, left, width, height }
+/** Upward pull (px) until compact→page morph completes (top-tracking). */
+function expandSpanPx(dock: 'tl' | 'tr' | 'bl' | 'br'): number {
+  return expandTravelPx(compactRestRect(dock), pageRestRect())
 }
 
 /**
  * Soft rubber past extents only. Downward travel stays 1:1 so the sheet can
- * slide past minimize and fully off-screen under the finger. While expandable,
- * upward travel is 1:1 through `expandLimit` (compact→page span); light rubber
- * only past full page — never before the grabber can reach the top.
+ * morph toward compact then slide fully off-screen under the finger. While
+ * expandable, upward travel is 1:1 through `expandLimit` (grabber→page top);
+ * light rubber only past full page — never before the grabber can reach the top.
  */
 function rubberY(y: number, canExpand: boolean, expandLimit: number): number {
   if (y >= 0) return y
@@ -715,8 +678,8 @@ export default function CoachSheet() {
   )
 
   /**
-   * Page → compact without a bottom pop-in: lock the current visual rect
-   * (includes pull translate), clear pullY, swap to compact classes, then
+   * Page → compact without a bottom pop-in: lock the live collapse-preview
+   * rect (or current visual), clear pullY, swap to compact classes, then
    * spring the locked box to compact resting geometry — one continuous sheet.
    */
   const morphToCompact = useCallback(
@@ -740,7 +703,29 @@ export default function CoachSheet() {
 
       const sheet = sheetRef.current
       const rect = sheet?.getBoundingClientRect()
-      if (!rect || rect.height < 8) {
+      // Prefer the same geometry the finger was driving (collapse preview).
+      // getBoundingClientRect alone was the rigid translateY card until release
+      // — then the bottom "popped" back in as compact classes landed.
+      const preview =
+        fromY > 0 ? liveCollapsePreview(dock, fromY) : null
+      const from: SheetRect =
+        preview != null
+          ? {
+              top: collapsePreviewVisualTop(preview),
+              left: preview.left,
+              width: preview.width,
+              height: preview.height,
+            }
+          : rect && rect.height >= 8
+            ? {
+                top: rect.top,
+                left: rect.left,
+                width: rect.width,
+                height: rect.height,
+              }
+            : pageRestRect()
+
+      if (from.height < 8) {
         setSize('compact')
         springPullToZero(fromY, 0)
         return
@@ -751,12 +736,6 @@ export default function CoachSheet() {
       setPullY(0)
       setPullPhase('idle')
 
-      const from = {
-        top: rect.top,
-        left: rect.left,
-        width: rect.width,
-        height: rect.height,
-      }
       setMorphLock(from)
       setSizeMorphing(true)
       setSize('compact')
@@ -805,7 +784,7 @@ export default function CoachSheet() {
       const rect = sheet?.getBoundingClientRect()
       const from: SheetRect =
         fromY < 0
-          ? expandPreviewRect(dock, fromY)
+          ? liveExpandPreview(dock, fromY)
           : rect && rect.height >= 8
             ? {
                 top: rect.top,
@@ -852,6 +831,9 @@ export default function CoachSheet() {
    * not a snappy cut/fade in place. Never reset translateY to 0 before exit.
    * Gesture dismiss owns Y on the motion shell until unmount; CSS transform
    * exit keyframes are banned for this path (middle flash).
+   *
+   * From page, keep the live collapse-preview box (mini morph) and fling that
+   * downward — never snap back to a full-bleed translateY card.
    */
   const flingOffAndClose = useCallback(
     (fromY: number, fromVy: number) => {
@@ -860,13 +842,44 @@ export default function CoachSheet() {
         window.clearTimeout(morphTimer.current)
         morphTimer.current = null
       }
-      setMorphLock(null)
       setSizeMorphing(false)
       setPlayEnter(false)
-      const h = sheetH.current || sheetRef.current?.offsetHeight || 400
-      sheetH.current = h
-      const offY = Math.max(fromY + 48, h + 24)
-      const dismissAt = sheetDismissThreshold(h)
+
+      const pageSized = size === 'page' || visualSize === 'page'
+      let startY = Math.max(fromY, 0)
+      let boxH =
+        sheetH.current || sheetRef.current?.offsetHeight || 400
+      let offY = Math.max(startY + 48, boxH + 24)
+
+      if (pageSized && fromY > 0) {
+        const preview = liveCollapsePreview(dock, fromY)
+        const visualTop = collapsePreviewVisualTop(preview)
+        // Lock the morphed (or mid-morph) box at its current visual top;
+        // fling only adds translateY from 0 so we don't double-apply slideY.
+        setMorphLock({
+          top: visualTop,
+          left: preview.left,
+          width: preview.width,
+          height: preview.height,
+        })
+        boxH = preview.height
+        startY = 0
+        // Clear from the locked visual position — not from a full-page height.
+        offY = Math.max(
+          48,
+          (typeof window !== 'undefined' ? window.innerHeight : 844) -
+            visualTop +
+            24,
+        )
+      } else {
+        setMorphLock(null)
+      }
+
+      sheetH.current = boxH
+      const dismissAt = sheetDismissThreshold(
+        sheetH.current || sheetRef.current?.offsetHeight || 400,
+      )
+      // Backdrop fade uses the finger's overall dismiss progress (raw fromY).
       const progress = Math.min(1, Math.max(0, fromY) / dismissAt)
       setDismissBackdropOpacity(0.45 * (1 - progress * 0.85))
       setBackdropOut(false)
@@ -877,9 +890,14 @@ export default function CoachSheet() {
       gestureDismissActiveRef.current = true
       setGestureDismissActive(true)
 
+      // Page dismiss rebases Y onto the locked mini box — clear the raw
+      // finger pullY immediately or one frame double-applies the slide.
+      pullYRef.current = startY
+      setPullY(startY)
+
       if (reduceMotion) {
         // Jump-unmount from the finger offset — no settle-to-0 flash.
-        const holdY = Math.max(fromY, 1)
+        const holdY = Math.max(startY, 1)
         setGestureDismissY(holdY)
         pullYRef.current = holdY
         setPullY(holdY)
@@ -889,7 +907,7 @@ export default function CoachSheet() {
       }
 
       setPullPhase('settling')
-      let y = fromY
+      let y = startY
       // Keep downward momentum; never reverse into a bounce on dismiss.
       let v = Math.max(fromVy, 520)
       const tick = () => {
@@ -921,7 +939,7 @@ export default function CoachSheet() {
       }
       settleRaf.current = requestAnimationFrame(tick)
     },
-    [cancelSettle, closeCoach, reduceMotion],
+    [cancelSettle, closeCoach, dock, reduceMotion, size, visualSize],
   )
 
   /**
@@ -1001,21 +1019,24 @@ export default function CoachSheet() {
           ? pullYRef.current
           : readTranslateY(motionRef.current) ||
             readTranslateY(sheetRef.current)
-      // Mid size morph / expand-preview box: convert visual top → pullY so
-      // the finger continues from the same frame (not resting compact).
+      // Mid size morph / live preview box: convert visual top → pullY so
+      // the finger continues from the same frame (not resting compact/page).
       if (sizeMorphing || morphLock) {
         const rect = sheetRef.current?.getBoundingClientRect()
         if (rect) {
-          const rest =
-            size === 'page' ? pageRestRect() : compactRestRect(dock)
-          liveY = rect.top - rest.top
+          if (size === 'page') {
+            // Collapse preview / page→compact FLIP: visualTop ≈ page.top + pullY.
+            liveY = Math.max(0, rect.top - pageRestRect().top)
+          } else {
+            liveY = rect.top - compactRestRect(dock).top
+          }
         }
       } else if (
-        size !== 'page' &&
         (pullPhase === 'dragging' || pullPhase === 'settling') &&
-        pullYRef.current < 0
+        ((size !== 'page' && pullYRef.current < 0) ||
+          (size === 'page' && pullYRef.current > 0))
       ) {
-        // Expand preview uses absolute geometry (motionY=0) — keep pullY.
+        // Expand/collapse previews own geometry via pullY — keep it.
         liveY = pullYRef.current
       }
       cancelSettle()
@@ -1211,19 +1232,40 @@ export default function CoachSheet() {
     gestureDismissActive || gestureDismissActiveRef.current
 
   /**
-   * Compact drag-up: absolute growing box (height + top), not translateY.
-   * Prior “fix” used Math.max(pullY, gestureDismissY) — gestureDismissY is 0
-   * while idle, so every negative pullY became 0 and the sheet never moved
-   * until release (then snapped via morphToPage).
+   * Compact drag-up / page drag-down: absolute morphing box (height + top),
+   * not a rigid translateY. Expand grows the bottom toward the screen as the
+   * top rises; minimize shrinks the bottom toward the compact rest, then
+   * slideY carries the mini sheet off-screen for a full dismiss.
    */
   const expandPreview =
     !isPage &&
     !morphLock &&
+    !pullDismissing &&
+    !fromDragDismiss &&
     (dragging || settling) &&
     pullY < 0
-      ? expandPreviewRect(dock, pullY)
+      ? liveExpandPreview(dock, pullY)
       : null
-  const boxLock: SheetRect | null = morphLock ?? expandPreview
+  const collapsePreview =
+    isPage &&
+    !morphLock &&
+    !pullDismissing &&
+    !fromDragDismiss &&
+    (dragging || settling) &&
+    pullY > 0
+      ? liveCollapsePreview(dock, pullY)
+      : null
+  const boxLock: SheetRect | null =
+    morphLock ??
+    expandPreview ??
+    (collapsePreview
+      ? {
+          top: collapsePreview.top,
+          left: collapsePreview.left,
+          width: collapsePreview.width,
+          height: collapsePreview.height,
+        }
+      : null)
 
   const motionY = (() => {
     if (!(dragging || settling || pullDismissing || fromDragDismiss)) return 0
@@ -1233,7 +1275,9 @@ export default function CoachSheet() {
     }
     // Expand preview owns geometry; translating would double-move the grabber.
     if (expandPreview) return 0
-    // Page rubber-band (and compact dismiss) — pullY may be negative.
+    // Collapse morph owns the box; only post-morph slide uses translateY.
+    if (collapsePreview) return collapsePreview.slideY
+    // Compact dismiss (and page upward rubber) — pullY may be negative.
     return pullY
   })()
 
@@ -1346,6 +1390,18 @@ export default function CoachSheet() {
     return undefined
   })()
 
+  // During live page→compact drag, ease card chrome (radius/border/shadow) in
+  // with the morph so the mini window appears under the finger — not only on release.
+  const collapseChromeT = collapsePreview
+    ? Math.min(
+        1,
+        pullY /
+          Math.max(
+            1,
+            collapseMorphTravelPx(pageRestRect(), compactRestRect(dock)),
+          ),
+      )
+    : 0
   const morphLockStyle: CSSProperties | undefined = boxLock
     ? {
         top: boxLock.top,
@@ -1355,6 +1411,19 @@ export default function CoachSheet() {
         right: 'auto',
         bottom: 'auto',
         maxHeight: 'none',
+        ...(collapsePreview
+          ? {
+              borderRadius: `${lerp(0, 16, collapseChromeT)}px`,
+              border:
+                collapseChromeT > 0.08
+                  ? `1px solid color-mix(in srgb, var(--border) ${Math.round(collapseChromeT * 100)}%, transparent)`
+                  : 'none',
+              boxShadow:
+                collapseChromeT > 0.12
+                  ? `0 ${Math.round(lerp(0, 24, collapseChromeT))}px ${Math.round(lerp(0, 64, collapseChromeT))}px color-mix(in srgb, #000 ${Math.round(collapseChromeT * 45)}%, transparent)`
+                  : 'none',
+            }
+          : null),
       }
     : undefined
 
