@@ -21,7 +21,7 @@ import {
   clearQueuedOpsForExercise,
 } from '@/lib/utils/offlineQueue'
 import { reportError } from '@/lib/utils/reportError'
-import { warmupRampWeights } from '@/lib/utils/warmupSets'
+import { planWarmupRamp } from '@/lib/utils/warmupSets'
 import type { UserRotation, UserStats, CompleteSessionResult } from '@/lib/types'
 import {
   emptySetState,
@@ -40,6 +40,7 @@ import PlateCalculator from '@/components/PlateCalculator'
 import CompletionModal from './CompletionModal'
 import { markAppDataStale } from '@/lib/cache/appDataCache'
 import { useFeatureTooltip } from '@/components/onboarding/useFeatureTooltip'
+import Tooltip from '@/components/onboarding/Tooltip'
 import { onboardTarget } from '@/components/onboarding/anchor'
 import { useOnboarding } from '@/lib/contexts/OnboardingContext'
 import {
@@ -1140,33 +1141,50 @@ export default function ActiveWorkout({ day }: { day: string }) {
     showSaveToast('Set added')
   }
 
-  /** Prefill leading sets as warm-ups at 40/60/80% of the working weight. */
+  /** Prefill 40/60/80% warm-ups in front of working sets, adding slots if needed. */
   function applyWarmupRamp(exerciseId: string) {
-    const working = (() => {
-      const keys = Object.keys(logs)
-        .filter(k => k.startsWith(`${exerciseId}-`))
-        .sort((a, b) => parseInt(a.split('-').pop()!, 10) - parseInt(b.split('-').pop()!, 10))
-      for (let i = keys.length - 1; i >= 0; i--) {
-        const w = parseFloat(logs[keys[i]]?.weight || '')
-        if (Number.isFinite(w) && w > 0) return w
-      }
-      return previousBests[exerciseId]
-    })()
-    if (working == null || working <= 0) {
-      setResumeToast('Enter a working weight first, then apply warm-ups.')
+    const ex = exercises.find(e => e.id === exerciseId)
+    if (!ex) return
+    const currentExtras = extraSets[exerciseId] ?? 0
+    const total = ex.sets_target + currentExtras
+    const currentLogs = logsRef.current
+    const snapshot = []
+    for (let n = 1; n <= total; n++) {
+      const row = currentLogs[`${exerciseId}-${n}`]
+      if (!row) continue
+      snapshot.push({
+        setNumber: n,
+        weight: row.weight,
+        isWarmup: row.isWarmup,
+        checked: row.checked,
+        skipped: row.skipped,
+      })
+    }
+    const plan = planWarmupRamp(snapshot, ex.sets_target, previousBests[exerciseId])
+    if (!plan.ok) {
+      setResumeToast(
+        plan.reason === 'nothing-to-fill'
+          ? 'Warm-ups go on the first sets. Undo those first.'
+          : 'Enter a working weight first, then apply warm-ups.',
+      )
       setTimeout(() => setResumeToast(null), 4000)
       return
     }
-    const ramp = warmupRampWeights(working)
-    if (ramp.length === 0) return
+
+    if (plan.extraToAdd > 0) {
+      setExtraSets(prev => ({ ...prev, [exerciseId]: currentExtras + plan.extraToAdd }))
+    }
     setLogs(prev => {
       const next = { ...prev }
-      ramp.forEach((w, i) => {
-        const key = `${exerciseId}-${i + 1}`
-        const cur = next[key]
-        if (!cur || cur.checked || cur.skipped) return
-        next[key] = { ...cur, weight: String(w), isWarmup: true }
-      })
+      for (let i = 0; i < plan.extraToAdd; i++) {
+        next[`${exerciseId}-${total + 1 + i}`] = emptySetState(plan.fillWeight)
+      }
+      for (const u of plan.updates) {
+        const key = `${exerciseId}-${u.setNumber}`
+        const cur = next[key] ?? emptySetState(plan.fillWeight)
+        if (cur.checked || cur.skipped) continue
+        next[key] = { ...cur, weight: String(u.weight), isWarmup: true }
+      }
       return next
     })
     showSaveToast('Warm-up ramp applied')
@@ -2847,6 +2865,8 @@ function ExerciseCard({
   const setNumbers = Array.from({ length: totalSets }, (_, i) => i + 1)
   const anySkipped = setNumbers.some(s => logs[`${exercise.id}-${s}`]?.skipped)
   const allSkipped = setNumbers.every(s => logs[`${exercise.id}-${s}`]?.skipped)
+  const [warmupHelpOpen, setWarmupHelpOpen] = useState(false)
+  const warmupHelpBtnRef = useRef<HTMLButtonElement>(null)
 
   return (
     <div id={`wo-ex-${exercise.id}`} style={{
@@ -3053,13 +3073,16 @@ function ExerciseCard({
           )
         })}
 
-        <div style={{ padding: '6px 16px 10px', display: 'flex', gap: '8px' }}>
+        <div style={{ padding: '6px 16px 10px', display: 'flex', gap: '8px', alignItems: 'center' }}>
           <button
             type="button"
+            className="press"
             data-haptic="light"
-            onClick={onWarmupRamp}
+            onClick={() => {
+              setWarmupHelpOpen(false)
+              onWarmupRamp()
+            }}
             aria-label={`Apply warm-up ramp for ${exercise.name}`}
-            title="Prefill leading sets at 40/60/80% as warm-ups"
             style={{
               position: 'relative',
               flex: 1,
@@ -3076,6 +3099,34 @@ function ExerciseCard({
             }}
           >
             WARM-UP %
+          </button>
+          <button
+            ref={warmupHelpBtnRef}
+            type="button"
+            className="press"
+            data-haptic="light"
+            aria-label="What warm-up percent does"
+            aria-expanded={warmupHelpOpen}
+            onClick={() => setWarmupHelpOpen(open => !open)}
+            style={{
+              width: '40px',
+              height: '40px',
+              flexShrink: 0,
+              borderRadius: '9999px',
+              border: '1px solid var(--border-strong)',
+              backgroundColor: warmupHelpOpen ? 'var(--surface-elevated)' : 'transparent',
+              color: 'var(--text-secondary)',
+              fontFamily: 'var(--font-sans)',
+              fontSize: '16px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              lineHeight: 1,
+            }}
+          >
+            ?
           </button>
           <button
             data-onboard={firstExercise ? 'aw-addset' : undefined}
@@ -3101,6 +3152,16 @@ function ExerciseCard({
             + ADD SET
           </button>
         </div>
+        {warmupHelpOpen && (
+          <Tooltip
+            getEl={() => warmupHelpBtnRef.current}
+            title="Warm-up %"
+            body="Fills your first 3 sets as easy warm-ups — 40%, 60%, then 80% of the weight you're about to lift. Your real sets stay after those. Warm-ups don't count as PRs."
+            onDismiss={() => setWarmupHelpOpen(false)}
+            preferred={['top', 'bottom']}
+            maxWidth={260}
+          />
+        )}
       </div>
     </div>
   )
