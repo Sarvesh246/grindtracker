@@ -343,8 +343,9 @@ export default function CoachFab() {
     [releaseGlow, setFabGesture],
   )
 
-  // Pause idle float while pressed/dragging/settling — press should feel solid.
-  const alive = !open && !dragging && !settling && !ghost && !pressed
+  // Pause idle float while pressed/dragging/settling/glowing — press should
+  // feel solid, and light-mode depth/glow must stay glued to the disc.
+  const alive = !open && !dragging && !settling && !ghost && !pressed && !glowing
 
   // Parked: CSS data-dock owns left/right/top/bottom with no position
   // transitions — settle is the RAF spring above (avoids L-shaped travel).
