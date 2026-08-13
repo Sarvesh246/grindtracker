@@ -367,6 +367,7 @@ export default function ShareCard({
       >
         Close
       </button>
+      </div>
     </div>
   )
 }
