@@ -766,6 +766,7 @@ html.reduce-motion *::after {
 }
 .cal-cell {
   height: 40px;
+  overflow: hidden;
 }
 .cal-empty {
   height: 40px;

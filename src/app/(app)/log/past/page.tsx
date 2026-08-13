@@ -7,7 +7,9 @@ import { demoSafeClient } from '@/lib/demoMode/demoSafeSupabase'
 import { Exercise, UserStats } from '@/lib/types'
 import { checkAndAwardBadges } from '@/lib/utils/badges'
 import { localDateKey } from '@/lib/utils/formatting'
+import { joinDayTypes, NAMED_DAY_COLORS, resolveDayColor } from '@/lib/utils/dayColors'
 import { useUnit } from '@/lib/contexts/UnitContext'
+import { useTheme } from '@/lib/contexts/ThemeContext'
 import { markAppDataStale } from '@/lib/cache/appDataCache'
 
 function parseDefaultReps(repsTarget: string): string {
@@ -31,10 +33,13 @@ function LogPastContent() {
   const { demoMode } = useDemoMode()
   const supabase = demoMode ? demoSafeClient(createClient()) : createClient()
   const { unitLabel, fromDisplay, fmt } = useUnit()
+  const { theme } = useTheme()
+  const isLight = theme === 'light'
 
   const yesterday = getYesterdayString()
   const today = localDateKey()
   const paramDate = searchParams.get('date')
+  const paramDay = searchParams.get('day')
   const initialDate = paramDate && paramDate <= today ? paramDate : yesterday
 
   const [selectedDate, setSelectedDate] = useState(initialDate)
@@ -42,6 +47,8 @@ function LogPastContent() {
   const [selectedDayType, setSelectedDayType] = useState<string | null>(null)
   const [existingSession, setExistingSession] = useState<ExistingSession | null>(null)
   const existingSessionRef = useRef<ExistingSession | null>(null)
+  const [sessionsOnDate, setSessionsOnDate] = useState<ExistingSession[]>([])
+  const sessionsOnDateRef = useRef<ExistingSession[]>([])
   // Incremented on every checkExistingSession call; async callbacks bail out if stale.
   const checkGenRef = useRef(0)
   const [exercises, setExercises] = useState<Exercise[]>([])
@@ -105,11 +112,14 @@ function LogPastContent() {
     setConfirmDelete(false)
     existingSessionRef.current = null
     setExistingSession(null)
+    sessionsOnDateRef.current = []
+    setSessionsOnDate([])
 
     const { data: { user } } = await supabase.auth.getUser()
     if (!user || gen !== checkGenRef.current) { setCheckingDate(false); return }
 
     // Match on sessions.local_date (streak key), never UTC completed_at windows.
+    // A date can have one completed session per day_type (pull + abs same day).
     const { data: existing, error: existingError } = await supabase
       .from('sessions')
       .select('id, day_type, xp_earned')
@@ -117,8 +127,6 @@ function LogPastContent() {
       .eq('local_date', date)
       .not('completed_at', 'is', null)
       .order('completed_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
 
     if (gen !== checkGenRef.current) return
 
@@ -131,11 +139,17 @@ function LogPastContent() {
       setError('Could not check this date. Check your connection and try again.')
     }
 
-    if (existing) {
-      existingSessionRef.current = existing
-      setExistingSession(existing)
-      setSelectedDayType(existing.day_type)
-      await loadExercises(existing.day_type, existing.id)
+    const list = existing ?? []
+    sessionsOnDateRef.current = list
+    setSessionsOnDate(list)
+
+    const preferred =
+      (paramDay && date === paramDate ? list.find(s => s.day_type === paramDay) : undefined) ?? list[0]
+    if (preferred) {
+      existingSessionRef.current = preferred
+      setExistingSession(preferred)
+      setSelectedDayType(preferred.day_type)
+      await loadExercises(preferred.day_type, preferred.id)
     }
 
     if (gen === checkGenRef.current) setCheckingDate(false)
@@ -221,11 +235,12 @@ function LogPastContent() {
   function handleDayTypeSelect(type: string) {
     setDuplicateWarning(false)
     setSkippedExercises(new Set())
+    setConfirmDelete(false)
     setSelectedDayType(type)
-    const editId = existingSessionRef.current?.day_type === type
-      ? existingSessionRef.current?.id
-      : undefined
-    loadExercises(type, editId)
+    const existing = sessionsOnDateRef.current.find(s => s.day_type === type) ?? null
+    existingSessionRef.current = existing
+    setExistingSession(existing)
+    loadExercises(type, existing?.id)
   }
 
   function updateSet(exerciseId: string, setIdx: number, field: 'weight' | 'reps', value: string) {
@@ -458,6 +473,8 @@ function LogPastContent() {
   }
 
   const isEditing = existingSession?.day_type === selectedDayType
+  const extraDayTypes = dayTypes.filter(t => !NAMED_DAY_COLORS[t])
+  const loggedTypes = sessionsOnDate.map(s => s.day_type)
 
   // ── Form ───────────────────────────────────────────────────────────────────
   return (
@@ -526,21 +543,37 @@ function LogPastContent() {
             ) : dayTypes.length === 0 ? (
               <div style={{ fontSize: '13px', color: 'var(--text-muted)', padding: '8px 0' }}>No workout days yet.</div>
             ) : (
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <>
+                {loggedTypes.length > 1 && (
+                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px', lineHeight: 1.4 }}>
+                    {joinDayTypes(loggedTypes)} logged this day — tap a day to edit it.
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 {dayTypes.map(type => {
                   const active = selectedDayType === type
+                  const logged = sessionsOnDate.some(s => s.day_type === type)
+                  const loggedColor = logged ? resolveDayColor(type, extraDayTypes, isLight) : null
                   return (
                     <button
                       key={type}
+                      type="button"
+                      className="press"
+                      data-haptic="light"
                       onClick={() => handleDayTypeSelect(type)}
                       style={{
+                        position: 'relative',
                         // Grow to fill, but wrap to a new row past ~3 days so custom
                         // rotations with many days stay readable on a phone.
                         flex: '1 1 80px',
                         height: '36px',
                         padding: '0 12px',
                         borderRadius: '9999px',
-                        border: active ? 'none' : '1px solid var(--border)',
+                        border: active
+                          ? 'none'
+                          : logged
+                            ? `1px solid ${loggedColor}`
+                            : '1px solid var(--border)',
                         backgroundColor: active ? 'var(--accent)' : 'var(--surface-elevated)',
                         color: active ? 'var(--on-accent)' : 'var(--text-secondary)',
                         fontSize: '13px',
@@ -548,14 +581,31 @@ function LogPastContent() {
                         letterSpacing: '0.5px',
                         cursor: 'pointer',
                         whiteSpace: 'nowrap',
-                        transition: 'background-color 150ms ease, color 150ms ease',
+                        transition: 'background-color 150ms ease, color 150ms ease, border-color 150ms ease',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
                       }}
                     >
+                      {logged && !active && loggedColor && (
+                        <span
+                          aria-hidden
+                          style={{
+                            width: 7,
+                            height: 7,
+                            borderRadius: '50%',
+                            backgroundColor: loggedColor,
+                            flexShrink: 0,
+                          }}
+                        />
+                      )}
                       {type.replace(/-/g, ' ').toUpperCase()}
                     </button>
                   )
                 })}
-              </div>
+                </div>
+              </>
             )}
           </div>
         </div>
@@ -579,7 +629,10 @@ function LogPastContent() {
                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
                 <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
               </svg>
-              Editing existing workout — changes will replace the saved data
+              Editing {selectedDayType?.replace(/-/g, ' ')}
+              {sessionsOnDate.length > 1
+                ? ' — tap another day type to edit it'
+                : ' — changes will replace the saved data'}
             </div>
             <button
               onClick={() => setConfirmDelete(true)}

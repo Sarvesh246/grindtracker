@@ -8,8 +8,9 @@ import { demoCalendarWorkoutDays } from '@/lib/demoMode/fakeData'
 import { localDateKey } from '@/lib/utils/formatting'
 import {
   NAMED_DAY_COLORS,
-  dayTintBg,
-  dayTintBorder,
+  calendarCellBackground,
+  calendarCellBorder,
+  joinDayTypes,
   resolveDayColor,
   resolveDayTextColor,
 } from '@/lib/utils/dayColors'
@@ -19,6 +20,30 @@ const MONTH_NAMES = [
   'JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE',
   'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER',
 ]
+
+function DayDots({ fills }: { fills: string[] }) {
+  if (fills.length === 0) return null
+  const size = fills.length > 1 ? 4 : 5
+  return (
+    <div
+      style={{ display: 'flex', gap: '2px', alignItems: 'center', height: 5 }}
+      aria-hidden
+    >
+      {fills.map((color, i) => (
+        <div
+          key={`${color}-${i}`}
+          style={{
+            width: size,
+            height: size,
+            borderRadius: '50%',
+            backgroundColor: color,
+            flexShrink: 0,
+          }}
+        />
+      ))}
+    </div>
+  )
+}
 
 export default function WorkoutCalendar() {
   const router = useRouter()
@@ -37,7 +62,7 @@ export default function WorkoutCalendar() {
     d.setHours(0, 0, 0, 0)
     return d
   })
-  const [workoutDays, setWorkoutDays] = useState<Record<string, string>>({})
+  const [workoutDays, setWorkoutDays] = useState<Record<string, string[]>>({})
   const [loading, setLoading] = useState(true)
 
   const loadMonth = useCallback(async () => {
@@ -67,11 +92,13 @@ export default function WorkoutCalendar() {
       .not('local_date', 'is', null)
       .gte('local_date', monthStart)
       .lte('local_date', monthEnd)
+      .order('completed_at', { ascending: true })
 
-    const map: Record<string, string> = {}
+    const map: Record<string, string[]> = {}
     for (const s of data ?? []) {
-      if (!s.local_date) continue
-      if (!map[s.local_date]) map[s.local_date] = s.day_type
+      if (!s.local_date || !s.day_type) continue
+      const list = map[s.local_date] ?? (map[s.local_date] = [])
+      if (!list.includes(s.day_type)) list.push(s.day_type)
     }
     setWorkoutDays(map)
     setLoading(false)
@@ -96,7 +123,7 @@ export default function WorkoutCalendar() {
     year === todayDate.getFullYear() && month === todayDate.getMonth()
 
   // Resolve colors dynamically so any extra day types get a unique color
-  const allTypes = Object.values(workoutDays)
+  const allTypes = Object.values(workoutDays).flat()
   const extraTypes = [...new Set(allTypes.filter(t => !NAMED_DAY_COLORS[t]))]
   // Always show all named day types; append any unrecognised ones from this month's data
   const legendTypes = [...Object.keys(NAMED_DAY_COLORS), ...extraTypes]
@@ -110,7 +137,7 @@ export default function WorkoutCalendar() {
   }
 
   function navigateTo(dateKey: string) {
-    if (dateKey === todayKey && !workoutDays[dateKey]) router.push('/log')
+    if (dateKey === todayKey && !workoutDays[dateKey]?.length) router.push('/log')
     else router.push(`/log/past?date=${dateKey}`)
   }
 
@@ -205,13 +232,14 @@ export default function WorkoutCalendar() {
           if (!day) return <div key={idx} className="cal-empty" role="gridcell" />
 
           const dateKey = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-          const workoutType = workoutDays[dateKey]
-          const dotColor = workoutType
-            ? resolveDayColor(workoutType, extraTypes, isLight)
-            : null
-          const dayTextColor = workoutType
-            ? resolveDayTextColor(workoutType, extraTypes, isLight)
-            : null
+          const workoutTypes = workoutDays[dateKey] ?? []
+          const fillHexes = workoutTypes.map(t => resolveDayColor(t, extraTypes, isLight))
+          const primaryType = workoutTypes[0] ?? null
+          const dayTextColor = primaryType && workoutTypes.length === 1
+            ? resolveDayTextColor(primaryType, extraTypes, isLight)
+            : workoutTypes.length > 1
+              ? 'var(--text-primary)'
+              : null
 
           const isToday = dateKey === todayKey
           const isFuture = dateKey > todayKey
@@ -225,24 +253,23 @@ export default function WorkoutCalendar() {
 
           const isClickable = !isFuture
 
-          const baseBg = dotColor ? dayTintBg(dotColor, isLight) : 'transparent'
+          const baseBg = calendarCellBackground(fillHexes, isLight)
+          const hoverBg = calendarCellBackground(fillHexes, isLight, true)
+          const tintBorder = fillHexes.length
+            ? calendarCellBorder(fillHexes, isLight)
+            : 'transparent'
+          const hoverTintBorder = fillHexes.length
+            ? calendarCellBorder(fillHexes, isLight, true)
+            : 'var(--border)'
           const baseBorder = isToday
             ? '1px solid var(--border-strong)'
-            : dotColor
-              ? `1px solid ${dayTintBorder(dotColor, isLight)}`
-              : '1px solid transparent'
-
-          const hoverBg = dotColor
-            ? `${dotColor}${isLight ? '33' : '55'}`
-            : isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.06)'
+            : `1px solid ${tintBorder}`
           const hoverBorder = isToday
             ? '1px solid var(--border-strong)'
-            : dotColor
-              ? `1px solid ${dotColor}${isLight ? 'aa' : 'cc'}`
-              : '1px solid var(--border)'
+            : `1px solid ${hoverTintBorder}`
 
-          const label = workoutType
-            ? `${dateKey}, ${workoutType} workout`
+          const label = workoutTypes.length
+            ? `${dateKey}, ${joinDayTypes(workoutTypes)} workout${workoutTypes.length > 1 ? 's' : ''}`
             : isToday
               ? `${dateKey}, today`
               : dateKey
@@ -262,19 +289,21 @@ export default function WorkoutCalendar() {
                   justifyContent: 'center',
                   borderRadius: '8px',
                   border: baseBorder,
-                  backgroundColor: baseBg,
+                  background: baseBg,
                   gap: '3px',
+                  overflow: 'hidden',
                 }}
               >
                 <span style={{
                   fontSize: '13px',
                   color: textColor,
-                  fontWeight: isToday ? 700 : 400,
+                  fontWeight: isToday ? 700 : fillHexes.length ? 600 : 400,
                   lineHeight: 1,
                   fontFamily: "'DM Sans', sans-serif",
                 }}>
                   {day}
                 </span>
+                <DayDots fills={fillHexes} />
               </div>
             )
           }
@@ -295,41 +324,34 @@ export default function WorkoutCalendar() {
                 borderRadius: '8px',
                 cursor: 'pointer',
                 border: baseBorder,
-                backgroundColor: baseBg,
-                transition: 'background-color 150ms ease, border-color 150ms ease',
+                background: baseBg,
+                transition: 'background 150ms ease, border-color 150ms ease',
                 gap: '3px',
                 padding: 0,
                 minHeight: '44px',
                 font: 'inherit',
                 color: 'inherit',
+                overflow: 'hidden',
               }}
               onMouseEnter={e => {
-                e.currentTarget.style.backgroundColor = hoverBg
+                e.currentTarget.style.background = hoverBg
                 e.currentTarget.style.borderColor = hoverBorder.replace('1px solid ', '')
               }}
               onMouseLeave={e => {
-                e.currentTarget.style.backgroundColor = baseBg
+                e.currentTarget.style.background = baseBg
                 e.currentTarget.style.borderColor = baseBorder.replace('1px solid ', '')
               }}
             >
               <span style={{
                 fontSize: '13px',
                 color: textColor,
-                fontWeight: isToday ? 700 : dotColor ? 600 : 400,
+                fontWeight: isToday ? 700 : fillHexes.length ? 600 : 400,
                 lineHeight: 1,
                 fontFamily: "'DM Sans', sans-serif",
               }}>
                 {day}
               </span>
-              {dotColor && (
-                <div style={{
-                  width: '5px',
-                  height: '5px',
-                  borderRadius: '50%',
-                  backgroundColor: dotColor,
-                  flexShrink: 0,
-                }} aria-hidden />
-              )}
+              <DayDots fills={fillHexes} />
             </button>
           )
         })}

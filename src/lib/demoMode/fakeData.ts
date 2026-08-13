@@ -299,12 +299,21 @@ export function demoCompletedLocalDates(): string[] {
   return demoRecentWorkoutDays().map(d => d.date)
 }
 
-/** date → day_type map for whichever month WorkoutCalendar has navigated to. */
-export function demoCalendarWorkoutDays(year: number, month0: number): Record<string, string> {
-  const map: Record<string, string> = {}
+/** date → day_type(s) map for whichever month WorkoutCalendar has navigated to. */
+export function demoCalendarWorkoutDays(year: number, month0: number): Record<string, string[]> {
+  const map: Record<string, string[]> = {}
   for (const { date, dayType } of demoRecentWorkoutDays()) {
     const [y, m] = date.split('-').map(Number)
-    if (y === year && m === month0 + 1) map[date] = dayType
+    if (y === year && m === month0 + 1) {
+      const list = map[date] ?? (map[date] = [])
+      if (!list.includes(dayType)) list.push(dayType)
+    }
+  }
+  // One dual-session day so the calendar split is visible in demo screenshots.
+  const inMonth = Object.keys(map).sort()
+  const dualKey = inMonth[Math.max(0, inMonth.length - 2)]
+  if (dualKey && map[dualKey] && !map[dualKey].includes('abs')) {
+    map[dualKey] = [...map[dualKey]!, 'abs']
   }
   return map
 }

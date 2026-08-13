@@ -104,3 +104,71 @@ export function dayTintBg(fill: string, isLight: boolean): string {
 export function dayTintBorder(fill: string, isLight: boolean): string {
   return `${fill}${isLight ? '99' : '55'}`
 }
+
+function uniqueTypes(types: string[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const t of types) {
+    if (!t || seen.has(t)) continue
+    seen.add(t)
+    out.push(t)
+  }
+  return out
+}
+
+function tintHex(fill: string, isLight: boolean, hover: boolean): string {
+  if (hover) return `${fill}${isLight ? '33' : '55'}`
+  return dayTintBg(fill, isLight)
+}
+
+/**
+ * Cell wash for one or more day types. A single type stays a flat tint.
+ * Two+ types use a diagonal split with a short blend at each seam — a full
+ * smear would muddy blue+purple into gray at this size; a hard 50/50 cut
+ * reads like a pie-chart bug. Completion order is preserved (first finished
+ * = top-left).
+ */
+export function calendarCellBackground(
+  fillHexes: string[],
+  isLight: boolean,
+  hover = false,
+): string {
+  const fills = fillHexes.filter(Boolean)
+  if (fills.length === 0) {
+    return hover
+      ? (isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.06)')
+      : 'transparent'
+  }
+  const tints = fills.map(h => tintHex(h, isLight, hover))
+  if (tints.length === 1) return tints[0]!
+
+  const n = tints.length
+  const stops: string[] = []
+  for (let i = 0; i < n; i++) {
+    const start = (i / n) * 100
+    const end = ((i + 1) / n) * 100
+    const blend = Math.min(8, (end - start) * 0.35)
+    stops.push(`${tints[i]} ${start}%`)
+    stops.push(`${tints[i]} ${Math.max(start, end - blend)}%`)
+  }
+  return `linear-gradient(135deg, ${stops.join(', ')})`
+}
+
+export function calendarCellBorder(
+  fillHexes: string[],
+  isLight: boolean,
+  hover = false,
+): string {
+  const fill = fillHexes[0]
+  if (!fill) return hover ? 'var(--border)' : 'transparent'
+  return hover ? `${fill}${isLight ? 'aa' : 'cc'}` : dayTintBorder(fill, isLight)
+}
+
+/** "pull and abs" / "push, pull, and abs" for aria + hint copy. */
+export function joinDayTypes(types: string[]): string {
+  const labels = uniqueTypes(types).map(t => t.replace(/-/g, ' '))
+  if (labels.length === 0) return ''
+  if (labels.length === 1) return labels[0]!
+  if (labels.length === 2) return `${labels[0]} and ${labels[1]}`
+  return `${labels.slice(0, -1).join(', ')}, and ${labels[labels.length - 1]}`
+}
