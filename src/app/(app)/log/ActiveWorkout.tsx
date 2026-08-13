@@ -38,6 +38,7 @@ import { useRestTimer, getPauseRestOnExit } from '@/lib/hooks/useRestTimer'
 import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
 import { useExitingValue } from '@/lib/hooks/useExitingValue'
 import RestTimerBar from '@/components/RestTimerBar'
+import ToastPill, { TOAST_SLIDE_OUT_MS } from '@/components/ToastPill'
 import { requestOpenCoach } from '@/lib/coach/openCoachBus'
 import PlateCalculator from '@/components/PlateCalculator'
 import CompletionModal from './CompletionModal'
@@ -183,9 +184,9 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const keyboardInset = useKeyboardInset()
   // Keep each toast's last content around through its exit animation instead
   // of yanking it off screen the instant its owning state clears.
-  const undoToastExit = useExitingValue(undoState, 200)
-  const resumeToastExit = useExitingValue(resumeToast, 200)
-  const saveToastExit = useExitingValue(saveToast, 180)
+  const undoToastExit = useExitingValue(undoState, TOAST_SLIDE_OUT_MS)
+  const resumeToastExit = useExitingValue(resumeToast, TOAST_SLIDE_OUT_MS)
+  const saveToastExit = useExitingValue(saveToast, TOAST_SLIDE_OUT_MS)
   const { hasSeenTooltip, markTooltipSeen } = useOnboarding()
 
   // Web Push prefs + wake lock (rest-end / hybrid status while backgrounded).
@@ -2327,14 +2328,13 @@ export default function ActiveWorkout({ day }: { day: string }) {
 
       {/* Resume toast */}
       {resumeToastExit.data && (
-        <div
+        <ToastPill
+          edge="top"
+          exiting={resumeToastExit.closing}
           role="status"
           aria-live="polite"
           style={{
-            position: 'fixed',
             top: 'calc(env(safe-area-inset-top) + 12px)',
-            left: '50%',
-            transform: 'translateX(-50%)',
             backgroundColor: 'var(--surface-elevated)',
             border: '1px solid var(--accent)',
             color: 'var(--accent-text)',
@@ -2344,27 +2344,23 @@ export default function ActiveWorkout({ day }: { day: string }) {
             fontWeight: 500,
             zIndex: 300,
             boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
-            animation: resumeToastExit.closing ? 'toast-out 200ms ease forwards' : 'toast-in 180ms ease',
-            // Purely informational — never let this strip swallow a tap meant
-            // for the content beneath it while it's on screen.
             pointerEvents: 'none',
           }}
         >
           {resumeToastExit.data}
-        </div>
+        </ToastPill>
       )}
 
       {/* Undo toast — anchored to the top so it's visible wherever you are scrolled.
           Sits just below the resume toast if both happen to show. */}
       {undoToastExit.data && (
-        <div
+        <ToastPill
+          edge="top"
+          exiting={undoToastExit.closing}
           role="status"
           aria-live="polite"
           style={{
-            position: 'fixed',
             top: `calc(env(safe-area-inset-top) + ${resumeToastExit.data ? '60px' : '12px'})`,
-            left: '50%',
-            transform: 'translateX(-50%)',
             width: 'calc(100% - 32px)',
             maxWidth: '420px',
             backgroundColor: 'var(--surface-elevated)',
@@ -2376,11 +2372,6 @@ export default function ActiveWorkout({ day }: { day: string }) {
             justifyContent: 'space-between',
             zIndex: 300,
             boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
-            animation: undoToastExit.closing ? 'toast-out 200ms ease forwards' : 'toast-in 180ms ease',
-            // The pill spans most of the width near the top for 5s. Only the
-            // UNDO button should catch taps — otherwise this bar sits over the
-            // top of the content and eats taps aimed at the controls beneath it
-            // (the "I tapped a button but nothing/the wrong thing happened" bug).
             pointerEvents: 'none',
           }}
         >
@@ -2413,21 +2404,20 @@ export default function ActiveWorkout({ day }: { day: string }) {
           >
             UNDO
           </button>
-        </div>
+        </ToastPill>
       )}
 
       {/* Passive "saved" confirmation — bottom-anchored, non-interactive.
           Sits above the finish/rest bar, and rides up above the keyboard when
           one is open so it stays visible while editing. */}
       {saveToastExit.data && (
-        <div
+        <ToastPill
+          edge="bottom"
+          exiting={saveToastExit.closing}
           role="status"
           aria-live="polite"
           style={{
-            position: 'fixed',
-            left: '50%',
             bottom: `calc(${keyboardInset > 0 ? `${keyboardInset}px` : 'env(safe-area-inset-bottom)'} + ${restTimer.active ? '104px' : '92px'})`,
-            transform: 'translateX(-50%)',
             backgroundColor: 'var(--surface-elevated)',
             border: '1px solid var(--accent)',
             color: 'var(--accent-text)',
@@ -2441,7 +2431,6 @@ export default function ActiveWorkout({ day }: { day: string }) {
             whiteSpace: 'nowrap',
             zIndex: 60,
             boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
-            animation: saveToastExit.closing ? 'save-toast-out 180ms ease forwards' : 'save-toast-in 160ms ease',
             pointerEvents: 'none',
           }}
         >
@@ -2449,7 +2438,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
             <polyline points="20 6 9 17 4 12" />
           </svg>
           {saveToastExit.data}
-        </div>
+        </ToastPill>
       )}
 
       {/* Plate calculator */}

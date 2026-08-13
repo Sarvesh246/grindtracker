@@ -12,6 +12,8 @@ import { createClient } from '@/lib/supabase/client'
 import { useDemoMode } from '@/lib/contexts/DemoModeContext'
 import { demoSafeClient } from '@/lib/demoMode/demoSafeSupabase'
 import { markAppDataStale } from '@/lib/cache/appDataCache'
+import { useExitingValue } from '@/lib/hooks/useExitingValue'
+import ToastPill, { TOAST_SLIDE_OUT_MS } from '@/components/ToastPill'
 import {
   FINISH_UNDO_EVENT,
   type FinishUndoToken,
@@ -34,7 +36,7 @@ export default function FinishUndoBanner() {
     () => (demoMode ? demoSafeClient(createClient()) : createClient()),
     [demoMode],
   )
-  const [token, setToken] = useState<FinishUndoToken | null>(null)
+  const [tokenState, setToken] = useState<FinishUndoToken | null>(null)
   const [remaining, setRemaining] = useState(0)
   const [undoing, setUndoing] = useState(false)
 
@@ -55,7 +57,7 @@ export default function FinishUndoBanner() {
     }
   }, [])
 
-  if (!token || demoMode) return null
+  const { data: token, closing } = useExitingValue(demoMode ? null : tokenState, TOAST_SLIDE_OUT_MS)
 
   async function handleUndo() {
     if (!token || undoing) return
@@ -69,15 +71,16 @@ export default function FinishUndoBanner() {
     router.push(`/log?day=${day}`)
   }
 
+  if (!token) return null
+
   return (
-    <div
+    <ToastPill
+      edge="bottom"
+      exiting={closing}
       role="status"
       aria-live="polite"
       style={{
-        position: 'fixed',
         bottom: 'calc(env(safe-area-inset-bottom) + 80px)',
-        left: '50%',
-        transform: 'translateX(-50%)',
         width: 'calc(100% - 32px)',
         maxWidth: '420px',
         backgroundColor: 'var(--surface-elevated)',
@@ -115,7 +118,8 @@ export default function FinishUndoBanner() {
           type="button"
           data-haptic="light"
           className="press"
-          onClick={() => { clearFinishUndoToken(); setToken(null) }}
+          onClick={() => { if (closing) return; clearFinishUndoToken(); setToken(null) }}
+          disabled={closing}
           style={{
             position: 'relative',
             background: 'none',
@@ -134,7 +138,7 @@ export default function FinishUndoBanner() {
           data-haptic="medium"
           className="press"
           onClick={() => void handleUndo()}
-          disabled={undoing}
+          disabled={undoing || closing}
           style={{
             position: 'relative',
             height: '36px',
@@ -153,6 +157,6 @@ export default function FinishUndoBanner() {
           {undoing ? 'UNDOING…' : 'UNDO'}
         </button>
       </div>
-    </div>
+    </ToastPill>
   )
 }

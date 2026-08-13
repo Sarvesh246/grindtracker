@@ -392,52 +392,63 @@ body.coach-fab-dragging .bottom-nav [data-haptic-overlay] {
   animation: shimmer 1.5s infinite;
 }
 
-/* Top-anchored toast entrance (slide down + fade). Keeps the -50% X centering. */
-@keyframes toast-in {
+/* Toast pills — slide fully off the nearest vertical edge (top pills go up,
+   bottom pills go down). Enter uses `backwards` so the first painted frame is
+   already off-screen. Exit uses `forwards` so the pill stays off-screen until
+   JS unmounts it — these nodes ARE the fixed layer (no nested fixed UI).
+   Durations must stay in sync with TOAST_SLIDE_OUT_MS in ToastPill.tsx. */
+@keyframes toast-slide-in-top {
   from {
     opacity: 0;
-    transform: translate(-50%, -8px);
+    transform: translate(-50%, calc(-100% - 24px));
   }
   to {
     opacity: 1;
     transform: translate(-50%, 0);
+  }
+}
+@keyframes toast-slide-out-top {
+  from {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, calc(-100% - 24px));
+  }
+}
+@keyframes toast-slide-in-bottom {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(100% + 24px));
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+@keyframes toast-slide-out-bottom {
+  from {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, calc(100% + 24px));
   }
 }
 
-/* Bottom-anchored "saved" confirmation entrance (rise up + fade). Keeps the
-   -50% X centering used by the passive save toast in ActiveWorkout. */
-@keyframes save-toast-in {
-  from {
-    opacity: 0;
-    transform: translate(-50%, 8px);
-  }
-  to {
-    opacity: 1;
-    transform: translate(-50%, 0);
-  }
+.toast-slide--top {
+  animation: toast-slide-in-top 520ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
-
-/* Exit variants ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ reverse of the entrances above, played while a toast is
-   being removed instead of just vanishing when its owning state clears. */
-@keyframes toast-out {
-  from {
-    opacity: 1;
-    transform: translate(-50%, 0);
-  }
-  to {
-    opacity: 0;
-    transform: translate(-50%, -8px);
-  }
+.toast-slide--bottom {
+  animation: toast-slide-in-bottom 520ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
-@keyframes save-toast-out {
-  from {
-    opacity: 1;
-    transform: translate(-50%, 0);
-  }
-  to {
-    opacity: 0;
-    transform: translate(-50%, 8px);
-  }
+.toast-slide--top.toast-slide--exiting {
+  animation: toast-slide-out-top 480ms cubic-bezier(0.32, 0.08, 0.24, 1) forwards;
+}
+.toast-slide--bottom.toast-slide--exiting {
+  animation: toast-slide-out-bottom 480ms cubic-bezier(0.32, 0.08, 0.24, 1) forwards;
 }
 
 /* ---------------------------------------------------------------------------

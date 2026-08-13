@@ -14,6 +14,8 @@ import { checkAndAwardBadges } from '@/lib/utils/badges'
 import { uncoveredDatesBetween, skipTodayState, type RestDayOpts } from '@/lib/utils/restDays'
 import WorkoutCalendar from '@/components/WorkoutCalendar'
 import FinishUndoBanner from '@/components/FinishUndoBanner'
+import ToastPill, { TOAST_SLIDE_OUT_MS } from '@/components/ToastPill'
+import { useExitingValue } from '@/lib/hooks/useExitingValue'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { useToast } from '@/lib/contexts/ToastContext'
 import { useTour, type TourStep } from '@/components/onboarding/Tour'
@@ -340,6 +342,7 @@ export default function HomeDashboard({
   const [busySessionId, setBusySessionId] = useState<string | null>(null)
   const [discardConfirmId, setDiscardConfirmId] = useState<string | null>(null)
   const [actionToast, setActionToast] = useState<string | null>(null)
+  const actionToastExit = useExitingValue(actionToast, TOAST_SLIDE_OUT_MS)
   const [skippingDay, setSkippingDay] = useState(false)
 
   function flashToast(msg: string) {
@@ -1527,14 +1530,13 @@ export default function HomeDashboard({
       </div>{/* end home-grid */}
 
       {/* Passive confirmation for the resume-block actions (save / discard). */}
-      {actionToast && (
-        <div
+      {actionToastExit.data && (
+        <ToastPill
+          edge="bottom"
+          exiting={actionToastExit.closing}
           role="status"
           style={{
-            position: 'fixed',
-            left: '50%',
             bottom: 'calc(84px + env(safe-area-inset-bottom))',
-            transform: 'translateX(-50%)',
             zIndex: 60,
             maxWidth: 'calc(100% - 32px)',
             padding: '11px 18px',
@@ -1547,10 +1549,11 @@ export default function HomeDashboard({
             fontWeight: 600,
             boxShadow: '0 6px 20px rgba(0,0,0,0.35)',
             textAlign: 'center',
+            pointerEvents: 'none',
           }}
         >
-          {actionToast}
-        </div>
+          {actionToastExit.data}
+        </ToastPill>
       )}
 
       <FinishUndoBanner />

@@ -21,6 +21,8 @@ import {
 import WorkoutManager from './WorkoutManager'
 import FinishUndoBanner from '@/components/FinishUndoBanner'
 import DayIcon from '@/components/DayIcon'
+import ToastPill, { TOAST_SLIDE_OUT_MS } from '@/components/ToastPill'
+import { useExitingValue } from '@/lib/hooks/useExitingValue'
 import { useTour, type TourStep } from '@/components/onboarding/Tour'
 import { CACHE_KEYS, markAppDataStale } from '@/lib/cache/appDataCache'
 import { useCachedQuery } from '@/lib/cache/useCachedQuery'
@@ -180,6 +182,7 @@ export default function DaySelect() {
   const [openBusyId, setOpenBusyId] = useState<string | null>(null)
   const [discardConfirmId, setDiscardConfirmId] = useState<string | null>(null)
   const [actionToast, setActionToast] = useState<string | null>(null)
+  const actionToastExit = useExitingValue(actionToast, TOAST_SLIDE_OUT_MS)
 
   const flashToast = useCallback((msg: string) => {
     setActionToast(msg)
@@ -762,14 +765,13 @@ export default function DaySelect() {
         />
       )}
 
-      {actionToast && (
-        <div
+      {actionToastExit.data && (
+        <ToastPill
+          edge="bottom"
+          exiting={actionToastExit.closing}
           role="status"
           style={{
-            position: 'fixed',
-            left: '50%',
             bottom: 'calc(84px + env(safe-area-inset-bottom))',
-            transform: 'translateX(-50%)',
             zIndex: 60,
             maxWidth: 'calc(100% - 32px)',
             padding: '11px 18px',
@@ -782,10 +784,11 @@ export default function DaySelect() {
             fontWeight: 600,
             boxShadow: '0 6px 20px rgba(0,0,0,0.35)',
             textAlign: 'center',
+            pointerEvents: 'none',
           }}
         >
-          {actionToast}
-        </div>
+          {actionToastExit.data}
+        </ToastPill>
       )}
 
       <FinishUndoBanner />

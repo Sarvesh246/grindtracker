@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { Feedback, FeedbackCategory } from '@/lib/types'
+import { useExitingValue } from '@/lib/hooks/useExitingValue'
+import ToastPill, { TOAST_SLIDE_OUT_MS } from '@/components/ToastPill'
 
 type Filter = 'all' | 'unread' | 'starred'
 type Sort = 'newest' | 'oldest' | 'unread-first'
@@ -104,6 +106,7 @@ export default function FeedbackInbox({
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [revealed, setRevealed] = useState<Set<string>>(new Set())
   const [toast, setToast] = useState<string | null>(null)
+  const toastExit = useExitingValue(toast, TOAST_SLIDE_OUT_MS)
 
   // The server re-renders on Refresh/navigation and hands down a new array;
   // adopt it during render (React's "adjust state when a prop changes"
@@ -683,20 +686,25 @@ export default function FeedbackInbox({
         </div>
       </div>
 
-      {toast && (
-        <div style={{
-          position: 'fixed', left: '50%', transform: 'translateX(-50%)',
-          bottom: 'calc(var(--nav-h) + env(safe-area-inset-bottom) + 16px)',
-          zIndex: 300, maxWidth: 'min(440px, calc(100vw - 32px))',
-          backgroundColor: 'var(--surface-elevated)',
-          border: '1px solid var(--danger-bg-hover)',
-          borderRadius: 'var(--radius-md)',
-          padding: '11px 14px',
-          fontSize: '12px', color: 'var(--danger)',
-          boxShadow: '0 8px 28px rgba(0,0,0,0.4)',
-        }}>
-          {toast}
-        </div>
+      {toastExit.data && (
+        <ToastPill
+          edge="bottom"
+          exiting={toastExit.closing}
+          role="status"
+          style={{
+            bottom: 'calc(var(--nav-h) + env(safe-area-inset-bottom) + 16px)',
+            zIndex: 300, maxWidth: 'min(440px, calc(100vw - 32px))',
+            backgroundColor: 'var(--surface-elevated)',
+            border: '1px solid var(--danger-bg-hover)',
+            borderRadius: 'var(--radius-md)',
+            padding: '11px 14px',
+            fontSize: '12px', color: 'var(--danger)',
+            boxShadow: '0 8px 28px rgba(0,0,0,0.4)',
+            pointerEvents: 'none',
+          }}
+        >
+          {toastExit.data}
+        </ToastPill>
       )}
     </div>
   )
