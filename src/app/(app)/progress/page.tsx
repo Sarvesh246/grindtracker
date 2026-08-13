@@ -1,16 +1,23 @@
 'use client'
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
+import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useDemoMode } from '@/lib/contexts/DemoModeContext'
 import { Exercise } from '@/lib/types'
 import { formatHeaderDate, formatShortDate } from '@/lib/utils/formatting'
-import ProgressChart from './ProgressChart'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { useTour, type TourStep } from '@/components/onboarding/Tour'
 import Card from '@/components/ui/Card'
 import { CACHE_KEYS, getUiState, setUiState } from '@/lib/cache/appDataCache'
 import { useCachedQuery } from '@/lib/cache/useCachedQuery'
+
+const ProgressChart = dynamic(() => import('./ProgressChart'), {
+  ssr: false,
+  loading: () => (
+    <div style={{ width: '100%', height: 216 }} aria-hidden="true" />
+  ),
+})
 
 export type Metric = 'weight' | 'volume' | 'e1rm' | 'best'
 

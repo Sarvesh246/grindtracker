@@ -263,6 +263,10 @@ export function CoachProvider({
     }
   }, [openCoach])
 
+  const openCoachRef = useRef(openCoach)
+  openCoachRef.current = openCoach
+  const sendMessageRef = useRef<(text: string) => Promise<void>>(async () => {})
+
   const closeCoach = useCallback(() => {
     // Blur the composer before unmount so iOS doesn't leave the layout
     // viewport panned after the focused field disappears (standalone PWA).
@@ -707,6 +711,7 @@ export function CoachProvider({
       activeConversationId,
     ],
   )
+  sendMessageRef.current = sendMessage
 
   const decideProposal = useCallback(
     async (proposalId: string, decision: 'confirm' | 'cancel') => {

@@ -213,4 +213,24 @@ Floating coach on authenticated `(app)` routes (`src/components/coach/`):
 | **API** | First open → `GET /api/coach/chat` (quota). Send → `POST` stream + `unit` from `UnitContext`; quota pill re-synced via `GET` after every turn settles. |
 | **z-index** | FAB 420 · backdrop 430 · sheet/page 440. |
 
+### Opening Coach from other surfaces
+
+Dispatch a window event (listened by `CoachProvider` via `openCoachBus`):
+
+```js
+window.dispatchEvent(
+  new CustomEvent('grind:open-coach', {
+    detail: { message: 'How was that workout?' }, // optional; spends 1 quota when sent
+  }),
+)
+```
+
+If Coach isn’t mounted yet (e.g. still on `/log?day=` where Coach is gated),
+the request is queued until `CoachProvider` subscribes — so post-finish flows
+should `router.push('/home')` then dispatch. CompletionModal’s **How was that?
+Ask Coach** uses this path.
+
+`POST /api/coach/chat` caches `buildCoachContext` JSON ~60s in-memory per
+`userId|localDate|unit` so multi-turn chats skip rebuilding USER_DATA.
+
 Not a nav tab; the full experience is an overlay page, not a `/coach` route.

@@ -32,11 +32,14 @@ export default function CompletionModal({
   data,
   onDone,
   onUndo,
+  onAskCoach,
 }: {
   data: CompletionData
   onDone: () => void
   /** Return false (or a rejected promise) to keep the modal open on failure. */
   onUndo?: () => void | boolean | Promise<void | boolean>
+  /** Opens Coach with a prefilled ask (1 quota) via grind:open-coach after home. */
+  onAskCoach?: () => void
 }) {
   const [visible, setVisible] = useState(false)
   const [closing, setClosing] = useState(false)
@@ -269,6 +272,31 @@ export default function CompletionModal({
           >
             BACK TO HOME
           </button>
+
+          {onAskCoach && (
+            <button
+              data-haptic="light"
+              type="button"
+              onClick={() => requestClose(onAskCoach)}
+              disabled={closing || undoBusy}
+              style={{
+                position: 'relative',
+                width: '100%',
+                height: '44px',
+                marginTop: '10px',
+                backgroundColor: 'var(--accent-wash)',
+                color: 'var(--accent-text)',
+                border: '1px solid var(--accent-border)',
+                borderRadius: '12px',
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: '14px',
+                fontWeight: 600,
+                cursor: closing || undoBusy ? 'default' : 'pointer',
+              }}
+            >
+              How was that? Ask Coach
+            </button>
+          )}
 
           {onUndo && (
             <button

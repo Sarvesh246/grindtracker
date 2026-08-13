@@ -4,7 +4,7 @@ import BottomNav from '@/components/BottomNav'
 import TopNav from '@/components/TopNav'
 import SwipeNavigator from '@/components/SwipeNavigator'
 import RouteCacheSync from '@/components/RouteCacheSync'
-import CoachRoot from '@/components/coach/CoachRoot'
+import CoachRootLazy from '@/components/coach/CoachRootLazy'
 import { UnitProvider } from '@/lib/contexts/UnitContext'
 import { ToastProvider } from '@/lib/contexts/ToastContext'
 import { OnboardingProvider, type OnboardingState } from '@/lib/contexts/OnboardingContext'
@@ -53,9 +53,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <OnboardingProvider userId={onboardingUserId} initialState={onboardingInitial}>
     <ToastProvider>
     <RouteCacheSync />
-    {/* Coach FAB + sheet: portal-friendly fixed UI above app chrome. Mid-workout
-        keeps Coach mounted (FAB hidden; Ask Coach opens compact sheet). */}
-    <CoachRoot />
+{/* Coach FAB + sheet: dynamically imported (keeps Fab/Sheet off the initial
+        home bundle). Mid-workout stays mounted — FAB hidden; Ask Coach opens
+        a compact sheet. */}
+    <CoachRootLazy />
     {/* Fixed, non-scrolling app shell. Only .app-main scrolls; the bottom nav is
         a flow child pinned at the bottom by layout (never position:fixed), so it
         can't strand. See .app-shell in globals.css. */}

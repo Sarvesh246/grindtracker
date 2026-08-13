@@ -21,6 +21,7 @@ import {
   useTheme,
 } from '@/lib/contexts/ThemeContext'
 import { useExitingValue } from '@/lib/hooks/useExitingValue'
+import { useFocusTrap } from '@/lib/hooks/useFocusTrap'
 import { useKeyboardMetrics } from '@/lib/hooks/useKeyboardInset'
 import IconButton from '@/components/ui/IconButton'
 import CoachFabIcon from './CoachFabIcon'
@@ -303,6 +304,7 @@ export default function CoachSheet() {
   // sheet back to translateY(0) (middle flash). Derive synchronously.
   const closing = mounted && !open
   const activelyOpen = open && !closing
+  useFocusTrap(sheetRef, activelyOpen)
 
   type PullPhase = 'idle' | 'dragging' | 'settling'
   const [pullY, setPullY] = useState(0)

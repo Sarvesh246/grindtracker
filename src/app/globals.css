@@ -3736,6 +3736,110 @@ html.light .landing-atmosphere {
   color: var(--text-secondary);
 }
 
+/* AI Coach beat — compact sheet mock (post-hero only) */
+.landing-coach-mock {
+  width: 100%;
+  max-width: 320px;
+  margin-inline: auto;
+}
+.landing-coach-mock__sheet {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: var(--card-shadow);
+}
+.landing-coach-mock__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.landing-coach-mock__orb {
+  width: 36px;
+  height: 36px;
+  border-radius: 9999px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-family: var(--font-display);
+  font-size: 20px;
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.landing-demo--active .landing-coach-mock__orb {
+  animation: landing-coach-pulse 1.6s ease-in-out 1;
+}
+@keyframes landing-coach-pulse {
+  0%, 100% { transform: scale(1); }
+  40% { transform: scale(1.06); }
+}
+.landing-coach-mock__title {
+  font-family: var(--font-display);
+  font-size: 22px;
+  letter-spacing: 1px;
+  color: var(--text-primary);
+}
+.landing-coach-mock__bubble {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.45;
+  padding: 10px 12px;
+  border-radius: 12px;
+  max-width: 92%;
+  opacity: 0;
+  transform: translateY(6px);
+}
+.landing-demo--seen .landing-coach-mock__bubble--user {
+  opacity: 1;
+  transform: none;
+  transition: opacity 320ms ease 80ms, transform 320ms ease 80ms;
+}
+.landing-demo--seen .landing-coach-mock__bubble--coach {
+  opacity: 1;
+  transform: none;
+  transition: opacity 360ms ease 280ms, transform 360ms ease 280ms;
+}
+.landing-coach-mock__bubble--user {
+  align-self: flex-end;
+  background: var(--surface-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+}
+.landing-coach-mock__bubble--coach {
+  align-self: flex-start;
+  background: var(--accent-wash);
+  color: var(--text-primary);
+  border: 1px solid var(--accent-border, transparent);
+}
+html.reduce-motion .landing-coach-mock__bubble,
+html.reduce-motion .landing-demo--seen .landing-coach-mock__bubble--user,
+html.reduce-motion .landing-demo--seen .landing-coach-mock__bubble--coach {
+  opacity: 1;
+  transform: none;
+  transition: none;
+}
+html.reduce-motion .landing-demo--active .landing-coach-mock__orb {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .landing-coach-mock__bubble,
+  .landing-demo--seen .landing-coach-mock__bubble--user,
+  .landing-demo--seen .landing-coach-mock__bubble--coach {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .landing-demo--active .landing-coach-mock__orb {
+    animation: none;
+  }
+}
+
 /* Install shortcut ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ secondary, not competing with Get started */
 .landing-install-btn {
   display: inline-flex;
@@ -4281,6 +4385,21 @@ html.light .landing-atmosphere {
   }
   .landing-friends-mock__note {
     font-size: 16px;
+  }
+
+  .landing-coach-mock {
+    max-width: 360px;
+  }
+  .landing-coach-mock__sheet {
+    padding: 20px;
+    gap: 12px;
+  }
+  .landing-coach-mock__title {
+    font-size: 26px;
+  }
+  .landing-coach-mock__bubble {
+    font-size: 15px;
+    padding: 12px 14px;
   }
 
   .landing-install-btn {

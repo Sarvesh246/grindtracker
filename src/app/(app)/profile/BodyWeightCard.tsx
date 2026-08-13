@@ -1,150 +1,30 @@
 'use client'
-import { Component, useEffect, useRef, useState, type ReactNode } from 'react'
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-} from 'recharts'
+import { useEffect, useRef, useState } from 'react'
+import dynamic from 'next/dynamic'
 import { createClient } from '@/lib/supabase/client'
 import { useUnit, LBS_PER_KG } from '@/lib/contexts/UnitContext'
 import { useToast } from '@/lib/contexts/ToastContext'
-import { useMotionPref } from '@/lib/contexts/MotionContext'
 import { useDemoMode } from '@/lib/contexts/DemoModeContext'
 import { demoSafeClient } from '@/lib/demoMode/demoSafeSupabase'
 import { demoBodyWeightRows } from '@/lib/demoMode/fakeData'
 import Dialog from '@/components/ui/Dialog'
 import { CACHE_KEYS, getCached, isFresh, markAppDataStale, setCached } from '@/lib/cache/appDataCache'
 import { reportError } from '@/lib/utils/reportError'
+import type { BodyWeightPoint } from './BodyWeightChart'
+
+const BodyWeightChart = dynamic(() => import('./BodyWeightChart'), {
+  ssr: false,
+  loading: () => (
+    <div style={{ height: '120px', width: '100%' }} aria-hidden="true" />
+  ),
+})
 
 interface Row {
   weight: number
   recorded_at: string
 }
 
-interface Point {
-  /** YYYY-MM-DD key, unique per entry (one weight per day). */
-  date: string
-  /** Stored value, always canonical lbs. */
-  canonical: number
-  /** Short axis / list label, e.g. "Jun 30". */
-  displayDate: string
-  /** Long label for the editor sheet, e.g. "Monday, June 30". */
-  longDate: string
-  /** Value in the active display unit — what the chart plots. */
-  weight: number
-}
-
-/**
- * Recharts v3 calls custom dots during the line draw-in with cx/cy but no
- * payload. A function `dot={fn}` that reads `payload.date` throws, and that
- * used to take down the whole /profile page via the app error boundary.
- * Element form + an explicit payload guard matches ProgressChart.
- */
-interface WeightDotProps {
-  cx?: number
-  cy?: number
-  payload?: Point
-  peeked?: string | null
-  selectedDate?: string
-  chartPoints?: Point[]
-  onDotClick?: (point: Point) => void
-  fmt?: (canonicalLbs: number) => string
-  unitLabel?: string
-}
-
-function WeightDot({
-  cx,
-  cy,
-  payload,
-  peeked,
-  selectedDate,
-  chartPoints = [],
-  onDotClick,
-  fmt,
-  unitLabel,
-}: WeightDotProps) {
-  if (cx == null || cy == null || !payload?.date) return null
-  const isPeeked = payload.date === peeked
-  const active = payload.date === selectedDate || isPeeked
-  const point = chartPoints.find(p => p.date === payload.date)
-  const isFirst = point === chartPoints[0]
-  const isLast = point === chartPoints[chartPoints.length - 1]
-  const anchor = isFirst ? 'start' : isLast ? 'end' : 'middle'
-  const label = point && fmt ? `${fmt(point.canonical)} ${unitLabel ?? ''}` : ''
-  const labelBelow = cy < 24
-  const pillWidth = label.length * 6.5 + 16
-  const pillX = anchor === 'start' ? cx : anchor === 'end' ? cx - pillWidth : cx - pillWidth / 2
-  const pillY = labelBelow ? cy + 10 : cy - 30
-  return (
-    <g
-      style={{ cursor: 'pointer' }}
-      onClick={e => {
-        e.stopPropagation()
-        if (point) onDotClick?.(point)
-      }}
-    >
-      <circle cx={cx} cy={cy} r={14} fill="transparent" />
-      {active && <circle cx={cx} cy={cy} r={9} fill="var(--chart-mark)" opacity={0.22} />}
-      <circle
-        cx={cx}
-        cy={cy}
-        r={active ? 5 : 4}
-        fill="var(--chart-mark)"
-        stroke="var(--surface)"
-        strokeWidth={2}
-      />
-      {isPeeked && (
-        <g pointerEvents="none">
-          <rect
-            x={pillX}
-            y={pillY}
-            width={pillWidth}
-            height={18}
-            rx={5}
-            fill="var(--surface-elevated)"
-            stroke="var(--border)"
-          />
-          <text
-            x={anchor === 'start' ? pillX + 8 : anchor === 'end' ? pillX + pillWidth - 8 : cx}
-            y={pillY + 13}
-            textAnchor={anchor === 'middle' ? 'middle' : anchor}
-            fontSize={10}
-            fontFamily="var(--font-mono)"
-            fill="var(--text-primary)"
-          >
-            {label}
-          </text>
-        </g>
-      )}
-    </g>
-  )
-}
-
-class ChartGuard extends Component<{ children: ReactNode }, { failed: boolean }> {
-  state = { failed: false }
-
-  static getDerivedStateFromError() {
-    return { failed: true }
-  }
-
-  componentDidCatch(error: Error) {
-    reportError(error, { operation: 'body-weight-chart' })
-  }
-
-  render() {
-    if (this.state.failed) {
-      return (
-        <div style={{ color: 'var(--text-muted)', fontSize: '12px', textAlign: 'center', padding: '12px 0' }}>
-          Could not render the weight chart. Use History below to view or edit entries.
-        </div>
-      )
-    }
-    return this.props.children
-  }
-}
+type Point = BodyWeightPoint
 
 function todayDateKey(): string {
   const d = new Date()
@@ -159,10 +39,6 @@ export default function BodyWeightCard() {
   const supabase = demoMode ? demoSafeClient(createClient()) : createClient()
   const { unitLabel, toDisplay, fromDisplay, fmt } = useUnit()
   const toast = useToast()
-  // Recharts' line-draw is a JS (react-smooth) animation, not CSS — the
-  // `html.reduce-motion` class in globals.css can't reach it, so it has to be
-  // gated explicitly or it keeps playing with the setting on.
-  const { reduceMotion } = useMotionPref()
   const [rows, setRows] = useState<Row[]>([])
   const [draft, setDraft] = useState('')
   const [saving, setSaving] = useState(false)
@@ -377,23 +253,6 @@ export default function BodyWeightCard() {
 
   const pointsNewestFirst = [...chartPoints].reverse()
 
-  /**
-   * Recharts v3 chart onClick no longer exposes `activePayload` (v2 API) — only
-   * `activeIndex` / `activeTooltipIndex`. Resolve the nearest point from that.
-   * Per-dot handlers (below) are the primary path; this covers taps on the line
-   * / gutters between dots.
-   */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function handleChartClick(state: any) {
-    const raw = state?.activeIndex ?? state?.activeTooltipIndex
-    const idx = typeof raw === 'string' ? Number(raw) : raw
-    if (idx == null || !Number.isFinite(idx)) return
-    const point = chartPoints[idx as number]
-    if (point) handleDotClick(point)
-  }
-
-  // Transparent r=14 hit circle lives on WeightDot so the tap target clears ~44px.
-
   return (
     <div
       style={{
@@ -499,97 +358,16 @@ export default function BodyWeightCard() {
         </div>
       ) : (
         <>
-          <div style={{ height: '120px', width: '100%', minWidth: 0 }} aria-hidden="true">
-            <ChartGuard>
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart
-                data={chartPoints}
-                margin={{ top: 4, right: 20, bottom: 0, left: 4 }}
-                onClick={handleChartClick}
-                style={{ cursor: 'pointer' }}
-              >
-                <XAxis
-                  dataKey="displayDate"
-                  stroke="transparent"
-                  tick={{ fill: 'var(--text-muted)', fontSize: 9, fontFamily: "'DM Sans', sans-serif" }}
-                  tickLine={false}
-                  axisLine={false}
-                  interval={Math.max(0, Math.floor(chartPoints.length / 4))}
-                />
-                <YAxis
-                  stroke="transparent"
-                  tick={{ fill: 'var(--text-muted)', fontSize: 9, fontFamily: "'DM Sans', sans-serif" }}
-                  tickLine={false}
-                  axisLine={false}
-                  width={40}
-                  domain={['dataMin - 2', 'dataMax + 2']}
-                  tickFormatter={(v: number) => String(Math.round(v))}
-                />
-                {/* Hover tooltip (desktop). pointer-events:none so the floating
-                    HTML never steals the second tap that opens the edit sheet.
-                    Mobile / touch uses the peek pill on the dot instead. */}
-                <Tooltip
-                  trigger="hover"
-                  cursor={{ stroke: 'var(--border-strong)', strokeWidth: 1 }}
-                  wrapperStyle={{ pointerEvents: 'none', outline: 'none' }}
-                  content={({ active, payload }) => {
-                    if (!active || !payload?.length) return null
-                    const point = payload[0]?.payload as Point | undefined
-                    if (!point) return null
-                    return (
-                      <div
-                        style={{
-                          backgroundColor: 'var(--surface-elevated)',
-                          border: '1px solid var(--border)',
-                          borderRadius: '8px',
-                          padding: '8px 12px',
-                          fontFamily: 'var(--font-sans)',
-                          boxShadow: 'var(--card-shadow)',
-                        }}
-                      >
-                        <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '2px' }}>
-                          {point.displayDate}
-                        </div>
-                        <div
-                          style={{
-                            fontFamily: 'var(--font-mono)',
-                            fontSize: '14px',
-                            color: 'var(--text-primary)',
-                          }}
-                        >
-                          {fmt(point.canonical)} {unitLabel}
-                        </div>
-                      </div>
-                    )
-                  }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="weight"
-                  stroke="var(--chart-mark)"
-                  strokeWidth={2}
-                  dot={
-                    <WeightDot
-                      peeked={peeked}
-                      selectedDate={selected?.date}
-                      chartPoints={chartPoints}
-                      onDotClick={handleDotClick}
-                      fmt={fmt}
-                      unitLabel={unitLabel}
-                    />
-                  }
-                  // No activeDot: it paints on top of the tapped point after the
-                  // first interaction and swallows the second tap that should
-                  // open the edit sheet.
-                  activeDot={false}
-                  isAnimationActive={!reduceMotion}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-            </ChartGuard>
-          </div>
+          <BodyWeightChart
+            chartPoints={chartPoints}
+            peeked={peeked}
+            selectedDate={selected?.date}
+            onDotClick={handleDotClick}
+            fmt={fmt}
+            unitLabel={unitLabel}
+          />
 
-          {/* The dots are the primary edit affordance, so say so — nothing about a
+                    {/* The dots are the primary edit affordance, so say so — nothing about a
               plotted point reads as tappable on its own. Two-step because a bare
               tap-to-edit made it too easy to open the sheet by accident while
               scrubbing across the chart to read values. */}

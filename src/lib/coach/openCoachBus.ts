@@ -6,13 +6,16 @@
  *   import { requestOpenCoach } from '@/lib/coach/openCoachBus'
  *   requestOpenCoach() // compact sheet
  *   requestOpenCoach({ size: 'compact' })
+ *   requestOpenCoach({ message: 'How was that workout?' })
+ *
+ * Or the window event:
  *   window.dispatchEvent(new CustomEvent('grind:open-coach', {
- *     detail: { message: 'How was that workout?' },
+ *     detail: { message: 'How was that workout?', size: 'compact' },
  *   }))
  *
  * CoachProvider subscribes via `subscribeOpenCoach`. If nothing is listening
- * yet (e.g. Coach still mounting), the request is queued until a subscriber
- * mounts.
+ * yet (e.g. Coach still mounting / lazy-loading), the request is queued until
+ * a subscriber mounts.
  */
 
 export type OpenCoachDetail = {

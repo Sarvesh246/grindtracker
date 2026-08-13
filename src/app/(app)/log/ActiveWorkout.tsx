@@ -2227,6 +2227,14 @@ export default function ActiveWorkout({ day }: { day: string }) {
           data={completionData}
           onDone={() => router.push('/home')}
           onUndo={handleUndoFinish}
+          onAskCoach={() => {
+            const message =
+              "How was that workout? Give me a quick take on today’s session — what went well and what to watch next time."
+            router.push('/home')
+            window.dispatchEvent(
+              new CustomEvent('grind:open-coach', { detail: { message } }),
+            )
+          }}
         />
       )}
 
