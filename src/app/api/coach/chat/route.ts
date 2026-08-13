@@ -27,6 +27,11 @@ import {
   type CoachToolContext,
 } from '@/lib/coach/actions'
 import { titleFromMessage } from '@/lib/coach/conversations'
+import {
+  coachContextCacheKey,
+  getCachedCoachContext,
+  setCachedCoachContext,
+} from '@/lib/coach/contextCache'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -248,23 +253,30 @@ export async function POST(request: Request) {
   const unit = parseUnit(body.unit, cookieStore.get('grind_unit_pref')?.value)
   const { localDate, timeZone } = resolveAsOfLocalDate(body)
 
-  let contextJson: string
-  try {
-    const context = await buildCoachContext(supabase, user.id, unit, {
-      asOfLocalDate: localDate,
-      timeZone,
-    })
-    contextJson = JSON.stringify(context)
-  } catch (err) {
-    console.error('[grind] coach context', err)
-    const { error: refundErr } = await supabase.rpc('grind_coach_refund_message', {
-      p_message_id: insertedMessage.id,
-    })
-    if (refundErr) console.error('[grind] coach refund failed', refundErr)
-    return NextResponse.json(
-      { error: 'Failed to load your training data' },
-      { status: 500 },
-    )
+  // Short TTL cache (~60s) keyed by user + local day + unit so multi-turn
+  // chats in the same session skip rebuilding the full USER_DATA payload.
+  // Streaming is unchanged — only the context JSON is reused.
+  const contextKey = coachContextCacheKey(user.id, localDate, unit)
+  let contextJson = getCachedCoachContext(contextKey)
+  if (!contextJson) {
+    try {
+      const context = await buildCoachContext(supabase, user.id, unit, {
+        asOfLocalDate: localDate,
+        timeZone,
+      })
+      contextJson = JSON.stringify(context)
+      setCachedCoachContext(contextKey, contextJson)
+    } catch (err) {
+      console.error('[grind] coach context', err)
+      const { error: refundErr } = await supabase.rpc('grind_coach_refund_message', {
+        p_message_id: insertedMessage.id,
+      })
+      if (refundErr) console.error('[grind] coach refund failed', refundErr)
+      return NextResponse.json(
+        { error: 'Failed to load your training data' },
+        { status: 500 },
+      )
+    }
   }
 
   const history = sanitizeHistory(body.history)
