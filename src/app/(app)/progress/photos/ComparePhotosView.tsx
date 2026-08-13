@@ -86,7 +86,7 @@ export default function ComparePhotosView({
             <div key={g.id} style={{ flex: 1, position: 'relative', backgroundColor: '#0a0a0a', overflow: 'hidden' }}>
               {url ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                <img src={url} alt="" loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
               ) : (
                 <div className="shimmer" style={{ width: '100%', height: '100%' }} />
               )}
