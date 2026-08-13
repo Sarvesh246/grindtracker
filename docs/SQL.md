@@ -53,6 +53,7 @@ is fully linked to migration history.
 | [38-schema-integrity.sql](sql/38-schema-integrity.sql) | 38 | **Paste this in Supabase.** Badge RPC no longer trusts client hour/skips; past-date UTC+1 slack; Coach recompute uses today; delete-my-data clears Coach; comeback = 14+ days |
 | [39-rest-day-skip.sql](sql/39-rest-day-skip.sql) | 39 | Home Rest today, weekly rest budget, Settings `effective_from` |
 | [40-integrity-followups.sql](sql/40-integrity-followups.sql) | 40 | **Paste this in Supabase.** Warm-up-only sessions cannot complete; completed session/log writes locked; rest-cancel steal rows insert-only; rotation seed `-1`; Coach assistant insert RPC |
+| [41-upsert-past-session-skip.sql](sql/41-upsert-past-session-skip.sql) | 41 | **Paste this in Supabase.** Past-edit round-trips skips, warm-ups, notes, and RPE via `upsert_past_session` |
 
 See also [PUSH.md](PUSH.md) for VAPID keys, Vercel env, and cron setup.
 See [COACH.md](COACH.md) for Gemini env, rate limits, `/api/coach/chat`, and
