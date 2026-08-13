@@ -9,6 +9,7 @@ import {
   isRestDay,
   skipTodayState,
   weekStartMonday,
+  sameDateKeyList,
 } from '../restDays'
 import { extraSetsFromLogs, emptySetState, type LogMap } from '../../../app/(app)/log/sessionLogState'
 
@@ -239,6 +240,16 @@ describe('skipTodayState', () => {
     })
     assert.equal(state.budget, 1)
     assert.equal(state.canSkip, true)
+  })
+})
+
+describe('sameDateKeyList', () => {
+  it('treats order as irrelevant', () => {
+    assert.equal(sameDateKeyList(['2026-08-12', '2026-08-10'], ['2026-08-10', '2026-08-12']), true)
+  })
+
+  it('is false when a key is missing', () => {
+    assert.equal(sameDateKeyList(['2026-08-12'], ['2026-08-12', '2026-08-10']), false)
   })
 })
 

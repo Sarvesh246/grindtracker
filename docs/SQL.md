@@ -54,6 +54,7 @@ is fully linked to migration history.
 | [39-rest-day-skip.sql](sql/39-rest-day-skip.sql) | 39 | Home Rest today, weekly rest budget, Settings `effective_from` |
 | [40-integrity-followups.sql](sql/40-integrity-followups.sql) | 40 | **Paste this in Supabase.** Warm-up-only sessions cannot complete; completed session/log writes locked; rest-cancel steal rows insert-only; rotation seed `-1`; Coach assistant insert RPC |
 | [41-upsert-past-session-skip.sql](sql/41-upsert-past-session-skip.sql) | 41 | **Paste this in Supabase.** Past-edit round-trips skips, warm-ups, notes, and RPE via `upsert_past_session` |
+| [42-rest-today-undo.sql](sql/42-rest-today-undo.sql) | 42 | **Paste this in Supabase.** Rest-today undo must be able to clear steal rows (`user_rest_cancels` DELETE is revoked; trigger is SECURITY DEFINER) |
 
 See also [PUSH.md](PUSH.md) for VAPID keys, Vercel env, and cron setup.
 See [COACH.md](COACH.md) for Gemini env, rate limits, `/api/coach/chat`, and
@@ -102,6 +103,12 @@ Signature of `upsert_past_session` is unchanged; JSON row shape gains `is_skippe
 optional `rpe`. Sanity check: saving a past edit that includes a skip-marker row
 (`is_skipped: true`, null weight/reps) keeps that row after reload, and existing
 RPE values survive a weight-only edit.
+
+**Rest-today undo (42):** paste and run `docs/sql/42-rest-today-undo.sql` **before**
+(or with) the app that lets Home undo Rest today. 40 already intended this
+(`grind_guard_rest_date_delete` as SECURITY DEFINER); 42 re-asserts it and
+clears steal rows inside `toggle_rest_today` itself. Without it, undoing a
+one-off rest day can fail with permission denied on `user_rest_cancels`.
 
 ## Deploying 20
 

@@ -154,6 +154,17 @@ export type SkipTodayState = {
   used: number
 }
 
+/** Order-independent equality for rest-date key lists (optimistic vs server). */
+export function sameDateKeyList(a: string[], b: string[]): boolean {
+  if (a === b) return true
+  if (a.length !== b.length) return false
+  const set = new Set(a)
+  for (const key of b) {
+    if (!set.has(key)) return false
+  }
+  return true
+}
+
 /**
  * Whether Home can mark `todayKey` as a one-off rest day without exceeding
  * the weekly budget (weekdays whose `effective_from` is on or before this

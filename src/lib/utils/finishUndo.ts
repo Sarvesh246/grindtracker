@@ -65,6 +65,21 @@ export function clearFinishUndoToken(): void {
   } catch { /* ignore */ }
 }
 
+/** True when two tokens refer to the same undo window (ignore object identity). */
+export function sameFinishUndoToken(
+  a: FinishUndoToken | null,
+  b: FinishUndoToken | null,
+): boolean {
+  if (a === b) return true
+  if (!a || !b) return false
+  return (
+    a.sessionId === b.sessionId
+    && a.expiresAt === b.expiresAt
+    && a.xpEarned === b.xpEarned
+    && a.day === b.day
+  )
+}
+
 /** Reopen the session + restore rotation. Returns false on auth/expiry/RPC failure. */
 export async function performFinishUndo(
   supabase: SupabaseClient,

@@ -20,6 +20,7 @@ import {
   clearFinishUndoToken,
   performFinishUndo,
   readFinishUndoToken,
+  sameFinishUndoToken,
 } from '@/lib/utils/finishUndo'
 
 function formatRemaining(ms: number): string {
@@ -43,7 +44,7 @@ export default function FinishUndoBanner() {
   useEffect(() => {
     const sync = () => {
       const latest = readFinishUndoToken()
-      setToken(latest)
+      setToken(prev => (sameFinishUndoToken(prev, latest) ? prev : latest))
       setRemaining(latest ? latest.expiresAt - Date.now() : 0)
     }
     sync()
@@ -75,6 +76,7 @@ export default function FinishUndoBanner() {
 
   return (
     <ToastPill
+      key={token.sessionId}
       edge="bottom"
       exiting={closing}
       role="status"

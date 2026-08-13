@@ -2329,6 +2329,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       {/* Resume toast */}
       {resumeToastExit.data && (
         <ToastPill
+          key={resumeToastExit.data}
           edge="top"
           exiting={resumeToastExit.closing}
           role="status"
@@ -2355,6 +2356,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
           Sits just below the resume toast if both happen to show. */}
       {undoToastExit.data && (
         <ToastPill
+          key={undoToastExit.data.key}
           edge="top"
           exiting={undoToastExit.closing}
           role="status"
@@ -2412,6 +2414,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
           one is open so it stays visible while editing. */}
       {saveToastExit.data && (
         <ToastPill
+          key={saveToastExit.data}
           edge="bottom"
           exiting={saveToastExit.closing}
           role="status"

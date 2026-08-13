@@ -688,6 +688,7 @@ export default function FeedbackInbox({
 
       {toastExit.data && (
         <ToastPill
+          key={toastExit.data}
           edge="bottom"
           exiting={toastExit.closing}
           role="status"
