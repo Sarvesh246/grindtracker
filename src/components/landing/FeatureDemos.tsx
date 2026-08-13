@@ -133,6 +133,7 @@ export function RestTimerDemo() {
   const progress = shown / TIMER_SECONDS
   const dashOffset = TIMER_CIRC * (1 - progress)
   const low = !reduceMotion && shown <= 5 && shown > 0
+  const phase = shown <= 0 ? 'DONE' : low ? 'UP SOON' : 'REST'
 
   return (
     <DemoFrame demoRef={ref} className="landing-timer-demo">
@@ -152,9 +153,15 @@ export function RestTimerDemo() {
         </svg>
         <div className="landing-timer-demo__time">
           <span className="landing-timer-demo__digits">{fmtRest(shown)}</span>
-          <span className="landing-timer-demo__label">{shown <= 0 ? 'DONE' : 'REST'}</span>
+          <span className="landing-timer-demo__label">{phase}</span>
         </div>
       </div>
+      <p className="landing-timer-demo__legend">
+        <span className="landing-timer-demo__swatch landing-timer-demo__swatch--rest" aria-hidden />
+        Lime is rest.
+        <span className="landing-timer-demo__swatch landing-timer-demo__swatch--low" aria-hidden />
+        Red is the last seconds — then you&apos;re up.
+      </p>
       <div className="landing-timer-demo__hints">
         <span>Prefill last weight</span>
         <span>Plate calc</span>

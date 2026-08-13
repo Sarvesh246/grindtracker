@@ -13,6 +13,7 @@ import {
 } from './FeatureDemos'
 import InstallSection, { FinalCta, LandingFooter } from './InstallSection'
 import MobileInstallPill from './MobileInstallPill'
+import HowItWorksDemo from './HowItWorksDemo'
 import LandingRise from './LandingRise'
 import GoogleSignInButton from '@/components/GoogleSignInButton'
 
@@ -83,8 +84,16 @@ export default function LandingPage() {
               <HeroDemo />
             </div>
           </div>
-          <HeroScrollCue targetId="log-fast" />
+          <HeroScrollCue targetId="how" />
         </section>
+
+        <Section
+          id="how"
+          eyebrow="How it works"
+          title="Ten seconds from home to a logged PR"
+          lead="Open the app, tap today’s day, check the set. Last weight is waiting, the rest timer runs, and a PR badge lands when you earn it — that’s the whole loop."
+          demo={<HowItWorksDemo />}
+        />
 
         <Section
           id="log-fast"

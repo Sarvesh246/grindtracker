@@ -38,11 +38,20 @@ function ShareGlyph() {
  * a second header CTA. Hidden in standalone PWA, after dismiss, on desktop,
  * and while the full #install section is on screen.
  */
+function persistDismissed() {
+  try {
+    window.localStorage.setItem(DISMISS_KEY, '1')
+  } catch {
+    /* private mode */
+  }
+}
+
 export default function MobileInstallPill() {
   const [ready, setReady] = useState(false)
   const [visible, setVisible] = useState(false)
   const [closing, setClosing] = useState(false)
   const [nearInstall, setNearInstall] = useState(false)
+  const [hideForScroll, setHideForScroll] = useState(false)
   const [label, setLabel] = useState('Install GRIND')
   const [nativeInstall, setNativeInstall] = useState(false)
 
@@ -67,8 +76,15 @@ export default function MobileInstallPill() {
       )
     }
     syncCopy()
+
+    function onInstalled() {
+      persistDismissed()
+      setClosing(true)
+      window.setTimeout(() => setVisible(false), 180)
+    }
+
     window.addEventListener('beforeinstallprompt', syncCopy)
-    window.addEventListener('appinstalled', syncCopy)
+    window.addEventListener('appinstalled', onInstalled)
 
     // Soft entrance after the hero settles — reads as a tip, not a second CTA row.
     const showTimer = window.setTimeout(() => {
@@ -77,19 +93,35 @@ export default function MobileInstallPill() {
     }, 900)
 
     const install = document.getElementById('install')
+    const scroller = document.querySelector('.landing')
     let observer: IntersectionObserver | null = null
     if (install) {
       observer = new IntersectionObserver(
         ([entry]) => setNearInstall(entry.isIntersecting && entry.intersectionRatio > 0.2),
-        { threshold: [0, 0.2, 0.5] },
+        { root: scroller instanceof Element ? scroller : null, threshold: [0, 0.2, 0.5] },
       )
       observer.observe(install)
     }
 
+    // Hide while scrolling down the page; reappear on scroll up — same pattern
+    // as a smart app banner, without nags after an explicit dismiss.
+    let lastTop = scroller instanceof HTMLElement ? scroller.scrollTop : window.scrollY
+    function onScroll() {
+      const top = scroller instanceof HTMLElement ? scroller.scrollTop : window.scrollY
+      const delta = top - lastTop
+      if (delta > 12 && top > 64) setHideForScroll(true)
+      else if (delta < -12) setHideForScroll(false)
+      lastTop = top
+    }
+    const scrollTarget: Window | HTMLElement =
+      scroller instanceof HTMLElement ? scroller : window
+    scrollTarget.addEventListener('scroll', onScroll, { passive: true })
+
     return () => {
       window.clearTimeout(showTimer)
       window.removeEventListener('beforeinstallprompt', syncCopy)
-      window.removeEventListener('appinstalled', syncCopy)
+      window.removeEventListener('appinstalled', onInstalled)
+      scrollTarget.removeEventListener('scroll', onScroll)
       observer?.disconnect()
     }
   }, [])
@@ -99,11 +131,7 @@ export default function MobileInstallPill() {
   function dismiss(e: MouseEvent) {
     e.preventDefault()
     e.stopPropagation()
-    try {
-      window.localStorage.setItem(DISMISS_KEY, '1')
-    } catch {
-      /* ignore */
-    }
+    persistDismissed()
     setClosing(true)
     window.setTimeout(() => setVisible(false), 180)
   }
@@ -117,7 +145,7 @@ export default function MobileInstallPill() {
     scrollToInstallSection()
   }
 
-  const hidden = nearInstall || closing
+  const hidden = nearInstall || closing || hideForScroll
 
   return (
     <div
