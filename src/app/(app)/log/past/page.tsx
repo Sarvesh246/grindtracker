@@ -71,6 +71,7 @@ function LogPastContent() {
   const [loadingExercises, setLoadingExercises] = useState(false)
   const [checkingDate, setCheckingDate] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const submittingRef = useRef(false)
   const [deleting, setDeleting] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -353,12 +354,13 @@ function LogPastContent() {
   }
 
   async function handleSubmit(editExisting = false) {
-    if (!selectedDayType) return
+    if (!selectedDayType || submittingRef.current) return
+    submittingRef.current = true
     setError(null)
     setSubmitting(true)
 
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setError('Not logged in.'); setSubmitting(false); return }
+    if (!user) { setError('Not logged in.'); submittingRef.current = false; setSubmitting(false); return }
 
     const isEditing = existingSessionRef.current?.day_type === selectedDayType
       || editExisting
@@ -385,6 +387,7 @@ function LogPastContent() {
         }
         setExistingSession(existingSessionRef.current)
         setDuplicateWarning(true)
+        submittingRef.current = false
         setSubmitting(false)
         return
       }
@@ -446,6 +449,7 @@ function LogPastContent() {
     )
     if (!hasWorking) {
       setError('Log at least one working set with weight and reps before saving.')
+      submittingRef.current = false
       setSubmitting(false)
       return
     }
@@ -475,6 +479,7 @@ function LogPastContent() {
       } else {
         setError('Could not save the workout. Check your connection and try again.')
       }
+      submittingRef.current = false
       setSubmitting(false)
       return
     }
@@ -517,6 +522,7 @@ function LogPastContent() {
       isDelete: false,
     })
     markAppDataStale()
+    submittingRef.current = false
     setSubmitting(false)
   }
 

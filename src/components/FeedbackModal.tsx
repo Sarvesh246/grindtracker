@@ -142,6 +142,7 @@ export default function FeedbackModal({ onClose }: { onClose: () => void }) {
       textareaRef.current?.focus()
       return
     }
+    if (submitting) return
 
     setSubmitting(true)
     setError(null)

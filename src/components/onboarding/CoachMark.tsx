@@ -240,14 +240,16 @@ export default function CoachMark({
         {/* × — dismiss this mark and advance (never kills the rest of the tour). */}
         <button
           type="button"
+          className="press"
+          data-haptic="light"
           onClick={onAdvance}
           aria-label={isLast ? 'Finish tour' : 'Dismiss this step'}
           style={{
             position: 'absolute',
-            top: '10px',
-            right: '10px',
-            width: '28px',
-            height: '28px',
+            top: '4px',
+            right: '4px',
+            width: '44px',
+            height: '44px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -304,6 +306,8 @@ export default function CoachMark({
           {onBack && (
             <button
               type="button"
+              className="press"
+              data-haptic="light"
               onClick={onBack}
               style={{
                 minHeight: '44px',
@@ -324,6 +328,8 @@ export default function CoachMark({
           <button
             ref={primaryRef}
             type="button"
+            className="press"
+            data-haptic={isLast ? 'medium' : 'light'}
             onClick={onAdvance}
             style={{
               flex: 1,
@@ -344,7 +350,7 @@ export default function CoachMark({
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', gap: '12px', marginTop: '12px' }}>
-          <button type="button" onClick={onSkipTour} style={linkStyle}>
+          <button type="button" className="press" data-haptic="light" onClick={onSkipTour} style={linkStyle}>
             Skip tutorial
           </button>
         </div>

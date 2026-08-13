@@ -34,6 +34,7 @@ export default function BodyWeightStep({
       setError(`Enter a weight in ${unitLabel}.`)
       return
     }
+    if (saving) return
 
     setSaving(true)
     setError(null)

@@ -38,6 +38,7 @@ export default function IdentityStep({
     existingProfile ? true : null,
   )
   const [submitting, setSubmitting] = useState(false)
+  const submittingRef = useRef(false)
   const [error, setError] = useState<string | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const checkGenRef = useRef(0)
@@ -99,6 +100,8 @@ export default function IdentityStep({
       setError('That username is taken.')
       return
     }
+    if (submittingRef.current) return
+    submittingRef.current = true
 
     setSubmitting(true)
     setError(null)
@@ -119,6 +122,7 @@ export default function IdentityStep({
 
       if (updateErr) {
         setError(updateErr.message)
+        submittingRef.current = false
         setSubmitting(false)
         return
       }
@@ -129,6 +133,7 @@ export default function IdentityStep({
         display_name: display,
         avatar_url: avatar,
       })
+      submittingRef.current = false
       setSubmitting(false)
       return
     }
@@ -144,6 +149,7 @@ export default function IdentityStep({
 
     if (insertErr) {
       setError(insertErr.message)
+      submittingRef.current = false
       setSubmitting(false)
       return
     }
@@ -155,6 +161,7 @@ export default function IdentityStep({
       avatar_url: avatar,
       setup_completed_at: null,
     })
+    submittingRef.current = false
     setSubmitting(false)
   }
 

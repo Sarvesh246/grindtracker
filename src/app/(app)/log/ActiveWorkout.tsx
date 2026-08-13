@@ -178,6 +178,9 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const [saveToast, setSaveToast] = useState<string | null>(null)
   const saveToastTimer = useRef<NodeJS.Timeout | null>(null)
   const [discarding, setDiscarding] = useState(false)
+  const discardingRef = useRef(false)
+  const finishingRef = useRef(false)
+  const skippingKeysRef = useRef<Set<string>>(new Set())
   const [plateCalcTarget, setPlateCalcTarget] = useState<{ key: string; current: number } | null>(null)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   const restTimer = useRestTimer()
@@ -1443,6 +1446,8 @@ export default function ActiveWorkout({ day }: { day: string }) {
   async function handleSkipSet(exerciseId: string, setNumber: number) {
     // Haptic: data-haptic on the skip control (delegated / overlay).
     const key = `${exerciseId}-${setNumber}`
+    if (skippingKeysRef.current.has(key)) return
+    skippingKeysRef.current.add(key)
     const wasChecked = logs[key]?.checked
     // persistSkip upserts the skip marker over whatever was there — including
     // an already-saved checked row, which it overwrites (weight/reps/is_pr
@@ -1478,16 +1483,22 @@ export default function ActiveWorkout({ day }: { day: string }) {
     })
     // Exit edit mode if the user is mid-edit when they skip.
     if (editingKey === key) setEditingKey(null)
-    const { error } = await persistSkip(exerciseId, [setNumber])
-    if (error) {
-      queueSkip(exerciseId, [setNumber])
-      setLogs(prev => ({ ...prev, [key]: { ...prev[key], pendingSync: true } }))
-      showQueuedSyncToast()
+    try {
+      const { error } = await persistSkip(exerciseId, [setNumber])
+      if (error) {
+        queueSkip(exerciseId, [setNumber])
+        setLogs(prev => ({ ...prev, [key]: { ...prev[key], pendingSync: true } }))
+        showQueuedSyncToast()
+      }
+    } finally {
+      skippingKeysRef.current.delete(key)
     }
   }
 
   async function handleUnskipSet(exerciseId: string, setNumber: number) {
     const key = `${exerciseId}-${setNumber}`
+    if (skippingKeysRef.current.has(key)) return
+    skippingKeysRef.current.add(key)
     setLogs(prev => {
       const entry = prev[key]
       return {
@@ -1507,11 +1518,15 @@ export default function ActiveWorkout({ day }: { day: string }) {
         },
       }
     })
-    const { error } = await persistUnskip(exerciseId, [setNumber])
-    if (error) {
-      queueUnskip(exerciseId, [setNumber])
-      setLogs(prev => ({ ...prev, [key]: { ...prev[key], pendingSync: true } }))
-      showQueuedSyncToast()
+    try {
+      const { error } = await persistUnskip(exerciseId, [setNumber])
+      if (error) {
+        queueUnskip(exerciseId, [setNumber])
+        setLogs(prev => ({ ...prev, [key]: { ...prev[key], pendingSync: true } }))
+        showQueuedSyncToast()
+      }
+    } finally {
+      skippingKeysRef.current.delete(key)
     }
   }
 
@@ -1530,6 +1545,9 @@ export default function ActiveWorkout({ day }: { day: string }) {
       if (entry?.checked) anyWasChecked = true
     }
     if (setsToSkip.length === 0) return
+    const skipKeys = setsToSkip.map(s => `${exerciseId}-${s}`)
+    if (skipKeys.some(k => skippingKeysRef.current.has(k))) return
+    for (const k of skipKeys) skippingKeysRef.current.add(k)
     setLogs(prev => {
       const next = { ...prev }
       for (const s of setsToSkip) {
@@ -1564,18 +1582,22 @@ export default function ActiveWorkout({ day }: { day: string }) {
     if (editingKey && setsToSkip.some(s => editingKey === `${exerciseId}-${s}`)) {
       setEditingKey(null)
     }
-    const { error } = await persistSkip(exerciseId, setsToSkip)
-    if (error) {
-      queueSkip(exerciseId, setsToSkip)
-      setLogs(prev => {
-        const next = { ...prev }
-        for (const s of setsToSkip) {
-          const key = `${exerciseId}-${s}`
-          next[key] = { ...next[key], pendingSync: true }
-        }
-        return next
-      })
-      showQueuedSyncToast()
+    try {
+      const { error } = await persistSkip(exerciseId, setsToSkip)
+      if (error) {
+        queueSkip(exerciseId, setsToSkip)
+        setLogs(prev => {
+          const next = { ...prev }
+          for (const s of setsToSkip) {
+            const key = `${exerciseId}-${s}`
+            next[key] = { ...next[key], pendingSync: true }
+          }
+          return next
+        })
+        showQueuedSyncToast()
+      }
+    } finally {
+      for (const k of skipKeys) skippingKeysRef.current.delete(k)
     }
   }
 
@@ -1588,6 +1610,9 @@ export default function ActiveWorkout({ day }: { day: string }) {
       if (logs[`${exerciseId}-${s}`]?.skipped) setsToUnskip.push(s)
     }
     if (setsToUnskip.length === 0) return
+    const unskipKeys = setsToUnskip.map(s => `${exerciseId}-${s}`)
+    if (unskipKeys.some(k => skippingKeysRef.current.has(k))) return
+    for (const k of unskipKeys) skippingKeysRef.current.add(k)
     setLogs(prev => {
       const next = { ...prev }
       for (const s of setsToUnskip) {
@@ -1611,18 +1636,22 @@ export default function ActiveWorkout({ day }: { day: string }) {
       }
       return next
     })
-    const { error } = await persistUnskip(exerciseId, setsToUnskip)
-    if (error) {
-      queueUnskip(exerciseId, setsToUnskip)
-      setLogs(prev => {
-        const next = { ...prev }
-        for (const s of setsToUnskip) {
-          const key = `${exerciseId}-${s}`
-          next[key] = { ...next[key], pendingSync: true }
-        }
-        return next
-      })
-      showQueuedSyncToast()
+    try {
+      const { error } = await persistUnskip(exerciseId, setsToUnskip)
+      if (error) {
+        queueUnskip(exerciseId, setsToUnskip)
+        setLogs(prev => {
+          const next = { ...prev }
+          for (const s of setsToUnskip) {
+            const key = `${exerciseId}-${s}`
+            next[key] = { ...next[key], pendingSync: true }
+          }
+          return next
+        })
+        showQueuedSyncToast()
+      }
+    } finally {
+      for (const k of unskipKeys) skippingKeysRef.current.delete(k)
     }
   }
 
@@ -1772,7 +1801,8 @@ export default function ActiveWorkout({ day }: { day: string }) {
   }
 
   async function handleDiscard() {
-    if (discarding) return
+    if (discardingRef.current) return
+    discardingRef.current = true
     setDiscarding(true)
     setShowExitConfirm(false)
     restTimer.stop()
@@ -1784,6 +1814,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
 
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
+      discardingRef.current = false
       setDiscarding(false)
       router.replace('/login')
       return
@@ -1791,6 +1822,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
 
     const result = await deleteIncompleteSessions(supabase, user.id, day)
     if (!result.ok) {
+      discardingRef.current = false
       setDiscarding(false)
       setResumeToast('Could not discard workout. Try again.')
       setTimeout(() => setResumeToast(null), 4000)
@@ -1799,6 +1831,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
 
     if (sessionId) clearQueuedOpsForSession(sessionId)
     setSessionId(null)
+    discardingRef.current = false
     setDiscarding(false)
     markAppDataStale()
     router.replace('/log')
@@ -1818,7 +1851,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
   }
 
   async function handleFinish() {
-    if (!sessionId || finishing) return
+    if (!sessionId || finishingRef.current) return
     if (!hasWorkingSet()) {
       // Align with server grind_session_has_working_set — warmups / empty weight
       // don't count, even if the UI shows them as checked.
@@ -1827,6 +1860,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       return
     }
     // Haptic: data-haptic="heavy" on FINISH (delegated / overlay).
+    finishingRef.current = true
     setFinishing(true)
     restTimer.stop()
     void cancelRestNotifications(sessionId)
@@ -2075,6 +2109,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       setResumeToast('Could not finish workout. Check your connection and try again.')
       setTimeout(() => setResumeToast(null), 5000)
     } finally {
+      finishingRef.current = false
       setFinishing(false)
     }
   }
@@ -2374,7 +2409,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
             justifyContent: 'space-between',
             zIndex: 300,
             boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
-            pointerEvents: 'none',
+            pointerEvents: 'auto',
           }}
         >
           <span style={{ display: 'flex', flexDirection: 'column', gap: '1px', minWidth: 0 }}>

@@ -383,11 +383,13 @@ export default function HomeDashboard({
   const noActiveForUi = activeSessions.length === 0
 
   const [busySessionId, setBusySessionId] = useState<string | null>(null)
+  const busySessionIdRef = useRef<string | null>(null)
   const [discardConfirmId, setDiscardConfirmId] = useState<string | null>(null)
   const [actionToast, setActionToast] = useState<string | null>(null)
   const actionToastExit = useExitingValue(actionToast, TOAST_SLIDE_OUT_MS)
   const actionToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [skippingDay, setSkippingDay] = useState(false)
+  const skippingDayRef = useRef(false)
 
   function flashToast(msg: string) {
     setActionToast(msg)
@@ -407,7 +409,8 @@ export default function HomeDashboard({
   // ActiveWorkout, without the celebratory modal — still writes the 10-minute
   // undo token for FinishUndoBanner.
   async function handleSaveActive(session: ActiveSession) {
-    if (busySessionId || session.loggedSets === 0) return
+    if (busySessionIdRef.current || session.loggedSets === 0) return
+    busySessionIdRef.current = session.id
     setBusySessionId(session.id)
     const dayType = session.day_type
     const sessionId = session.id
@@ -488,12 +491,14 @@ export default function HomeDashboard({
     } catch {
       flashToast('Could not save workout. Check your connection and try again.')
     } finally {
+      busySessionIdRef.current = null
       setBusySessionId(null)
     }
   }
 
   async function handleExitActive(session: ActiveSession) {
-    if (busySessionId) return
+    if (busySessionIdRef.current) return
+    busySessionIdRef.current = session.id
     setBusySessionId(session.id)
     try {
       const { data: { user } } = await supabase.auth.getUser()
@@ -508,6 +513,7 @@ export default function HomeDashboard({
     } catch {
       flashToast('Could not discard. Try again.')
     } finally {
+      busySessionIdRef.current = null
       setBusySessionId(null)
     }
   }
@@ -518,7 +524,8 @@ export default function HomeDashboard({
   // Re-reads days/rotation/flex fresh rather than trusting the `nextDay` prop,
   // matching the save flow's own defense against a stale server-rendered prop.
   async function handleSkipDay() {
-    if (!hasDays || skippingDay) return
+    if (!hasDays || skippingDayRef.current) return
+    skippingDayRef.current = true
     setSkippingDay(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
@@ -554,6 +561,7 @@ export default function HomeDashboard({
     } catch {
       flashToast('Could not skip. Check your connection and try again.')
     } finally {
+      skippingDayRef.current = false
       setSkippingDay(false)
     }
   }

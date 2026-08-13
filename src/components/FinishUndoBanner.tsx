@@ -6,7 +6,7 @@
  * the live-finish path inside ActiveWorkout. Reads the same `grind_finish_undo`
  * token ActiveWorkout writes so either surface can undo either finish.
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useDemoMode } from '@/lib/contexts/DemoModeContext'
@@ -14,6 +14,7 @@ import { demoSafeClient } from '@/lib/demoMode/demoSafeSupabase'
 import { markAppDataStale } from '@/lib/cache/appDataCache'
 import { useExitingValue } from '@/lib/hooks/useExitingValue'
 import ToastPill, { TOAST_SLIDE_OUT_MS } from '@/components/ToastPill'
+import { useToast } from '@/lib/contexts/ToastContext'
 import {
   FINISH_UNDO_EVENT,
   type FinishUndoToken,
@@ -37,9 +38,11 @@ export default function FinishUndoBanner() {
     () => (demoMode ? demoSafeClient(createClient()) : createClient()),
     [demoMode],
   )
+  const toast = useToast()
   const [tokenState, setToken] = useState<FinishUndoToken | null>(null)
   const [remaining, setRemaining] = useState(0)
   const [undoing, setUndoing] = useState(false)
+  const undoingRef = useRef(false)
 
   useEffect(() => {
     const sync = () => {
@@ -61,12 +64,17 @@ export default function FinishUndoBanner() {
   const { data: token, closing } = useExitingValue(demoMode ? null : tokenState, TOAST_SLIDE_OUT_MS)
 
   async function handleUndo() {
-    if (!token || undoing) return
+    if (!token || undoingRef.current) return
+    undoingRef.current = true
     setUndoing(true)
     const day = token.day
     const ok = await performFinishUndo(supabase, token)
+    undoingRef.current = false
     setUndoing(false)
-    if (!ok) return
+    if (!ok) {
+      toast.show('Could not undo. Try again.', 'error')
+      return
+    }
     setToken(null)
     markAppDataStale()
     router.push(`/log?day=${day}`)

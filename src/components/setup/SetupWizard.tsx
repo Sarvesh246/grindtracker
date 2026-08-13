@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { User } from '@supabase/supabase-js'
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -35,6 +35,7 @@ export default function SetupWizard({
   const [direction, setDirection] = useState<'forward' | 'back'>('forward')
   const [profile, setProfile] = useState<SetupProfile | null>(initial.profile)
   const [finishing, setFinishing] = useState(false)
+  const finishingRef = useRef(false)
   const [finishError, setFinishError] = useState<string | null>(null)
   const router = useRouter()
 
@@ -45,6 +46,8 @@ export default function SetupWizard({
   }, [])
 
   const finishSetup = useCallback(async () => {
+    if (finishingRef.current) return
+    finishingRef.current = true
     setFinishing(true)
     setFinishError(null)
     try {
@@ -56,6 +59,7 @@ export default function SetupWizard({
       router.replace('/home')
       router.refresh()
     } catch (e) {
+      finishingRef.current = false
       setFinishError(e instanceof Error ? e.message : 'Could not finish setup.')
       setFinishing(false)
     }
@@ -104,7 +108,8 @@ export default function SetupWizard({
               fontSize: '14px',
               fontWeight: 600,
               cursor: finishing ? 'default' : 'pointer',
-              padding: '8px 4px',
+              minHeight: '44px',
+              padding: '8px 12px 8px 4px',
               opacity: finishing ? 0.5 : 1,
             }}
           >

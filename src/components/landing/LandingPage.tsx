@@ -77,7 +77,7 @@ export default function LandingPage() {
                   Log in
                 </Link>
               </div>
-              <p className="landing-hero__auth-hint">Continues with Google · no App Store required</p>
+              <p className="landing-hero__auth-hint">Continue with Google · no App Store required</p>
             </div>
             <div className="landing-hero__demo">
               <HeroDemo />

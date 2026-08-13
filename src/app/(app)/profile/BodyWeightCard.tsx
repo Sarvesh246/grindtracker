@@ -134,7 +134,7 @@ export default function BodyWeightCard() {
 
   async function handleSave() {
     const w = parseFloat(draft)
-    if (!Number.isFinite(w) || w <= 0) return
+    if (!Number.isFinite(w) || w <= 0 || saving) return
     setSaving(true)
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setSaving(false); return }
@@ -182,7 +182,7 @@ export default function BodyWeightCard() {
   }
 
   async function handleUpdate() {
-    if (!selected) return
+    if (!selected || busy) return
     const w = parseFloat(editDraft)
     if (!Number.isFinite(w) || w <= 0) return
     setBusy('saving')

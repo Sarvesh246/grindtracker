@@ -166,6 +166,7 @@ export function CoachProvider({
   const [historyOpen, setHistoryOpen] = useState(false)
   const fabRef = useRef<HTMLButtonElement | null>(null)
   const openedOnce = useRef(false)
+  const streamingRef = useRef(false)
   const sendMessageRef = useRef<(text: string) => Promise<void>>(async () => {})
 
   const setDock = useCallback((next: CoachDockId) => {
@@ -372,7 +373,7 @@ export function CoachProvider({
   const sendMessage = useCallback(
     async (raw: string) => {
       const text = raw.trim()
-      if (!text || streaming) return
+      if (!text || streamingRef.current) return
       if (text.length > COACH_MAX_MESSAGE_CHARS) {
         setError(`Message must be at most ${COACH_MAX_MESSAGE_CHARS} characters.`)
         return
@@ -399,6 +400,7 @@ export function CoachProvider({
         return
       }
 
+      streamingRef.current = true
       setError(null)
       const userMsg: CoachMessage = { id: uid(), role: 'user', content: text }
       const history = messages
@@ -689,6 +691,7 @@ export function CoachProvider({
         setConversations(prev => prev.filter(c => c.id !== 'pending'))
         setError('Could not reach Coach. Check your connection.')
       } finally {
+        streamingRef.current = false
         setStreaming(false)
         void refreshQuota()
         void refreshConversations()
@@ -697,7 +700,6 @@ export function CoachProvider({
     [
       messages,
       quota,
-      streaming,
       unitLabel,
       refreshQuota,
       refreshConversations,

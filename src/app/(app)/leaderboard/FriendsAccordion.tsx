@@ -69,6 +69,8 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
   // index, now that duplicate requests are a constraint violation rather than a
   // silently-inserted second row.
   const [actionError, setActionError] = useState<string | null>(null)
+  const [actionBusyId, setActionBusyId] = useState<string | null>(null)
+  const actionBusyRef = useRef<string | null>(null)
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const holdStartPos = useRef<{ x: number; y: number } | null>(null)
   // Stored so cancelHold always removes the exact listener instance startHold
@@ -208,7 +210,9 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
   }, [query, userId, friends, pending, sent, supabase, demoMode])
 
   async function sendRequest(targetId: string) {
-    if (demoMode) return
+    if (demoMode || actionBusyRef.current) return
+    actionBusyRef.current = targetId
+    setActionBusyId(targetId)
     // `status` is set explicitly rather than left to the column default: the
     // INSERT policy (docs/sql/12-friendship-authz.sql) requires 'pending', and
     // relying on a default to satisfy a policy is a silent dependency.
@@ -217,6 +221,9 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
       addressee_id: targetId,
       status: 'pending',
     })
+
+    actionBusyRef.current = null
+    setActionBusyId(null)
 
     if (error) {
       // Most likely the unique-pair index: a relationship already exists in one
@@ -238,13 +245,18 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
   }
 
   async function acceptRequest(friendshipId: string) {
-    if (demoMode) return
+    if (demoMode || actionBusyRef.current) return
+    actionBusyRef.current = friendshipId
+    setActionBusyId(friendshipId)
     // Only the addressee can accept, enforced in Postgres — the requester has
     // no UPDATE path at all, which is what prevents accepting your own request.
     const { error } = await supabase
       .from('friendships')
       .update({ status: 'accepted' })
       .eq('id', friendshipId)
+
+    actionBusyRef.current = null
+    setActionBusyId(null)
 
     if (error) {
       setActionError('Could not accept the request. Try again.')
@@ -473,6 +485,7 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
                     <button
                       data-haptic="medium"
                       onClick={() => sendRequest(u.id)}
+                      disabled={actionBusyId === u.id}
                       style={{
                         position: 'relative',
                         padding: '6px 14px',
@@ -483,9 +496,10 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
                         fontFamily: "'DM Sans', sans-serif",
                         fontWeight: 700,
                         fontSize: '12px',
-                        cursor: 'pointer',
+                        cursor: actionBusyId === u.id ? 'default' : 'pointer',
+                        opacity: actionBusyId === u.id ? 0.6 : 1,
                       }}
-                    >Add</button>
+                    >{actionBusyId === u.id ? 'Sending…' : 'Add'}</button>
                   </div>
                 ))}
               </div>
@@ -521,7 +535,7 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
                       <button
                         data-haptic="medium"
                         onClick={() => acceptRequest(p.friendship_id)}
-                        disabled={demoMode}
+                        disabled={demoMode || actionBusyId === p.friendship_id}
                         style={{
                           position: 'relative',
                           padding: '6px 12px',
@@ -532,10 +546,10 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
                           fontFamily: "'DM Sans', sans-serif",
                           fontWeight: 700,
                           fontSize: '12px',
-                          cursor: demoMode ? 'default' : 'pointer',
-                          opacity: demoMode ? 0.5 : 1,
+                          cursor: demoMode || actionBusyId === p.friendship_id ? 'default' : 'pointer',
+                          opacity: demoMode || actionBusyId === p.friendship_id ? 0.5 : 1,
                         }}
-                      >Accept</button>
+                      >{actionBusyId === p.friendship_id ? 'Accepting…' : 'Accept'}</button>
                       <button
                         data-haptic="light"
                         onClick={() => declineRequest(p.friendship_id)}

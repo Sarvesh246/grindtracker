@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, type CSSProperties, type ReactNode } from 'react'
+import { useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
 type Variant = 'google' | 'primary' | 'secondary'
@@ -82,12 +82,16 @@ export default function GoogleSignInButton({
   children,
 }: GoogleSignInButtonProps) {
   const [loading, setLoading] = useState(false)
+  const loadingRef = useRef(false)
+  const [error, setError] = useState<string | null>(null)
   const defaultLabel =
     variant === 'google' ? 'Continue with Google' : variant === 'primary' ? 'Get started' : 'Sign in'
 
   const handleClick = async () => {
-    if (loading) return
+    if (loadingRef.current) return
+    loadingRef.current = true
     setLoading(true)
+    setError(null)
     const supabase = createClient()
     const { error: oauthErr } = await supabase.auth.signInWithOAuth({
       provider: 'google',
@@ -97,12 +101,24 @@ export default function GoogleSignInButton({
       },
     })
     if (oauthErr) {
-      onError?.('Could not start sign in. Please try again.')
+      const message = 'Could not start sign in. Please try again.'
+      onError?.(message)
+      if (!onError) setError(message)
+      loadingRef.current = false
       setLoading(false)
     }
   }
 
   return (
+    <span
+      style={{
+        display: fullWidth ? 'flex' : 'inline-flex',
+        flexDirection: 'column',
+        alignItems: fullWidth ? 'stretch' : 'flex-end',
+        gap: error && !onError ? '8px' : 0,
+        width: fullWidth ? '100%' : undefined,
+      }}
+    >
     <button
       type="button"
       onClick={handleClick}
@@ -138,5 +154,22 @@ export default function GoogleSignInButton({
         </>
       )}
     </button>
+    {error && !onError && (
+      <span
+        role="alert"
+        style={{
+          fontFamily: 'var(--font-sans)',
+          fontSize: '12px',
+          fontWeight: 500,
+          color: 'var(--danger)',
+          textAlign: fullWidth ? 'center' : 'right',
+          maxWidth: fullWidth ? undefined : '220px',
+          lineHeight: 1.4,
+        }}
+      >
+        {error}
+      </span>
+    )}
+    </span>
   )
 }

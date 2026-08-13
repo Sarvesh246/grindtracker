@@ -293,6 +293,7 @@ export default function CoachSheet() {
   const motionRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const stickBottom = useRef(true)
+  const sendingRef = useRef(false)
   const [draft, setDraft] = useState('')
   /** Composer focus — used to re-stick the list when the keyboard animates in. */
   const [composerFocused, setComposerFocused] = useState(false)
@@ -1225,11 +1226,16 @@ export default function CoachSheet() {
 
   async function handleSend(text?: string) {
     const value = (text ?? draft).trim()
-    if (!value || streaming || capped || configured === false) return
+    if (!value || sendingRef.current || streaming || capped || configured === false) return
+    sendingRef.current = true
     setDraft('')
     clearError()
     stickBottom.current = true
-    await sendMessage(value)
+    try {
+      await sendMessage(value)
+    } finally {
+      sendingRef.current = false
+    }
   }
 
   function onSubmit(e: FormEvent) {

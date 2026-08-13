@@ -112,8 +112,8 @@ export default function RestDaysStep({
                 aria-label={`${DAY_NAMES[dayOfWeek]} rest day`}
                 onClick={() => toggle(dayOfWeek)}
                 style={{
-                  width: '40px',
-                  height: '40px',
+                  width: '44px',
+                  height: '44px',
                   borderRadius: '9999px',
                   border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
                   backgroundColor: active ? 'var(--accent)' : 'var(--surface)',
