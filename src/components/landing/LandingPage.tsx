@@ -59,7 +59,8 @@ export default function LandingPage() {
       <LandingHeader />
 
       <main>
-        {/* Hero — brand first, one composition, phone demo as visual anchor */}
+        {/* Hero — brand + CTAs. Phone mock lives in How it works on mobile;
+            desktop (≥900px) still shows the set-loop phone beside copy. */}
         <section className="landing-hero">
           <div className="landing-hero__layout">
             <div className="landing-hero__copy">

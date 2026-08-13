@@ -2814,8 +2814,8 @@ ol.coach-md__list,
   inset: 0 0 auto 0;
   height: min(92vh, 1080px);
   background:
-    /* Mobile: soft wash behind the stacked phone (lower-center) */
-    radial-gradient(ellipse 68% 46% at 50% 52%, color-mix(in srgb, var(--accent) 13%, transparent), transparent 55%),
+    /* Mobile: wash behind the brand — the How it works phone is the only mock */
+    radial-gradient(ellipse 68% 46% at 50% 18%, color-mix(in srgb, var(--accent) 13%, transparent), transparent 55%),
     radial-gradient(ellipse 50% 36% at 10% 6%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 50%),
     linear-gradient(180deg, #141414 0%, var(--bg) 72%);
   z-index: 0;
@@ -2823,7 +2823,7 @@ ol.coach-md__list,
 
 html.light .landing-atmosphere {
   background:
-    radial-gradient(ellipse 68% 46% at 50% 52%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 55%),
+    radial-gradient(ellipse 68% 46% at 50% 18%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 55%),
     radial-gradient(ellipse 50% 36% at 10% 6%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 50%),
     linear-gradient(180deg, color-mix(in srgb, var(--bg) 88%, var(--accent)) 0%, var(--bg) 72%);
 }
@@ -2913,8 +2913,9 @@ html.light .landing-atmosphere {
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  min-height: calc(100svh - 60px - env(safe-area-inset-top));
-  padding: 22px 20px 56px;
+  /* Compact on mobile — no phone here, How it works is the mock */
+  min-height: 0;
+  padding: 36px 20px 56px;
   box-sizing: border-box;
 }
 
@@ -2923,9 +2924,9 @@ html.light .landing-atmosphere {
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  gap: 30px;
+  gap: 0;
   width: 100%;
-  flex: 1;
+  flex: none;
   min-height: 0;
 }
 
@@ -3052,8 +3053,9 @@ html.light .landing-atmosphere {
 }
 
 .landing-hero__demo {
+  /* Hidden on mobile — How it works already has the phone loop */
+  display: none;
   width: 100%;
-  display: flex;
   justify-content: center;
   flex: 1;
   align-items: flex-start;
@@ -3165,6 +3167,7 @@ html.light .landing-atmosphere {
     max-width: 1368px;
     margin: 0 auto;
     width: 100%;
+    flex: 1;
   }
   .landing-hero__copy {
     text-align: left;
@@ -3211,6 +3214,7 @@ html.light .landing-atmosphere {
     width: auto;
   }
   .landing-hero__demo {
+    display: flex;
     flex: 1 1 44%;
     width: auto;
     /* Center in demo column — pulls phone left into the atmosphere halo */
@@ -4488,6 +4492,13 @@ html.light .landing-atmosphere {
 .landing-section {
   padding: 80px 20px;
   border-top: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+}
+
+@media (max-width: 899px) {
+  /* Mobile hero is compact (no phone). Pull How it works up so the loop is close. */
+  .landing-section#how {
+    padding-top: 48px;
+  }
 }
 
 .landing-section__inner {
