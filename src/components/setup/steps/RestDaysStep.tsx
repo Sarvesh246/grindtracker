@@ -3,13 +3,13 @@
 import { useState } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import Button from '@/components/ui/Button'
+import { localDateKey } from '@/lib/utils/formatting'
 
 const REST_DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'] // 0=Sun..6=Sat
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
 export default function RestDaysStep({
   supabase,
-  userId,
   initialRestDays,
   onContinue,
 }: {
@@ -43,18 +43,24 @@ export default function RestDaysStep({
 
     try {
       if (toDelete.length > 0) {
-        const { error: delErr } = await supabase
-          .from('user_rest_days')
-          .delete()
-          .eq('user_id', userId)
-          .in('day_of_week', toDelete)
-        if (delErr) throw delErr
+        for (const day of toDelete) {
+          const { error: delErr } = await supabase.rpc('set_rest_weekday', {
+            p_day_of_week: day,
+            p_enabled: false,
+            p_local_date: localDateKey(),
+          })
+          if (delErr) throw delErr
+        }
       }
       if (toInsert.length > 0) {
-        const { error: insErr } = await supabase.from('user_rest_days').insert(
-          toInsert.map(day_of_week => ({ user_id: userId, day_of_week })),
-        )
-        if (insErr) throw insErr
+        for (const day of toInsert) {
+          const { error: insErr } = await supabase.rpc('set_rest_weekday', {
+            p_day_of_week: day,
+            p_enabled: true,
+            p_local_date: localDateKey(),
+          })
+          if (insErr) throw insErr
+        }
       }
       onContinue()
     } catch (e) {
@@ -88,7 +94,7 @@ export default function RestDaysStep({
             fontFamily: "'DM Sans', sans-serif",
           }}
         >
-          Weekly days off that don&apos;t break your streak. None is fine.
+          Weekly days off that don&apos;t break your streak. This is your weekly budget — skip a one-off day from Home. None is fine.
         </p>
       </div>
 

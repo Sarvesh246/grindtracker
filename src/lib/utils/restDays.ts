@@ -3,9 +3,9 @@ import { localDateKey } from './formatting'
 /**
  * Rest-day helpers — pure, framework-agnostic (no Supabase import), same style
  * as rotation.ts. Mirrors the SQL connectivity semantics in
- * docs/sql/14-rest-days.sql exactly, so the client can reason about streak
- * gaps using the viewer's own local "today" (never the server's — see Dates &
- * timezones in CLAUDE.md).
+ * docs/sql/14-rest-days.sql + docs/sql/39-rest-day-skip.sql, so the client can
+ * reason about streak gaps using the viewer's own local "today" (never the
+ * server's — see Dates & timezones in CLAUDE.md).
  */
 
 /** Parse a 'YYYY-MM-DD' key as local noon, avoiding the UTC-midnight shift a
@@ -21,17 +21,28 @@ function addDays(date: Date, days: number): Date {
   return d
 }
 
-/** True if `dateKey` is a rest day: its weekday is in the recurring set
- *  (0=Sun..6=Sat — Date.getDay() already matches Postgres's extract(dow), no
- *  translation needed), or it's one of the user's one-off confirmed rest
- *  dates. */
+export type RestDayOpts = {
+  /** Recurring weekdays suppressed this week because a skip used the budget. */
+  cancels?: Set<string>
+  /** day_of_week → YYYY-MM-DD first date that weekday counts (39). Missing = always. */
+  effectiveFrom?: Map<number, string>
+}
+
+/** True if `dateKey` is a rest day: one-off confirmed date, or a recurring
+ *  weekday that has reached `effectiveFrom` and is not cancelled. */
 export function isRestDay(
   dateKey: string,
   recurringDaysOfWeek: Set<number>,
   oneOffDates: Set<string>,
+  opts?: RestDayOpts,
 ): boolean {
   if (oneOffDates.has(dateKey)) return true
-  return recurringDaysOfWeek.has(parseDateKey(dateKey).getDay())
+  if (opts?.cancels?.has(dateKey)) return false
+  const dow = parseDateKey(dateKey).getDay()
+  if (!recurringDaysOfWeek.has(dow)) return false
+  const from = opts?.effectiveFrom?.get(dow)
+  if (from && dateKey < from) return false
+  return true
 }
 
 /**
@@ -47,6 +58,7 @@ export function uncoveredDatesBetween(
   toKey: string,
   recurringDaysOfWeek: Set<number>,
   oneOffDates: Set<string>,
+  opts?: RestDayOpts,
 ): string[] {
   const a = parseDateKey(fromKey)
   const b = parseDateKey(toKey)
@@ -57,7 +69,7 @@ export function uncoveredDatesBetween(
   let cursor = addDays(start, 1)
   while (cursor.getTime() < end.getTime()) {
     const key = localDateKey(cursor)
-    if (!isRestDay(key, recurringDaysOfWeek, oneOffDates)) uncovered.push(key)
+    if (!isRestDay(key, recurringDaysOfWeek, oneOffDates, opts)) uncovered.push(key)
     cursor = addDays(cursor, 1)
   }
   return uncovered
@@ -75,6 +87,60 @@ export function datesConnected(
   toKey: string,
   recurringDaysOfWeek: Set<number>,
   oneOffDates: Set<string>,
+  opts?: RestDayOpts,
 ): boolean {
-  return uncoveredDatesBetween(fromKey, toKey, recurringDaysOfWeek, oneOffDates).length === 0
+  return uncoveredDatesBetween(fromKey, toKey, recurringDaysOfWeek, oneOffDates, opts).length === 0
+}
+
+/** Monday of the week containing `dateKey` (matches Home "this week" and SQL 39). */
+export function weekStartMonday(dateKey: string): string {
+  const d = parseDateKey(dateKey)
+  return localDateKey(addDays(d, -((d.getDay() + 6) % 7)))
+}
+
+function datesInWeek(dateKey: string): string[] {
+  const start = parseDateKey(weekStartMonday(dateKey))
+  return Array.from({ length: 7 }, (_, i) => localDateKey(addDays(start, i)))
+}
+
+export function restDaysInWeek(
+  dateKey: string,
+  recurringDaysOfWeek: Set<number>,
+  oneOffDates: Set<string>,
+  opts?: RestDayOpts,
+): string[] {
+  return datesInWeek(dateKey).filter(k => isRestDay(k, recurringDaysOfWeek, oneOffDates, opts))
+}
+
+export type SkipTodayState = {
+  todayIsRest: boolean
+  todayIsOneOff: boolean
+  todayIsScheduled: boolean
+  canSkip: boolean
+  budget: number
+}
+
+/**
+ * Whether Home can mark `todayKey` as a one-off rest day without exceeding
+ * the weekly budget (number of configured rest weekdays). If the week is
+ * already full, a later scheduled rest day this week can be stolen.
+ */
+export function skipTodayState(
+  todayKey: string,
+  recurringDaysOfWeek: Set<number>,
+  oneOffDates: Set<string>,
+  opts?: RestDayOpts,
+): SkipTodayState {
+  const budget = recurringDaysOfWeek.size
+  const todayIsOneOff = oneOffDates.has(todayKey)
+  const todayIsRest = isRestDay(todayKey, recurringDaysOfWeek, oneOffDates, opts)
+  const todayIsScheduled = todayIsRest && !todayIsOneOff
+  const weekRest = restDaysInWeek(todayKey, recurringDaysOfWeek, oneOffDates, opts)
+  const hasSteal = datesInWeek(todayKey).some(k => {
+    if (k <= todayKey) return false
+    if (oneOffDates.has(k)) return false
+    return isRestDay(k, recurringDaysOfWeek, oneOffDates, opts)
+  })
+  const canSkip = !todayIsRest && budget > 0 && (weekRest.length < budget || hasSteal)
+  return { todayIsRest, todayIsOneOff, todayIsScheduled, canSkip, budget }
 }

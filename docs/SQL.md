@@ -50,6 +50,7 @@ is fully linked to migration history.
 | [35-coach-conversations.sql](sql/35-coach-conversations.sql) | 35 | Saved Coach chats (`coach_conversations` + message link) |
 | [36-coach-actions.sql](sql/36-coach-actions.sql) | 36 | Coach action proposals (confirm-before-apply mutations) |
 | [37-coach-correct-weights.sql](sql/37-coach-correct-weights.sql) | 37 | In-place Coach weight corrections (preserve skips + RPE) |
+| [39-rest-day-skip.sql](sql/39-rest-day-skip.sql) | 39 | Home Rest today, weekly rest budget, Settings `effective_from` |
 
 See also [PUSH.md](PUSH.md) for VAPID keys, Vercel env, and cron setup.
 See [COACH.md](COACH.md) for Gemini env, rate limits, `/api/coach/chat`, and
@@ -57,6 +58,11 @@ confirm-before-apply Coach actions (`docs/sql/36-coach-actions.sql`).
 
 **If you already applied an older 27:** run **28** next. Fresh installs can apply the
 updated **27** alone (includes the hardening) or 27 then 28 (idempotent).
+
+**Rest-today skip (39):** paste and run `docs/sql/39-rest-day-skip.sql` **before**
+deploying the app that shows Rest today on Home / calls `toggle_rest_today`.
+If schema-integrity **38** was already applied on that project, still run 39
+after it (39 is numbered past 38 on purpose).
 
 ## Deploying 20
 

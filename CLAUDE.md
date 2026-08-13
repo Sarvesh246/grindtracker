@@ -161,12 +161,16 @@ Both share `UnitContext`, so the kg/lbs toggle stays in sync across them.
   is_starred. See Feedback below and migration `09-feedback.sql`.
 - user_rest_days — (user_id, day_of_week) PK, recurring weekly rest days
   (0=Sun..6=Sat, matches `extract(dow)`/`Date.getDay()`), configured in
-  Profile. user_rest_dates — (user_id, rest_date) PK, one-off confirmed rest
-  dates (retroactive "missed a day?" confirmation from the home dashboard, or
-  set directly). Both single-owner tables, RLS-protected. See Rest days below
-  and migration `14-rest-days.sql`.
+  Profile. `effective_from` (migration `39`) is the first date that weekday
+  counts; new rows start the next occurrence strictly after today so Settings
+  cannot cover a missed workout the same day. user_rest_dates — (user_id,
+  rest_date) PK, one-off rest dates (Home "Rest today", or the missed-day
+  banner). user_rest_cancels — (user_id, rest_date) PK, a scheduled rest date
+  given up this week because a one-off used the weekly budget (`stolen_for`).
+  See Rest days below and migrations `14-rest-days.sql`, `39-rest-day-skip.sql`.
 RLS on exercises, sessions, session_logs, user_stats, user_badges, body_weights,
-user_day_categories, user_rotation, feedback, user_rest_days, user_rest_dates
+user_day_categories, user_rotation, feedback, user_rest_days, user_rest_dates,
+user_rest_cancels
 (and delete policies on sessions/session_logs for discard).
 `get_leaderboard(p_day_type, p_user_ids)` RPC ranks overall by XP, or
 push/pull/legs by heaviest working-set lift (category-aware, security definer).
@@ -229,6 +233,8 @@ stored that isn't recomputable — and the client has **no UPDATE privilege on
 | `uncomplete_session(session_id, local_date)` | `ActiveWorkout.handleUndoFinish`, `FinishUndoBanner` |
 | `delete_session(session_id, local_date)` | `log/past` delete |
 | `refresh_stats(local_date)` | `log/past` save, `HomeDashboard` stale-streak lapse |
+| `toggle_rest_today(local_date)` | `HomeDashboard` Rest today / undo |
+| `set_rest_weekday(day_of_week, enabled, local_date)` | Settings + onboarding rest-day pills |
 
 `src/lib/utils/gamification.ts` still holds `getLevel`/`getXpInCurrentLevel` etc.
 for DISPLAY. `grind_level_for_xp()` in SQL mirrors `getLevel` — **change one,
@@ -266,23 +272,39 @@ completion (backdated `log/past` entries deliberately don't). The suggestion is
 non-binding — DaySelect still lets you pick any day, and marks the suggested one "UP NEXT".
 Helpers are pure (no Supabase import). Apply migration `06-user-rotation.sql` first.
 
-### Rest days (src/lib/utils/restDays.ts, migration `14-rest-days.sql`)
+### Rest days (src/lib/utils/restDays.ts, migrations `14-rest-days.sql` + `39-rest-day-skip.sql`)
 Two ways to declare a day off without breaking the streak: recurring weekly
 rest days (toggled as day-pills in Profile → Settings, backed by
-`user_rest_days`) and one-off confirmed rest dates (`user_rest_dates`),
-either set the same way or confirmed retroactively via a dismissible "missed
-a day?" banner on the home dashboard. The banner only offers to mark a gap as
-rest days when the gap is small relative to how many recurring rest days are
-already configured (`1 <= uncovered.length <= max(1, recurringRestDays.length)`)
-— a bigger gap is just a broken streak, no prompt. Server-side,
-`grind_dates_connected(user, from, to)` (SQL) tests whether every day
-strictly between two dates is a rest day; `grind_recompute_stats()` uses it
-to group workout dates into rest-day-aware "runs" instead of requiring
-literally-consecutive calendar dates (see Stats below). `restDays.ts` mirrors
-the same connectivity logic in TS (`Date.getDay()` already matches Postgres's
-`extract(dow)` convention, 0=Sun..6=Sat, so no translation needed) so the
-client can compute gaps and eligible banner state using the viewer's own
-local "today" — never the server's, per Dates & timezones below.
+`user_rest_days`) and one-off rest dates (`user_rest_dates`). Settings pills
+are the **weekly budget N** and the default schedule — they do **not** cover
+today when newly turned on (`effective_from` is the next occurrence of that
+weekday strictly after local today), which closes the old bypass of toggling
+today's weekday in Settings to save a streak. Existing rows stay at
+`effective_from = 1970-01-01`.
+
+Home has a **Rest today** control under the streak card: tap to insert a
+one-off for today, tap again to undo. Scheduled rest (a Settings weekday
+that's already in effect) is shown but not undone from Home. The button hides
+when N=0 (configure rest days first) or when they already trained today
+(unless there's a one-off to undo).
+
+A Mon–Sun week cannot have more rest days than N. An extra one-off steals a
+**later** scheduled rest day that week via `user_rest_cancels` (`stolen_for`
+= the one-off); undoing the one-off deletes those cancels. If nothing is left
+to steal, Postgres raises `REST_BUDGET_EXCEEDED`. Example: Sunday is the
+configured rest day; Rest today on Wednesday cancels this week's Sunday.
+
+The missed-day banner still offers to confirm a small gap as rest, but only
+when the gap fits the same weekly budget (`1 <= uncovered.length <= N`).
+Server-side, `grind_dates_connected(user, from, to)` tests whether every day
+strictly between two dates is a rest day (`grind_is_rest_day`, which honors
+one-offs, cancels, and `effective_from`); `grind_recompute_stats()` uses it
+to group workout dates into rest-day-aware "runs". `restDays.ts` mirrors the
+same logic in TS (`Date.getDay()` matches `extract(dow)`, 0=Sun..6=Sat) so
+the client can compute gaps and Rest today eligibility using the viewer's
+own local "today" — never the server's, per Dates & timezones below. Mutate
+through `toggle_rest_today` / `set_rest_weekday`; do not UPDATE
+`user_rest_days.effective_from` from the client.
 
 ### Skip persistence (migration `18-skip-persistence.sql`)
 Skipping a set/exercise in ActiveWorkout is optimistic in React state

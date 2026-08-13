@@ -12,6 +12,7 @@ import { useMotionPref } from '@/lib/contexts/MotionContext'
 import { useDemoMode } from '@/lib/contexts/DemoModeContext'
 import FeedbackModal from '@/components/FeedbackModal'
 import { markAppDataStale } from '@/lib/cache/appDataCache'
+import { localDateKey } from '@/lib/utils/formatting'
 import {
   downloadJson,
   downloadText,
@@ -329,9 +330,11 @@ export default function SettingsView({
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setSavingRestDay(null); return }
 
-    const { error } = wasActive
-      ? await supabase.from('user_rest_days').delete().eq('user_id', user.id).eq('day_of_week', dayOfWeek)
-      : await supabase.from('user_rest_days').insert({ user_id: user.id, day_of_week: dayOfWeek })
+    const { error } = await supabase.rpc('set_rest_weekday', {
+      p_day_of_week: dayOfWeek,
+      p_enabled: !wasActive,
+      p_local_date: localDateKey(),
+    })
 
     setSavingRestDay(null)
     if (error) {
@@ -716,7 +719,7 @@ export default function SettingsView({
         <div>
           <div style={{ marginBottom: '10px' }}>
             <div style={titleStyle}>Rest Days</div>
-            <div style={hintStyle}>Won&apos;t break your streak</div>
+            <div style={hintStyle}>Weekly budget. Skip today from Home — turning a day on here starts the next time it comes around, not today.</div>
           </div>
           <div style={{ display: 'flex', gap: '6px', justifyContent: 'space-between' }}>
             {REST_DAY_LABELS.map((label, dayOfWeek) => {

@@ -11,7 +11,7 @@ import { advanceIndex, effectiveSequence, nextDay as nextDayFromRotation, overdu
 import { deleteIncompleteSessions } from '@/lib/utils/sessions'
 import { flushQueuedOps, getQueuedOps, clearQueuedOpsForSession } from '@/lib/utils/offlineQueue'
 import { checkAndAwardBadges } from '@/lib/utils/badges'
-import { uncoveredDatesBetween } from '@/lib/utils/restDays'
+import { uncoveredDatesBetween, skipTodayState, type RestDayOpts } from '@/lib/utils/restDays'
 import WorkoutCalendar from '@/components/WorkoutCalendar'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { useToast } from '@/lib/contexts/ToastContext'
@@ -69,6 +69,13 @@ function makeDismissStore(storageKey: string, eventName: string) {
 const overdueDismissStore = makeDismissStore(OVERDUE_DISMISS_KEY, OVERDUE_DISMISS_EVENT)
 const restDismissStore = makeDismissStore(REST_DISMISS_KEY, REST_DISMISS_EVENT)
 
+function restBudgetError(err: unknown): boolean {
+  const msg = err && typeof err === 'object' && 'message' in err
+    ? String((err as { message: unknown }).message)
+    : err instanceof Error ? err.message : String(err ?? '')
+  return msg.includes('REST_BUDGET_EXCEEDED')
+}
+
 interface ActiveSession {
   id: string
   day_type: string
@@ -92,6 +99,8 @@ interface Props {
   totalPRs: number
   recurringRestDays: number[]
   restDates: string[]
+  restCancels?: string[]
+  restEffectiveFrom?: Record<number, string>
 }
 
 const DAY_LABELS: Record<string, string> = {
@@ -153,6 +162,8 @@ export default function HomeDashboard({
   totalPRs,
   recurringRestDays,
   restDates,
+  restCancels = [],
+  restEffectiveFrom = {},
 }: Props) {
   const router = useRouter()
   const { demoMode } = useDemoMode()
@@ -168,7 +179,13 @@ export default function HomeDashboard({
   const { unitLabel, fmt } = useUnit()
   const toast = useToast()
   const recurringRestSet = useMemo(() => new Set(recurringRestDays), [recurringRestDays])
-  const restDateSet = useMemo(() => new Set(restDates), [restDates])
+  const restOpts = useMemo<RestDayOpts>(() => {
+    const effectiveFrom = new Map<number, string>()
+    for (const [k, v] of Object.entries(restEffectiveFrom)) {
+      effectiveFrom.set(Number(k), v)
+    }
+    return { cancels: new Set(restCancels), effectiveFrom }
+  }, [restCancels, restEffectiveFrom])
 
   const xpTotal = stats?.xp_total ?? 0
   const level = getLevel(xpTotal)
@@ -202,22 +219,30 @@ export default function HomeDashboard({
     }
   }, [])
   const lastWorkoutKey = stats?.last_workout_date ?? null
-  const gapUncoveredDates = useMemo(
-    () => lastWorkoutKey ? uncoveredDatesBetween(lastWorkoutKey, todayKey, recurringRestSet, restDateSet) : [],
-    [lastWorkoutKey, todayKey, recurringRestSet, restDateSet],
+  const [streakOverride, setStreakOverride] = useState<number | null>(null)
+  const [restBannerBusy, setRestBannerBusy] = useState(false)
+  const [restTodayBusy, setRestTodayBusy] = useState(false)
+  const [restDatesOverride, setRestDatesOverride] = useState<string[] | null>(null)
+  const effectiveRestDates = restDatesOverride ?? restDates
+  const effectiveRestDateSet = useMemo(() => new Set(effectiveRestDates), [effectiveRestDates])
+  const skipState = useMemo(
+    () => skipTodayState(todayKey, recurringRestSet, effectiveRestDateSet, restOpts),
+    [todayKey, recurringRestSet, effectiveRestDateSet, restOpts],
   )
-  // Per the rest-day density rule: a gap this small relative to how many
-  // recurring rest days are configured is worth asking about instead of
-  // assuming broken outright.
+  const trainedToday = completedAt.includes(todayKey)
+  const gapUncoveredDates = useMemo(
+    () => lastWorkoutKey ? uncoveredDatesBetween(lastWorkoutKey, todayKey, recurringRestSet, effectiveRestDateSet, restOpts) : [],
+    [lastWorkoutKey, todayKey, recurringRestSet, effectiveRestDateSet, restOpts],
+  )
+  // Confirming a missed-day gap spends the same weekly rest budget as Rest today.
   const gapEligibleForPrompt =
-    gapUncoveredDates.length > 0 && gapUncoveredDates.length <= Math.max(1, recurringRestSet.size)
+    gapUncoveredDates.length > 0 &&
+    recurringRestSet.size > 0 &&
+    gapUncoveredDates.length <= recurringRestSet.size
   const restBannerSig = gapUncoveredDates.join(',')
   const restBannerDismissedSig = useSyncExternalStore(restDismissStore.subscribe, restDismissStore.read, () => null)
   const showRestBanner =
     (stats?.current_streak ?? 0) > 0 && gapEligibleForPrompt && restBannerDismissedSig !== restBannerSig
-
-  const [streakOverride, setStreakOverride] = useState<number | null>(null)
-  const [restBannerBusy, setRestBannerBusy] = useState(false)
   const correctedStaleStreak = useRef(false)
   useEffect(() => {
     if (correctedStaleStreak.current) return
@@ -257,8 +282,8 @@ export default function HomeDashboard({
       toast.show('Streak saved')
       markAppDataStale('/home')
       router.refresh()
-    } catch {
-      flashToast('Could not save. Try again.')
+    } catch (err) {
+      flashToast(restBudgetError(err) ? 'No rest days left this week' : 'Could not save. Try again.')
     } finally {
       setRestBannerBusy(false)
     }
@@ -272,6 +297,28 @@ export default function HomeDashboard({
     supabase.rpc('refresh_stats', { p_local_date: todayKey }).then(({ error }) => {
       if (error) console.error('[grind] refresh_stats failed (decline rest banner)', error)
     })
+  }
+
+  async function handleToggleRestToday() {
+    if (restTodayBusy || skipState.todayIsScheduled) return
+    if (!skipState.todayIsOneOff && !skipState.canSkip) return
+    setRestTodayBusy(true)
+    const nextDates = skipState.todayIsOneOff
+      ? effectiveRestDates.filter(d => d !== todayKey)
+      : [...effectiveRestDates, todayKey]
+    setRestDatesOverride(nextDates)
+    try {
+      const { error } = await supabase.rpc('toggle_rest_today', { p_local_date: todayKey })
+      if (error) throw error
+      toast.show(skipState.todayIsOneOff ? 'Rest day undone' : 'Rest day')
+      markAppDataStale('/home')
+      router.refresh()
+    } catch (err) {
+      setRestDatesOverride(null)
+      flashToast(restBudgetError(err) ? 'No rest days left this week' : 'Could not save. Try again.')
+    } finally {
+      setRestTodayBusy(false)
+    }
   }
 
   // ── Active-session controls (resume / save / discard) ──────────────────────
@@ -802,6 +849,59 @@ export default function HomeDashboard({
             <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>DAYS</div>
           </div>
         </div>
+      )}
+
+      {/* Rest today — one-off skip that spends a configured rest-day slot this
+          week. Tap again to undo. Scheduled weekdays (Settings) are shown but
+          not undone here. Hidden until rest days are configured. */}
+      {currentStreak > 0 && (skipState.budget > 0 || skipState.todayIsOneOff) && (!trainedToday || skipState.todayIsOneOff) && (
+        <button
+          type="button"
+          className="press"
+          data-haptic="medium"
+          onClick={() => void handleToggleRestToday()}
+          disabled={restTodayBusy || skipState.todayIsScheduled || (!skipState.todayIsOneOff && !skipState.canSkip)}
+          aria-pressed={skipState.todayIsRest}
+          style={{
+            ...card,
+            width: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px',
+            cursor: restTodayBusy || skipState.todayIsScheduled || (!skipState.todayIsOneOff && !skipState.canSkip)
+              ? 'default'
+              : 'pointer',
+            opacity: restTodayBusy ? 0.7 : 1,
+            borderColor: skipState.todayIsRest ? 'var(--accent)' : 'var(--border)',
+          }}
+        >
+          <div style={{ textAlign: 'left' }}>
+            <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)' }}>
+              {skipState.todayIsRest ? 'Rest day' : skipState.canSkip ? 'Rest today' : 'No rest days left'}
+            </div>
+            <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+              {skipState.todayIsOneOff
+                ? 'Tap again to undo'
+                : skipState.todayIsScheduled
+                  ? 'Scheduled in Settings'
+                  : skipState.canSkip
+                    ? 'Won’t break your streak'
+                    : 'Used this week’s rest days'}
+            </div>
+          </div>
+          <div
+            aria-hidden
+            style={{
+              width: '22px',
+              height: '22px',
+              borderRadius: '9999px',
+              border: `2px solid ${skipState.todayIsRest ? 'var(--accent)' : 'var(--border-strong)'}`,
+              backgroundColor: skipState.todayIsRest ? 'var(--accent)' : 'transparent',
+              flexShrink: 0,
+            }}
+          />
+        </button>
       )}
 
       {/* Rest-day banner — offered only for a small, plausibly-a-rest-day gap
