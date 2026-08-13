@@ -168,48 +168,21 @@ export default function IconGallery() {
                   {kind.toUpperCase()}
                 </span>
               </div>
-              <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{meta.glyph}</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span
-                  title="Log card"
-                  style={{
-                    ...swatch,
-                    backgroundColor: 'var(--surface-elevated)',
-                    border: '1px solid var(--border)',
-                    color: 'var(--accent-text)',
-                  }}
-                >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{
+                  ...swatch,
+                  backgroundColor: 'var(--surface-elevated)',
+                  border: '1px solid var(--border)',
+                  color: 'var(--accent-text)',
+                }}>
                   <DayIcon kind={kind} size={28} />
                 </span>
-                <span
-                  title="Home START button"
-                  style={{
-                    ...swatch,
-                    backgroundColor: 'var(--accent)',
-                    color: 'var(--on-accent)',
-                  }}
-                >
-                  <DayIcon kind={kind} size={32} color="var(--on-accent)" />
-                </span>
-                <span
-                  title="28px on surface"
-                  style={{
-                    width: '40px',
-                    height: '40px',
-                    borderRadius: '10px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: 'var(--text-primary)',
-                    backgroundColor: 'var(--bg)',
-                    border: '1px solid var(--border)',
-                  }}
-                >
-                  <DayIcon kind={kind} size={28} />
-                </span>
-              </div>
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.4 }}>
-                {meta.matches.join(' · ')}
+                <div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{meta.glyph}</div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.4, marginTop: '4px' }}>
+                    {meta.matches.join(' · ')}
+                  </div>
+                </div>
               </div>
             </div>
           )
