@@ -114,7 +114,9 @@ export default function GoogleSignInButton({
       style={{
         display: fullWidth ? 'flex' : 'inline-flex',
         flexDirection: 'column',
-        alignItems: fullWidth ? 'stretch' : 'flex-end',
+        // Center the button inside a full-width wrapper. Stretch + maxWidth
+        // on the button left-aligns it (login desktop). Header stays shrink-wrapped.
+        alignItems: 'center',
         gap: error && !onError ? '8px' : 0,
         width: fullWidth ? '100%' : undefined,
       }}
@@ -162,7 +164,7 @@ export default function GoogleSignInButton({
           fontSize: '12px',
           fontWeight: 500,
           color: 'var(--danger)',
-          textAlign: fullWidth ? 'center' : 'right',
+          textAlign: 'center',
           maxWidth: fullWidth ? undefined : '220px',
           lineHeight: 1.4,
         }}
