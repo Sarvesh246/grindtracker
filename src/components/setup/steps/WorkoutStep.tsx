@@ -104,7 +104,7 @@ export default function WorkoutStep({
           user_id: userId,
           mode: 'manual',
           sequence: [key],
-          current_index: 0,
+          current_index: -1,
           updated_at: new Date().toISOString(),
         },
         { onConflict: 'user_id' },

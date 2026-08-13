@@ -20,6 +20,8 @@ const MUTATING_RPCS = new Set([
   'refresh_stats',
   'toggle_rest_today',
   'set_rest_weekday',
+  'delete_my_grind_data',
+  'grind_insert_coach_assistant',
 ])
 
 const MUTATING_TABLE_METHODS = new Set(['insert', 'upsert', 'update', 'delete'])

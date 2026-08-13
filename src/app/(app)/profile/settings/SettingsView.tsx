@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo, type CSSProperties, type ReactNode } from
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { demoSafeClient } from '@/lib/demoMode/demoSafeSupabase'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { useToast } from '@/lib/contexts/ToastContext'
 import { getDefaultRest, setDefaultRest, getPauseRestOnExit, setPauseRestOnExit } from '@/lib/hooks/useRestTimer'
@@ -214,11 +215,14 @@ export default function SettingsView({
   coachDevUnlimited,
 }: Props) {
   const router = useRouter()
-  const supabase = useMemo(() => createClient(), [])
+  const { demoMode, toggleDemoMode } = useDemoMode()
+  const supabase = useMemo(
+    () => (demoMode ? demoSafeClient(createClient()) : createClient()),
+    [demoMode],
+  )
   const { unit, toggleUnit } = useUnit()
   const { theme } = useTheme()
   const { prefReduceMotion, toggleReduceMotion } = useMotionPref()
-  const { demoMode, toggleDemoMode } = useDemoMode()
   const toast = useToast()
 
   const [feedbackOpen, setFeedbackOpen] = useState(false)

@@ -388,17 +388,10 @@ Remember: intent before formatting — Understand intent → assess complexity �
                 ? 'I prepared an action for you — confirm or cancel below.'
                 : '')
             if (assistantText) {
-              const assistantInsert: Record<string, unknown> = {
-                user_id: user.id,
-                role: 'assistant',
-                content: assistantText.slice(0, 4000),
-              }
-              if (conversationId) {
-                assistantInsert.conversation_id = conversationId
-              }
-              const { error } = await supabase
-                .from('coach_messages')
-                .insert(assistantInsert)
+              const { error } = await supabase.rpc('grind_insert_coach_assistant', {
+                p_content: assistantText.slice(0, 4000),
+                p_conversation_id: conversationId,
+              })
               if (error) console.error('[grind] coach insert assistant', error)
             }
             if (conversationId) {

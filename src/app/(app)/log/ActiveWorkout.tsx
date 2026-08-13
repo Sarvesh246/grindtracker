@@ -29,6 +29,8 @@ import {
   computeLocalIsPR,
   parseRpe,
   overlayQueuedOps,
+  extraSetsFromLogs,
+  ensureLogSlots,
   type LogMap,
   type SetState,
 } from './sessionLogState'
@@ -574,21 +576,9 @@ export default function ActiveWorkout({ day }: { day: string }) {
     }
 
     if (existingLogs.length > 0 || resumePayload.resumed) {
-      // Count extras per exercise from highest set_number seen.
-      const extras: Record<string, number> = {}
-      for (const log of existingLogs) {
-        const ex = exs.find(e => e.id === log.exercise_id)
-        if (!ex) continue
-        if (log.set_number > ex.sets_target) {
-          extras[ex.id] = Math.max(extras[ex.id] ?? 0, log.set_number - ex.sets_target)
-        }
-      }
-      setExtraSets(extras)
-
       const restored: LogMap = {}
       for (const ex of exs) {
-        const total = ex.sets_target + (extras[ex.id] ?? 0)
-        for (let s = 1; s <= total; s++) {
+        for (let s = 1; s <= ex.sets_target; s++) {
           const key = `${ex.id}-${s}`
           restored[key] = emptySetState(
             fillWeights[ex.id] !== null ? String(fillWeights[ex.id]) : '',
@@ -618,6 +608,14 @@ export default function ActiveWorkout({ day }: { day: string }) {
             }
       }
       overlayQueuedOps(restored, sid)
+      const extras = extraSetsFromLogs(restored, exs)
+      ensureLogSlots(
+        restored,
+        exs,
+        extras,
+        id => (fillWeights[id] !== null ? String(fillWeights[id]) : ''),
+      )
+      setExtraSets(extras)
       setLogs(restored)
 
       const ageMs = Date.now() - sessionStart.getTime()
@@ -640,6 +638,14 @@ export default function ActiveWorkout({ day }: { day: string }) {
       // failed before the app was closed (so no session_logs rows exist yet)
       // — same overlay as the resumed branch above.
       overlayQueuedOps(prefilled, sid)
+      const extras = extraSetsFromLogs(prefilled, exs)
+      ensureLogSlots(
+        prefilled,
+        exs,
+        extras,
+        id => (fillWeights[id] !== null ? String(fillWeights[id]) : ''),
+      )
+      setExtraSets(extras)
       setLogs(prefilled)
     }
 
@@ -827,8 +833,8 @@ export default function ActiveWorkout({ day }: { day: string }) {
     checkingKeysRef.current.add(key)
 
     try {
-      const weight = logEntry.weight !== '' ? parseFloat(logEntry.weight) : null
-      if (weight !== null && !Number.isFinite(weight)) return
+      const weight = logEntry.weight !== '' ? parseFloat(logEntry.weight) : NaN
+      if (!Number.isFinite(weight) || weight < 0) return
 
       // If reps not entered, carry forward the nearest earlier set's reps for
       // this exercise — not necessarily set N-1, since that one might itself be
@@ -841,7 +847,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       if (!Number.isFinite(reps)) return
 
       const prevBestVolume = previousBestVolumes[exerciseId]
-      const volume = weight !== null ? weight * reps : null
+      const volume = weight * reps
       // Match server grind_recompute_stats: first-ever volume for an exercise is
       // a PR (prior best treated as -1), not only improvements over a known best.
       // Live bar uses prior-session baseline only (not raised mid-session) so a
@@ -902,7 +908,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         ...prev,
         [key]: {
           ...(prev[key] ?? logEntry),
-          weight: weight !== null ? String(weight) : (prev[key]?.weight ?? ''),
+          weight: String(weight),
           reps: repsStr,
           checked: true,
           skipped: false,
@@ -912,7 +918,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         },
       }))
 
-      if (isPR && weight !== null && volume !== null) {
+      if (isPR) {
         // Raise the live bar so subsequent sets need a new high — still matches
         // server (prior sessions only) for the first PR of the session; later
         // intra-session badges are optimistic UX only.
@@ -1705,7 +1711,6 @@ export default function ActiveWorkout({ day }: { day: string }) {
     restTimer.stop()
     if (sessionId) {
       void cancelRestNotifications(sessionId)
-      clearQueuedOpsForSession(sessionId)
     }
     clearWorkoutNotifications()
     void wakeLockRef.current?.release()
@@ -1725,6 +1730,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       return
     }
 
+    if (sessionId) clearQueuedOpsForSession(sessionId)
     setSessionId(null)
     setDiscarding(false)
     markAppDataStale()
@@ -1947,7 +1953,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       // Advance the rotation pointer so the home page suggests the next day
       // after this one. Best-effort — a failure here must never block
       // completion.
-      let prevRotationIndex = 0
+      let prevRotationIndex = -1
       try {
         const [{ data: dayTypeRows }, { data: rotationRow }, { data: flexRows }] = await Promise.all([
           supabase.from('exercises').select('day_type'),
@@ -1956,7 +1962,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         ])
         const dayKeys = Array.from(new Set((dayTypeRows ?? []).map(r => r.day_type)))
         const rotation = rotationRow as UserRotation | null
-        prevRotationIndex = rotation?.current_index ?? 0
+        prevRotationIndex = rotation?.current_index ?? -1
         const flexDays = new Set((flexRows ?? []).map((r: { day_key: string }) => r.day_key))
         const seq = effectiveSequence(rotation, dayKeys, flexDays)
         const newIndex = advanceIndex(seq, rotation?.current_index ?? -1, day)

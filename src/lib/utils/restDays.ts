@@ -128,6 +128,23 @@ export function restDaysUsedThrough(
   ).length
 }
 
+/** Weekdays that already count this week — not ones whose effective_from is next week. */
+export function restBudgetForWeek(
+  todayKey: string,
+  recurringDaysOfWeek: Set<number>,
+  opts?: RestDayOpts,
+): number {
+  const week = datesInWeek(todayKey)
+  const weekEnd = week[week.length - 1]
+  if (!weekEnd) return 0
+  let n = 0
+  for (const dow of recurringDaysOfWeek) {
+    const from = opts?.effectiveFrom?.get(dow)
+    if (!from || from <= weekEnd) n += 1
+  }
+  return n
+}
+
 export type SkipTodayState = {
   todayIsRest: boolean
   todayIsOneOff: boolean
@@ -139,10 +156,10 @@ export type SkipTodayState = {
 
 /**
  * Whether Home can mark `todayKey` as a one-off rest day without exceeding
- * the weekly budget (number of configured rest weekdays). Spent slots are
- * rest days already on or before today — future scheduled days can still
- * be given up by skipping today, but once N days this week are rest, no
- * more skips (and another miss breaks the streak).
+ * the weekly budget (weekdays whose `effective_from` is on or before this
+ * week's Sunday). Spent slots are rest days already on or before today —
+ * future scheduled days can still be given up by skipping today, but once
+ * N days this week are rest, no more skips (and another miss breaks the streak).
  */
 export function skipTodayState(
   todayKey: string,
@@ -150,7 +167,7 @@ export function skipTodayState(
   oneOffDates: Set<string>,
   opts?: RestDayOpts,
 ): SkipTodayState {
-  const budget = recurringDaysOfWeek.size
+  const budget = restBudgetForWeek(todayKey, recurringDaysOfWeek, opts)
   const todayIsOneOff = oneOffDates.has(todayKey)
   const todayIsRest = isRestDay(todayKey, recurringDaysOfWeek, oneOffDates, opts)
   const todayIsScheduled = todayIsRest && !todayIsOneOff

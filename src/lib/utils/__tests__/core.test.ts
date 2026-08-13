@@ -10,6 +10,7 @@ import {
   skipTodayState,
   weekStartMonday,
 } from '../restDays'
+import { extraSetsFromLogs, emptySetState, type LogMap } from '../../../app/(app)/log/sessionLogState'
 
 describe('gamification level curve', () => {
   it('level 1 at 0 XP', () => {
@@ -66,6 +67,12 @@ describe('rotation', () => {
     assert.equal(nextDay(seq, -1), 'push')
     assert.equal(nextDay(seq, 0), 'pull')
     assert.equal(nextDay(seq, 2), 'push')
+  })
+
+  it('seeding current_index at 0 skips the first day', () => {
+    const seq = ['push', 'pull', 'legs']
+    assert.notEqual(nextDay(seq, 0), 'push')
+    assert.equal(nextDay(seq, -1), 'push')
   })
 
   it('advanceIndex points at completed day', () => {
@@ -217,6 +224,22 @@ describe('skipTodayState', () => {
     assert.equal(state.used, 0)
     assert.equal(state.canSkip, true)
   })
+
+  it('does not count a weekday that only starts next week toward this week\'s budget', () => {
+    const state = skipTodayState('2026-08-12', new Set([3]), new Set(), {
+      effectiveFrom: new Map([[3, '2026-08-19']]),
+    })
+    assert.equal(state.budget, 0)
+    assert.equal(state.canSkip, false)
+  })
+
+  it('still counts a weekday that takes effect later this week', () => {
+    const state = skipTodayState('2026-08-10', new Set([0]), new Set(), {
+      effectiveFrom: new Map([[0, '2026-08-16']]),
+    })
+    assert.equal(state.budget, 1)
+    assert.equal(state.canSkip, true)
+  })
 })
 
 describe('gamification display helpers', () => {
@@ -228,5 +251,29 @@ describe('gamification display helpers', () => {
   it('xp in current level at mid-level-2', () => {
     // level 2 starts at 500; 500+250 = 750 → 250 into level 2
     assert.equal(getXpInCurrentLevel(750), 250)
+  })
+})
+
+describe('extraSetsFromLogs', () => {
+  it('counts bonus sets past sets_target after overlay-style keys', () => {
+    const exId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+    const logs: LogMap = {
+      [`${exId}-1`]: emptySetState('100'),
+      [`${exId}-2`]: emptySetState('100'),
+      [`${exId}-3`]: emptySetState('100'),
+      [`${exId}-4`]: emptySetState('110'),
+    }
+    const extras = extraSetsFromLogs(logs, [{ id: exId, sets_target: 3 }])
+    assert.equal(extras[exId], 1)
+  })
+
+  it('is zero when nothing exceeds sets_target', () => {
+    const exId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+    const logs: LogMap = {
+      [`${exId}-1`]: emptySetState('100'),
+      [`${exId}-2`]: emptySetState('100'),
+    }
+    const extras = extraSetsFromLogs(logs, [{ id: exId, sets_target: 3 }])
+    assert.equal(extras[exId], 0)
   })
 })

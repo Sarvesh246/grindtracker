@@ -71,6 +71,47 @@ export function parseRpe(raw: string): number | null {
 }
 
 /**
+ * How many bonus sets past `sets_target` appear in `logs` (DB rows + overlay).
+ * Keys are `${exerciseId}-${setNumber}`; exercise ids are UUIDs so we split on
+ * the last hyphen.
+ */
+export function extraSetsFromLogs(
+  logs: LogMap,
+  exercises: { id: string; sets_target: number }[],
+): Record<string, number> {
+  const maxByEx = new Map<string, number>()
+  for (const key of Object.keys(logs)) {
+    const dash = key.lastIndexOf('-')
+    if (dash < 0) continue
+    const exId = key.slice(0, dash)
+    const n = Number(key.slice(dash + 1))
+    if (!Number.isFinite(n)) continue
+    maxByEx.set(exId, Math.max(maxByEx.get(exId) ?? 0, n))
+  }
+  const extras: Record<string, number> = {}
+  for (const ex of exercises) {
+    extras[ex.id] = Math.max(0, (maxByEx.get(ex.id) ?? 0) - ex.sets_target)
+  }
+  return extras
+}
+
+/** Fill missing 1..sets_target+extras slots so overlayed bonus sets have rows. */
+export function ensureLogSlots(
+  logs: LogMap,
+  exercises: { id: string; sets_target: number }[],
+  extraSets: Record<string, number>,
+  fillWeight: (exerciseId: string) => string,
+): void {
+  for (const ex of exercises) {
+    const total = ex.sets_target + (extraSets[ex.id] ?? 0)
+    for (let s = 1; s <= total; s++) {
+      const key = `${ex.id}-${s}`
+      if (!logs[key]) logs[key] = emptySetState(fillWeight(ex.id))
+    }
+  }
+}
+
+/**
  * Overlays anything still sitting in the offline queue onto a freshly-built
  * LogMap (mutates in place).
  */

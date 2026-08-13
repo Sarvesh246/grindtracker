@@ -86,6 +86,7 @@ export default async function HomePage() {
       .select('id', { count: 'exact', head: true })
       .eq('session_id', activeRow.id)
       .eq('is_skipped', false)
+      .eq('is_warmup', false)
       .not('weight', 'is', null)
     activeSession = {
       id: activeRow.id,

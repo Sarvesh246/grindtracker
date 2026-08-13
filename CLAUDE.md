@@ -3,7 +3,7 @@
 ## Status: COMPLETE ✅
 Core phases (1–7) plus later ships (flex days, photos, onboarding, web push,
 weight targets, offline set queue, RPE, data export) — single-user PWA in daily use.
-Schema migrations run through `docs/sql/31-*.sql`.
+Schema migrations run through `docs/sql/40-*.sql`.
 
 ## Git Workflow
 Single-user repo, no review process. Commit and push directly to `main` —
@@ -133,7 +133,9 @@ Both share `UnitContext`, so the kg/lbs toggle stays in sync across them.
   save. ActiveWorkout never does a wholesale replace, so the same filter is
   really just about not hiding a set the user can still finish mid-session.
   See migration `17-exercise-active-flag.sql`.
-- sessions — user_id, day_type, started_at, completed_at, xp_earned, note
+- sessions — user_id, day_type, started_at, completed_at, xp_earned, note.
+  Client DELETE is only for open sessions (`completed_at is null`, migration
+  `40`); finished workouts go through `delete_session` so stats recompute.
 - session_logs — session_id, exercise_id, set_number, weight, reps, is_pr,
   is_warmup, note, rpe (optional 1–10, migration `31`), is_skipped (default
   false). UNIQUE on (session_id, exercise_id, set_number). Client writes of
@@ -182,8 +184,9 @@ Schema migrations live in `docs/sql/` (idempotent; apply in order via the
 Supabase SQL editor). See `docs/SQL.md`.
 
 ## Gamification (src/lib/utils/gamification.ts)
-XP: +100 per completed workout, +25 per PR set, +50 when the new streak hits a
-multiple of 7. Warm-up sets never count toward PRs.
+XP: +100 per completed workout (needs ≥1 non-warmup working set — migration
+`40`; warm-up-only sessions cannot finish), +25 per PR set, +50 when the new
+streak hits a multiple of 7. Warm-up sets never count toward PRs.
 Level: triangular curve — XP to advance from level n to n+1 is `500 * n`, so
 cumulative XP for level n is `500 * n * (n-1) / 2`. `getLevel(xp)` inverts this.
 Streak: continues on consecutive calendar days (gap of exactly 1 day
@@ -268,9 +271,12 @@ where custom days fell out of the push→pull→legs cycle; `manual` mode follow
 `sequence`, editable in WorkoutManager's "Edit workout order" screen (reorderable slot
 list). `home/page.tsx` reads `nextDay(effectiveSequence(row, dayKeys), current_index)`;
 `ActiveWorkout.handleFinish` advances `current_index` via `advanceIndex` after a live
-completion (backdated `log/past` entries deliberately don't). The suggestion is
+completion (backdated `log/past` entries deliberately don't). New rotations seed
+`current_index: -1` so the first day is next (`nextDay(seq, 0)` would skip it).
+The suggestion is
 non-binding — DaySelect still lets you pick any day, and marks the suggested one "UP NEXT".
-Helpers are pure (no Supabase import). Apply migration `06-user-rotation.sql` first.
+Helpers are pure (no Supabase import). Apply migration `06-user-rotation.sql` first
+(default `-1` as of `40`).
 
 ### Rest days (src/lib/utils/restDays.ts, migrations `14-rest-days.sql` + `39-rest-day-skip.sql`)
 Two ways to declare a day off without breaking the streak: recurring weekly
@@ -306,7 +312,10 @@ from, to)` tests whether every day strictly between two dates is a rest day
 eligibility using the viewer's own local "today" — never the server's, per
 Dates & timezones below. Mutate through `toggle_rest_today` /
 `set_rest_weekday`; do not UPDATE `user_rest_days.effective_from` from the
-client.
+client. Direct INSERT on `user_rest_days` is revoked as of `40` (UTC-today hole);
+`user_rest_cancels` is insert/select only so a steal row cannot be deleted while
+keeping the one-off. Weekly budget N ignores weekdays whose `effective_from` is
+after this week's Sunday.
 
 ### Skip persistence (migration `18-skip-persistence.sql`)
 Skipping a set/exercise in ActiveWorkout is optimistic in React state

@@ -45,7 +45,7 @@ export async function applyWorkoutTemplate(
         user_id: userId,
         mode: 'manual',
         sequence: template.sequence,
-        current_index: 0,
+        current_index: -1, // pointer = last completed slot; -1 ⇒ first day is next
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'user_id' },

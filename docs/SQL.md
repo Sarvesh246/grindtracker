@@ -52,6 +52,7 @@ is fully linked to migration history.
 | [37-coach-correct-weights.sql](sql/37-coach-correct-weights.sql) | 37 | In-place Coach weight corrections (preserve skips + RPE) |
 | [38-schema-integrity.sql](sql/38-schema-integrity.sql) | 38 | **Paste this in Supabase.** Badge RPC no longer trusts client hour/skips; past-date UTC+1 slack; Coach recompute uses today; delete-my-data clears Coach; comeback = 14+ days |
 | [39-rest-day-skip.sql](sql/39-rest-day-skip.sql) | 39 | Home Rest today, weekly rest budget, Settings `effective_from` |
+| [40-integrity-followups.sql](sql/40-integrity-followups.sql) | 40 | **Paste this in Supabase.** Warm-up-only sessions cannot complete; completed session/log writes locked; rest-cancel steal rows insert-only; rotation seed `-1`; Coach assistant insert RPC |
 
 See also [PUSH.md](PUSH.md) for VAPID keys, Vercel env, and cron setup.
 See [COACH.md](COACH.md) for Gemini env, rate limits, `/api/coach/chat`, and
@@ -84,6 +85,15 @@ it does not deadlock against in-flight streak RPCs (`40P01` on
 as one transaction and you get a deadlock, run each `begin`/`commit` half as
 its own editor run — both halves are idempotent.
 
+**Integrity follow-ups (40):** paste and run `docs/sql/40-integrity-followups.sql`
+**after** 38 and 39, **before** (or with) the app that calls
+`grind_insert_coach_assistant` and treats warm-up-only sessions as unfinished.
+Sanity checks:
+
+- Completing a session that only has `is_warmup` sets raises `NO_WORKING_SETS`
+- Direct `DELETE` of a completed session is rejected by RLS
+- `select proname from pg_proc where proname = 'grind_insert_coach_assistant';`
+
 ## Deploying 20
 
 `20-production-hardening.sql` must be applied before the app that consumes it.
@@ -99,7 +109,7 @@ its own editor run — both halves are idempotent.
 ### What 20 changes
 
 - Admin-only `grind_stats_drift`
-- `complete_session` requires ≥1 non-skipped set with weight+reps
+- `complete_session` requires ≥1 non-skipped **working** set with weight+reps (warm-ups excluded as of **40**)
 - Transactional `upsert_past_session` (no client delete-then-insert of logs)
 - Partial unique indexes: one open session per day_type; one completed per local_date+day_type
 - `start_or_resume_session` atomic open-session create

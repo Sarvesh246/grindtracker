@@ -1,6 +1,8 @@
 'use client'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { useDemoMode } from '@/lib/contexts/DemoModeContext'
+import { demoSafeClient } from '@/lib/demoMode/demoSafeSupabase'
 import { Exercise, DayCategory, UserRotation } from '@/lib/types'
 import { autoSequence, effectiveSequence, orderedDayKeys } from '@/lib/utils/rotation'
 import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
@@ -30,7 +32,11 @@ type DeleteTarget =
   | { type: 'exercise'; id: string; name: string; dayKey: string }
 
 export default function WorkoutManager({ onClose, onChanged, initialNewDay = false }: WorkoutManagerProps) {
-  const supabase = useMemo(() => createClient(), [])
+  const { demoMode } = useDemoMode()
+  const supabase = useMemo(
+    () => (demoMode ? demoSafeClient(createClient()) : createClient()),
+    [demoMode],
+  )
   const toast = useToast()
   // Height hidden behind the iOS keyboard, so the bottom-sheet can ride above it
   // instead of leaving the day-name / exercise-form inputs pinned underneath.
@@ -420,11 +426,11 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
     setRotationError('')
     const previous = rotation
     const updatedAt = new Date().toISOString()
-    setRotation({ user_id: userId, mode, sequence, current_index: previous?.current_index ?? 0, updated_at: updatedAt })
+    setRotation({ user_id: userId, mode, sequence, current_index: previous?.current_index ?? -1, updated_at: updatedAt })
     setSavingRotation(true)
     try {
       const { error } = await supabase.from('user_rotation').upsert(
-        { user_id: userId, mode, sequence, current_index: previous?.current_index ?? 0, updated_at: updatedAt },
+        { user_id: userId, mode, sequence, current_index: previous?.current_index ?? -1, updated_at: updatedAt },
         { onConflict: 'user_id' },
       )
       if (error) {
