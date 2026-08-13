@@ -51,6 +51,7 @@ is fully linked to migration history.
 | [36-coach-actions.sql](sql/36-coach-actions.sql) | 36 | Coach action proposals (confirm-before-apply mutations) |
 | [37-coach-correct-weights.sql](sql/37-coach-correct-weights.sql) | 37 | In-place Coach weight corrections (preserve skips + RPE) |
 | [38-schema-integrity.sql](sql/38-schema-integrity.sql) | 38 | **Paste this in Supabase.** Badge RPC no longer trusts client hour/skips; past-date UTC+1 slack; Coach recompute uses today; delete-my-data clears Coach; comeback = 14+ days |
+| [39-rest-day-skip.sql](sql/39-rest-day-skip.sql) | 39 | Home Rest today, weekly rest budget, Settings `effective_from` |
 
 See also [PUSH.md](PUSH.md) for VAPID keys, Vercel env, and cron setup.
 See [COACH.md](COACH.md) for Gemini env, rate limits, `/api/coach/chat`, and
@@ -73,6 +74,11 @@ calls `award_earned_badges()` with no args and `complete_session(..., p_start_ho
    - `select proname, pg_get_function_identity_arguments(oid) from pg_proc where proname = 'award_earned_badges';` — includes a zero-arg overload
    - `select grind_safe_past_date(current_date + 1);` — returns UTC today or UTC+1, not rewritten further back
 3. Deploy the app.
+
+**Rest-today skip (39):** paste and run `docs/sql/39-rest-day-skip.sql` **before**
+deploying the app that shows Rest today on Home / calls `toggle_rest_today`.
+If schema-integrity **38** was already applied on that project, still run 39
+after it (39 is numbered past 38 on purpose).
 
 ## Deploying 20
 

@@ -3,7 +3,13 @@ import assert from 'node:assert/strict'
 import { getLevel, getXpInCurrentLevel, getXpRequiredForLevel } from '../gamification'
 import { calendarDaysSince, nextDay, advanceIndex, autoSequence, orderedDayKeys } from '../rotation'
 import { localDateKey, parseClientLocalDate } from '../formatting'
-import { datesConnected, uncoveredDatesBetween } from '../restDays'
+import {
+  datesConnected,
+  uncoveredDatesBetween,
+  isRestDay,
+  skipTodayState,
+  weekStartMonday,
+} from '../restDays'
 
 describe('gamification level curve', () => {
   it('level 1 at 0 XP', () => {
@@ -118,6 +124,98 @@ describe('rest days connectivity', () => {
       datesConnected('2026-08-01', '2026-08-03', new Set(), new Set(['2026-08-02'])),
       true,
     )
+  })
+
+  it('ignores a weekday until effective_from', () => {
+    const opts = { effectiveFrom: new Map([[3, '2026-08-19']]) }
+    assert.equal(isRestDay('2026-08-12', new Set([3]), new Set(), opts), false)
+    assert.equal(isRestDay('2026-08-19', new Set([3]), new Set(), opts), true)
+  })
+
+  it('treats a cancelled scheduled date as not rest', () => {
+    assert.equal(
+      isRestDay('2026-08-16', new Set([0]), new Set(), { cancels: new Set(['2026-08-16']) }),
+      false,
+    )
+  })
+})
+
+describe('skipTodayState', () => {
+  // Week of Mon 10 Aug – Sun 16 Aug 2026. Sunday scheduled as the weekly rest.
+
+  it('lets Wednesday skip by stealing this week\'s upcoming Sunday', () => {
+    const wed = '2026-08-12'
+    assert.equal(weekStartMonday(wed), '2026-08-10')
+    const state = skipTodayState(wed, new Set([0]), new Set())
+    assert.equal(state.canSkip, true)
+    assert.equal(state.todayIsOneOff, false)
+  })
+
+  it('lets Saturday skip by stealing this week\'s Sunday', () => {
+    const state = skipTodayState('2026-08-15', new Set([0]), new Set())
+    assert.equal(state.canSkip, true)
+  })
+
+  it('blocks another skip after this week\'s Sunday was stolen', () => {
+    const state = skipTodayState('2026-08-12', new Set([0]), new Set(['2026-08-10']), {
+      cancels: new Set(['2026-08-16']),
+    })
+    assert.equal(state.canSkip, false)
+  })
+
+  it('exposes undo on an existing one-off', () => {
+    const state = skipTodayState('2026-08-12', new Set(), new Set(['2026-08-12']))
+    assert.equal(state.todayIsOneOff, true)
+    assert.equal(state.todayIsRest, true)
+    assert.equal(state.canSkip, false)
+  })
+
+  it('cannot skip when no rest weekdays are configured', () => {
+    const state = skipTodayState('2026-08-12', new Set(), new Set())
+    assert.equal(state.canSkip, false)
+    assert.equal(state.budget, 0)
+  })
+
+  it('with 2 rest days, allows two skips on other weekdays then blocks a third', () => {
+    const satSun = new Set([0, 6])
+    assert.equal(skipTodayState('2026-08-10', satSun, new Set()).canSkip, true)
+    assert.equal(skipTodayState('2026-08-10', satSun, new Set()).used, 0)
+
+    const afterTwoSkips = skipTodayState(
+      '2026-08-12',
+      satSun,
+      new Set(['2026-08-10', '2026-08-11']),
+      { cancels: new Set(['2026-08-15', '2026-08-16']) },
+    )
+    assert.equal(afterTwoSkips.used, 2)
+    assert.equal(afterTwoSkips.canSkip, false)
+    assert.equal(afterTwoSkips.budget, 2)
+  })
+
+  it('with 2 rest days, still allows a second skip after one midweek skip', () => {
+    const state = skipTodayState(
+      '2026-08-11',
+      new Set([0, 6]),
+      new Set(['2026-08-10']),
+      { cancels: new Set(['2026-08-15']) },
+    )
+    assert.equal(state.used, 1)
+    assert.equal(state.canSkip, true)
+  })
+
+  it('blocks a skip once the configured rest days this week have already passed', () => {
+    // Mon + Tue scheduled; Friday cannot skip — those 2 slots are spent.
+    const state = skipTodayState('2026-08-14', new Set([1, 2]), new Set())
+    assert.equal(state.used, 2)
+    assert.equal(state.canSkip, false)
+  })
+
+  it('does not spend a skip slot when they trained on a scheduled rest day', () => {
+    const state = skipTodayState('2026-08-14', new Set([1, 2]), new Set(), {
+      trainedDates: new Set(['2026-08-10', '2026-08-11']),
+    })
+    assert.equal(state.used, 0)
+    assert.equal(state.canSkip, true)
   })
 })
 

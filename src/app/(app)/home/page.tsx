@@ -34,6 +34,7 @@ export default async function HomePage() {
     { count: totalPRs },
     { data: restDayRows },
     { data: restDateRows },
+    { data: restCancelRows },
   ] = await Promise.all([
     supabase.from('user_profiles').select('display_name, username').eq('id', user.id).maybeSingle(),
     supabase.from('user_stats').select('*').eq('user_id', user.id).maybeSingle(),
@@ -62,8 +63,9 @@ export default async function HomePage() {
       .select('sessions!inner(user_id)', { count: 'exact', head: true })
       .eq('is_pr', true)
       .eq('sessions.user_id', user.id),
-    supabase.from('user_rest_days').select('day_of_week').eq('user_id', user.id),
+    supabase.from('user_rest_days').select('day_of_week, effective_from').eq('user_id', user.id),
     supabase.from('user_rest_dates').select('rest_date').eq('user_id', user.id),
+    supabase.from('user_rest_cancels').select('rest_date').eq('user_id', user.id),
   ])
 
   const demoModePref = (await cookies()).get('grind_demo_mode_pref')?.value
@@ -181,6 +183,12 @@ export default async function HomePage() {
       stats={demoMode ? demoHomeStats() : stats}
       recurringRestDays={(restDayRows ?? []).map(r => r.day_of_week)}
       restDates={(restDateRows ?? []).map(r => r.rest_date)}
+      restCancels={(restCancelRows ?? []).map(r => r.rest_date)}
+      restEffectiveFrom={Object.fromEntries(
+        (restDayRows ?? [])
+          .filter(r => r.effective_from && r.effective_from !== '1970-01-01')
+          .map(r => [r.day_of_week, r.effective_from as string]),
+      )}
       activeSession={demoMode ? null : activeSession}
       lastSession={demoMode ? demoLastSession() : (lastSession ?? null)}
       lastSessionLogs={demoMode ? DEMO_LAST_SESSION_LOGS : lastSessionLogs}

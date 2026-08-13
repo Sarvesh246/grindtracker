@@ -18,6 +18,8 @@ const MUTATING_RPCS = new Set([
   'upsert_past_session',
   'delete_session',
   'refresh_stats',
+  'toggle_rest_today',
+  'set_rest_weekday',
 ])
 
 const MUTATING_TABLE_METHODS = new Set(['insert', 'upsert', 'update', 'delete'])
@@ -108,6 +110,10 @@ function fakeRpcData(fnName: string, args: Record<string, unknown> | undefined):
       }
     case 'award_earned_badges':
       return []
+    case 'toggle_rest_today':
+      return { rest: true, undone: false }
+    case 'set_rest_weekday':
+      return { enabled: true }
     default:
       return null
   }
