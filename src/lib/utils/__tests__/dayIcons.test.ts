@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { normalizeDayKey, resolveDayIconKind } from '../dayIcons'
+import { DAY_ICON_KINDS, DAY_ICON_META, normalizeDayKey, resolveDayIconKind } from '../dayIcons'
 
 describe('normalizeDayKey', () => {
   it('lowercases and collapses separators', () => {
@@ -43,5 +43,13 @@ describe('resolveDayIconKind', () => {
   it('prefers name keywords over a mismatched category', () => {
     // "abs" tagged as pull for leaderboards still gets the abs glyph.
     assert.equal(resolveDayIconKind('abs', 'pull'), 'abs')
+  })
+
+  it('has gallery meta for every catalog kind', () => {
+    for (const kind of DAY_ICON_KINDS) {
+      assert.ok(DAY_ICON_META[kind], `missing meta for ${kind}`)
+      assert.ok(DAY_ICON_META[kind].glyph.length > 0)
+      assert.ok(DAY_ICON_META[kind].matches.length > 0)
+    }
   })
 })

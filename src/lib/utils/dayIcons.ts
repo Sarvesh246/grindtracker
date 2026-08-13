@@ -28,6 +28,20 @@ export const DAY_ICON_KINDS = [
 
 export type DayIconKind = (typeof DAY_ICON_KINDS)[number]
 
+/** Labels + name examples for the developer gallery (`/admin/icons`). */
+export const DAY_ICON_META: Record<DayIconKind, { glyph: string; matches: string[] }> = {
+  push: { glyph: 'Flat bench', matches: ['push', 'chest', 'press'] },
+  pull: { glyph: 'Pull-up station', matches: ['pull', 'back', 'row', 'lat'] },
+  legs: { glyph: 'Squat rack', matches: ['legs', 'lower', 'glute', 'squat'] },
+  abs: { glyph: "Captain's chair", matches: ['abs', 'core', 'midsection', 'oblique'] },
+  upper: { glyph: 'Twin dumbbells', matches: ['upper'] },
+  arms: { glyph: 'EZ curl bar', matches: ['arms', 'bicep', 'tricep'] },
+  shoulders: { glyph: 'Vertical dumbbells', matches: ['shoulders', 'delt'] },
+  cardio: { glyph: 'Exercise bike', matches: ['cardio', 'hiit', 'run', 'bike'] },
+  full: { glyph: 'Kettlebell', matches: ['full', 'full-body', 'full_a'] },
+  default: { glyph: 'Straight dumbbell', matches: ['(fallback)'] },
+}
+
 /** Design-language constants — keep glyphs inside this box. */
 export const DAY_ICON_VIEWBOX = 24
 export const DAY_ICON_STROKE = 1.8

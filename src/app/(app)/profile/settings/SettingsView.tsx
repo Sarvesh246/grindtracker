@@ -543,6 +543,14 @@ export default function SettingsView({
       <polyline points="4 7 12 13 20 7" />
     </svg>
   )
+  const galleryIcon = (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="6" y1="12" x2="18" y2="12" />
+      <rect x="2" y="9" width="4" height="6" rx="1.5" />
+      <rect x="18" y="9" width="4" height="6" rx="1.5" />
+    </svg>
+  )
 
   return (
     <div className="page page--profile" style={{
@@ -973,6 +981,13 @@ export default function SettingsView({
             hint="Everything users have sent in"
             href="/admin/feedback"
             icon={inboxIcon}
+          />
+          <div style={dividerStyle} />
+          <NavRow
+            title="Day Icon Gallery"
+            hint="Preview every workout-day glyph"
+            href="/admin/icons"
+            icon={galleryIcon}
           />
         </Section>
       )}
