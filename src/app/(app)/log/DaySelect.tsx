@@ -20,6 +20,7 @@ import {
 } from '@/lib/utils/finishUndo'
 import WorkoutManager from './WorkoutManager'
 import FinishUndoBanner from '@/components/FinishUndoBanner'
+import DayIcon from '@/components/DayIcon'
 import { useTour, type TourStep } from '@/components/onboarding/Tour'
 import { CACHE_KEYS, markAppDataStale } from '@/lib/cache/appDataCache'
 import { useCachedQuery } from '@/lib/cache/useCachedQuery'
@@ -48,63 +49,6 @@ function categoryForDay(dayKey: string, categories: Record<string, DayCategory>)
   if (categories[dayKey]) return categories[dayKey]
   if (dayKey in NAMED_DAY_COLORS) return dayKey
   return 'other'
-}
-
-function PushIcon() {
-  return (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="5" y1="17" x2="5" y2="21" />
-      <line x1="19" y1="17" x2="19" y2="21" />
-      <rect x="3" y="14" width="18" height="3" rx="1.5" />
-      <line x1="7" y1="9" x2="17" y2="9" />
-      <rect x="4" y="6.5" width="3" height="5" rx="1" />
-      <rect x="17" y="6.5" width="3" height="5" rx="1" />
-    </svg>
-  )
-}
-
-function PullIcon() {
-  return (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="4" y1="4" x2="4" y2="20" />
-      <line x1="20" y1="4" x2="20" y2="20" />
-      <line x1="4" y1="7" x2="20" y2="7" />
-      <line x1="9" y1="7" x2="9" y2="13" />
-      <line x1="15" y1="7" x2="15" y2="13" />
-      <line x1="7" y1="13" x2="11" y2="13" />
-      <line x1="13" y1="13" x2="17" y2="13" />
-    </svg>
-  )
-}
-
-function LegsIcon() {
-  return (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="5" y1="3" x2="5" y2="21" />
-      <line x1="19" y1="3" x2="19" y2="21" />
-      <polyline points="5 10 8 10 8 13" />
-      <polyline points="19 10 16 10 16 13" />
-      <line x1="8" y1="10" x2="16" y2="10" />
-      <rect x="2" y="7" width="3" height="6" rx="1" />
-      <rect x="19" y="7" width="3" height="6" rx="1" />
-    </svg>
-  )
-}
-
-function DefaultDayIcon() {
-  return (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="6" y1="12" x2="18" y2="12" />
-      <rect x="2" y="9" width="4" height="6" rx="1.5" />
-      <rect x="18" y="9" width="4" height="6" rx="1.5" />
-    </svg>
-  )
-}
-
-const DAY_ICONS: Record<string, React.FC> = {
-  push: PushIcon,
-  pull: PullIcon,
-  legs: LegsIcon,
 }
 
 type LogCatalog = {
@@ -470,7 +414,7 @@ export default function DaySelect() {
               backgroundColor: 'var(--accent-wash)', color: 'var(--accent-text)',
               display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
             }}>
-              <DefaultDayIcon />
+              <DayIcon kind="default" size={28} />
             </span>
             <h2 style={{
               fontFamily: "'Bebas Neue', sans-serif", fontSize: '28px',
@@ -670,13 +614,13 @@ export default function DaySelect() {
               // Preview only active exercises so it matches what the live
               // workout will actually offer (17-exercise-active-flag.sql).
               const activeExs = exs.filter(e => e.active)
-              const Icon = DAY_ICONS[key] ?? DefaultDayIcon
               const description = activeExs.slice(0, 3).map(e => e.name).join(', ') + (activeExs.length > 3 ? '…' : '')
               const isUpNext = key === upNext
               const openSession = openByDay[key]
               const colorKey = categoryForDay(key, dayCategories)
               const fillColor = resolveDayColor(colorKey, extraTypes, isLight)
               const labelColor = resolveDayTextColor(colorKey, extraTypes, isLight)
+              const dayCategory = dayCategories[key] ?? null
               // Category color accents the title/icon + UP NEXT chrome only —
               // cards stay on the normal surface so the grid isn't a rainbow.
               // UP NEXT uses a 2px category outline so it reads clearly vs the
@@ -720,7 +664,7 @@ export default function DaySelect() {
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: labelColor }}>
-                      <Icon />
+                      <DayIcon dayKey={key} category={dayCategory} size={28} />
                       <span style={{
                         fontFamily: "'Bebas Neue', sans-serif",
                         fontSize: '28px',

@@ -18,6 +18,7 @@ import { useUnit } from '@/lib/contexts/UnitContext'
 import { useToast } from '@/lib/contexts/ToastContext'
 import { useTour, type TourStep } from '@/components/onboarding/Tour'
 import FlameIcon from '@/components/FlameIcon'
+import DayIcon from '@/components/DayIcon'
 import { markAppDataStale } from '@/lib/cache/appDataCache'
 import {
   FINISH_UNDO_TTL_MS,
@@ -128,17 +129,6 @@ function dayLabel(key: string): string {
 // Just the day's name (no "DAY" suffix) for the overdue nudge.
 function dayName(key: string): string {
   return key.replace(/-/g, ' ').toUpperCase()
-}
-
-// A small dumbbell/barbell glyph, reused for the welcome state and the CTA.
-function BarbellIcon({ size = 24, color = 'currentColor' }: { size?: number; color?: string }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="6" y1="12" x2="18" y2="12" />
-      <rect x="2" y="9" width="4" height="6" rx="1.5" />
-      <rect x="18" y="9" width="4" height="6" rx="1.5" />
-    </svg>
-  )
 }
 
 function ChevronRight({ color = 'currentColor' }: { color?: string }) {
@@ -631,7 +621,7 @@ export default function HomeDashboard({
             justifyContent: 'center',
             flexShrink: 0,
           }}>
-            <BarbellIcon size={34} />
+            <DayIcon kind="default" size={34} />
           </span>
           <h2
             style={{
@@ -1174,7 +1164,14 @@ export default function HomeDashboard({
         onTouchStart={e => (e.currentTarget.style.opacity = '0.85')}
         onTouchEnd={e => (e.currentTarget.style.opacity = '1')}
       >
-        <span style={{ flexShrink: 0 }}><BarbellIcon size={32} color="var(--on-accent)" /></span>
+        <span style={{ flexShrink: 0 }}>
+          <DayIcon
+            dayKey={hasDays ? nextDay : undefined}
+            kind={hasDays ? undefined : 'default'}
+            size={32}
+            color="var(--on-accent)"
+          />
+        </span>
         <span style={{ flex: 1, textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '4px' }}>
           <span style={{
             fontFamily: "'Bebas Neue', sans-serif",
