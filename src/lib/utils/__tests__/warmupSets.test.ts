@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { warmupRampWeights, roundToStep } from '../warmupSets'
+import { warmupRampWeights, roundToStep, planWarmupRamp, workingWeightForRamp } from '../warmupSets'
 import { getWorkoutTemplate, WORKOUT_TEMPLATES } from '../workoutTemplates'
 import { sessionsLogsToCsv, exportFilename } from '../exportData'
 
@@ -13,6 +13,92 @@ describe('warmupRampWeights', () => {
   it('returns empty for non-positive working weight', () => {
     assert.deepEqual(warmupRampWeights(0), [])
     assert.deepEqual(warmupRampWeights(-10), [])
+  })
+})
+
+function set(n: number, weight: string, extra: Partial<{ isWarmup: boolean; checked: boolean; skipped: boolean }> = {}) {
+  return {
+    setNumber: n,
+    weight,
+    isWarmup: extra.isWarmup ?? false,
+    checked: extra.checked ?? false,
+    skipped: extra.skipped ?? false,
+  }
+}
+
+describe('planWarmupRamp', () => {
+  it('adds 3 extras so 3 working sets are not overwritten', () => {
+    const sets = [set(1, '225'), set(2, '225'), set(3, '225')]
+    const plan = planWarmupRamp(sets, 3, 225)
+    assert.equal(plan.ok, true)
+    if (!plan.ok) return
+    assert.equal(plan.working, 225)
+    assert.equal(plan.extraToAdd, 3)
+    assert.deepEqual(plan.updates, [
+      { setNumber: 1, weight: 90 },
+      { setNumber: 2, weight: 135 },
+      { setNumber: 3, weight: 180 },
+    ])
+  })
+
+  it('does not add extras when the ramp is already in front of working sets', () => {
+    const sets = [
+      set(1, '90', { isWarmup: true }),
+      set(2, '135', { isWarmup: true }),
+      set(3, '180', { isWarmup: true }),
+      set(4, '245'),
+      set(5, '245'),
+      set(6, '245'),
+    ]
+    const plan = planWarmupRamp(sets, 3, 225)
+    assert.equal(plan.ok, true)
+    if (!plan.ok) return
+    assert.equal(plan.working, 245)
+    assert.equal(plan.extraToAdd, 0)
+    assert.equal(plan.updates[2]?.weight, 196)
+  })
+
+  it('ignores warmup weights when finding the working load', () => {
+    const sets = [
+      set(1, '90', { isWarmup: true }),
+      set(2, '135', { isWarmup: true }),
+      set(3, '180', { isWarmup: true }),
+      set(4, '225'),
+    ]
+    assert.equal(workingWeightForRamp(sets, 315), 225)
+  })
+
+  it('uses previous best when every set is blank', () => {
+    const sets = [set(1, ''), set(2, ''), set(3, '')]
+    const plan = planWarmupRamp(sets, 3, 185)
+    assert.equal(plan.ok, true)
+    if (!plan.ok) return
+    assert.equal(plan.working, 185)
+    assert.equal(plan.extraToAdd, 3)
+  })
+
+  it('does not overwrite a checked first set', () => {
+    const sets = [set(1, '225', { checked: true }), set(2, '225'), set(3, '225')]
+    const plan = planWarmupRamp(sets, 3, 225)
+    assert.equal(plan.ok, false)
+    if (plan.ok) return
+    assert.equal(plan.reason, 'nothing-to-fill')
+  })
+
+  it('fills an empty leading set when later sets are already logged', () => {
+    const sets = [set(1, ''), set(2, '225', { checked: true }), set(3, '225', { checked: true })]
+    const plan = planWarmupRamp(sets, 3, 225)
+    assert.equal(plan.ok, true)
+    if (!plan.ok) return
+    assert.equal(plan.extraToAdd, 0)
+    assert.deepEqual(plan.updates, [{ setNumber: 1, weight: 90 }])
+  })
+
+  it('fails when there is no working weight', () => {
+    const plan = planWarmupRamp([set(1, ''), set(2, '')], 2, null)
+    assert.equal(plan.ok, false)
+    if (plan.ok) return
+    assert.equal(plan.reason, 'no-weight')
   })
 })
 
