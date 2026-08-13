@@ -100,7 +100,7 @@ export default async function HomePage() {
   if (lastSession) {
     const { data: logs } = await supabase
       .from('session_logs')
-      .select('weight, reps, is_warmup, exercise_id, set_number, created_at, exercises(name)')
+      .select('weight, reps, is_warmup, is_skipped, exercise_id, set_number, created_at, exercises(name)')
       .eq('session_id', lastSession.id)
       .order('created_at', { ascending: true })
 
@@ -125,15 +125,19 @@ export default async function HomePage() {
             firstLoggedAt: log.created_at,
           }
         }
-        if (log.is_warmup) continue
+        // Working sets only — skip markers and warm-ups never count toward
+        // the Last Workout set tally (same filter as activeSession.loggedSets).
+        if (log.is_warmup || log.is_skipped || log.weight === null) continue
         const entry = byExercise[log.exercise_id]
         entry.sets += 1
-        if (log.weight !== null && (entry.weight === null || log.weight > entry.weight)) {
+        if (entry.weight === null || log.weight > entry.weight) {
           entry.weight = log.weight
           entry.reps = log.reps
         }
       }
+      // Drop exercises that only had skips/warm-ups (sets === 0).
       lastSessionLogs = Object.values(byExercise)
+        .filter(row => row.sets > 0)
         .sort((a, b) => a.firstLoggedAt.localeCompare(b.firstLoggedAt))
         .map(({ firstLoggedAt: _, ...row }) => row)
     }

@@ -3,17 +3,45 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useTheme } from '@/lib/contexts/ThemeContext'
-import { Exercise, type DayCategory, UserRotation } from '@/lib/types'
+import { Exercise, type DayCategory, UserRotation, CompleteSessionResult, UserStats } from '@/lib/types'
 import {
   NAMED_DAY_COLORS,
   resolveDayColor,
   resolveDayTextColor,
 } from '@/lib/utils/dayColors'
-import { effectiveSequence, nextDay as nextDayFromRotation, orderedDayKeys } from '@/lib/utils/rotation'
+import { effectiveSequence, nextDay as nextDayFromRotation, orderedDayKeys, advanceIndex } from '@/lib/utils/rotation'
+import { deleteIncompleteSessions } from '@/lib/utils/sessions'
+import { flushQueuedOps, getQueuedOps, clearQueuedOpsForSession } from '@/lib/utils/offlineQueue'
+import { checkAndAwardBadges } from '@/lib/utils/badges'
+import { formatShortDate, localDateKey } from '@/lib/utils/formatting'
+import {
+  FINISH_UNDO_TTL_MS,
+  writeFinishUndoToken,
+} from '@/lib/utils/finishUndo'
 import WorkoutManager from './WorkoutManager'
+import FinishUndoBanner from '@/components/FinishUndoBanner'
 import { useTour, type TourStep } from '@/components/onboarding/Tour'
 import { CACHE_KEYS, markAppDataStale } from '@/lib/cache/appDataCache'
 import { useCachedQuery } from '@/lib/cache/useCachedQuery'
+
+type OpenSession = {
+  id: string
+  day_type: string
+  started_at: string
+  loggedSets: number
+}
+
+function dayLabel(key: string): string {
+  return key.replace(/-/g, ' ').toUpperCase()
+}
+
+function isStartedToday(startedAt: string): boolean {
+  const started = new Date(startedAt)
+  started.setHours(0, 0, 0, 0)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return started.getTime() === today.getTime()
+}
 
 /** Resolve leaderboard category for a day key (custom days via user_day_categories). */
 function categoryForDay(dayKey: string, categories: Record<string, DayCategory>): string {
@@ -84,6 +112,7 @@ type LogCatalog = {
   rotation: UserRotation | null
   flexDays: string[]
   dayCategories: Record<string, DayCategory>
+  openSessions: OpenSession[]
 }
 
 export default function DaySelect() {
@@ -127,7 +156,7 @@ export default function DaySelect() {
     CACHE_KEYS.logCatalog,
     async () => {
       const { data: { user } } = await supabase.auth.getUser()
-      const [exRes, rotRes, flexRes, catRes] = await Promise.all([
+      const [exRes, rotRes, flexRes, catRes, openRes] = await Promise.all([
         supabase.from('exercises').select('*')
           .order('day_type', { ascending: true })
           .order('sort_order', { ascending: true }),
@@ -140,6 +169,14 @@ export default function DaySelect() {
         user
           ? supabase.from('user_day_categories').select('day_key, category').eq('user_id', user.id)
           : Promise.resolve({ data: [] as { day_key: string; category: DayCategory }[] }),
+        user
+          ? supabase
+              .from('sessions')
+              .select('id, day_type, started_at')
+              .eq('user_id', user.id)
+              .is('completed_at', null)
+              .order('started_at', { ascending: false })
+          : Promise.resolve({ data: [] as { id: string; day_type: string; started_at: string }[] }),
       ])
       if (exRes.error) {
         console.error('[grind] failed to load exercises', exRes.error)
@@ -147,11 +184,30 @@ export default function DaySelect() {
       }
       const catMap: Record<string, DayCategory> = {}
       for (const r of catRes.data ?? []) catMap[r.day_key] = r.category as DayCategory
+
+      const openSessions: OpenSession[] = []
+      for (const row of openRes.data ?? []) {
+        const { count } = await supabase
+          .from('session_logs')
+          .select('id', { count: 'exact', head: true })
+          .eq('session_id', row.id)
+          .eq('is_skipped', false)
+          .eq('is_warmup', false)
+          .not('weight', 'is', null)
+        openSessions.push({
+          id: row.id,
+          day_type: row.day_type,
+          started_at: row.started_at,
+          loggedSets: count ?? 0,
+        })
+      }
+
       return {
         exercises: exRes.data ?? [],
         rotation: (rotRes.data as UserRotation | null) ?? null,
         flexDays: (flexRes.data ?? []).map(r => r.day_key),
         dayCategories: catMap,
+        openSessions,
       }
     },
   )
@@ -165,6 +221,133 @@ export default function DaySelect() {
   const loadError = !!error && !catalog
 
   const load = useCallback(() => refetch(), [refetch])
+
+  // Open incomplete sessions (incl. prior-day orphans) from the catalog.
+  // Local override lets Save/Discard update the banner immediately.
+  const [openSessionsOverride, setOpenSessionsOverride] = useState<OpenSession[] | null>(null)
+  const openSessions = useMemo(
+    () => openSessionsOverride ?? catalog?.openSessions ?? [],
+    [openSessionsOverride, catalog?.openSessions],
+  )
+  const [openBusyId, setOpenBusyId] = useState<string | null>(null)
+  const [discardConfirmId, setDiscardConfirmId] = useState<string | null>(null)
+  const [actionToast, setActionToast] = useState<string | null>(null)
+
+  const flashToast = useCallback((msg: string) => {
+    setActionToast(msg)
+    setTimeout(() => setActionToast(null), 4000)
+  }, [])
+
+  const openByDay = useMemo(() => {
+    const map: Record<string, OpenSession> = {}
+    for (const s of openSessions) map[s.day_type] = s
+    return map
+  }, [openSessions])
+
+  async function handleSaveOpen(session: OpenSession) {
+    if (openBusyId || session.loggedSets === 0) return
+    setOpenBusyId(session.id)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { router.push('/login'); return }
+
+      await flushQueuedOps(session.id, supabase)
+      if (getQueuedOps(session.id).length > 0) {
+        flashToast('Still syncing sets — check your connection and try again.')
+        return
+      }
+
+      const { data, error } = await supabase.rpc('complete_session', {
+        p_session_id: session.id,
+        p_local_date: localDateKey(new Date()),
+        p_note: null,
+        p_start_hour: new Date(session.started_at).getHours(),
+      })
+      if (error || !data) throw error ?? new Error('Save failed')
+      const result = data as CompleteSessionResult
+
+      let prevRotationIndex = -1
+      try {
+        const [{ data: dayTypeRows }, { data: rotationRow }, { data: flexRows }] = await Promise.all([
+          supabase.from('exercises').select('day_type'),
+          supabase.from('user_rotation').select('*').eq('user_id', user.id).maybeSingle(),
+          supabase.from('user_flex_days').select('day_key').eq('user_id', user.id),
+        ])
+        const dayKeys = Array.from(new Set((dayTypeRows ?? []).map(r => r.day_type)))
+        const rot = rotationRow as UserRotation | null
+        prevRotationIndex = rot?.current_index ?? -1
+        const flex = new Set((flexRows ?? []).map((r: { day_key: string }) => r.day_key))
+        const seq = effectiveSequence(rot, dayKeys, flex)
+        const newIndex = advanceIndex(seq, rot?.current_index ?? -1, session.day_type)
+        await supabase.from('user_rotation').upsert(
+          {
+            user_id: user.id,
+            mode: rot?.mode ?? 'auto',
+            sequence: rot?.sequence ?? [],
+            current_index: newIndex,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'user_id' },
+        )
+      } catch { /* non-critical */ }
+
+      writeFinishUndoToken({
+        sessionId: session.id,
+        day: session.day_type,
+        userId: user.id,
+        xpEarned: result.xp_earned ?? 0,
+        prevRotationIndex,
+        expiresAt: Date.now() + FINISH_UNDO_TTL_MS,
+      })
+
+      try {
+        await checkAndAwardBadges(
+          supabase,
+          user.id,
+          {
+            user_id: user.id,
+            xp_total: result.xp_total,
+            level: result.level,
+            current_streak: result.current_streak,
+            longest_streak: result.longest_streak,
+            last_workout_date: result.last_workout_date,
+            total_workouts: result.total_workouts,
+            updated_at: new Date().toISOString(),
+          } as UserStats,
+        )
+      } catch { /* non-critical */ }
+
+      setDiscardConfirmId(null)
+      setOpenSessionsOverride(prev => (prev ?? openSessions).filter(s => s.id !== session.id))
+      markAppDataStale()
+      void load()
+    } catch {
+      flashToast('Could not save workout. Check your connection and try again.')
+    } finally {
+      setOpenBusyId(null)
+    }
+  }
+
+  async function handleDiscardOpen(session: OpenSession) {
+    if (openBusyId) return
+    setOpenBusyId(session.id)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { router.push('/login'); return }
+      const result = await deleteIncompleteSessions(supabase, user.id, session.day_type)
+      if (!result.ok) throw new Error(result.error)
+      clearQueuedOpsForSession(session.id)
+      setDiscardConfirmId(null)
+      setOpenSessionsOverride(prev => (prev ?? openSessions).filter(s => s.id !== session.id))
+      flashToast('Workout discarded')
+      markAppDataStale()
+      void load()
+    } catch {
+      flashToast('Could not discard. Try again.')
+    } finally {
+      setOpenBusyId(null)
+    }
+  }
 
   const grouped: Record<string, Exercise[]> = {}
   for (const ex of exercises) {
@@ -312,6 +495,171 @@ export default function DaySelect() {
             </button>
           </div>
         ) : (
+          <>
+          {openSessions.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
+              {openSessions.map(session => {
+                const today = isStartedToday(session.started_at)
+                const busy = openBusyId === session.id
+                return (
+                  <div
+                    key={session.id}
+                    style={{
+                      backgroundColor: 'var(--surface)',
+                      border: '1px solid var(--border)',
+                      borderRadius: '12px',
+                      padding: '14px 16px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '12px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{
+                          fontSize: '10px', fontWeight: 700, letterSpacing: '1.2px',
+                          textTransform: 'uppercase', color: 'var(--accent-text)', marginBottom: '4px',
+                        }}>
+                          {today ? 'In progress' : 'Incomplete session'}
+                        </div>
+                        <div style={{
+                          fontFamily: "'Bebas Neue', sans-serif",
+                          fontSize: '22px', letterSpacing: '1px',
+                          color: 'var(--text-primary)', lineHeight: 1,
+                        }}>
+                          {dayLabel(session.day_type)}
+                        </div>
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                          {today
+                            ? (session.loggedSets > 0
+                              ? `${session.loggedSets} set${session.loggedSets === 1 ? '' : 's'} logged`
+                              : 'No sets logged yet')
+                            : `${formatShortDate(session.started_at)}${
+                                session.loggedSets > 0
+                                  ? ` · ${session.loggedSets} set${session.loggedSets === 1 ? '' : 's'}`
+                                  : ' · no sets yet'
+                              }`}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        data-haptic="medium"
+                        className="press"
+                        disabled={busy}
+                        onClick={() => router.push(`/log?day=${session.day_type}`)}
+                        style={{
+                          position: 'relative',
+                          height: '40px', padding: '0 16px', flexShrink: 0,
+                          backgroundColor: 'var(--accent)', color: 'var(--on-accent)',
+                          border: 'none', borderRadius: '10px',
+                          fontFamily: "'Bebas Neue', sans-serif",
+                          fontSize: '16px', letterSpacing: '0.5px',
+                          cursor: busy ? 'default' : 'pointer',
+                          opacity: busy ? 0.6 : 1,
+                        }}
+                      >
+                        RESUME
+                      </button>
+                    </div>
+
+                    {discardConfirmId !== session.id ? (
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button
+                          type="button"
+                          data-haptic="medium"
+                          className="press"
+                          disabled={busy || session.loggedSets === 0}
+                          title={session.loggedSets === 0 ? 'Log a set before saving' : undefined}
+                          onClick={() => void handleSaveOpen(session)}
+                          style={{
+                            position: 'relative',
+                            flex: 1, height: '40px',
+                            backgroundColor: 'var(--surface-elevated)',
+                            border: '1px solid var(--border)', borderRadius: '10px',
+                            color: session.loggedSets === 0 ? 'var(--text-muted)' : 'var(--accent-text)',
+                            fontFamily: "'DM Sans', sans-serif",
+                            fontSize: '13px', fontWeight: 700,
+                            cursor: (busy || session.loggedSets === 0) ? 'default' : 'pointer',
+                            opacity: busy ? 0.6 : 1,
+                          }}
+                        >
+                          {busy ? 'Saving…' : 'Save'}
+                        </button>
+                        <button
+                          type="button"
+                          data-haptic="light"
+                          className="press"
+                          disabled={busy}
+                          onClick={() => setDiscardConfirmId(session.id)}
+                          style={{
+                            position: 'relative',
+                            flex: 1, height: '40px',
+                            backgroundColor: 'transparent',
+                            border: '1px solid var(--border)', borderRadius: '10px',
+                            color: 'var(--text-secondary)',
+                            fontFamily: "'DM Sans', sans-serif",
+                            fontSize: '13px', fontWeight: 600,
+                            cursor: busy ? 'default' : 'pointer',
+                            opacity: busy ? 0.6 : 1,
+                          }}
+                        >
+                          Discard
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{
+                        display: 'flex', flexDirection: 'column', gap: '8px',
+                        padding: '12px',
+                        backgroundColor: 'var(--surface-elevated)',
+                        border: '1px solid rgba(239,68,68,0.3)',
+                        borderRadius: '10px',
+                      }}>
+                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                          Discard this workout? Logged sets will be permanently deleted.
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button
+                            type="button"
+                            data-haptic="light"
+                            className="press"
+                            disabled={busy}
+                            onClick={() => setDiscardConfirmId(null)}
+                            style={{
+                              position: 'relative', flex: 1, height: '40px',
+                              backgroundColor: 'var(--surface)', border: '1px solid var(--border)',
+                              borderRadius: '8px', color: 'var(--text-primary)',
+                              fontFamily: "'DM Sans', sans-serif", fontSize: '13px', fontWeight: 600,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Keep
+                          </button>
+                          <button
+                            type="button"
+                            data-haptic="heavy"
+                            className="press"
+                            disabled={busy}
+                            onClick={() => void handleDiscardOpen(session)}
+                            style={{
+                              position: 'relative', flex: 1, height: '40px',
+                              backgroundColor: 'rgba(239,68,68,0.15)',
+                              border: '1px solid rgba(239,68,68,0.3)', borderRadius: '8px',
+                              color: 'var(--danger)',
+                              fontFamily: "'DM Sans', sans-serif", fontSize: '13px', fontWeight: 700,
+                              cursor: busy ? 'default' : 'pointer',
+                            }}
+                          >
+                            {busy ? 'Discarding…' : 'Discard'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
           <div className="day-grid stagger">
             {dayKeys.map((key, idx) => {
               const exs = grouped[key]
@@ -321,6 +669,7 @@ export default function DaySelect() {
               const Icon = DAY_ICONS[key] ?? DefaultDayIcon
               const description = activeExs.slice(0, 3).map(e => e.name).join(', ') + (activeExs.length > 3 ? '…' : '')
               const isUpNext = key === upNext
+              const openSession = openByDay[key]
               const colorKey = categoryForDay(key, dayCategories)
               const fillColor = resolveDayColor(colorKey, extraTypes, isLight)
               const labelColor = resolveDayTextColor(colorKey, extraTypes, isLight)
@@ -389,7 +738,16 @@ export default function DaySelect() {
                           FLEX
                         </span>
                       )}
-                      {isUpNext ? (
+                      {openSession ? (
+                        <span style={{
+                          fontSize: '10px', fontWeight: 700, letterSpacing: '0.5px',
+                          color: 'var(--on-accent)', backgroundColor: 'var(--accent)',
+                          padding: '3px 8px', borderRadius: '9999px',
+                          fontFamily: "'DM Sans', sans-serif",
+                        }}>
+                          {isStartedToday(openSession.started_at) ? 'IN PROGRESS' : 'INCOMPLETE'}
+                        </span>
+                      ) : isUpNext ? (
                         <span style={{
                           fontSize: '10px', fontWeight: 700, letterSpacing: '0.5px',
                           color: 'var(--on-accent)', backgroundColor: fillColor,
@@ -412,6 +770,7 @@ export default function DaySelect() {
               )
             })}
           </div>
+          </>
         )}
 
         {/* "Log a past workout" is a power feature — only surface it once the
@@ -448,11 +807,40 @@ export default function DaySelect() {
           onClose={closeManager}
           onChanged={() => {
             markAppDataStale()
+            setOpenSessionsOverride(null)
             void load()
           }}
           initialNewDay={managerNewDay}
         />
       )}
+
+      {actionToast && (
+        <div
+          role="status"
+          style={{
+            position: 'fixed',
+            left: '50%',
+            bottom: 'calc(84px + env(safe-area-inset-bottom))',
+            transform: 'translateX(-50%)',
+            zIndex: 60,
+            maxWidth: 'calc(100% - 32px)',
+            padding: '11px 18px',
+            backgroundColor: 'var(--surface-elevated)',
+            border: '1px solid var(--border-strong)',
+            borderRadius: '9999px',
+            color: 'var(--text-primary)',
+            fontFamily: "'DM Sans', sans-serif",
+            fontSize: '13px',
+            fontWeight: 600,
+            boxShadow: '0 6px 20px rgba(0,0,0,0.35)',
+            textAlign: 'center',
+          }}
+        >
+          {actionToast}
+        </div>
+      )}
+
+      <FinishUndoBanner />
     </>
   )
 }
