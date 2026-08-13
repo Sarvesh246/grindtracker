@@ -38,6 +38,7 @@ import { useRestTimer, getPauseRestOnExit } from '@/lib/hooks/useRestTimer'
 import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
 import { useExitingValue } from '@/lib/hooks/useExitingValue'
 import RestTimerBar from '@/components/RestTimerBar'
+import { requestOpenCoach } from '@/lib/coach/openCoachBus'
 import PlateCalculator from '@/components/PlateCalculator'
 import CompletionModal from './CompletionModal'
 import { markAppDataStale } from '@/lib/cache/appDataCache'
@@ -2587,6 +2588,21 @@ export default function ActiveWorkout({ day }: { day: string }) {
             Exit
           </button>
 
+          <button
+            type="button"
+            className="press"
+            data-haptic="light"
+            onClick={() => requestOpenCoach({ size: 'compact' })}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '6px',
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: 'var(--accent-text)', padding: 0,
+              fontFamily: "'DM Sans', sans-serif", fontSize: '13px', fontWeight: 600,
+            }}
+          >
+            Ask Coach
+          </button>
+
           <div>
             <div style={{
               fontFamily: "'Bebas Neue', sans-serif",
@@ -2726,12 +2742,42 @@ export default function ActiveWorkout({ day }: { day: string }) {
               {dayLabel(day)}
             </h1>
 
-            <span style={{
-              fontFamily: "'JetBrains Mono', monospace",
-              fontSize: '14px', color: 'var(--text-secondary)', minWidth: '50px', textAlign: 'right',
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '4px',
+              minWidth: '50px', justifyContent: 'flex-end',
             }}>
-              {formatElapsed(elapsed)}
-            </span>
+              <button
+                type="button"
+                className="press"
+                data-haptic="light"
+                aria-label="Ask Coach"
+                onClick={() => requestOpenCoach({ size: 'compact' })}
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  padding: '8px', minWidth: '44px', minHeight: '44px',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: 'var(--accent-text)',
+                }}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
+                  <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.75" />
+                  <text
+                    x="12" y="12.5"
+                    textAnchor="middle" dominantBaseline="middle"
+                    fill="currentColor"
+                    fontFamily="var(--font-display, 'Bebas Neue', sans-serif)"
+                    fontSize="11" fontWeight="700"
+                  >G</text>
+                </svg>
+              </button>
+              <span style={{
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: '14px', color: 'var(--text-secondary)',
+                minWidth: '44px', textAlign: 'right',
+              }}>
+                {formatElapsed(elapsed)}
+              </span>
+            </div>
           </div>
 
           {/* Progress bar */}

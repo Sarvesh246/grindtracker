@@ -53,8 +53,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <OnboardingProvider userId={onboardingUserId} initialState={onboardingInitial}>
     <ToastProvider>
     <RouteCacheSync />
-    {/* Coach FAB + sheet: portal-friendly fixed UI above app chrome; hidden on
-        active workout via CoachRoot (same /log?day= gate as BottomNav). */}
+    {/* Coach FAB + sheet: portal-friendly fixed UI above app chrome. Mid-workout
+        keeps Coach mounted (FAB hidden; Ask Coach opens compact sheet). */}
     <CoachRoot />
     {/* Fixed, non-scrolling app shell. Only .app-main scrolls; the bottom nav is
         a flow child pinned at the bottom by layout (never position:fixed), so it

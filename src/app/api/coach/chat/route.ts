@@ -27,6 +27,7 @@ import {
   type CoachToolContext,
 } from '@/lib/coach/actions'
 import { titleFromMessage } from '@/lib/coach/conversations'
+import { loadCoachChipHints } from '@/lib/coach/chipHints'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -463,6 +464,22 @@ export async function GET() {
     )
   }
 
+  let chipHints: {
+    has_active_session: boolean
+    next_day: string | null
+    last_pr_exercise: string | null
+  } | null = null
+  try {
+    const hints = await loadCoachChipHints(supabase, user.id)
+    chipHints = {
+      has_active_session: hints.hasActiveSession,
+      next_day: hints.nextDay,
+      last_pr_exercise: hints.lastPrExercise,
+    }
+  } catch (err) {
+    console.error('[grind] coach chip hints', err)
+  }
+
   return NextResponse.json({
     quota,
     model: process.env.GEMINI_MODEL?.trim() || COACH_DEFAULT_MODEL,
@@ -470,5 +487,6 @@ export async function GET() {
       process.env.GEMINI_API_KEY?.trim() ||
       process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim()
     ),
+    chipHints,
   })
 }
