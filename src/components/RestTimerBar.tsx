@@ -8,8 +8,6 @@ interface Props {
   remainingMs: number
   durationMs: number
   paused: boolean
-  /** Distance from viewport bottom so the bar can sit above Finish. */
-  bottomOffset?: string
   onStop: () => void
   onAdd: (sec: number) => void
   onPause: () => void
@@ -38,7 +36,6 @@ export default function RestTimerBar({
   remainingMs,
   durationMs,
   paused,
-  bottomOffset = 'calc(132px + env(safe-area-inset-bottom))',
   onStop,
   onAdd,
   onPause,
@@ -74,10 +71,11 @@ export default function RestTimerBar({
       className="wo-fixed-bar"
       style={{
         position: 'fixed',
-        // Sit above the Finish bar when both are mounted (Finish stays at bottom: 0).
-        bottom: bottomOffset,
-        // Safe-area is already on the Finish bar below — keep a normal pad here.
-        paddingBottom: '8px',
+        // Owns the bottom edge while active — Finish is hidden during rest.
+        bottom: 0,
+        // Bar background fills through the home-indicator safe area to the true
+        // bottom; controls stay clear of the indicator.
+        paddingBottom: 'max(8px, env(safe-area-inset-bottom))',
         backgroundColor: 'var(--surface-elevated)',
         borderTop: '1px solid var(--border)',
         boxShadow: '0 -4px 16px rgba(0,0,0,0.4)',

@@ -2426,7 +2426,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
           style={{
             position: 'fixed',
             left: '50%',
-            bottom: `calc(${keyboardInset > 0 ? `${keyboardInset}px` : 'env(safe-area-inset-bottom)'} + ${restTimer.active ? '190px' : '92px'})`,
+            bottom: `calc(${keyboardInset > 0 ? `${keyboardInset}px` : 'env(safe-area-inset-bottom)'} + ${restTimer.active ? '104px' : '92px'})`,
             transform: 'translateX(-50%)',
             backgroundColor: 'var(--surface-elevated)',
             border: '1px solid var(--accent)',
@@ -2473,7 +2473,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
             left: '12px',
             right: '12px',
             bottom: restTimer.active
-              ? 'calc(198px + env(safe-area-inset-bottom))'
+              ? 'calc(108px + env(safe-area-inset-bottom))'
               : 'calc(72px + env(safe-area-inset-bottom))',
             zIndex: 55,
             backgroundColor: 'var(--surface-elevated)',
@@ -2551,7 +2551,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         </div>
       )}
 
-      {/* Rest timer — stacked above the always-visible Finish bar. */}
+      {/* Rest timer — owns the bottom edge; Finish is hidden while active. */}
       {restTimer.active && restTimer.exerciseId && (
         <RestTimerBar
           exerciseId={restTimer.exerciseId}
@@ -2559,9 +2559,6 @@ export default function ActiveWorkout({ day }: { day: string }) {
           remainingMs={restTimer.remainingMs}
           durationMs={restTimer.durationMs}
           paused={restTimer.paused}
-          bottomOffset={hasPendingSync()
-            ? 'calc(168px + env(safe-area-inset-bottom))'
-            : 'calc(132px + env(safe-area-inset-bottom))'}
           onStop={restTimer.stop}
           onAdd={restTimer.addSeconds}
           onPause={restTimer.pause}
@@ -2569,7 +2566,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         />
       )}
 
-      <div className="page page--workout" style={{ paddingBottom: restTimer.active ? 'calc(220px + env(safe-area-inset-bottom))' : 'calc(140px + env(safe-area-inset-bottom))', fontFamily: "'DM Sans', sans-serif" }}>
+      <div className="page page--workout" style={{ paddingBottom: 'calc(140px + env(safe-area-inset-bottom))', fontFamily: "'DM Sans', sans-serif" }}>
        <div className="wo-layout">
 
         {/* Desktop sidebar rail — hidden on mobile via CSS. Mirrors the mobile
@@ -2878,8 +2875,10 @@ export default function ActiveWorkout({ day }: { day: string }) {
        </div>{/* .wo-layout */}
       </div>
 
-      {/* Finish button — always pinned to the viewport bottom (even while rest
-          is active). RestTimerBar stacks above it. Keyboard appears on top. */}
+      {/* Finish button — hidden while the rest bar owns the bottom edge
+          (including the brief REST DONE / OK flash). Always pinned to the
+          viewport bottom otherwise; the keyboard appears on top of it. */}
+      {!restTimer.active && (
       <div className="wo-fixed-bar" style={{
         position: 'fixed',
         bottom: 0,
@@ -2974,6 +2973,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         </div>
         </div>
       </div>
+      )}
     </>
   )
 }
