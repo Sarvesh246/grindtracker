@@ -62,7 +62,10 @@ export default async function HomePage() {
       .select('sessions!inner(user_id)', { count: 'exact', head: true })
       .eq('is_pr', true)
       .eq('sessions.user_id', user.id),
-    supabase.from('user_rest_days').select('day_of_week, effective_from').eq('user_id', user.id),
+    supabase
+      .from('user_rest_days')
+      .select('day_of_week, effective_from, effective_until')
+      .eq('user_id', user.id),
     supabase.from('user_rest_dates').select('rest_date').eq('user_id', user.id),
     supabase.from('user_rest_cancels').select('rest_date').eq('user_id', user.id),
   ])
@@ -190,14 +193,16 @@ export default async function HomePage() {
   return (
     <HomeDashboard
       stats={demoMode ? demoHomeStats() : stats}
-      recurringRestDays={(restDayRows ?? []).map(r => r.day_of_week)}
+      recurringRestDays={(restDayRows ?? [])
+        .filter(r => r.effective_until == null)
+        .map(r => r.day_of_week)}
       restDates={(restDateRows ?? []).map(r => r.rest_date)}
       restCancels={(restCancelRows ?? []).map(r => r.rest_date)}
-      restEffectiveFrom={Object.fromEntries(
-        (restDayRows ?? [])
-          .filter(r => r.effective_from && r.effective_from !== '1970-01-01')
-          .map(r => [r.day_of_week, r.effective_from as string]),
-      )}
+      restIntervals={(restDayRows ?? []).map(r => ({
+        dayOfWeek: r.day_of_week as number,
+        effectiveFrom: (r.effective_from as string) || '1970-01-01',
+        effectiveUntil: (r.effective_until as string | null) ?? null,
+      }))}
       activeSessions={demoMode ? [] : activeSessions}
       lastSession={demoMode ? demoLastSession() : (lastSession ?? null)}
       lastSessionLogs={demoMode ? DEMO_LAST_SESSION_LOGS : lastSessionLogs}

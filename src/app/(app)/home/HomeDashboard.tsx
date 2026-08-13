@@ -109,7 +109,8 @@ interface Props {
   recurringRestDays: number[]
   restDates: string[]
   restCancels?: string[]
-  restEffectiveFrom?: Record<number, string>
+  /** Active + soft-ended recurring intervals (43). */
+  restIntervals?: { dayOfWeek: number; effectiveFrom: string; effectiveUntil: string | null }[]
 }
 
 const DAY_LABELS: Record<string, string> = {
@@ -161,7 +162,7 @@ export default function HomeDashboard({
   recurringRestDays,
   restDates,
   restCancels = [],
-  restEffectiveFrom = {},
+  restIntervals = [],
 }: Props) {
   const router = useRouter()
   const { demoMode } = useDemoMode()
@@ -177,13 +178,11 @@ export default function HomeDashboard({
   const { unitLabel, fmt } = useUnit()
   const toast = useToast()
   const recurringRestSet = useMemo(() => new Set(recurringRestDays), [recurringRestDays])
-  const restOpts = useMemo<RestDayOpts>(() => {
-    const effectiveFrom = new Map<number, string>()
-    for (const [k, v] of Object.entries(restEffectiveFrom)) {
-      effectiveFrom.set(Number(k), v)
-    }
-    return { cancels: new Set(restCancels), effectiveFrom, trainedDates: new Set(completedAt) }
-  }, [restCancels, restEffectiveFrom, completedAt])
+  const restOpts = useMemo<RestDayOpts>(() => ({
+    cancels: new Set(restCancels),
+    intervals: restIntervals,
+    trainedDates: new Set(completedAt),
+  }), [restCancels, restIntervals, completedAt])
 
   const xpTotal = stats?.xp_total ?? 0
   const level = getLevel(xpTotal)

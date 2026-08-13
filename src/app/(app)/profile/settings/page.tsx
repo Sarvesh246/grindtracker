@@ -13,6 +13,7 @@ export default async function ProfileSettingsPage() {
     .from('user_rest_days')
     .select('day_of_week')
     .eq('user_id', user.id)
+    .is('effective_until', null)
 
   const displayName = (user.user_metadata?.full_name as string | undefined)
     ?? user.email

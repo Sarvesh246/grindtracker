@@ -32,7 +32,8 @@ export default async function SetupPage() {
       supabase
         .from('user_rest_days')
         .select('day_of_week')
-        .eq('user_id', user.id),
+        .eq('user_id', user.id)
+        .is('effective_until', null),
       supabase
         .from('exercises')
         .select('id')

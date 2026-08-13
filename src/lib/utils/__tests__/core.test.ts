@@ -140,6 +140,25 @@ describe('rest days connectivity', () => {
     assert.equal(isRestDay('2026-08-19', new Set([3]), new Set(), opts), true)
   })
 
+  it('keeps past coverage after a weekday is soft-ended', () => {
+    // Was Sun+Thu; Thursday removed on 2026-08-13 → interval ends exclusive.
+    const intervals = [
+      { dayOfWeek: 0, effectiveFrom: '1970-01-01', effectiveUntil: null },
+      { dayOfWeek: 4, effectiveFrom: '1970-01-01', effectiveUntil: '2026-08-13' },
+      { dayOfWeek: 3, effectiveFrom: '2026-08-19', effectiveUntil: null },
+    ]
+    const opts = { intervals }
+    const active = new Set([0, 3])
+    // Last week's Thursday still counts
+    assert.equal(isRestDay('2026-08-06', active, new Set(), opts), true)
+    // Removal day itself does not
+    assert.equal(isRestDay('2026-08-13', active, new Set(), opts), false)
+    // Future Thursday does not
+    assert.equal(isRestDay('2026-08-20', active, new Set(), opts), false)
+    // Streak across last Thursday still connects
+    assert.equal(datesConnected('2026-08-05', '2026-08-07', active, new Set(), opts), true)
+  })
+
   it('treats a cancelled scheduled date as not rest', () => {
     assert.equal(
       isRestDay('2026-08-16', new Set([0]), new Set(), { cancels: new Set(['2026-08-16']) }),

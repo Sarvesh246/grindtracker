@@ -3,9 +3,10 @@ import { localDateKey } from './formatting'
 /**
  * Rest-day helpers — pure, framework-agnostic (no Supabase import), same style
  * as rotation.ts. Mirrors the SQL connectivity semantics in
- * docs/sql/14-rest-days.sql + docs/sql/39-rest-day-skip.sql, so the client can
- * reason about streak gaps using the viewer's own local "today" (never the
- * server's — see Dates & timezones in CLAUDE.md).
+ * docs/sql/14-rest-days.sql + docs/sql/39-rest-day-skip.sql +
+ * docs/sql/43-rest-weekday-history.sql, so the client can reason about streak
+ * gaps using the viewer's own local "today" (never the server's — see Dates &
+ * timezones in CLAUDE.md).
  */
 
 /** Parse a 'YYYY-MM-DD' key as local noon, avoiding the UTC-midnight shift a
@@ -21,17 +22,48 @@ function addDays(date: Date, days: number): Date {
   return d
 }
 
+/** One recurring weekday interval (active or soft-ended). Matches user_rest_days. */
+export type RestWeekdayInterval = {
+  dayOfWeek: number
+  /** Inclusive start (YYYY-MM-DD). Missing / epoch = always from the beginning. */
+  effectiveFrom: string
+  /** Exclusive end (YYYY-MM-DD). null = currently active. */
+  effectiveUntil: string | null
+}
+
 export type RestDayOpts = {
   /** Recurring weekdays suppressed this week because a skip used the budget. */
   cancels?: Set<string>
-  /** day_of_week → YYYY-MM-DD first date that weekday counts (39). Missing = always. */
+  /**
+   * @deprecated Prefer `intervals`. day_of_week → YYYY-MM-DD first date that
+   * weekday counts (39). Missing = always. Ignored when `intervals` is set.
+   */
   effectiveFrom?: Map<number, string>
+  /**
+   * All recurring intervals (active + soft-ended history). When set, this is
+   * the source of truth for scheduled rest — not `recurringDaysOfWeek` alone.
+   */
+  intervals?: RestWeekdayInterval[]
   /** Completed-workout dates — training on a scheduled rest day does not spend a skip. */
   trainedDates?: Set<string>
 }
 
+function scheduledRestDay(dateKey: string, dow: number, opts?: RestDayOpts): boolean {
+  if (opts?.intervals && opts.intervals.length > 0) {
+    return opts.intervals.some(i => {
+      if (i.dayOfWeek !== dow) return false
+      const from = i.effectiveFrom && i.effectiveFrom !== '1970-01-01' ? i.effectiveFrom : null
+      if (from && dateKey < from) return false
+      if (i.effectiveUntil && dateKey >= i.effectiveUntil) return false
+      return true
+    })
+  }
+  // Legacy callers: active weekday set is passed separately; see isRestDay.
+  return false
+}
+
 /** True if `dateKey` is a rest day: one-off confirmed date, or a recurring
- *  weekday that has reached `effectiveFrom` and is not cancelled. */
+ *  weekday interval that covers the date and is not cancelled. */
 export function isRestDay(
   dateKey: string,
   recurringDaysOfWeek: Set<number>,
@@ -41,6 +73,11 @@ export function isRestDay(
   if (oneOffDates.has(dateKey)) return true
   if (opts?.cancels?.has(dateKey)) return false
   const dow = parseDateKey(dateKey).getDay()
+
+  if (opts?.intervals && opts.intervals.length > 0) {
+    return scheduledRestDay(dateKey, dow, opts)
+  }
+
   if (!recurringDaysOfWeek.has(dow)) return false
   const from = opts?.effectiveFrom?.get(dow)
   if (from && dateKey < from) return false
@@ -128,7 +165,8 @@ export function restDaysUsedThrough(
   ).length
 }
 
-/** Weekdays that already count this week — not ones whose effective_from is next week. */
+/** Weekdays that already count this week — not ones whose effective_from is next week.
+ *  Soft-ended intervals (effective_until set) do not add to the budget. */
 export function restBudgetForWeek(
   todayKey: string,
   recurringDaysOfWeek: Set<number>,
@@ -137,6 +175,17 @@ export function restBudgetForWeek(
   const week = datesInWeek(todayKey)
   const weekEnd = week[week.length - 1]
   if (!weekEnd) return 0
+
+  if (opts?.intervals && opts.intervals.length > 0) {
+    let n = 0
+    for (const i of opts.intervals) {
+      if (i.effectiveUntil != null) continue
+      const from = i.effectiveFrom && i.effectiveFrom !== '1970-01-01' ? i.effectiveFrom : null
+      if (!from || from <= weekEnd) n += 1
+    }
+    return n
+  }
+
   let n = 0
   for (const dow of recurringDaysOfWeek) {
     const from = opts?.effectiveFrom?.get(dow)

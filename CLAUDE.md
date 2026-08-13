@@ -3,7 +3,7 @@
 ## Status: COMPLETE ✅
 Core phases (1–7) plus later ships (flex days, photos, onboarding, web push,
 weight targets, offline set queue, RPE, data export) — single-user PWA in daily use.
-Schema migrations run through `docs/sql/40-*.sql`.
+Schema migrations run through `docs/sql/43-*.sql`.
 
 ## Git Workflow
 Single-user repo, no review process. Commit and push directly to `main` —
@@ -161,15 +161,18 @@ Both share `UnitContext`, so the kg/lbs toggle stays in sync across them.
   category ('bug'|'feature'|'improvement'|'other'), message, image_paths (text[]
   of objects in the private `feedback-images` bucket), is_anonymous, is_read,
   is_starred. See Feedback below and migration `09-feedback.sql`.
-- user_rest_days — (user_id, day_of_week) PK, recurring weekly rest days
-  (0=Sun..6=Sat, matches `extract(dow)`/`Date.getDay()`), configured in
+- user_rest_days — (user_id, day_of_week, effective_from) PK, recurring weekly
+  rest days (0=Sun..6=Sat, matches `extract(dow)`/`Date.getDay()`), configured in
   Profile. `effective_from` (migration `39`) is the first date that weekday
   counts; new rows start the next occurrence strictly after today so Settings
-  cannot cover a missed workout the same day. user_rest_dates — (user_id,
-  rest_date) PK, one-off rest dates (Home "Rest today", or the missed-day
-  banner). user_rest_cancels — (user_id, rest_date) PK, a scheduled rest date
-  given up this week because a one-off used the weekly budget (`stolen_for`).
-  See Rest days below and migrations `14-rest-days.sql`, `39-rest-day-skip.sql`.
+  cannot cover a missed workout the same day. `effective_until` (migration `43`,
+  exclusive, null = active) soft-ends a weekday when removed so past coverage
+  survives schedule changes; re-enable inserts a new open-ended interval.
+  user_rest_dates — (user_id, rest_date) PK, one-off rest dates (Home "Rest today",
+  or the missed-day banner). user_rest_cancels — (user_id, rest_date) PK, a
+  scheduled rest date given up this week because a one-off used the weekly budget
+  (`stolen_for`). See Rest days below and migrations `14-rest-days.sql`,
+  `39-rest-day-skip.sql`, `43-rest-weekday-history.sql`.
 RLS on exercises, sessions, session_logs, user_stats, user_badges, body_weights,
 user_day_categories, user_rotation, feedback, user_rest_days, user_rest_dates,
 user_rest_cancels
@@ -278,7 +281,7 @@ non-binding — DaySelect still lets you pick any day, and marks the suggested o
 Helpers are pure (no Supabase import). Apply migration `06-user-rotation.sql` first
 (default `-1` as of `40`).
 
-### Rest days (src/lib/utils/restDays.ts, migrations `14-rest-days.sql` + `39-rest-day-skip.sql`)
+### Rest days (src/lib/utils/restDays.ts, migrations `14` + `39` + `43`)
 Two ways to declare a day off without breaking the streak: recurring weekly
 rest days (toggled as day-pills in Profile → Settings, backed by
 `user_rest_days`) and one-off rest dates (`user_rest_dates`). Settings pills
@@ -286,7 +289,10 @@ are the **weekly budget N** and the default schedule — they do **not** cover
 today when newly turned on (`effective_from` is the next occurrence of that
 weekday strictly after local today), which closes the old bypass of toggling
 today's weekday in Settings to save a streak. Existing rows stay at
-`effective_from = 1970-01-01`.
+`effective_from = 1970-01-01`. Removing a weekday soft-ends it
+(`effective_until` = local today, exclusive) instead of deleting — past
+occurrences keep counting for streaks; re-adding inserts a new open-ended
+interval from the next occurrence (migration `43`).
 
 Home has a **Rest today** control under the streak card: tap to insert a
 one-off for today, tap again to undo. Scheduled rest (a Settings weekday
@@ -305,17 +311,19 @@ when the gap fits **remaining** weekly slots (`uncovered.length <= N - used`).
 Once N rest days are used this week — configured weekdays or Rest today skips
 — another miss breaks the streak. Server-side, `grind_dates_connected(user,
 from, to)` tests whether every day strictly between two dates is a rest day
-(`grind_is_rest_day`, which honors one-offs, cancels, and `effective_from`);
-`grind_recompute_stats()` uses it to group workout dates into rest-day-aware
-"runs". `restDays.ts` mirrors the same logic in TS (`Date.getDay()` matches
-`extract(dow)`, 0=Sun..6=Sat) so the client can compute gaps and Rest today
-eligibility using the viewer's own local "today" — never the server's, per
-Dates & timezones below. Mutate through `toggle_rest_today` /
-`set_rest_weekday`; do not UPDATE `user_rest_days.effective_from` from the
-client. Direct INSERT on `user_rest_days` is revoked as of `40` (UTC-today hole);
-`user_rest_cancels` is insert/select only so a steal row cannot be deleted while
-keeping the one-off. Weekly budget N ignores weekdays whose `effective_from` is
-after this week's Sunday.
+(`grind_is_rest_day`, which honors one-offs, cancels, `effective_from`, and
+`effective_until`); `grind_recompute_stats()` uses it to group workout dates
+into rest-day-aware "runs". `restDays.ts` mirrors the same logic in TS
+(`Date.getDay()` matches `extract(dow)`, 0=Sun..6=Sat) so the client can
+compute gaps and Rest today eligibility using the viewer's own local "today"
+— never the server's, per Dates & timezones below. Mutate through
+`toggle_rest_today` / `set_rest_weekday`; do not UPDATE
+`user_rest_days.effective_from` / `effective_until` from the client. Direct
+INSERT/UPDATE/DELETE on `user_rest_days` is revoked (UTC-today hole + history
+wipe); `user_rest_cancels` is insert/select only so a steal row cannot be
+deleted while keeping the one-off. Weekly budget N counts only active
+weekdays (`effective_until` is null) whose `effective_from` is on or before
+this week's Sunday.
 
 ### Skip persistence (migration `18-skip-persistence.sql`)
 Skipping a set/exercise in ActiveWorkout is optimistic in React state

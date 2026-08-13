@@ -267,7 +267,11 @@ export async function buildCoachContext(
       .order('sort_order', { ascending: true }),
     supabase.from('user_rotation').select('*').eq('user_id', userId).maybeSingle(),
     supabase.from('user_flex_days').select('day_key').eq('user_id', userId),
-    supabase.from('user_rest_days').select('day_of_week').eq('user_id', userId),
+    supabase
+      .from('user_rest_days')
+      .select('day_of_week')
+      .eq('user_id', userId)
+      .is('effective_until', null),
     supabase
       .from('user_rest_dates')
       .select('rest_date')

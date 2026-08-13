@@ -55,6 +55,7 @@ is fully linked to migration history.
 | [40-integrity-followups.sql](sql/40-integrity-followups.sql) | 40 | **Paste this in Supabase.** Warm-up-only sessions cannot complete; completed session/log writes locked; rest-cancel steal rows insert-only; rotation seed `-1`; Coach assistant insert RPC |
 | [41-upsert-past-session-skip.sql](sql/41-upsert-past-session-skip.sql) | 41 | **Paste this in Supabase.** Past-edit round-trips skips, warm-ups, notes, and RPE via `upsert_past_session` |
 | [42-rest-today-undo.sql](sql/42-rest-today-undo.sql) | 42 | **Paste this in Supabase.** Rest-today undo must be able to clear steal rows (`user_rest_cancels` DELETE is revoked; trigger is SECURITY DEFINER) |
+| [43-rest-weekday-history.sql](sql/43-rest-weekday-history.sql) | 43 | **Paste this in Supabase.** Soft-end rest weekdays (`effective_until`) so schedule changes do not erase past streak coverage |
 
 See also [PUSH.md](PUSH.md) for VAPID keys, Vercel env, and cron setup.
 See [COACH.md](COACH.md) for Gemini env, rate limits, `/api/coach/chat`, and

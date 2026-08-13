@@ -20,6 +20,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - Production site: https://grindtrack.vercel.app/ auto-deploys from `main` (https://github.com/Sarvesh246/grindtracker.git).
 - Last Workout panel must list exercises in the order they were logged (`session_logs.created_at`), not by set number.
 - Workout discard needs Supabase delete RLS from `docs/sql/04-session-delete-rls.sql`; production hardening and past save/edit via `upsert_past_session` live in `docs/sql/20-production-hardening.sql` (never client delete-then-insert of `session_logs`).
+- Rest weekday removals soft-end with `effective_until` (`docs/sql/43-rest-weekday-history.sql`) so past scheduled rest still counts for streaks; do not DELETE `user_rest_days` rows that already covered history.
 - Badge catalog objects must stay RSC-serializable: never put functions on `ALL_BADGES` (or pass them server→client); weight-threshold copy uses plain `weightLbs`/`weightKind` with `formatBadgeDescription()` at the call site.
 - Web Push (subscriptions, prefs, scheduled sends) lives in `docs/sql/27-web-push.sql`; if an older 27 was already applied, also run `docs/sql/28-web-push-hardening.sql`. Setup/env notes are in `docs/PUSH.md`.
 - Vercel Hobby forbids sub-daily cron expressions; `vercel.json` fans out 24 once-daily UTC-hour jobs to `/api/cron/notifications` for roughly hourly coverage. Rest-end alerts must use in-page/local timers — Hobby cron is too coarse for short gym rests.
