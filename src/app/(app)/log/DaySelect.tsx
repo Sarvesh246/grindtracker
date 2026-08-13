@@ -225,7 +225,10 @@ export default function DaySelect() {
   // Open incomplete sessions (incl. prior-day orphans) from the catalog.
   // Local override lets Save/Discard update the banner immediately.
   const [openSessionsOverride, setOpenSessionsOverride] = useState<OpenSession[] | null>(null)
-  const openSessions = openSessionsOverride ?? catalog?.openSessions ?? []
+  const openSessions = useMemo(
+    () => openSessionsOverride ?? catalog?.openSessions ?? [],
+    [openSessionsOverride, catalog?.openSessions],
+  )
   const [openBusyId, setOpenBusyId] = useState<string | null>(null)
   const [discardConfirmId, setDiscardConfirmId] = useState<string | null>(null)
   const [actionToast, setActionToast] = useState<string | null>(null)
