@@ -1,8 +1,38 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import DayIcon from '@/components/DayIcon'
 import FlameIcon from '@/components/FlameIcon'
+
+/** Must match the CSS loop length on `.landing-how__scene`. */
+const LOOP_MS = 10_000
+/** Log scene is on-screen; rest bar is visible until finish swaps in. */
+const REST_START_MS = 2_200
+/** Hits 0:00 / REST DONE just before the finish bar takes the bottom edge. */
+const REST_ZERO_MS = 5_000
+const REST_DURATION_MS = 6_000
+
+function prefersReducedMotion(): boolean {
+  if (typeof window === 'undefined') return false
+  return (
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches ||
+    document.documentElement.classList.contains('reduce-motion')
+  )
+}
+
+function fmtRest(ms: number): string {
+  const total = Math.ceil(Math.max(0, ms) / 1000)
+  const m = Math.floor(total / 60)
+  const s = total % 60
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
+function restMsAt(elapsed: number): number {
+  if (elapsed < REST_START_MS) return REST_DURATION_MS
+  if (elapsed >= REST_ZERO_MS) return 0
+  const t = (elapsed - REST_START_MS) / (REST_ZERO_MS - REST_START_MS)
+  return Math.max(0, (1 - t) * REST_DURATION_MS)
+}
 
 function CheckIcon() {
   return (
@@ -14,7 +44,7 @@ function CheckIcon() {
 
 function ChevronRight() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <polyline points="9 18 15 12 9 6" />
     </svg>
   )
@@ -22,7 +52,7 @@ function ChevronRight() {
 
 function BackIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <polyline points="15 18 9 12 15 6" />
     </svg>
   )
@@ -30,7 +60,7 @@ function BackIcon() {
 
 function CoachG() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.75" />
       <text
         x="12"
@@ -48,11 +78,50 @@ function CoachG() {
   )
 }
 
+function PauseIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <rect x="6" y="4" width="4" height="16" rx="1" />
+      <rect x="14" y="4" width="4" height="16" rx="1" />
+    </svg>
+  )
+}
+
+function RestChevron() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polyline points="18 15 12 9 6 15" />
+    </svg>
+  )
+}
+
+function PrTrophy() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polyline points="8 6 12 2 16 6" />
+      <path d="M12 2v10" />
+      <path d="M5 17l1.5-5h11L19 17" />
+      <path d="M3 22h18" />
+    </svg>
+  )
+}
+
 function NavIcon({ name, active }: { name: 'home' | 'log' | 'progress' | 'profile' | 'ranks'; active?: boolean }) {
   const color = active ? 'var(--accent-text)' : 'var(--text-muted)'
+  const props = {
+    width: 24,
+    height: 24,
+    viewBox: '0 0 24 24',
+    fill: 'none' as const,
+    stroke: color,
+    strokeWidth: 2,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+    'aria-hidden': true,
+  }
   if (name === 'home') {
     return (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <svg {...props}>
         <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
         <polyline points="9 22 9 12 15 12 15 22" />
       </svg>
@@ -60,7 +129,7 @@ function NavIcon({ name, active }: { name: 'home' | 'log' | 'progress' | 'profil
   }
   if (name === 'log') {
     return (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <svg {...props}>
         <line x1="8" y1="6" x2="8" y2="18" />
         <line x1="16" y1="6" x2="16" y2="18" />
         <line x1="5" y1="9" x2="8" y2="9" />
@@ -74,21 +143,21 @@ function NavIcon({ name, active }: { name: 'home' | 'log' | 'progress' | 'profil
   }
   if (name === 'progress') {
     return (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <svg {...props}>
         <polyline points="3 17 9 11 13 15 21 7" />
       </svg>
     )
   }
   if (name === 'profile') {
     return (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <svg {...props}>
         <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
         <circle cx="12" cy="7" r="4" />
       </svg>
     )
   }
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg {...props}>
       <rect x="2" y="13" width="6" height="8" rx="1" />
       <rect x="9" y="9" width="6" height="12" rx="1" />
       <rect x="16" y="5" width="6" height="16" rx="1" />
@@ -111,7 +180,9 @@ function MiniNav({ active }: { active: 'home' | 'log' }) {
           key={tab.id}
           className={`landing-how-nav__tab${tab.id === active ? ' landing-how-nav__tab--on' : ''}`}
         >
-          <NavIcon name={tab.id} active={tab.id === active} />
+          <span className="landing-how-nav__icon">
+            <NavIcon name={tab.id} active={tab.id === active} />
+          </span>
           <span>{tab.label}</span>
         </div>
       ))}
@@ -146,11 +217,21 @@ function SetRow({
 }
 
 /**
- * ~10s CSS loop that mirrors the real app: home → log a set → PR → completion sheet.
- * Reduce-motion holds on the home screen (the "screenshot" of opening the app).
+ * ~10s loop that mirrors the real app: home → log a set → PR → completion sheet.
+ * Bottom chrome (nav, rest, finish, sheet) is pinned to the phone screen edge.
+ * Reduce-motion holds on the home screen.
  */
 export default function HowItWorksDemo() {
   const rootRef = useRef<HTMLDivElement>(null)
+  const [active, setActive] = useState(false)
+  const [reduceMotion, setReduceMotion] = useState(false)
+  const [restMs, setRestMs] = useState(REST_DURATION_MS)
+
+  useEffect(() => {
+    // Client-only motion preference (SSR shows animated-capable markup).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setReduceMotion(prefersReducedMotion())
+  }, [])
 
   useEffect(() => {
     const el = rootRef.current
@@ -159,12 +240,34 @@ export default function HowItWorksDemo() {
     const io = new IntersectionObserver(
       ([entry]) => {
         el.classList.toggle('landing-demo--active', entry.isIntersecting)
+        setActive(entry.isIntersecting)
       },
       { root: root instanceof Element ? root : null, threshold: 0.3 },
     )
     io.observe(el)
     return () => io.disconnect()
   }, [])
+
+  useEffect(() => {
+    if (reduceMotion || !active) {
+      setRestMs(REST_DURATION_MS)
+      return
+    }
+
+    let start = performance.now()
+    let timer = 0
+    const tick = () => {
+      const elapsed = (performance.now() - start) % LOOP_MS
+      setRestMs(restMsAt(elapsed))
+      timer = window.setTimeout(tick, 250)
+    }
+    tick()
+    return () => window.clearTimeout(timer)
+  }, [active, reduceMotion])
+
+  const restDone = active && !reduceMotion && restMs <= 0
+  const restLow = active && !reduceMotion && !restDone && restMs <= 2_000
+  const restPct = restDone ? 0 : Math.min(100, (restMs / REST_DURATION_MS) * 100)
 
   return (
     <div ref={rootRef} className="landing-how" aria-hidden="true">
@@ -209,7 +312,7 @@ export default function HowItWorksDemo() {
                 </div>
 
                 <div className="landing-how-home__cta">
-                    <DayIcon dayKey="push" size={24} color="var(--on-accent)" />
+                  <DayIcon dayKey="push" size={32} color="var(--on-accent)" />
                   <span className="landing-how-home__cta-copy">
                     <span className="landing-how-home__cta-title">START PUSH DAY</span>
                     <span className="landing-how-home__cta-meta">Bench, Incline +1 more</span>
@@ -282,17 +385,41 @@ export default function HowItWorksDemo() {
                   </div>
                 </div>
 
-                <div className="landing-how-wo__rest">
+                <div
+                  className={`landing-how-wo__rest${restLow ? ' landing-how-wo__rest--low' : ''}${restDone ? ' landing-how-wo__rest--done' : ''}`}
+                >
                   <div className="landing-how-wo__rest-bar">
-                    <div className="landing-how-wo__rest-fill" />
+                    <div
+                      className="landing-how-wo__rest-fill"
+                      style={{ width: `${restPct}%` }}
+                    />
                   </div>
                   <div className="landing-how-wo__rest-row">
-                    <span className="landing-how-wo__rest-time">1:32</span>
-                    <span className="landing-how-wo__rest-label">Rest · Bench Press</span>
+                    <span className="landing-how-wo__rest-time">
+                      {restDone ? '0:00' : fmtRest(restMs)}
+                    </span>
+                    <span className="landing-how-wo__rest-label">
+                      {restDone ? 'REST DONE' : 'REST · Bench Press'}
+                    </span>
+                    {!restDone ? (
+                      <>
+                        <span className="landing-how-wo__rest-iconbtn">
+                          <PauseIcon />
+                        </span>
+                        <span className="landing-how-wo__rest-iconbtn">±</span>
+                      </>
+                    ) : null}
+                    <span className="landing-how-wo__rest-skip">{restDone ? 'OK' : 'SKIP'}</span>
                   </div>
+                  {!restDone ? (
+                    <div className="landing-how-wo__rest-chevron">
+                      <RestChevron />
+                    </div>
+                  ) : null}
                 </div>
                 <div className="landing-how-wo__finish">
                   <span>FINISH WORKOUT</span>
+                  <div className="landing-how-wo__finish-sum">3 / 3 sets</div>
                 </div>
               </div>
             </div>
@@ -321,9 +448,13 @@ export default function HowItWorksDemo() {
                       </div>
                     ))}
                   </div>
+                  <div className="landing-how-done__prs">PERSONAL RECORDS</div>
                   <div className="landing-how-done__pr">
                     <span>Bench Press</span>
-                    <span>190 lbs × 8</span>
+                    <span className="landing-how-done__pr-lift">
+                      190 lbs × 8
+                      <PrTrophy />
+                    </span>
                   </div>
                   <div className="landing-how-done__cta">BACK TO HOME</div>
                 </div>
