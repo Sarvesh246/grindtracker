@@ -13,11 +13,16 @@ import { flushQueuedOps, getQueuedOps, clearQueuedOpsForSession } from '@/lib/ut
 import { checkAndAwardBadges } from '@/lib/utils/badges'
 import { uncoveredDatesBetween, skipTodayState, type RestDayOpts } from '@/lib/utils/restDays'
 import WorkoutCalendar from '@/components/WorkoutCalendar'
+import FinishUndoBanner from '@/components/FinishUndoBanner'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { useToast } from '@/lib/contexts/ToastContext'
 import { useTour, type TourStep } from '@/components/onboarding/Tour'
 import FlameIcon from '@/components/FlameIcon'
 import { markAppDataStale } from '@/lib/cache/appDataCache'
+import {
+  FINISH_UNDO_TTL_MS,
+  writeFinishUndoToken,
+} from '@/lib/utils/finishUndo'
 
 // "This week"/"this month" start in the VIEWER's local timezone — computed here
 // (client) rather than on the server, whose clock/timezone is very often not
@@ -322,11 +327,10 @@ export default function HomeDashboard({
   }
 
   // ── Active-session controls (resume / save / discard) ──────────────────────
-  // Only surface the in-progress session when it was started on the viewer's
-  // local calendar day — the same window ActiveWorkout will actually resume into
-  // (its lookup is bounded to today's `started_at`), so tapping Resume continues
-  // this session rather than forking a fresh one. A stale prior-day session is
-  // left alone, exactly as the rest of the app already treats it.
+  // Surface ANY in-progress session — today's or a prior-day orphan left open
+  // overnight. start_or_resume_session resumes by day_type regardless of when
+  // it started, so Resume continues the same row rather than forking a fresh
+  // one. Stale sessions get slightly different chrome ("Incomplete").
   const activeIsToday = useMemo(() => {
     if (!activeSession) return false
     const started = new Date(activeSession.started_at)
@@ -336,17 +340,14 @@ export default function HomeDashboard({
     return started.getTime() === today.getTime()
   }, [activeSession])
 
-  // The "is it today?" test reads the local clock, which is UTC on the server and
-  // the viewer's zone in the browser — so it can disagree across the hydration
-  // boundary. Defer the decision to after mount: SSR and the first client render
-  // both see `mounted === false` (identical output, no mismatch), then the client
-  // resolves it. A present-but-not-today session is treated as "no active session"
-  // (a stale prior-day orphan), falling back to the normal start CTA / welcome.
+  // Defer resume chrome to after mount so local-clock "today?" labels don't
+  // disagree across the SSR/client hydration boundary.
   const [mounted, setMounted] = useState(false)
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setMounted(true) }, [])
-  const showResume = !!activeSession && mounted && activeIsToday
-  const noActiveForUi = !activeSession || (mounted && !activeIsToday)
+  const showResume = !!activeSession && mounted
+  // Hide start/welcome CTAs whenever an open session exists (even before mount).
+  const noActiveForUi = !activeSession
 
   const [savingActive, setSavingActive] = useState(false)
   const [exiting, setExiting] = useState(false)
@@ -367,30 +368,26 @@ export default function HomeDashboard({
   // Quick-save from the dashboard. This is the same authoritative finish path as
   // ActiveWorkout — `complete_session` derives XP/streak/PRs server-side — plus
   // the two best-effort follow-ups a live finish also does (advance the rotation
-  // pointer, award badges). It deliberately skips the celebratory modal and the
-  // 10-minute undo token: this is the "just bank it" path. A completed workout
-  // is still reversible from Log → past if needed.
+  // pointer, award badges). It skips the celebratory modal but still writes the
+  // 10-minute undo token so a mis-tap can be reversed via FinishUndoBanner.
   async function handleSaveActive() {
     if (!activeSession || savingActive) return
-    // Never complete an empty session — that would mint the +100 completion XP
-    // for no work. The button is disabled in this state; this is the backstop.
     if (activeSession.loggedSets === 0) return
     setSavingActive(true)
     const dayType = activeSession.day_type
+    const sessionId = activeSession.id
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
 
-      // Same as ActiveWorkout.handleFinish — flush offline set writes first so
-      // complete_session sees every checked set (avoids NO_WORKING_SETS / missing XP).
-      await flushQueuedOps(activeSession.id, supabase)
-      if (getQueuedOps(activeSession.id).length > 0) {
+      await flushQueuedOps(sessionId, supabase)
+      if (getQueuedOps(sessionId).length > 0) {
         flashToast('Still syncing sets — check your connection and try again.')
         return
       }
 
       const { data, error } = await supabase.rpc('complete_session', {
-        p_session_id: activeSession.id,
+        p_session_id: sessionId,
         p_local_date: localDateKey(new Date()),
         p_note: null,
         p_start_hour: new Date(activeSession.started_at).getHours(),
@@ -398,8 +395,7 @@ export default function HomeDashboard({
       if (error || !data) throw error ?? new Error('Save failed')
       const result = data as CompleteSessionResult
 
-      // Advance the rotation so the next suggested day moves past this one.
-      // Best-effort — a rotation hiccup must never make a saved workout look failed.
+      let prevRotationIndex = -1
       try {
         const [{ data: dayTypeRows }, { data: rotationRow }, { data: flexRows }] = await Promise.all([
           supabase.from('exercises').select('day_type'),
@@ -408,6 +404,7 @@ export default function HomeDashboard({
         ])
         const dayKeys = Array.from(new Set((dayTypeRows ?? []).map(r => r.day_type)))
         const rot = rotationRow as UserRotation | null
+        prevRotationIndex = rot?.current_index ?? -1
         const flex = new Set((flexRows ?? []).map((r: { day_key: string }) => r.day_key))
         const seq = effectiveSequence(rot, dayKeys, flex)
         const newIndex = advanceIndex(seq, rot?.current_index ?? -1, dayType)
@@ -423,11 +420,15 @@ export default function HomeDashboard({
         )
       } catch { /* non-critical */ }
 
-      // Award any badges this completion unlocked (e.g. first_workout). Best-effort.
-      // No celebration popup on this path (see the comment on handleSaveActive
-      // above — quick-save deliberately skips the celebratory modal too), but
-      // the badge itself still gets earned so it's there next time the profile
-      // is opened.
+      writeFinishUndoToken({
+        sessionId,
+        day: dayType,
+        userId: user.id,
+        xpEarned: result.xp_earned ?? 0,
+        prevRotationIndex,
+        expiresAt: Date.now() + FINISH_UNDO_TTL_MS,
+      })
+
       try {
         await checkAndAwardBadges(
           supabase,
@@ -445,7 +446,6 @@ export default function HomeDashboard({
         )
       } catch { /* non-critical */ }
 
-      flashToast(result.xp_earned ? `Workout saved · +${result.xp_earned} XP` : 'Workout saved')
       markAppDataStale('/home')
       router.refresh()
     } catch {
@@ -1011,7 +1011,7 @@ export default function HomeDashboard({
                   fontSize: '10px', fontWeight: 700, letterSpacing: '1.5px',
                   textTransform: 'uppercase', color: 'var(--on-accent)', opacity: 0.75,
                 }}>
-                  In progress
+                  {activeIsToday ? 'In progress' : 'Incomplete'}
                 </span>
               </span>
               <span style={{
@@ -1029,9 +1029,15 @@ export default function HomeDashboard({
                 opacity: 0.7,
                 lineHeight: 1.2,
               }}>
-                {activeSession.loggedSets > 0
-                  ? `${activeSession.loggedSets} set${activeSession.loggedSets === 1 ? '' : 's'} logged`
-                  : 'No sets logged yet'}
+                {activeIsToday
+                  ? (activeSession.loggedSets > 0
+                    ? `${activeSession.loggedSets} set${activeSession.loggedSets === 1 ? '' : 's'} logged`
+                    : 'No sets logged yet')
+                  : `${formatShortDate(activeSession.started_at)}${
+                      activeSession.loggedSets > 0
+                        ? ` · ${activeSession.loggedSets} set${activeSession.loggedSets === 1 ? '' : 's'}`
+                        : ' · no sets yet'
+                    }`}
               </span>
             </span>
             <span style={{ flexShrink: 0 }}><ChevronRight color="var(--on-accent)" /></span>
@@ -1553,6 +1559,8 @@ export default function HomeDashboard({
           {actionToast}
         </div>
       )}
+
+      <FinishUndoBanner />
 
     </div>
   )
