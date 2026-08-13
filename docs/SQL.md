@@ -78,7 +78,11 @@ calls `award_earned_badges()` with no args and `complete_session(..., p_start_ho
 **Rest-today skip (39):** paste and run `docs/sql/39-rest-day-skip.sql` **before**
 deploying the app that shows Rest today on Home / calls `toggle_rest_today`.
 If schema-integrity **38** was already applied on that project, still run 39
-after it (39 is numbered past 38 on purpose).
+after it (39 is numbered past 38 on purpose). The file is two transactions so
+it does not deadlock against in-flight streak RPCs (`40P01` on
+`user_rest_days` + `user_rest_dates`). If the SQL editor still wraps the paste
+as one transaction and you get a deadlock, run each `begin`/`commit` half as
+its own editor run — both halves are idempotent.
 
 ## Deploying 20
 
