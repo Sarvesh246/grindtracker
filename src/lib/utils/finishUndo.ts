@@ -4,7 +4,8 @@
  * Written by ActiveWorkout after a live finish and by HomeDashboard after a
  * quick-save. Undo reopens the session via `uncomplete_session` and restores
  * the rotation pointer — stats are re-derived server-side (never stored on
- * the token). Shape must stay in sync with ActiveWorkout's FinishUndoToken.
+ * the token). Shape must stay in sync across ActiveWorkout, HomeDashboard,
+ * and DaySelect writers.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'

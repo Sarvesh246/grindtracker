@@ -366,8 +366,8 @@ export async function buildCoachContext(
   const perfIds = activeExercises
     .slice(0, COACH_CONTEXT_EXERCISE_BESTS)
     .map(e => e.id)
-  let bestsMap = new Map<string, { max_weight: number; max_volume: number }>()
-  let lastMap = new Map<string, number>()
+  const bestsMap = new Map<string, { max_weight: number; max_volume: number }>()
+  const lastMap = new Map<string, number>()
   if (perfIds.length > 0) {
     const [{ data: bestRows }, { data: lastRows }] = await Promise.all([
       supabase.rpc('get_exercise_bests', { p_exercise_ids: perfIds }),

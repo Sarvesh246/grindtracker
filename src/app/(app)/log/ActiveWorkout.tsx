@@ -41,6 +41,10 @@ import RestTimerBar from '@/components/RestTimerBar'
 import { requestOpenCoach } from '@/lib/coach/openCoachBus'
 import PlateCalculator from '@/components/PlateCalculator'
 import CompletionModal from './CompletionModal'
+import {
+  writeFinishUndoToken,
+  performFinishUndo,
+} from '@/lib/utils/finishUndo'
 import { markAppDataStale } from '@/lib/cache/appDataCache'
 import { useFeatureTooltip } from '@/components/onboarding/useFeatureTooltip'
 import Tooltip from '@/components/onboarding/Tooltip'
@@ -82,21 +86,6 @@ interface CompletionData {
   setsCompleted: number
   currentStreak: number
   isNewBestStreak: boolean
-}
-
-export interface FinishUndoToken {
-  sessionId: string
-  day: string
-  userId: string
-  xpEarned: number
-  /**
-   * Rotation pointer to restore. Stats are NOT stored here anymore: undo calls
-   * `uncomplete_session`, which reopens the session and lets the server
-   * re-derive every stat from the logs. Storing "previous XP" client-side was
-   * how a replayed or tampered undo token could mint XP out of nothing.
-   */
-  prevRotationIndex: number
-  expiresAt: number
 }
 
 function dayLabel(day: string): string {
@@ -1785,36 +1774,13 @@ export default function ActiveWorkout({ day }: { day: string }) {
   }
 
   async function handleUndoFinish() {
-    const raw = typeof window !== 'undefined' ? localStorage.getItem('grind_finish_undo') : null
-    if (!raw) return false
-    let token: FinishUndoToken
-    try { token = JSON.parse(raw) } catch { return false }
-    if (Date.now() > token.expiresAt) { localStorage.removeItem('grind_finish_undo'); return false }
-
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user || user.id !== token.userId) return false
-
-    // Reopen the session server-side; stats are re-derived from the remaining
-    // logs rather than restored from values the client was holding. A tampered
-    // or replayed token can therefore only reopen a session you own — it can't
-    // dictate what your XP becomes.
-    const { error: undoError } = await supabase.rpc('uncomplete_session', {
-      p_session_id: token.sessionId,
-      p_local_date: localDateKey(new Date()),
-    })
-
-    if (undoError) {
+    // Shared helper: uncomplete_session + rotation restore + clear token.
+    const ok = await performFinishUndo(supabase)
+    if (!ok) {
       setResumeToast('Could not undo. Try again.')
       setTimeout(() => setResumeToast(null), 4000)
       return false
     }
-
-    await supabase
-      .from('user_rotation')
-      .update({ current_index: token.prevRotationIndex })
-      .eq('user_id', user.id)
-
-    localStorage.removeItem('grind_finish_undo')
     markAppDataStale()
     setCompletionData(null)
     return true
@@ -2027,19 +1993,16 @@ export default function ActiveWorkout({ day }: { day: string }) {
         // Rotation is a non-critical convenience; swallow and move on.
       }
 
-      // Store a 10-minute undo token so the user can resume if they finished
-      // by accident.
-      if (typeof window !== 'undefined') {
-        const token: FinishUndoToken = {
-          sessionId,
-          day,
-          userId: user.id,
-          xpEarned,
-          prevRotationIndex,
-          expiresAt: Date.now() + 10 * 60 * 1000,
-        }
-        localStorage.setItem('grind_finish_undo', JSON.stringify(token))
-      }
+      // Store a 10-minute undo token so Home's FinishUndoBanner (and this
+      // modal) can reverse an accidental finish.
+      writeFinishUndoToken({
+        sessionId,
+        day,
+        userId: user.id,
+        xpEarned,
+        prevRotationIndex,
+        expiresAt: Date.now() + 10 * 60 * 1000,
+      })
 
       // Badge awards are a bonus — never fail an already-saved finish over them.
       let newBadges: string[] = []

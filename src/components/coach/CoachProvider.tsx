@@ -263,10 +263,6 @@ export function CoachProvider({
     }
   }, [openCoach])
 
-  const openCoachRef = useRef(openCoach)
-  openCoachRef.current = openCoach
-  const sendMessageRef = useRef<(text: string) => Promise<void>>(async () => {})
-
   const closeCoach = useCallback(() => {
     // Blur the composer before unmount so iOS doesn't leave the layout
     // viewport panned after the focused field disappears (standalone PWA).
@@ -923,8 +919,6 @@ export function CoachProvider({
     },
     [streaming, router],
   )
-
-  sendMessageRef.current = sendMessage
 
   const value = useMemo<CoachContextValue>(
     () => ({
