@@ -3,6 +3,15 @@
 --
 -- Paste this whole file into the Supabase SQL editor.
 --
+-- TWO TRANSACTIONS ON PURPOSE. A single wrapping transaction takes
+-- AccessExclusiveLock on user_rest_days (ALTER / insert trigger) and then
+-- on user_rest_dates (CREATE TRIGGER). Live grind_dates_connected /
+-- grind_recompute_stats take AccessShareLock on those tables in the other
+-- order, which deadlocks (40P01) on a live project. The first COMMIT
+-- releases the rest-days lock before rest-dates triggers run.
+-- Idempotent: re-run the whole file, or each begin/commit half on its own
+-- if the editor still wraps everything and you hit 40P01 again.
+--
 -- What this does:
 --   1. Recurring rest weekdays no longer cover today/the past when newly
 --      added (closes the "toggle today in Settings, save streak, toggle off"
@@ -14,6 +23,7 @@
 --   4. Streak reminder copy: rotating motivating variants (no rest-day CTA).
 
 begin;
+set local lock_timeout = '30s';
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- 1. user_rest_days.effective_from
@@ -209,6 +219,14 @@ create trigger grind_guard_rest_day_insert
 revoke update on public.user_rest_days from authenticated, anon;
 
 grant select, insert, update, delete on public.user_rest_cancels to authenticated;
+
+commit;
+
+-- Exclusive locks on user_rest_dates only (CREATE TRIGGER). Do not merge
+-- this block back into the transaction above.
+
+begin;
+set local lock_timeout = '30s';
 
 create or replace function public.grind_guard_rest_date_budget()
 returns trigger
