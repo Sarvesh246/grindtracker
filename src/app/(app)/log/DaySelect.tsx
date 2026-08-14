@@ -171,10 +171,15 @@ export default function DaySelect() {
   // Open incomplete sessions (incl. prior-day orphans) from the catalog.
   // Local override lets Save/Discard update the banner immediately; clear it
   // once a fresh catalog arrives so we don't shadow server truth forever.
+  // Adjusted during render (React's blessed pattern for "reset derived state
+  // when a prop/value changes") rather than in an effect, so a fresh catalog
+  // can't paint through a stale override for even one frame.
   const [openSessionsOverride, setOpenSessionsOverride] = useState<OpenSession[] | null>(null)
-  useEffect(() => {
+  const [prevCatalogOpenSessions, setPrevCatalogOpenSessions] = useState(catalog?.openSessions)
+  if (catalog?.openSessions !== prevCatalogOpenSessions) {
+    setPrevCatalogOpenSessions(catalog?.openSessions)
     setOpenSessionsOverride(null)
-  }, [catalog?.openSessions])
+  }
   const openSessions = useMemo(
     () => openSessionsOverride ?? catalog?.openSessions ?? [],
     [openSessionsOverride, catalog?.openSessions],

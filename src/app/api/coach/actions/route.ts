@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/admin'
 import {
   encodeNdjson,
   executeCorrectWeights,
   executeCreateDay,
   executeStartWorkout,
+  formatCorrectWeightsMessage,
   getCoachProposal,
   isProposalExpired,
   updateCoachProposalStatus,
@@ -103,6 +105,18 @@ export async function POST(request: Request) {
     )
   }
 
+  // Every status write from here on claims a mutation really happened
+  // (executed) or really failed (failed) — the per-user client's RLS policy
+  // only allows pending -> confirmed/cancelled/failed, so these use the
+  // service role (bypasses RLS) rather than the per-user client. This is
+  // what stops a user from PATCHing their own proposal straight to
+  // status='executed' with a fabricated result, without the underlying
+  // mutation RPC ever running (see docs/sql/46). The mutation RPCs
+  // themselves (executeCorrectWeights etc.) still use the per-user
+  // `supabase` client below — they rely on auth.uid() to scope the write,
+  // which the service-role connection has no JWT to supply.
+  const serviceSupabase = createServiceClient()
+
   // Multi-session weight fixes stream progress; everything else is JSON.
   const longRunning =
     payload.kind === 'correct_weights' && payload.execute.sessions.length > 1
@@ -126,31 +140,26 @@ export async function POST(request: Request) {
             })
           }
 
+          // One session failing doesn't stop the rest from being attempted —
+          // each is an independent correction — so report every step's own
+          // outcome (done/error) as it finishes, rather than assuming
+          // whatever ran before the current step must have succeeded.
           const result = await executeCorrectWeights(
             supabase,
             payload.execute,
-            async (index, totalSteps, label) => {
+            async (index, totalSteps, label, state) => {
               emit({
                 type: 'step',
                 index,
                 total: totalSteps,
                 label,
-                state: 'active',
+                state,
               })
-              if (index > 0) {
-                emit({
-                  type: 'step',
-                  index: index - 1,
-                  total: totalSteps,
-                  label: payload.card.steps?.[index - 1] ?? `Session ${index}`,
-                  state: 'done',
-                })
-              }
             },
           )
 
           if (!result.ok) {
-            await updateCoachProposalStatus(supabase, {
+            await updateCoachProposalStatus(serviceSupabase, {
               userId: user.id,
               proposalId,
               status: 'failed',
@@ -163,22 +172,20 @@ export async function POST(request: Request) {
               status: 'failed',
             })
           } else {
-            const message = `Updated ${result.updated} session${result.updated === 1 ? '' : 's'}. XP and PRs recomputed.`
-            await updateCoachProposalStatus(supabase, {
+            // ok:true means at least one session was actually corrected —
+            // still true (and worth invalidating caches for) even if some
+            // sessions in this batch didn't match and are listed in
+            // result.failed. The message says so honestly instead of
+            // reporting a clean "Updated N sessions" that hides partial
+            // failure, or a blanket "failed" that hides the real progress.
+            const message = formatCorrectWeightsMessage(result.updated, result.failed)
+            await updateCoachProposalStatus(serviceSupabase, {
               userId: user.id,
               proposalId,
               status: 'executed',
-              result: { message, updated: result.updated },
+              result: { message, updated: result.updated, failed: result.failed },
             })
             invalidateCoachContextCache(user.id)
-            // Mark final step done
-            emit({
-              type: 'step',
-              index: total - 1,
-              total,
-              label: payload.card.steps?.[total - 1] ?? `Session ${total}`,
-              state: 'done',
-            })
             emit({
               type: 'result',
               ok: true,
@@ -188,7 +195,7 @@ export async function POST(request: Request) {
           }
         } catch (err) {
           console.error('[grind] coach action stream', err)
-          await updateCoachProposalStatus(supabase, {
+          await updateCoachProposalStatus(serviceSupabase, {
             userId: user.id,
             proposalId,
             status: 'failed',
@@ -221,7 +228,7 @@ export async function POST(request: Request) {
     if (payload.kind === 'correct_weights') {
       const result = await executeCorrectWeights(supabase, payload.execute)
       if (!result.ok) {
-        await updateCoachProposalStatus(supabase, {
+        await updateCoachProposalStatus(serviceSupabase, {
           userId: user.id,
           proposalId,
           status: 'failed',
@@ -232,15 +239,15 @@ export async function POST(request: Request) {
           { status: 500 },
         )
       }
-      message = `Updated ${result.updated} session${result.updated === 1 ? '' : 's'}. XP and PRs recomputed.`
-      details = { updated: result.updated }
+      message = formatCorrectWeightsMessage(result.updated, result.failed)
+      details = { updated: result.updated, failed: result.failed }
     } else if (payload.kind === 'start_workout') {
       const result = await executeStartWorkout(
         supabase,
         payload.execute.dayType,
       )
       if (!result.ok) {
-        await updateCoachProposalStatus(supabase, {
+        await updateCoachProposalStatus(serviceSupabase, {
           userId: user.id,
           proposalId,
           status: 'failed',
@@ -264,7 +271,7 @@ export async function POST(request: Request) {
         exercises: payload.execute.exercises,
       })
       if (!result.ok) {
-        await updateCoachProposalStatus(supabase, {
+        await updateCoachProposalStatus(serviceSupabase, {
           userId: user.id,
           proposalId,
           status: 'failed',
@@ -285,7 +292,7 @@ export async function POST(request: Request) {
       href = '/log'
     }
 
-    await updateCoachProposalStatus(supabase, {
+    await updateCoachProposalStatus(serviceSupabase, {
       userId: user.id,
       proposalId,
       status: 'executed',
@@ -302,7 +309,7 @@ export async function POST(request: Request) {
     })
   } catch (err) {
     console.error('[grind] coach action execute', err)
-    await updateCoachProposalStatus(supabase, {
+    await updateCoachProposalStatus(serviceSupabase, {
       userId: user.id,
       proposalId,
       status: 'failed',

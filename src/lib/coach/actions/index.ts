@@ -27,6 +27,10 @@ export {
 export {
   previewCorrectWeights,
   executeCorrectWeights,
+  formatCorrectWeightsMessage,
+  type CorrectWeightsFailedSession,
+  type CorrectWeightsResult,
+  type CorrectWeightsStepState,
 } from './correctWeights'
 
 export {

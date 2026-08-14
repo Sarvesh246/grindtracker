@@ -236,7 +236,7 @@ export default function HowItWorksDemo() {
       return
     }
 
-    let start = performance.now()
+    const start = performance.now()
     let raf = 0
     let lastShown = -1
     const tick = (now: number) => {

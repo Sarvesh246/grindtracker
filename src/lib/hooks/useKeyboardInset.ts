@@ -90,6 +90,11 @@ export function useKeyboardMetrics(): KeyboardMetrics {
   useEffect(() => {
     const vv = typeof window !== 'undefined' ? window.visualViewport : null
     if (!vv) {
+      // Synchronizing with an external system (the browser's visualViewport
+      // API) on mount when it's unsupported — the same "no VV, use a static
+      // fallback" case handled below for the supported branch, not a
+      // derived-from-props reset.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setMetrics({
         inset: 0,
         occluded: 0,

@@ -57,12 +57,17 @@ export default function RestTimerBar({
   const lowTime = !paused && !done && remainingMs <= 10_000
 
   // Collapse expanders while flashing REST DONE so a new start() doesn't
-  // remount with presets still open.
-  useEffect(() => {
-    if (!done) return
-    setOpen(false)
-    setAddOpen(false)
-  }, [done])
+  // remount with presets still open. Adjusted during render (on the flip to
+  // done) rather than in an effect, so there's no frame where REST DONE
+  // shows with presets still open.
+  const [wasDone, setWasDone] = useState(done)
+  if (done !== wasDone) {
+    setWasDone(done)
+    if (done) {
+      setOpen(false)
+      setAddOpen(false)
+    }
+  }
 
   return (
     <div

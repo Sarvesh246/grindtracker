@@ -1,5 +1,5 @@
 'use client'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useDemoMode } from '@/lib/contexts/DemoModeContext'
@@ -160,8 +160,13 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const [baselineBestVolumes, setBaselineBestVolumes] = useState<PreviousBest>({})
   // handleCheck/saveEdit read this so a stale render can't treat a missing
   // prior as "not a PR" (undefined fails `=== null` and `n > undefined`).
+  // Synced in a layout effect (not during render) so the ref write can't be
+  // read as a render-time side effect, while still landing before any event
+  // handler could plausibly fire against a stale value.
   const baselineBestVolumesRef = useRef(baselineBestVolumes)
-  baselineBestVolumesRef.current = baselineBestVolumes
+  useLayoutEffect(() => {
+    baselineBestVolumesRef.current = baselineBestVolumes
+  }, [baselineBestVolumes])
   const [startedAt, setStartedAt] = useState<Date>(new Date())
   const [elapsed, setElapsed] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -1337,6 +1342,11 @@ export default function ActiveWorkout({ day }: { day: string }) {
             note: entry.note || null,
             isSkipped: entry.skipped,
             rpe: parseRpe(entry.rpe),
+            // Timestamping a queued retry inside a click-triggered async
+            // handler, never during render — eslint's purity check can't
+            // see that this function is only ever invoked from an event
+            // handler.
+            // eslint-disable-next-line react-hooks/purity
             queuedAt: Date.now(),
           })
           next[`${exerciseId}-${s}`] = { ...entry, pendingSync: true }
@@ -1352,6 +1362,8 @@ export default function ActiveWorkout({ day }: { day: string }) {
       )
       if (deleteError) {
         anyFailed = true
+        // Same click-triggered async handler as above, not render.
+        // eslint-disable-next-line react-hooks/purity
         queueOp({ kind: 'delete', sessionId, exerciseId, setNumber: total, queuedAt: Date.now() })
       }
       if (anyFailed) showQueuedSyncToast()

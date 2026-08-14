@@ -228,25 +228,50 @@ export async function previewCorrectWeights(
   return { ok: true, proposal, matchedSets }
 }
 
+export type CorrectWeightsFailedSession = {
+  localDate: string
+  dayType: string
+  message: string
+}
+
+export type CorrectWeightsResult =
+  | { ok: true; updated: number; failed: CorrectWeightsFailedSession[] }
+  | { ok: false; message: string; failed: CorrectWeightsFailedSession[] }
+
+/**
+ * Each session's correction is independent (its own RPC call, scoped to that
+ * session_id). One session failing (a transient error, or its matching sets
+ * having already changed) has no bearing on whether the others can still
+ * succeed, so every session is attempted rather than stopping at the first
+ * failure — a single bad session shouldn't block correcting the rest in the
+ * same request. `ok` reflects whether ANY session was actually corrected;
+ * the caller uses `failed` to report which ones weren't, instead of
+ * collapsing a partial success into a blanket "failed".
+ */
+export type CorrectWeightsStepState = 'active' | 'done' | 'error'
+
 export async function executeCorrectWeights(
   supabase: SupabaseClient,
   execute: CorrectWeightsExecutePayload,
-  onStep?: (index: number, total: number, label: string) => void | Promise<void>,
-): Promise<{ ok: true; updated: number } | { ok: false; message: string }> {
+  onStep?: (
+    index: number,
+    total: number,
+    label: string,
+    state: CorrectWeightsStepState,
+  ) => void | Promise<void>,
+): Promise<CorrectWeightsResult> {
   if (!execute.exerciseId) {
-    return { ok: false, message: 'Missing exercise id for weight correction.' }
+    return { ok: false, message: 'Missing exercise id for weight correction.', failed: [] }
   }
 
   const total = execute.sessions.length
   let updated = 0
+  const failed: CorrectWeightsFailedSession[] = []
 
   for (let i = 0; i < execute.sessions.length; i++) {
     const session = execute.sessions[i]!
-    await onStep?.(
-      i,
-      total,
-      `Updating ${session.localDate} (${session.dayType})…`,
-    )
+    const label = `Updating ${session.localDate} (${session.dayType})…`
+    await onStep?.(i, total, label, 'active')
 
     // In-place weight update (migration 37) — preserves is_skipped markers and RPE.
     // Prefer this over upsert_past_session for Coach corrections (full replace).
@@ -259,17 +284,37 @@ export async function executeCorrectWeights(
     })
 
     if (error) {
-      const partial =
-        updated > 0
-          ? ` Updated ${updated} session${updated === 1 ? '' : 's'} before failing.`
-          : ''
-      return {
-        ok: false,
-        message: `Failed on ${session.localDate}: ${error.message}.${partial} Apply docs/sql/37-coach-correct-weights.sql if this RPC is missing.`,
-      }
+      failed.push({
+        localDate: session.localDate,
+        dayType: session.dayType,
+        message: error.message,
+      })
+      await onStep?.(i, total, label, 'error')
+      continue
     }
     updated += 1
+    await onStep?.(i, total, label, 'done')
   }
 
-  return { ok: true, updated }
+  if (updated === 0) {
+    const first = failed[0]
+    return {
+      ok: false,
+      message: first
+        ? `Failed on ${first.localDate}: ${first.message}. Apply docs/sql/37-coach-correct-weights.sql if this RPC is missing.`
+        : 'No sessions were updated.',
+      failed,
+    }
+  }
+
+  return { ok: true, updated, failed }
+}
+
+/** Honest summary for a batch that may have partially failed. */
+export function formatCorrectWeightsMessage(updated: number, failed: CorrectWeightsFailedSession[]): string {
+  const updatedPart = `Updated ${updated} session${updated === 1 ? '' : 's'}. XP and PRs recomputed.`
+  if (failed.length === 0) return updatedPart
+  return `${updatedPart} ${failed.length} session${failed.length === 1 ? '' : 's'} didn't apply (${failed
+    .map(f => f.localDate)
+    .join(', ')}) — ask again to retry ${failed.length === 1 ? 'it' : 'the rest'}.`
 }

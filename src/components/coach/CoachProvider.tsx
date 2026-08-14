@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -707,7 +708,13 @@ export function CoachProvider({
       activeConversationId,
     ],
   )
-  sendMessageRef.current = sendMessage
+  // Latest-ref pattern: openCoach() reads sendMessageRef.current from an
+  // async callback (line ~247), never during another render, so this only
+  // needs to land before that later read — a layout effect keeps the write
+  // out of the render body itself.
+  useLayoutEffect(() => {
+    sendMessageRef.current = sendMessage
+  }, [sendMessage])
 
   const decideProposal = useCallback(
     async (proposalId: string, decision: 'confirm' | 'cancel') => {
