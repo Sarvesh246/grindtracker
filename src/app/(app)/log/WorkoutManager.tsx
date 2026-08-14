@@ -724,11 +724,8 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
                               <span
                                 aria-hidden
-                                style={{
-                                  width: '10px', height: '10px', borderRadius: '50%',
-                                  backgroundColor: dayFill(key), flexShrink: 0,
-                                  boxShadow: isLight ? 'none' : `0 0 6px ${dayFill(key)}80`,
-                                }}
+                                className="day-color-dot"
+                                style={{ backgroundColor: dayFill(key) }}
                               />
                               <span style={{
                                 fontFamily: "'Bebas Neue', sans-serif", fontSize: '20px',
@@ -1172,11 +1169,8 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
                       </div>
                       <span
                         aria-hidden
-                        style={{
-                          width: '22px', height: '22px', borderRadius: '50%',
-                          backgroundColor: swatch, flexShrink: 0,
-                          boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.18)',
-                        }}
+                        className="day-color-dot day-color-dot--lg"
+                        style={{ backgroundColor: swatch }}
                       />
                     </button>
                   )
@@ -1265,6 +1259,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
                   description={description}
                   extraTypes={extraColorTypes}
                   overrideHex={dayColors[dayKey] ?? null}
+                  exerciseCount={activeExs.length}
                   onCommit={hex => { void saveDayColor(dayKey, hex) }}
                   saving={savingColor}
                   error={colorError}
@@ -1485,11 +1480,8 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
                     </div>
                     <span
                       aria-hidden
-                      style={{
-                        width: '22px', height: '22px', borderRadius: '50%',
-                        backgroundColor: dayFill(dayKey), flexShrink: 0,
-                        boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.18)',
-                      }}
+                      className="day-color-dot day-color-dot--lg"
+                      style={{ backgroundColor: dayFill(dayKey) }}
                     />
                   </button>
 
