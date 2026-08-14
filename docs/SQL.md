@@ -61,6 +61,7 @@ is fully linked to migration history.
 | [46-coach-proposal-execution-integrity.sql](sql/46-coach-proposal-execution-integrity.sql) | 46 | **Paste this in Supabase, deploy with the matching app change.** Tightens `coach_action_proposals` UPDATE RLS so only the service role can write `status='executed'`/`'failed'` — closes a self-forgery path where a user could PATCH their own proposal to "executed" with a fake result without the mutation ever running |
 | [47-coach-action-kinds.sql](sql/47-coach-action-kinds.sql) | 47 | **Paste this in Supabase, deploy with the matching app change.** Widens `coach_action_proposals.kind` for 11 more confirm-before-apply Coach tools (body weight, finish/undo, skip, rest, exercise edit, rotation, session-log edit, notification prefs). No new RPCs. |
 | [48-week-start-sunday.sql](sql/48-week-start-sunday.sql) | 48 | **Paste this in Supabase, deploy with the matching app change.** `grind_week_start` is Sunday (not Monday) so rest budget and Home “this week” share a Sun–Sat week |
+| [49-user-day-colors.sql](sql/49-user-day-colors.sql) | 49 | **Paste this in Supabase, deploy with the matching app change.** Per-day color overrides (`user_day_colors`) for Log cards, calendar, and past-log pills |
 
 See also [PUSH.md](PUSH.md) for VAPID keys, Vercel env, and cron setup.
 See [COACH.md](COACH.md) for Gemini env, rate limits, `/api/coach/chat`, and

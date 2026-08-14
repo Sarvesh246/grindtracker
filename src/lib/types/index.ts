@@ -122,6 +122,14 @@ export interface UserDayCategory {
   created_at: string
 }
 
+/** Optional per-day color override (`user_day_colors`, migration 49). */
+export interface UserDayColor {
+  user_id: string
+  day_key: string
+  /** Canonical `#rrggbb`. */
+  color: string
+}
+
 export type FeedbackCategory = 'bug' | 'feature' | 'improvement' | 'other'
 
 export interface Feedback {

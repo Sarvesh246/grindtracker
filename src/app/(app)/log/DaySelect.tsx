@@ -6,6 +6,9 @@ import { useTheme } from '@/lib/contexts/ThemeContext'
 import { Exercise, type DayCategory, UserRotation, CompleteSessionResult, UserStats } from '@/lib/types'
 import {
   NAMED_DAY_COLORS,
+  categoryColorKey,
+  mapDayColorRows,
+  onDayFill,
   resolveDayColor,
   resolveDayTextColor,
 } from '@/lib/utils/dayColors'
@@ -48,9 +51,7 @@ function isStartedToday(startedAt: string): boolean {
 
 /** Resolve leaderboard category for a day key (custom days via user_day_categories). */
 function categoryForDay(dayKey: string, categories: Record<string, DayCategory>): string {
-  if (categories[dayKey]) return categories[dayKey]
-  if (dayKey in NAMED_DAY_COLORS) return dayKey
-  return 'other'
+  return categoryColorKey(dayKey, categories)
 }
 
 type LogCatalog = {
@@ -58,6 +59,7 @@ type LogCatalog = {
   rotation: UserRotation | null
   flexDays: string[]
   dayCategories: Record<string, DayCategory>
+  dayColors: Record<string, string>
   openSessions: OpenSession[]
 }
 
@@ -102,7 +104,7 @@ export default function DaySelect() {
     CACHE_KEYS.logCatalog,
     async () => {
       const { data: { user } } = await supabase.auth.getUser()
-      const [exRes, rotRes, flexRes, catRes, openRes] = await Promise.all([
+      const [exRes, rotRes, flexRes, catRes, colorRes, openRes] = await Promise.all([
         supabase.from('exercises').select('*')
           .order('day_type', { ascending: true })
           .order('sort_order', { ascending: true }),
@@ -115,6 +117,9 @@ export default function DaySelect() {
         user
           ? supabase.from('user_day_categories').select('day_key, category').eq('user_id', user.id)
           : Promise.resolve({ data: [] as { day_key: string; category: DayCategory }[] }),
+        user
+          ? supabase.from('user_day_colors').select('day_key, color').eq('user_id', user.id)
+          : Promise.resolve({ data: [] as { day_key: string; color: string }[], error: null }),
         user
           ? supabase
               .from('sessions')
@@ -153,6 +158,7 @@ export default function DaySelect() {
         rotation: (rotRes.data as UserRotation | null) ?? null,
         flexDays: (flexRes.data ?? []).map(r => r.day_key),
         dayCategories: catMap,
+        dayColors: colorRes.error ? {} : mapDayColorRows(colorRes.data),
         openSessions,
       }
     },
@@ -161,6 +167,7 @@ export default function DaySelect() {
   const rotation = catalog?.rotation ?? null
   const flexDays = useMemo(() => new Set(catalog?.flexDays ?? []), [catalog])
   const dayCategories = catalog?.dayCategories ?? {}
+  const dayColors = catalog?.dayColors ?? {}
   // Set only when the exercises fetch itself fails — an existing user must
   // never see the blank-slate "SET UP YOUR FIRST DAY" hero over a transient
   // network/RLS blip; that reads as their days having vanished.
@@ -626,8 +633,8 @@ export default function DaySelect() {
               const isUpNext = key === upNext
               const openSession = openByDay[key]
               const colorKey = categoryForDay(key, dayCategories)
-              const fillColor = resolveDayColor(colorKey, extraTypes, isLight)
-              const labelColor = resolveDayTextColor(colorKey, extraTypes, isLight)
+              const fillColor = resolveDayColor(colorKey, extraTypes, isLight, dayColors[key])
+              const labelColor = resolveDayTextColor(colorKey, extraTypes, isLight, dayColors[key])
               const dayCategory = dayCategories[key] ?? null
               // Category color accents the title/icon + UP NEXT chrome only —
               // cards stay on the normal surface so the grid isn't a rainbow.
@@ -706,7 +713,7 @@ export default function DaySelect() {
                       ) : isUpNext ? (
                         <span style={{
                           fontSize: '10px', fontWeight: 700, letterSpacing: '0.5px',
-                          color: 'var(--on-accent)', backgroundColor: fillColor,
+                          color: onDayFill(fillColor), backgroundColor: fillColor,
                           padding: '3px 8px', borderRadius: '9999px',
                           fontFamily: "'DM Sans', sans-serif",
                         }}>

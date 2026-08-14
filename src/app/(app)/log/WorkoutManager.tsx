@@ -1,5 +1,5 @@
 'use client'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useDemoMode } from '@/lib/contexts/DemoModeContext'
 import { demoSafeClient } from '@/lib/demoMode/demoSafeSupabase'
@@ -12,6 +12,14 @@ import { useFeatureTooltip } from '@/components/onboarding/useFeatureTooltip'
 import { onboardTarget } from '@/components/onboarding/anchor'
 import { WORKOUT_TEMPLATES } from '@/lib/utils/workoutTemplates'
 import { applyWorkoutTemplate } from '@/lib/utils/applyWorkoutTemplate'
+import DayColorPicker from '@/components/DayColorPicker'
+import { useTheme } from '@/lib/contexts/ThemeContext'
+import {
+  NAMED_DAY_COLORS,
+  categoryColorKey,
+  mapDayColorRows,
+  resolveDayColor,
+} from '@/lib/utils/dayColors'
 
 interface WorkoutManagerProps {
   onClose: () => void
@@ -27,6 +35,7 @@ type Screen =
   | { id: 'setup-choice' }
   | { id: 'new-day' }
   | { id: 'category-picker'; dayKey: string }
+  | { id: 'color-picker'; dayKey: string; from: 'day' | 'new-day' }
   | { id: 'rotation' }
 
 type DeleteTarget =
@@ -40,6 +49,8 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
     [demoMode],
   )
   const toast = useToast()
+  const { theme } = useTheme()
+  const isLight = theme === 'light'
   // Height hidden behind the iOS keyboard, so the bottom-sheet can ride above it
   // instead of leaving the day-name / exercise-form inputs pinned underneath.
   const keyboardInset = useKeyboardInset()
@@ -47,6 +58,10 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
   const [exercises, setExercises] = useState<Exercise[]>([])
   const [dayCategories, setDayCategories] = useState<Record<string, DayCategory>>({})
   const [flexDays, setFlexDays] = useState<Set<string>>(new Set())
+  const [dayColors, setDayColors] = useState<Record<string, string>>({})
+  const [savingColor, setSavingColor] = useState(false)
+  const [colorError, setColorError] = useState('')
+  const colorSaveSeq = useRef(0)
   const [rotation, setRotation] = useState<UserRotation | null>(null)
   const [rotationError, setRotationError] = useState('')
   const [savingRotation, setSavingRotation] = useState(false)
@@ -79,7 +94,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
     try {
       const { data: { user } } = await supabase.auth.getUser()
       setUserId(user?.id ?? null)
-      const [exRes, catRes, flexRes, rotRes] = await Promise.all([
+      const [exRes, catRes, flexRes, rotRes, colorRes] = await Promise.all([
         supabase.from('exercises').select('*')
           .order('day_type', { ascending: true })
           .order('sort_order', { ascending: true }),
@@ -92,6 +107,9 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
         user
           ? supabase.from('user_rotation').select('*').eq('user_id', user.id).maybeSingle()
           : Promise.resolve({ data: null }),
+        user
+          ? supabase.from('user_day_colors').select('day_key, color').eq('user_id', user.id)
+          : Promise.resolve({ data: [] as { day_key: string; color: string }[], error: null }),
       ])
       if (exRes.error) {
         // A failed fetch must never look like "you have no exercises" — that's
@@ -108,6 +126,9 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
       setDayCategories(map)
       setFlexDays(new Set((flexRes.data ?? []).map(r => r.day_key)))
       setRotation((rotRes.data as UserRotation | null) ?? null)
+      // Missing table (SQL 49 not applied yet) must not blank the manager —
+      // treat as "no overrides" the same as a fresh user.
+      setDayColors(colorRes.error ? {} : mapDayColorRows(colorRes.data))
     } catch {
       // Network/auth failure — keep whatever we have rather than wedging the UI.
       // The spinner is cleared in finally so the modal stays usable.
@@ -141,6 +162,18 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
   // the rotation editor itself, including here and on the log day-select grid.
   const effectiveSeq = effectiveSequence(rotation, Object.keys(grouped), flexDays)
   const dayKeys = orderedDayKeys(Object.keys(grouped), effectiveSeq)
+  const extraColorTypes = [...new Set(
+    dayKeys.map(k => categoryColorKey(k, dayCategories)).filter(t => !NAMED_DAY_COLORS[t]),
+  )]
+
+  function dayFill(key: string) {
+    return resolveDayColor(
+      categoryColorKey(key, dayCategories),
+      extraColorTypes,
+      isLight,
+      dayColors[key],
+    )
+  }
 
   function openExerciseForm(dayKey: string, exercise?: Exercise) {
     setFormName(exercise?.name ?? '')
@@ -244,6 +277,11 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
         return
       }
 
+      if (deleteTarget.type === 'day') {
+        await supabase.from('user_day_colors').delete()
+          .eq('user_id', user.id).eq('day_key', deleteTarget.key)
+      }
+
       await load()
       onChanged()
       if (deleteTarget.type === 'day') setScreen({ id: 'days' })
@@ -256,7 +294,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
   }
 
   function submitNewDay() {
-    const key = newDayInput.trim().toLowerCase().replace(/\s+/g, '-')
+    const key = slugDayKey(newDayInput)
     if (!key) return
     if (grouped[key]) {
       setNewDayInput('')
@@ -345,6 +383,72 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
       setFlexDays(prev => new Set([...prev, dayKey]))
     }
     onChanged()
+  }
+
+  async function saveDayColor(dayKey: string, color: string | null) {
+    const seq = ++colorSaveSeq.current
+    setSavingColor(true)
+    setColorError('')
+    const previous = dayColors[dayKey] ?? null
+    setDayColors(prev => {
+      const next = { ...prev }
+      if (color) next[dayKey] = color
+      else delete next[dayKey]
+      return next
+    })
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        if (seq !== colorSaveSeq.current) return
+        setColorError('You must be signed in to save a color.')
+        setDayColors(prev => {
+          const next = { ...prev }
+          if (previous) next[dayKey] = previous
+          else delete next[dayKey]
+          return next
+        })
+        return
+      }
+      const { error } = color
+        ? await supabase.from('user_day_colors').upsert(
+            { user_id: user.id, day_key: dayKey, color },
+            { onConflict: 'user_id,day_key' },
+          )
+        : await supabase.from('user_day_colors').delete()
+            .eq('user_id', user.id).eq('day_key', dayKey)
+      if (seq !== colorSaveSeq.current) return
+      if (error) {
+        setDayColors(prev => {
+          const next = { ...prev }
+          if (previous) next[dayKey] = previous
+          else delete next[dayKey]
+          return next
+        })
+        setColorError('Could not save color. Check your connection and try again.')
+        return
+      }
+      onChanged()
+    } catch {
+      if (seq !== colorSaveSeq.current) return
+      setDayColors(prev => {
+        const next = { ...prev }
+        if (previous) next[dayKey] = previous
+        else delete next[dayKey]
+        return next
+      })
+      setColorError('Could not save color. Check your connection and try again.')
+    } finally {
+      if (seq === colorSaveSeq.current) setSavingColor(false)
+    }
+  }
+
+  function slugDayKey(raw: string): string {
+    return raw.trim().toLowerCase().replace(/\s+/g, '-')
+  }
+
+  function openColorPicker(dayKey: string, from: 'day' | 'new-day') {
+    setColorError('')
+    setScreen({ id: 'color-picker', dayKey, from })
   }
 
   const [togglingExerciseId, setTogglingExerciseId] = useState<string | null>(null)
@@ -491,6 +595,9 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
       // never as a forced step before the first exercise — so return to the day
       // when it exists, falling back to the list otherwise.
       setScreen(grouped[screen.dayKey] ? { id: 'day', dayKey: screen.dayKey } : { id: 'days' })
+    } else if (screen.id === 'color-picker') {
+      if (screen.from === 'new-day') setScreen({ id: 'new-day' })
+      else setScreen(grouped[screen.dayKey] ? { id: 'day', dayKey: screen.dayKey } : { id: 'days' })
     } else if (screen.id === 'day') {
       setScreen({ id: 'days' })
     } else if (screen.id === 'exercise-form') {
@@ -517,6 +624,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
     screen.id === 'setup-choice' ? 'GET STARTED' :
     screen.id === 'new-day' ? 'NEW DAY' :
     screen.id === 'category-picker' ? 'SELECT CATEGORY' :
+    screen.id === 'color-picker' ? 'DAY COLOR' :
     screen.id === 'rotation' ? 'WORKOUT ORDER' :
     screen.id === 'day' ? screen.dayKey.replace(/-/g, ' ').toUpperCase() :
     screen.exercise ? 'EDIT EXERCISE' : 'ADD EXERCISE'
@@ -614,6 +722,14 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
                             }}
                           >
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
+                              <span
+                                aria-hidden
+                                style={{
+                                  width: '10px', height: '10px', borderRadius: '50%',
+                                  backgroundColor: dayFill(key), flexShrink: 0,
+                                  boxShadow: isLight ? 'none' : `0 0 6px ${dayFill(key)}80`,
+                                }}
+                              />
                               <span style={{
                                 fontFamily: "'Bebas Neue', sans-serif", fontSize: '20px',
                                 color: 'var(--text-primary)', letterSpacing: '1px',
@@ -1017,6 +1133,54 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
                     outline: 'none', boxSizing: 'border-box',
                   }}
                 />
+                {(() => {
+                  const pendingKey = slugDayKey(newDayInput)
+                  const swatch = pendingKey
+                    ? resolveDayColor(
+                        categoryColorKey(pendingKey, dayCategories),
+                        extraColorTypes,
+                        isLight,
+                        dayColors[pendingKey],
+                      )
+                    : 'var(--border)'
+                  return (
+                    <button
+                      type="button"
+                      data-haptic="light"
+                      className="press"
+                      disabled={!pendingKey}
+                      onClick={() => pendingKey && openColorPicker(pendingKey, 'new-day')}
+                      style={{
+                        marginTop: '12px', width: '100%',
+                        textAlign: 'left',
+                        backgroundColor: 'var(--surface-elevated)',
+                        border: '1px solid var(--border)',
+                        borderRadius: '12px',
+                        padding: '14px 16px',
+                        cursor: pendingKey ? 'pointer' : 'default',
+                        opacity: pendingKey ? 1 : 0.5,
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px',
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '2px' }}>
+                          Color
+                        </div>
+                        <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '12px', color: 'var(--text-muted)' }}>
+                          {pendingKey ? (dayColors[pendingKey] ? 'Custom' : 'Default — tap to change') : 'Name the day first'}
+                        </div>
+                      </div>
+                      <span
+                        aria-hidden
+                        style={{
+                          width: '22px', height: '22px', borderRadius: '50%',
+                          backgroundColor: swatch, flexShrink: 0,
+                          boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.18)',
+                        }}
+                      />
+                    </button>
+                  )
+                })()}
                 <button
                   onClick={submitNewDay}
                   disabled={!newDayInput.trim()}
@@ -1084,6 +1248,29 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
                 )}
               </div>
             )}
+
+            {/* ── Day color picker ── */}
+            {screen.id === 'color-picker' && (() => {
+              const dayKey = screen.dayKey
+              const exs = grouped[dayKey] ?? []
+              const activeExs = exs.filter(e => e.active)
+              const description = activeExs.length
+                ? activeExs.slice(0, 3).map(e => e.name).join(', ') + (activeExs.length > 3 ? '…' : '')
+                : undefined
+              return (
+                <DayColorPicker
+                  dayKey={dayKey}
+                  category={dayCategories[dayKey] ?? null}
+                  isFlex={flexDays.has(dayKey)}
+                  description={description}
+                  extraTypes={extraColorTypes}
+                  overrideHex={dayColors[dayKey] ?? null}
+                  onCommit={hex => { void saveDayColor(dayKey, hex) }}
+                  saving={savingColor}
+                  error={colorError}
+                />
+              )
+            })()}
 
             {/* ── Day Exercises ── */}
             {screen.id === 'day' && (() => {
@@ -1272,6 +1459,38 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-muted)', flexShrink: 0 }}>
                       <polyline points="9 18 15 12 9 6" />
                     </svg>
+                  </button>
+
+                  <button
+                    type="button"
+                    data-haptic="light"
+                    className="press"
+                    onClick={() => openColorPicker(dayKey, 'day')}
+                    style={{
+                      width: '100%', textAlign: 'left',
+                      background: 'none', border: 'none',
+                      padding: '16px',
+                      borderBottom: '1px solid var(--border)',
+                      cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px',
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '2px' }}>
+                        Color
+                      </div>
+                      <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '12px', color: 'var(--text-muted)' }}>
+                        {dayColors[dayKey] ? 'Custom — tap to change' : 'Default — tap to pick'}
+                      </div>
+                    </div>
+                    <span
+                      aria-hidden
+                      style={{
+                        width: '22px', height: '22px', borderRadius: '50%',
+                        backgroundColor: dayFill(dayKey), flexShrink: 0,
+                        boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.18)',
+                      }}
+                    />
                   </button>
 
                   {/* Flex day toggle */}

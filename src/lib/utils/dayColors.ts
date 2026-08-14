@@ -4,6 +4,9 @@
  * Named push/pull/legs stay fixed; anything else (custom day keys on the
  * calendar, or category `other` on DaySelect) draws from EXTRA_COLORS by
  * stable index among the unknown set passed by the caller.
+ *
+ * Optional per-day overrides (`user_day_colors`) win when a valid `#rrggbb`
+ * is passed as `customHex`. Missing / invalid = derived palette.
  */
 
 /** Fill colors — backgrounds, borders, dots (dark / neon on OLED). */
@@ -60,12 +63,112 @@ export const EXTRA_DAY_TEXT_COLORS_LIGHT = [
   '#86198f',
 ]
 
+/**
+ * Preset palette for the day-color picker — named days, rotating extras,
+ * then a few more distinct hues. Stored/compared as lowercase `#rrggbb`.
+ */
+export const DAY_COLOR_PRESETS: readonly string[] = [
+  '#c8f135',
+  '#38bdf8',
+  '#fb923c',
+  '#a78bfa',
+  '#f472b6',
+  '#34d399',
+  '#fbbf24',
+  '#f87171',
+  '#e879f9',
+  '#22d3ee',
+  '#818cf8',
+  '#4ade80',
+]
+
+/** Normalize a stored/custom hex to lowercase `#rrggbb`, or null if invalid. */
+export function normalizeDayColor(hex: string | null | undefined): string | null {
+  if (!hex) return null
+  const t = hex.trim().toLowerCase()
+  if (/^#[0-9a-f]{6}$/.test(t)) return t
+  if (/^#[0-9a-f]{3}$/.test(t)) {
+    return `#${t[1]}${t[1]}${t[2]}${t[2]}${t[3]}${t[3]}`
+  }
+  return null
+}
+
+export function isDayColorPreset(hex: string | null | undefined): boolean {
+  const n = normalizeDayColor(hex)
+  return n != null && (DAY_COLOR_PRESETS as readonly string[]).includes(n)
+}
+
+export function mapDayColorRows(
+  rows: { day_key: string; color: string }[] | null | undefined,
+): Record<string, string> {
+  const map: Record<string, string> = {}
+  for (const r of rows ?? []) {
+    const hex = normalizeDayColor(r.color)
+    if (hex) map[r.day_key] = hex
+  }
+  return map
+}
+
+/**
+ * Leaderboard category used as the *default* color key for a day (DaySelect).
+ * Custom days mapped to push get lime until the user picks an override.
+ */
+export function categoryColorKey(
+  dayKey: string,
+  categories: Record<string, string>,
+): string {
+  if (categories[dayKey]) return categories[dayKey]
+  if (dayKey in NAMED_DAY_COLORS) return dayKey
+  return 'other'
+}
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  const n = normalizeDayColor(hex) ?? '#888888'
+  return {
+    r: parseInt(n.slice(1, 3), 16),
+    g: parseInt(n.slice(3, 5), 16),
+    b: parseInt(n.slice(5, 7), 16),
+  }
+}
+
+function rgbToHex(r: number, g: number, b: number): string {
+  const c = (n: number) => Math.round(Math.max(0, Math.min(255, n))).toString(16).padStart(2, '0')
+  return `#${c(r)}${c(g)}${c(b)}`
+}
+
+/** Darken a hex toward black — custom colors stay readable as light-mode text. */
+export function darkenHex(hex: string, amount = 0.32): string {
+  const { r, g, b } = hexToRgb(hex)
+  const t = 1 - amount
+  return rgbToHex(r * t, g * t, b * t)
+}
+
+function relativeLuminance(hex: string): number {
+  const { r, g, b } = hexToRgb(hex)
+  const lin = (c: number) => {
+    const s = c / 255
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
+  }
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+}
+
+/**
+ * Text/icon color that contrasts against a filled day color (UP NEXT pill).
+ * Light fills get dark text; dark fills get white.
+ */
+export function onDayFill(hex: string): string {
+  return relativeLuminance(hex) > 0.45 ? '#0f0f0f' : '#f0f0f0'
+}
+
 /** Vibrant fill color used for backgrounds, borders, and dots. */
 export function resolveDayColor(
   type: string,
   extraTypes: string[],
   isLight = false,
+  customHex?: string | null,
 ): string {
+  const custom = normalizeDayColor(customHex)
+  if (custom) return isLight ? darkenHex(custom, 0.32) : custom
   if (isLight) {
     if (NAMED_DAY_COLORS_LIGHT[type]) return NAMED_DAY_COLORS_LIGHT[type]!
     const idx = extraTypes.indexOf(type)
@@ -86,7 +189,13 @@ export function resolveDayTextColor(
   type: string,
   extraTypes: string[],
   isLight: boolean,
+  customHex?: string | null,
 ): string {
+  const custom = normalizeDayColor(customHex)
+  if (custom) {
+    if (!isLight) return custom
+    return darkenHex(custom, 0.52)
+  }
   if (!isLight) return resolveDayColor(type, extraTypes, false)
   if (NAMED_DAY_TEXT_COLORS_LIGHT[type]) return NAMED_DAY_TEXT_COLORS_LIGHT[type]!
   const idx = extraTypes.indexOf(type)

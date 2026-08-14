@@ -7,7 +7,7 @@ import { demoSafeClient } from '@/lib/demoMode/demoSafeSupabase'
 import { Exercise, UserStats } from '@/lib/types'
 import { checkAndAwardBadges } from '@/lib/utils/badges'
 import { localDateKey } from '@/lib/utils/formatting'
-import { joinDayTypes, NAMED_DAY_COLORS, resolveDayColor } from '@/lib/utils/dayColors'
+import { joinDayTypes, NAMED_DAY_COLORS, mapDayColorRows, resolveDayColor } from '@/lib/utils/dayColors'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { useTheme } from '@/lib/contexts/ThemeContext'
 import { markAppDataStale } from '@/lib/cache/appDataCache'
@@ -56,6 +56,7 @@ function LogPastContent() {
 
   const [selectedDate, setSelectedDate] = useState(initialDate)
   const [dayTypes, setDayTypes] = useState<string[]>([])
+  const [dayColors, setDayColors] = useState<Record<string, string>>({})
   const [selectedDayType, setSelectedDayType] = useState<string | null>(null)
   const [existingSession, setExistingSession] = useState<ExistingSession | null>(null)
   const existingSessionRef = useRef<ExistingSession | null>(null)
@@ -89,6 +90,13 @@ function LogPastContent() {
       .then(({ data }) => {
         if (cancelled) return
         setDayTypes(Array.from(new Set((data ?? []).map(r => r.day_type))).sort())
+      })
+    supabase
+      .from('user_day_colors')
+      .select('day_key, color')
+      .then(({ data, error }) => {
+        if (cancelled) return
+        setDayColors(error ? {} : mapDayColorRows(data))
       })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -690,7 +698,7 @@ function LogPastContent() {
                 {dayTypes.map(type => {
                   const active = selectedDayType === type
                   const logged = sessionsOnDate.some(s => s.day_type === type)
-                  const loggedColor = logged ? resolveDayColor(type, extraDayTypes, isLight) : null
+                  const loggedColor = logged ? resolveDayColor(type, extraDayTypes, isLight, dayColors[type]) : null
                   return (
                     <button
                       key={type}

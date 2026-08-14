@@ -3,8 +3,13 @@ import assert from 'node:assert/strict'
 import {
   NAMED_DAY_COLORS,
   NAMED_DAY_COLORS_LIGHT,
+  DAY_COLOR_PRESETS,
   calendarCellBackground,
+  categoryColorKey,
   joinDayTypes,
+  mapDayColorRows,
+  normalizeDayColor,
+  onDayFill,
   resolveDayColor,
   resolveDayTextColor,
 } from '../dayColors'
@@ -28,6 +33,55 @@ describe('dayColors', () => {
     const extras = ['abs', 'cardio']
     assert.equal(resolveDayColor('abs', extras, true), '#7c3aed')
     assert.equal(resolveDayColor('cardio', extras, true), '#db2777')
+  })
+
+  it('lets a custom hex override the derived palette', () => {
+    assert.equal(resolveDayColor('push', [], false, '#818cf8'), '#818cf8')
+    assert.equal(resolveDayColor('push', [], false, '  #ABC '), '#aabbcc')
+    // Invalid / missing custom falls back.
+    assert.equal(resolveDayColor('push', [], false, 'red'), NAMED_DAY_COLORS.push)
+    assert.equal(resolveDayColor('push', [], false, null), NAMED_DAY_COLORS.push)
+  })
+
+  it('darkens a custom hex in light mode so it still reads as text', () => {
+    const fill = resolveDayColor('push', [], true, '#c8f135')
+    const text = resolveDayTextColor('push', [], true, '#c8f135')
+    assert.notEqual(fill, '#c8f135')
+    assert.notEqual(text, fill)
+    assert.ok(text < fill)
+  })
+})
+
+describe('normalizeDayColor / presets', () => {
+  it('accepts 3-digit and 6-digit hex', () => {
+    assert.equal(normalizeDayColor('#AbC'), '#aabbcc')
+    assert.equal(normalizeDayColor('#C8F135'), '#c8f135')
+    assert.equal(normalizeDayColor('nope'), null)
+  })
+
+  it('includes named-day hues in the picker presets', () => {
+    assert.ok(DAY_COLOR_PRESETS.includes(NAMED_DAY_COLORS.push))
+    assert.ok(DAY_COLOR_PRESETS.includes(NAMED_DAY_COLORS.pull))
+    assert.ok(DAY_COLOR_PRESETS.includes(NAMED_DAY_COLORS.legs))
+  })
+
+  it('maps color rows and ignores junk', () => {
+    const map = mapDayColorRows([
+      { day_key: 'push', color: '#38BDF8' },
+      { day_key: 'abs', color: 'nope' },
+    ])
+    assert.deepEqual(map, { push: '#38bdf8' })
+  })
+
+  it('picks dark text on light fills and light text on dark fills', () => {
+    assert.equal(onDayFill('#c8f135'), '#0f0f0f')
+    assert.equal(onDayFill('#1e3a8a'), '#f0f0f0')
+  })
+
+  it('uses leaderboard category as the default color key', () => {
+    assert.equal(categoryColorKey('chest', { chest: 'push' }), 'push')
+    assert.equal(categoryColorKey('push', {}), 'push')
+    assert.equal(categoryColorKey('abs', {}), 'other')
   })
 })
 

@@ -154,6 +154,10 @@ Both share `UnitContext`, so the kg/lbs toggle stays in sync across them.
 - friendships — requester_id, addressee_id, status ('pending' | 'accepted')
 - user_day_categories — (user_id, day_key) → category ('push'|'pull'|'legs'|'other'),
   maps custom day names to leaderboard tabs.
+- user_day_colors — (user_id, day_key) → color (`#rrggbb`). Optional override for
+  Log day cards, the home calendar, and past-log pills. Missing row uses the
+  derived palette (named push/pull/legs, or the rotating extra pool). Picked
+  from WorkoutManager’s color screen. See migration `49-user-day-colors.sql`.
 - user_rotation — user_id (PK), mode ('auto'|'manual'), sequence (jsonb array of
   day_keys, may repeat), current_index (pointer to last completed slot). Drives the
   home page's suggested next day. See Rotation below.
@@ -174,7 +178,7 @@ Both share `UnitContext`, so the kg/lbs toggle stays in sync across them.
   (`stolen_for`). See Rest days below and migrations `14-rest-days.sql`,
   `39-rest-day-skip.sql`, `43-rest-weekday-history.sql`.
 RLS on exercises, sessions, session_logs, user_stats, user_badges, body_weights,
-user_day_categories, user_rotation, feedback, user_rest_days, user_rest_dates,
+user_day_categories, user_day_colors, user_rotation, feedback, user_rest_days, user_rest_dates,
 user_rest_cancels
 (and delete policies on sessions/session_logs for discard).
 `get_leaderboard(p_day_type, p_user_ids)` RPC ranks overall by XP, or
@@ -465,6 +469,7 @@ src/
     BottomNav.tsx, TopNav.tsx, WorkoutCalendar.tsx, PlateCalculator.tsx, RestTimerBar.tsx
     FeedbackModal.tsx, ThemeToggle.tsx
     BadgeIcon.tsx (shared badge icon set) + BadgeUnlockOverlay.tsx (full-screen unlock celebration)
+    DayCardPreview.tsx + DayColorPicker.tsx — Log day-card preview + color picker (WorkoutManager)
     ui/ (Button, Card, IconButton, Input, SectionLabel, StatTile, index)
   lib/
     supabase/client.ts + server.ts

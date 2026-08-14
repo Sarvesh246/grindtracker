@@ -11,6 +11,7 @@ import {
   calendarCellBackground,
   calendarCellBorder,
   joinDayTypes,
+  mapDayColorRows,
   resolveDayColor,
   resolveDayTextColor,
 } from '@/lib/utils/dayColors'
@@ -63,6 +64,7 @@ export default function WorkoutCalendar() {
     return d
   })
   const [workoutDays, setWorkoutDays] = useState<Record<string, string[]>>({})
+  const [dayColors, setDayColors] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
 
   const loadMonth = useCallback(async () => {
@@ -72,6 +74,7 @@ export default function WorkoutCalendar() {
 
     if (demoMode) {
       setWorkoutDays(demoCalendarWorkoutDays(year, month))
+      setDayColors({})
       setLoading(false)
       return
     }
@@ -84,15 +87,21 @@ export default function WorkoutCalendar() {
     const lastDay = new Date(year, month + 1, 0).getDate()
     const monthEnd = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
 
-    const { data } = await supabase
-      .from('sessions')
-      .select('local_date, day_type')
-      .eq('user_id', user.id)
-      .not('completed_at', 'is', null)
-      .not('local_date', 'is', null)
-      .gte('local_date', monthStart)
-      .lte('local_date', monthEnd)
-      .order('completed_at', { ascending: true })
+    const [{ data }, { data: colorRows, error: colorErr }] = await Promise.all([
+      supabase
+        .from('sessions')
+        .select('local_date, day_type')
+        .eq('user_id', user.id)
+        .not('completed_at', 'is', null)
+        .not('local_date', 'is', null)
+        .gte('local_date', monthStart)
+        .lte('local_date', monthEnd)
+        .order('completed_at', { ascending: true }),
+      supabase
+        .from('user_day_colors')
+        .select('day_key, color')
+        .eq('user_id', user.id),
+    ])
 
     const map: Record<string, string[]> = {}
     for (const s of data ?? []) {
@@ -101,6 +110,7 @@ export default function WorkoutCalendar() {
       if (!list.includes(s.day_type)) list.push(s.day_type)
     }
     setWorkoutDays(map)
+    setDayColors(colorErr ? {} : mapDayColorRows(colorRows))
     setLoading(false)
   }, [supabase, currentMonth, demoMode])
 
@@ -233,10 +243,10 @@ export default function WorkoutCalendar() {
 
           const dateKey = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
           const workoutTypes = workoutDays[dateKey] ?? []
-          const fillHexes = workoutTypes.map(t => resolveDayColor(t, extraTypes, isLight))
+          const fillHexes = workoutTypes.map(t => resolveDayColor(t, extraTypes, isLight, dayColors[t]))
           const primaryType = workoutTypes[0] ?? null
           const dayTextColor = primaryType && workoutTypes.length === 1
-            ? resolveDayTextColor(primaryType, extraTypes, isLight)
+            ? resolveDayTextColor(primaryType, extraTypes, isLight, dayColors[primaryType])
             : workoutTypes.length > 1
               ? 'var(--text-primary)'
               : null
@@ -360,8 +370,8 @@ export default function WorkoutCalendar() {
       {/* Legend — always shows all named types; extra types from data appended */}
       <div style={{ display: 'flex', gap: '14px', marginTop: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
         {legendTypes.map(type => {
-          const fillColor = resolveDayColor(type, extraTypes, isLight)
-          const labelColor = resolveDayTextColor(type, extraTypes, isLight)
+          const fillColor = resolveDayColor(type, extraTypes, isLight, dayColors[type])
+          const labelColor = resolveDayTextColor(type, extraTypes, isLight, dayColors[type])
           return (
             <div key={type} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
               <div style={{
