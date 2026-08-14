@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { executeCorrectWeights, formatCorrectWeightsMessage } from './correctWeights'
-import { executeCreateDay } from './createDay'
+import { executeCreateDay, formatCreateDayMessage } from './createDay'
 import { executeStartWorkout } from './startWorkout'
 import { executeLogBodyWeight } from './logBodyWeight'
 import { executeDeleteBodyWeight } from './deleteBodyWeight'
@@ -62,16 +62,22 @@ export async function executeConfirmedPayload(
         userId,
         dayKey: payload.execute.dayKey,
         category: payload.execute.category,
+        flex: payload.execute.flex,
         exercises: payload.execute.exercises,
       })
       if (!result.ok) return { ok: false, message: result.message }
       return {
         ok: true,
-        message: `Created “${payload.execute.dayKey}” with ${result.inserted} exercise${result.inserted === 1 ? '' : 's'}. Pick it from Log when you want to train — it won’t start automatically.`,
+        message: formatCreateDayMessage(
+          payload.execute.dayKey,
+          result.inserted,
+          result.flex,
+        ),
         href: '/log',
         details: {
           inserted: result.inserted,
           dayKey: payload.execute.dayKey,
+          flex: result.flex,
         },
       }
     }

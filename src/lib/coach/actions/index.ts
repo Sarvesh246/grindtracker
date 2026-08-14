@@ -55,6 +55,8 @@ export {
   validateCreateDayInput,
   previewCreateDay,
   executeCreateDay,
+  resolveCreateDayFlex,
+  formatCreateDayMessage,
 } from './createDay'
 
 export { pickExerciseByName, resolveExerciseByName, normalizeName } from './resolveExercise'

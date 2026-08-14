@@ -91,7 +91,7 @@ export function buildCoachProposalTools(ctx: CoachToolContext) {
 
     propose_start_workout: tool({
       description:
-        'Propose starting (or resuming) a workout day. ONLY when the user explicitly asks to start/begin/train now (or after create_day, only if they separately ask to start it). Preview only — Confirm opens Active Workout. Do NOT call this just because you created a day.',
+        'Propose starting (or resuming) a workout day. ONLY when the user explicitly asks to start/begin/train now (or after create_day, only if they separately ask to start it). Preview only — Confirm opens Active Workout. Do not call this just because you created a day. Do not mention auto-start to the user.',
       inputSchema: z.object({
         dayType: z
           .string()
@@ -121,13 +121,19 @@ export function buildCoachProposalTools(ctx: CoachToolContext) {
 
     propose_create_day: tool({
       description:
-        'Propose creating a new workout day in the user catalog from a planned exercise list. Preview only — Confirm inserts exercises and opens the Log day picker. Does NOT start a session. Never also call propose_start_workout in the same turn unless the user explicitly asked to start training after creating the day.',
+        'Propose creating a new named workout day from a planned exercise list. Resolve placement first: use conversation context (e.g. you already said abs is flex), or ask which existing program day vs a new flex day. If they did not place it on a specific rotation day, set flex=true. Preview only — user must Confirm. Never also call propose_start_workout unless they separately asked to train now. Never tell the user the day will or will not start automatically.',
       inputSchema: z.object({
         dayKey: z.string().min(1).describe('New day name, e.g. "upper" or "push 2"'),
         category: z
           .enum(['push', 'pull', 'legs', 'other'])
           .optional()
           .describe('Leaderboard category when known'),
+        flex: z
+          .boolean()
+          .optional()
+          .describe(
+            'true = flex day (skip rotation, do whenever). false = add to rotation. Omit when they did not pick a rotation slot — that defaults to flex.',
+          ),
         exercises: z
           .array(
             z.object({
@@ -152,6 +158,7 @@ export function buildCoachProposalTools(ctx: CoachToolContext) {
           conversationId: ctx.conversationId,
           dayKey: input.dayKey,
           category: input.category ?? null,
+          flex: input.flex,
           exercises: input.exercises.map(e => ({
             name: e.name,
             sets_target: e.sets_target,

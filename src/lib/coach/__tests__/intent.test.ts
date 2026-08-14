@@ -81,6 +81,8 @@ describe('inferCoachIntent', () => {
     assert.match(definition, /definition\/education/i)
     assert.match(definition, /No personal history/i)
     assert.match(workout, /executable workout/i)
+    assert.match(workout, /unspecified → flex/i)
+    assert.match(workout, /Never mention auto-start/i)
     assert.match(safety, /safety/i)
     assert.match(short, /short contextual/i)
 

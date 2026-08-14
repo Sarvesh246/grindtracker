@@ -88,6 +88,8 @@ export type CreateDayExerciseInput = {
 export type CreateDayExecutePayload = {
   dayKey: string
   category: 'push' | 'pull' | 'legs' | 'other' | null
+  /** Skip rotation (do it whenever). Default true when omitted (older proposals). */
+  flex?: boolean
   exercises: CreateDayExerciseInput[]
 }
 

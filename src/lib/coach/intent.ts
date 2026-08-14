@@ -109,7 +109,7 @@ const REMINDER: Record<CoachIntent, string> = {
   actionable:
     'Intent: actionable mutation. Call the matching propose_* tool so the user gets a Confirm/Cancel card. Never claim the change is applied until they confirm.',
   workout:
-    'Intent: workout request. Lead with an executable workout using bold exercise stacks (sets×reps, Target, Rest). No essay intro. If they ask to save it as a day, call propose_create_day only — do not also propose_start_workout unless they explicitly ask to start it.',
+    'Intent: workout request. Lead with an executable workout using bold exercise stacks (sets×reps, Target, Rest). No essay intro. If they ask to save it as a day, resolve flex vs which program day from context or ask; unspecified → flex. Call propose_create_day only — do not also propose_start_workout unless they ask to train now. Never mention auto-start.',
   program:
     'Intent: program design. Give a structured plan with explicit assumptions. More detail than a simple Q is OK here.',
   general:

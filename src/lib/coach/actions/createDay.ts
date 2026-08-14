@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import type { UserRotation } from '@/lib/types'
 import { insertCoachProposal } from './proposals'
 import type {
   CoachActionPayload,
@@ -12,15 +13,33 @@ function normalizeDayKey(raw: string): string {
   return raw.trim().toLowerCase().replace(/\s+/g, ' ')
 }
 
+/** Unspecified placement is a flex day — not a rotation slot. */
+export function resolveCreateDayFlex(flex?: boolean | null): boolean {
+  return flex !== false
+}
+
+export function formatCreateDayMessage(
+  dayKey: string,
+  inserted: number,
+  flex: boolean,
+): string {
+  const n = `${inserted} exercise${inserted === 1 ? '' : 's'}`
+  return flex
+    ? `Created “${dayKey}” with ${n} as a flex day.`
+    : `Created “${dayKey}” with ${n}.`
+}
+
 export function validateCreateDayInput(input: {
   dayKey: string
   category?: string | null
+  flex?: boolean | null
   exercises: CreateDayExerciseInput[]
 }):
   | {
       ok: true
       dayKey: string
       category: 'push' | 'pull' | 'legs' | 'other' | null
+      flex: boolean
       exercises: CreateDayExerciseInput[]
     }
   | { ok: false; reason: string } {
@@ -83,7 +102,13 @@ export function validateCreateDayInput(input: {
     })
   }
 
-  return { ok: true, dayKey, category, exercises }
+  return {
+    ok: true,
+    dayKey,
+    category,
+    flex: resolveCreateDayFlex(input.flex),
+    exercises,
+  }
 }
 
 export async function previewCreateDay(
@@ -93,6 +118,7 @@ export async function previewCreateDay(
     conversationId: string | null
     dayKey: string
     category?: string | null
+    flex?: boolean | null
     exercises: CreateDayExerciseInput[]
   },
 ): Promise<
@@ -122,6 +148,9 @@ export async function previewCreateDay(
       title: 'Create workout day',
       summaryLines: [
         `Day: ${validated.dayKey}`,
+        validated.flex
+          ? 'Flex day — skip rotation, do it whenever'
+          : 'In rotation',
         validated.category
           ? `Category: ${validated.category}`
           : 'Category: (none)',
@@ -134,8 +163,9 @@ export async function previewCreateDay(
             ? ` +${validated.exercises.length - 4} more`
             : ''),
       ],
-      riskNote:
-        'Adds exercises to your catalog, then opens Log so you can pick the day. Does not start a session — ask Coach to start it if you want to train now.',
+      riskNote: validated.flex
+        ? 'Won’t change your next-day suggestion. Toggle Flex in Log → Manage if you want it in the rotation instead.'
+        : 'Adds this day to your rotation. Toggle Flex in Log → Manage if you’d rather do it whenever.',
       steps: validated.exercises.map(
         e =>
           `${e.name} · ${e.sets_target} × ${e.reps_target}${
@@ -146,6 +176,7 @@ export async function previewCreateDay(
     execute: {
       dayKey: validated.dayKey,
       category: validated.category,
+      flex: validated.flex,
       exercises: validated.exercises,
     },
   }
@@ -171,9 +202,13 @@ export async function executeCreateDay(
     userId: string
     dayKey: string
     category: 'push' | 'pull' | 'legs' | 'other' | null
+    flex?: boolean | null
     exercises: CreateDayExerciseInput[]
   },
-): Promise<{ ok: true; inserted: number } | { ok: false; message: string }> {
+): Promise<
+  | { ok: true; inserted: number; flex: boolean }
+  | { ok: false; message: string }
+> {
   const validated = validateCreateDayInput(args)
   if (!validated.ok) return { ok: false, message: validated.reason }
 
@@ -220,5 +255,46 @@ export async function executeCreateDay(
     }
   }
 
-  return { ok: true, inserted: rows.length }
+  if (validated.flex) {
+    const { error: flexError } = await supabase.from('user_flex_days').upsert(
+      { user_id: args.userId, day_key: validated.dayKey },
+      { onConflict: 'user_id,day_key' },
+    )
+    if (flexError) {
+      console.error('[grind] coach create_day flex', flexError)
+    }
+  } else {
+    try {
+      const { data: rotationRow } = await supabase
+        .from('user_rotation')
+        .select('*')
+        .eq('user_id', args.userId)
+        .maybeSingle()
+      const rotation = rotationRow as UserRotation | null
+      if (rotation?.mode === 'manual') {
+        const seq = Array.isArray(rotation.sequence)
+          ? rotation.sequence.map(k => String(k))
+          : []
+        if (!seq.includes(validated.dayKey)) {
+          const { error: rotError } = await supabase.from('user_rotation').upsert(
+            {
+              user_id: args.userId,
+              mode: 'manual',
+              sequence: [...seq, validated.dayKey],
+              current_index: rotation.current_index ?? -1,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: 'user_id' },
+          )
+          if (rotError) {
+            console.error('[grind] coach create_day rotation', rotError)
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[grind] coach create_day rotation', err)
+    }
+  }
+
+  return { ok: true, inserted: rows.length, flex: validated.flex }
 }

@@ -170,7 +170,7 @@ relying on this.
 | --- | --- | --- |
 | Correct past weights | `propose_correct_weights` | `coach_correct_session_weights` (in-place; preserves skips/RPE) + recompute |
 | Start today’s workout | `propose_start_workout` | `start_or_resume_session` → `/log?day=…` |
-| Create a new day | `propose_create_day` | `exercises` insert (+ optional category) → `/log` day picker (does **not** auto-start; use `propose_start_workout` only if they ask) |
+| Create a new day | `propose_create_day` | `exercises` insert (+ optional category + **flex** default) → `/log` day picker. Unspecified rotation slot is a **flex day**. Use `propose_start_workout` only if they ask to train now. |
 | Log / update body weight | `propose_log_body_weight` | `body_weights` upsert (`user_id,recorded_at`) — overwrites that date |
 | Delete body weight | `propose_delete_body_weight` | `body_weights` delete |
 | Finish open workout | `propose_finish_workout` | `complete_session` (+ rotation advance, same as Active Workout) |

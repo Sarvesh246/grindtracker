@@ -4,6 +4,8 @@ import {
   encodeNdjson,
   parseCoachChatStreamLine,
   validateCreateDayInput,
+  formatCreateDayMessage,
+  resolveCreateDayFlex,
   validateEditExerciseInput,
   validateLogBodyWeightInput,
   validateSkipSetsInput,
@@ -55,8 +57,34 @@ describe('coach actions helpers', () => {
     if (ok.ok) {
       assert.equal(ok.dayKey, 'upper')
       assert.equal(ok.category, 'push')
+      assert.equal(ok.flex, true)
       assert.equal(ok.exercises[0]!.name, 'Bench')
     }
+
+    const rotation = validateCreateDayInput({
+      dayKey: 'push 2',
+      flex: false,
+      exercises: [{ name: 'Bench', sets_target: 3, reps_target: '6-8' }],
+    })
+    assert.equal(rotation.ok, true)
+    if (rotation.ok) assert.equal(rotation.flex, false)
+
+    assert.equal(resolveCreateDayFlex(undefined), true)
+    assert.equal(resolveCreateDayFlex(null), true)
+    assert.equal(resolveCreateDayFlex(true), true)
+    assert.equal(resolveCreateDayFlex(false), false)
+    assert.equal(
+      formatCreateDayMessage('home abs', 4, true),
+      'Created “home abs” with 4 exercises as a flex day.',
+    )
+    assert.equal(
+      formatCreateDayMessage('push 2', 1, false),
+      'Created “push 2” with 1 exercise.',
+    )
+    assert.equal(
+      formatCreateDayMessage('home abs', 4, true).includes('automatically'),
+      false,
+    )
 
     const bad = validateCreateDayInput({
       dayKey: '',
