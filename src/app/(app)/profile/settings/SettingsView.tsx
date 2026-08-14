@@ -746,7 +746,7 @@ export default function SettingsView({
         <div data-onboard="profile-rest-days">
           <div style={{ marginBottom: '10px' }}>
             <div style={titleStyle}>Rest Days</div>
-            <div style={hintStyle}>Weekly budget. Skip today from Home — turning a day on here starts the next time it comes around, not today.</div>
+            <div style={hintStyle}>Weekly budget — resets Sunday. Skip today from Home — turning a day on here starts the next time it comes around, not today.</div>
           </div>
           <div style={{ display: 'flex', gap: '6px', justifyContent: 'space-between' }}>
             {REST_DAY_LABELS.map((label, dayOfWeek) => {

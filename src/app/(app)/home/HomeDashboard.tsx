@@ -11,7 +11,7 @@ import { advanceIndex, effectiveSequence, nextDay as nextDayFromRotation, overdu
 import { deleteIncompleteSessions } from '@/lib/utils/sessions'
 import { flushQueuedOps, getQueuedOps, clearQueuedOpsForSession } from '@/lib/utils/offlineQueue'
 import { checkAndAwardBadges } from '@/lib/utils/badges'
-import { uncoveredDatesBetween, skipTodayState, sameDateKeyList, type RestDayOpts } from '@/lib/utils/restDays'
+import { uncoveredDatesBetween, skipTodayState, restLeftThisWeekLabel, weekStart, sameDateKeyList, type RestDayOpts } from '@/lib/utils/restDays'
 import WorkoutCalendar from '@/components/WorkoutCalendar'
 import FinishUndoBanner from '@/components/FinishUndoBanner'
 import ToastPill, { TOAST_SLIDE_OUT_MS } from '@/components/ToastPill'
@@ -32,15 +32,7 @@ import {
 // (client) rather than on the server, whose clock/timezone is very often not
 // the viewer's and would bucket a workout into the wrong week/month right
 // around the boundary. Same reasoning as `overdueDays`, computed client-side below.
-function getWeekStart(): Date {
-  const now = new Date()
-  const day = now.getDay()
-  const diff = now.getDate() - day + (day === 0 ? -6 : 1) // Monday
-  const monday = new Date(now)
-  monday.setDate(diff)
-  monday.setHours(0, 0, 0, 0)
-  return monday
-}
+// Week is Sunday–Saturday (`weekStart` in restDays.ts, SQL `grind_week_start`).
 function getMonthStart(): Date {
   const now = new Date()
   return new Date(now.getFullYear(), now.getMonth(), 1)
@@ -194,7 +186,7 @@ export default function HomeDashboard({
   const totalWorkouts = stats?.total_workouts ?? 0
 
   // Stale-streak reset, using the viewer's own local "today" (a server component
-  // would otherwise use the server's clock/timezone — see getWeekStart/getMonthStart
+  // would otherwise use the server's clock/timezone — see getMonthStart
   // above for the same reasoning). A gap since the last workout only breaks the
   // streak if it ISN'T fully covered by rest days (recurring or one-off
   // confirmed — see CLAUDE.md → Rest days); a plain adjacent-day gap has no
@@ -226,6 +218,13 @@ export default function HomeDashboard({
     () => skipTodayState(todayKey, recurringRestSet, effectiveRestDateSet, restOpts),
     [todayKey, recurringRestSet, effectiveRestDateSet, restOpts],
   )
+  // Budget spent: tapping Rest today can't save the streak. Show that on the
+  // card itself (red) instead of a confirm toast — tap again to dismiss.
+  const [restStreakWarn, setRestStreakWarn] = useState(false)
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setRestStreakWarn(false)
+  }, [todayKey])
   // Rapid Rest today → undo must not wait on restTodayBusy (that dropped the
   // second tap) and must not fire overlapping toggle RPCs (unique violation /
   // permission-denied on steal-row cleanup). Optimistic UI flips immediately;
@@ -348,7 +347,11 @@ export default function HomeDashboard({
 
   function handleToggleRestToday() {
     if (skipState.todayIsScheduled && !restTodayOnRef.current) return
-    if (!restTodayOnRef.current && !skipState.canSkip) return
+    if (!restTodayOnRef.current && !skipState.canSkip) {
+      setRestStreakWarn(on => !on)
+      return
+    }
+    setRestStreakWarn(false)
     const turningOn = !restTodayOnRef.current
     restTodayOnRef.current = turningOn
     const current = restDatesRef.current
@@ -569,13 +572,12 @@ export default function HomeDashboard({
   // Bucketed from the viewer's local calendar — completedAt is local_date keys
   // (YYYY-MM-DD) from grind_home_history, not UTC timestamps.
   const weeklyWorkouts = useMemo(() => {
-    const start = getWeekStart()
-    const startKey = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`
+    const startKey = weekStart(todayKey)
     return completedAt.filter(d => {
       const key = d.includes('T') ? localDateKey(new Date(d)) : d
       return key >= startKey
     }).length
-  }, [completedAt])
+  }, [completedAt, todayKey])
   const monthlyWorkouts = useMemo(() => {
     const start = getMonthStart()
     const startKey = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`
@@ -1241,14 +1243,16 @@ export default function HomeDashboard({
       {/* Rest today — secondary to Start. One-off skip that spends a configured
           rest-day slot this week. Tap again to undo. Scheduled weekdays
           (Settings) are shown but not undone here. Hidden until rest days
-          are configured. */}
+          are configured. Remaining count is always on the card; tapping with
+          none left turns it red (no confirm toast) so it’s obvious the streak
+          would break. */}
       {currentStreak > 0 && (skipState.budget > 0 || skipState.todayIsOneOff) && (!trainedToday || skipState.todayIsOneOff) && (
         <button
           type="button"
           className="press"
-          data-haptic="medium"
+          data-haptic={restStreakWarn || (!skipState.canSkip && !skipState.todayIsRest) ? 'heavy' : 'medium'}
           onClick={() => handleToggleRestToday()}
-          disabled={skipState.todayIsScheduled || (!skipState.todayIsOneOff && !skipState.canSkip)}
+          disabled={skipState.todayIsScheduled}
           aria-pressed={skipState.todayIsRest}
           style={{
             ...card,
@@ -1257,38 +1261,67 @@ export default function HomeDashboard({
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: '12px',
-            cursor: skipState.todayIsScheduled || (!skipState.todayIsOneOff && !skipState.canSkip)
-              ? 'default'
-              : 'pointer',
+            cursor: skipState.todayIsScheduled ? 'default' : 'pointer',
             opacity: restTodayBusy ? 0.7 : 1,
-            borderColor: skipState.todayIsRest ? 'var(--accent)' : 'var(--border)',
+            backgroundColor: restStreakWarn ? 'var(--danger-bg)' : card.backgroundColor,
+            borderColor: restStreakWarn
+              ? 'var(--danger)'
+              : skipState.todayIsRest ? 'var(--accent)' : 'var(--border)',
+            transition: 'border-color 150ms ease, background-color 150ms ease',
           }}
         >
           <div style={{ textAlign: 'left' }}>
-            <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)' }}>
-              {skipState.todayIsRest ? 'Rest day' : skipState.canSkip ? 'Rest today' : 'No rest days left'}
+            <div style={{
+              fontSize: '15px',
+              fontWeight: 600,
+              color: restStreakWarn ? 'var(--danger)' : 'var(--text-primary)',
+            }}>
+              {skipState.todayIsRest ? 'Rest day' : 'Rest today'}
             </div>
-            <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+            <div style={{
+              fontSize: '13px',
+              color: restStreakWarn ? 'var(--danger)' : 'var(--text-secondary)',
+              marginTop: '2px',
+            }} aria-live={restStreakWarn ? 'polite' : undefined}>
               {skipState.todayIsOneOff
                 ? 'Tap again to undo'
                 : skipState.todayIsScheduled
                   ? 'Scheduled in Settings'
-                  : skipState.canSkip
-                    ? 'Won’t break your streak'
-                    : 'Used this week’s rest days'}
+                  : restStreakWarn
+                    ? `${restLeftThisWeekLabel(restRemaining)} — this will break your streak`
+                    : restLeftThisWeekLabel(restRemaining)}
             </div>
           </div>
-          <div
-            aria-hidden
-            style={{
-              width: '22px',
-              height: '22px',
-              borderRadius: '9999px',
-              border: `2px solid ${skipState.todayIsRest ? 'var(--accent)' : 'var(--border-strong)'}`,
-              backgroundColor: skipState.todayIsRest ? 'var(--accent)' : 'transparent',
-              flexShrink: 0,
-            }}
-          />
+          {restStreakWarn ? (
+            <svg
+              width="22"
+              height="22"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="var(--danger)"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+              style={{ flexShrink: 0 }}
+            >
+              <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+              <line x1="12" y1="9" x2="12" y2="13" />
+              <line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+          ) : (
+            <div
+              aria-hidden
+              style={{
+                width: '22px',
+                height: '22px',
+                borderRadius: '9999px',
+                border: `2px solid ${skipState.todayIsRest ? 'var(--accent)' : 'var(--border-strong)'}`,
+                backgroundColor: skipState.todayIsRest ? 'var(--accent)' : 'transparent',
+                flexShrink: 0,
+              }}
+            />
+          )}
         </button>
       )}
 

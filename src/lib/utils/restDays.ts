@@ -4,9 +4,9 @@ import { localDateKey } from './formatting'
  * Rest-day helpers — pure, framework-agnostic (no Supabase import), same style
  * as rotation.ts. Mirrors the SQL connectivity semantics in
  * docs/sql/14-rest-days.sql + docs/sql/39-rest-day-skip.sql +
- * docs/sql/43-rest-weekday-history.sql, so the client can reason about streak
- * gaps using the viewer's own local "today" (never the server's — see Dates &
- * timezones in CLAUDE.md).
+ * docs/sql/43-rest-weekday-history.sql + docs/sql/48-week-start-sunday.sql,
+ * so the client can reason about streak gaps using the viewer's own local
+ * "today" (never the server's — see Dates & timezones in CLAUDE.md).
  */
 
 /** Parse a 'YYYY-MM-DD' key as local noon, avoiding the UTC-midnight shift a
@@ -131,14 +131,14 @@ export function datesConnected(
   return uncoveredDatesBetween(fromKey, toKey, recurringDaysOfWeek, oneOffDates, opts).length === 0
 }
 
-/** Monday of the week containing `dateKey` (matches Home "this week" and SQL 39). */
-export function weekStartMonday(dateKey: string): string {
+/** Sunday of the week containing `dateKey` (matches Home "this week" and SQL 48). */
+export function weekStart(dateKey: string): string {
   const d = parseDateKey(dateKey)
-  return localDateKey(addDays(d, -((d.getDay() + 6) % 7)))
+  return localDateKey(addDays(d, -d.getDay()))
 }
 
 function datesInWeek(dateKey: string): string[] {
-  const start = parseDateKey(weekStartMonday(dateKey))
+  const start = parseDateKey(weekStart(dateKey))
   return Array.from({ length: 7 }, (_, i) => localDateKey(addDays(start, i)))
 }
 
@@ -217,7 +217,7 @@ export function sameDateKeyList(a: string[], b: string[]): boolean {
 /**
  * Whether Home can mark `todayKey` as a one-off rest day without exceeding
  * the weekly budget (weekdays whose `effective_from` is on or before this
- * week's Sunday). Spent slots are rest days already on or before today —
+ * week's Saturday). Spent slots are rest days already on or before today —
  * future scheduled days can still be given up by skipping today, but once
  * N days this week are rest, no more skips (and another miss breaks the streak).
  */
@@ -234,4 +234,15 @@ export function skipTodayState(
   const used = restDaysUsedThrough(todayKey, recurringDaysOfWeek, oneOffDates, opts)
   const canSkip = !todayIsRest && budget > 0 && used < budget
   return { todayIsRest, todayIsOneOff, todayIsScheduled, canSkip, budget, used }
+}
+
+/**
+ * Home Rest today remaining line. Weekly budget resets Sunday (see
+ * `weekStart`); "this week" is the reset cue, not a separate sentence.
+ */
+export function restLeftThisWeekLabel(remaining: number): string {
+  const n = Math.max(0, remaining)
+  if (n === 0) return 'None left this week'
+  if (n === 1) return '1 left this week'
+  return `${n} left this week`
 }
