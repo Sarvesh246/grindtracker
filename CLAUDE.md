@@ -3,7 +3,7 @@
 ## Status: COMPLETE ✅
 Core phases (1–7) plus later ships (flex days, photos, onboarding, web push,
 weight targets, offline set queue, RPE, data export) — single-user PWA in daily use.
-Schema migrations run through `docs/sql/43-*.sql`.
+Schema migrations run through `docs/sql/48-*.sql`.
 
 ## Git Workflow
 Single-user repo, no review process. Commit and push directly to `main` —
@@ -300,11 +300,13 @@ that's already in effect) is shown but not undone from Home. The button hides
 when N=0 (configure rest days first) or when they already trained today
 (unless there's a one-off to undo).
 
-A Mon–Sun week cannot have more rest days than N. An extra one-off steals a
+A Sun–Sat week cannot have more rest days than N. An extra one-off steals a
 **later** scheduled rest day that week via `user_rest_cancels` (`stolen_for`
 = the one-off); undoing the one-off deletes those cancels. If nothing is left
-to steal, Postgres raises `REST_BUDGET_EXCEEDED`. Example: Sunday is the
-configured rest day; Rest today on Wednesday cancels this week's Sunday.
+to steal, Postgres raises `REST_BUDGET_EXCEEDED`. Example: Saturday is the
+configured rest day; Rest today on Wednesday cancels this week's Saturday.
+Sunday is the first day of the week (migration `48`), so a Sunday rest day
+has already spent its slot by Monday.
 
 The missed-day banner still offers to confirm a small gap as rest, but only
 when the gap fits **remaining** weekly slots (`uncovered.length <= N - used`).
@@ -323,7 +325,7 @@ INSERT/UPDATE/DELETE on `user_rest_days` is revoked (UTC-today hole + history
 wipe); `user_rest_cancels` is insert/select only so a steal row cannot be
 deleted while keeping the one-off. Weekly budget N counts only active
 weekdays (`effective_until` is null) whose `effective_from` is on or before
-this week's Sunday.
+this week's Saturday.
 
 ### Skip persistence (migration `18-skip-persistence.sql`)
 Skipping a set/exercise in ActiveWorkout is optimistic in React state

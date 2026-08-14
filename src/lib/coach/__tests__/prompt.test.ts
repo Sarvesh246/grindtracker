@@ -236,6 +236,7 @@ describe('COACH_SYSTEM_PROMPT', () => {
     assert.match(COACH_SYSTEM_PROMPT, /propose_undo_finish_workout/i)
     assert.match(COACH_SYSTEM_PROMPT, /propose_skip_sets/i)
     assert.match(COACH_SYSTEM_PROMPT, /propose_toggle_rest_today/i)
+    assert.match(COACH_SYSTEM_PROMPT, /Sunday–Saturday week/i)
     assert.match(COACH_SYSTEM_PROMPT, /propose_set_rest_weekday/i)
     assert.match(COACH_SYSTEM_PROMPT, /propose_edit_exercise/i)
     assert.match(COACH_SYSTEM_PROMPT, /propose_update_rotation/i)

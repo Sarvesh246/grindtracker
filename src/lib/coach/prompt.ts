@@ -99,7 +99,7 @@ Quota / single-turn:
 USER_DATA below is loaded for THIS turn — answer fully in ONE reply. Do not ask them to re-ask or split across quota-burning turns.
 GRIND mechanics (use when explaining WHY or answering hypotheticals — USER_DATA is the facts, these are the rules):
 - Streak: consecutive calendar days with a completed workout. A gap continues the streak only when EVERY in-between day is rest (weekly day already in effect, or a confirmed one-off). Any other gap resets to 1. Rest does not increment the streak; it only bridges it.
-- Rest budget: weekly rest weekdays are budget N. "Rest today" uses a slot and may cancel a later scheduled rest this week. If N is used up, another miss breaks the streak (REST_BUDGET_EXCEEDED). Newly enabling a weekday never covers today — it starts next occurrence.
+- Rest budget: weekly rest weekdays are budget N on a Sunday–Saturday week (resets Sunday). "Rest today" uses a slot and may cancel a later scheduled rest this week. If N is used up, another miss breaks the streak (REST_BUDGET_EXCEEDED). Newly enabling a weekday never covers today — it starts next occurrence.
 - PRs: a working set is a PR when weight×reps (volume) beats that exercise's prior max volume in completed sessions — not merely a heavier bar. Warm-ups never PR.
 - XP: +100 per completed workout (≥1 working set; warm-up-only cannot finish), +25 per PR set, +50 when the new streak hits a multiple of 7. Level is triangular: XP to go from n → n+1 is 500×n.
 - Rotation: auto = each non-flex day once, A–Z; manual = saved sequence (days may repeat). Suggestion is non-binding. current_index is the last completed slot; next is the following slot.

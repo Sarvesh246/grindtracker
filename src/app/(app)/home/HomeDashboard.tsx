@@ -11,7 +11,7 @@ import { advanceIndex, effectiveSequence, nextDay as nextDayFromRotation, overdu
 import { deleteIncompleteSessions } from '@/lib/utils/sessions'
 import { flushQueuedOps, getQueuedOps, clearQueuedOpsForSession } from '@/lib/utils/offlineQueue'
 import { checkAndAwardBadges } from '@/lib/utils/badges'
-import { uncoveredDatesBetween, skipTodayState, restLeftThisWeekLabel, sameDateKeyList, type RestDayOpts } from '@/lib/utils/restDays'
+import { uncoveredDatesBetween, skipTodayState, restLeftThisWeekLabel, weekStart, sameDateKeyList, type RestDayOpts } from '@/lib/utils/restDays'
 import WorkoutCalendar from '@/components/WorkoutCalendar'
 import FinishUndoBanner from '@/components/FinishUndoBanner'
 import ToastPill, { TOAST_SLIDE_OUT_MS } from '@/components/ToastPill'
@@ -32,15 +32,7 @@ import {
 // (client) rather than on the server, whose clock/timezone is very often not
 // the viewer's and would bucket a workout into the wrong week/month right
 // around the boundary. Same reasoning as `overdueDays`, computed client-side below.
-function getWeekStart(): Date {
-  const now = new Date()
-  const day = now.getDay()
-  const diff = now.getDate() - day + (day === 0 ? -6 : 1) // Monday
-  const monday = new Date(now)
-  monday.setDate(diff)
-  monday.setHours(0, 0, 0, 0)
-  return monday
-}
+// Week is Sunday–Saturday (`weekStart` in restDays.ts, SQL `grind_week_start`).
 function getMonthStart(): Date {
   const now = new Date()
   return new Date(now.getFullYear(), now.getMonth(), 1)
@@ -194,7 +186,7 @@ export default function HomeDashboard({
   const totalWorkouts = stats?.total_workouts ?? 0
 
   // Stale-streak reset, using the viewer's own local "today" (a server component
-  // would otherwise use the server's clock/timezone — see getWeekStart/getMonthStart
+  // would otherwise use the server's clock/timezone — see getMonthStart
   // above for the same reasoning). A gap since the last workout only breaks the
   // streak if it ISN'T fully covered by rest days (recurring or one-off
   // confirmed — see CLAUDE.md → Rest days); a plain adjacent-day gap has no
@@ -580,13 +572,12 @@ export default function HomeDashboard({
   // Bucketed from the viewer's local calendar — completedAt is local_date keys
   // (YYYY-MM-DD) from grind_home_history, not UTC timestamps.
   const weeklyWorkouts = useMemo(() => {
-    const start = getWeekStart()
-    const startKey = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`
+    const startKey = weekStart(todayKey)
     return completedAt.filter(d => {
       const key = d.includes('T') ? localDateKey(new Date(d)) : d
       return key >= startKey
     }).length
-  }, [completedAt])
+  }, [completedAt, todayKey])
   const monthlyWorkouts = useMemo(() => {
     const start = getMonthStart()
     const startKey = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`

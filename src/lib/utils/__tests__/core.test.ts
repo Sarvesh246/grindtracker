@@ -9,7 +9,7 @@ import {
   isRestDay,
   skipTodayState,
   restLeftThisWeekLabel,
-  weekStartMonday,
+  weekStart,
   sameDateKeyList,
 } from '../restDays'
 import { extraSetsFromLogs, emptySetState, type LogMap } from '../../../app/(app)/log/sessionLogState'
@@ -168,26 +168,42 @@ describe('rest days connectivity', () => {
   })
 })
 
-describe('skipTodayState', () => {
-  // Week of Mon 10 Aug – Sun 16 Aug 2026. Sunday scheduled as the weekly rest.
+describe('weekStart', () => {
+  it('is Sunday of the containing week', () => {
+    assert.equal(weekStart('2026-08-09'), '2026-08-09') // Sun
+    assert.equal(weekStart('2026-08-12'), '2026-08-09') // Wed
+    assert.equal(weekStart('2026-08-15'), '2026-08-09') // Sat
+    assert.equal(weekStart('2026-08-16'), '2026-08-16') // next Sun
+  })
+})
 
-  it('lets Wednesday skip by stealing this week\'s upcoming Sunday', () => {
+describe('skipTodayState', () => {
+  // Week of Sun 9 Aug – Sat 15 Aug 2026.
+
+  it('lets Wednesday skip by stealing this week\'s upcoming Saturday', () => {
     const wed = '2026-08-12'
-    assert.equal(weekStartMonday(wed), '2026-08-10')
-    const state = skipTodayState(wed, new Set([0]), new Set())
+    assert.equal(weekStart(wed), '2026-08-09')
+    const state = skipTodayState(wed, new Set([6]), new Set())
     assert.equal(state.canSkip, true)
     assert.equal(state.todayIsOneOff, false)
   })
 
-  it('lets Saturday skip by stealing this week\'s Sunday', () => {
-    const state = skipTodayState('2026-08-15', new Set([0]), new Set())
+  it('lets Friday skip by stealing this week\'s Saturday', () => {
+    const state = skipTodayState('2026-08-14', new Set([6]), new Set())
     assert.equal(state.canSkip, true)
   })
 
-  it('blocks another skip after this week\'s Sunday was stolen', () => {
-    const state = skipTodayState('2026-08-12', new Set([0]), new Set(['2026-08-10']), {
-      cancels: new Set(['2026-08-16']),
+  it('blocks another skip after this week\'s Saturday was stolen', () => {
+    const state = skipTodayState('2026-08-12', new Set([6]), new Set(['2026-08-10']), {
+      cancels: new Set(['2026-08-15']),
     })
+    assert.equal(state.canSkip, false)
+  })
+
+  it('cannot skip midweek when the only rest day is this week\'s already-elapsed Sunday', () => {
+    const state = skipTodayState('2026-08-12', new Set([0]), new Set())
+    assert.equal(state.used, 1)
+    assert.equal(state.budget, 1)
     assert.equal(state.canSkip, false)
   })
 
@@ -205,15 +221,15 @@ describe('skipTodayState', () => {
   })
 
   it('with 2 rest days, allows two skips on other weekdays then blocks a third', () => {
-    const satSun = new Set([0, 6])
-    assert.equal(skipTodayState('2026-08-10', satSun, new Set()).canSkip, true)
-    assert.equal(skipTodayState('2026-08-10', satSun, new Set()).used, 0)
+    const friSat = new Set([5, 6])
+    assert.equal(skipTodayState('2026-08-10', friSat, new Set()).canSkip, true)
+    assert.equal(skipTodayState('2026-08-10', friSat, new Set()).used, 0)
 
     const afterTwoSkips = skipTodayState(
       '2026-08-12',
-      satSun,
+      friSat,
       new Set(['2026-08-10', '2026-08-11']),
-      { cancels: new Set(['2026-08-15', '2026-08-16']) },
+      { cancels: new Set(['2026-08-14', '2026-08-15']) },
     )
     assert.equal(afterTwoSkips.used, 2)
     assert.equal(afterTwoSkips.canSkip, false)
@@ -223,9 +239,9 @@ describe('skipTodayState', () => {
   it('with 2 rest days, still allows a second skip after one midweek skip', () => {
     const state = skipTodayState(
       '2026-08-11',
-      new Set([0, 6]),
+      new Set([5, 6]),
       new Set(['2026-08-10']),
-      { cancels: new Set(['2026-08-15']) },
+      { cancels: new Set(['2026-08-14']) },
     )
     assert.equal(state.used, 1)
     assert.equal(state.canSkip, true)
@@ -255,8 +271,8 @@ describe('skipTodayState', () => {
   })
 
   it('still counts a weekday that takes effect later this week', () => {
-    const state = skipTodayState('2026-08-10', new Set([0]), new Set(), {
-      effectiveFrom: new Map([[0, '2026-08-16']]),
+    const state = skipTodayState('2026-08-10', new Set([6]), new Set(), {
+      effectiveFrom: new Map([[6, '2026-08-15']]),
     })
     assert.equal(state.budget, 1)
     assert.equal(state.canSkip, true)
