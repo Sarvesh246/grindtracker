@@ -35,17 +35,17 @@ const EXPERIMENTS: {
   hint: string
   pointer?: boolean
 }[] = [
-  { id: 'current', n: '00', title: 'Current', hint: 'The Log UP NEXT card as it ships today. Baseline.' },
-  { id: 'glass', n: '01', title: 'Animated frosted glass', hint: 'Glass stays still. Light and refraction drift underneath; hover pulls the highlight toward the cursor.', pointer: true },
-  { id: 'heat', n: '02', title: 'Heat / energy border', hint: 'One small highlight traveling the perimeter. Not a neon tube.' },
-  { id: 'liquid', n: '03', title: 'Liquid gradient', hint: 'A 26s warm wash drifting through a still-dark card.' },
-  { id: 'aurora', n: '04', title: 'Aurora glow', hint: 'A blurred blob of the day color slowly moving and breathing behind the type.' },
-  { id: 'sweep', n: '05', title: 'Border sweep', hint: 'Every few seconds a tiny highlight runs the border and fades. Lowest risk.' },
-  { id: 'focus', n: '06', title: 'Focus / target lock', hint: 'Once on load: scale, border flash, pill pulse, glow. Then it sits. Replay to see it again.' },
-  { id: 'ice', n: '07', title: 'Ice / frost reveal', hint: 'Hover (or tap-hold) deepens the frost, brightens the border, and slides a glass reflection.' },
-  { id: 'sheen', n: '08', title: 'Glass reflection', hint: 'A 3–7% diagonal sheen crossing the surface on a long loop.' },
-  { id: 'parallax', n: '09', title: 'Micro-parallax', hint: 'Desktop: card 2px, wash 6px, icon 3px toward the cursor. Keep the mouse on the card.', pointer: true },
-  { id: 'charge', n: '10', title: 'Charging', hint: 'Ambient glow builds, then snaps back. “This is what’s next” without a progress bar.' },
+  { id: 'current', n: '00', title: 'Current', hint: 'The Log UP NEXT card as it ships today. Baseline — no motion.' },
+  { id: 'glass', n: '01', title: 'Animated frosted glass', hint: 'Still glass plate. Thin caustic streaks drift underneath; hover pulls a specular highlight to the cursor.', pointer: true },
+  { id: 'heat', n: '02', title: 'Heat / energy border', hint: 'A short ember rides the 2px border, always on. Interior stays clean.' },
+  { id: 'liquid', n: '03', title: 'Liquid gradient', hint: 'Two sharp (unblurred) color sheets slide past each other over 28s. Dark card, occasional warm band.' },
+  { id: 'aurora', n: '04', title: 'Aurora glow', hint: 'Two irregular, heavily blurred ribbons breathe on different clocks. The only “blob” treatment.' },
+  { id: 'sweep', n: '05', title: 'Border sweep', hint: 'Card is otherwise identical to Current. Every ~8s a 4px tick runs the edge and vanishes.' },
+  { id: 'focus', n: '06', title: 'Focus / target lock', hint: 'One-shot: scale 0.98→1, inset ring flash, pill pulse. Then it sits. Replay to see it again.' },
+  { id: 'ice', n: '07', title: 'Ice / frost reveal', hint: 'Grain + white frost at rest. Hover or tap-hold clears the veil, sharpens type, and slides a reflection.', pointer: true },
+  { id: 'sheen', n: '08', title: 'Glass reflection', hint: 'A 4–8% white band crosses once, then a long rest. No day-color wash.' },
+  { id: 'parallax', n: '09', title: 'Micro-parallax', hint: 'No idle motion. Card 1.5px, wash 5px, icon 3px toward the cursor. Interior only.', pointer: true },
+  { id: 'charge', n: '10', title: 'Charging', hint: 'A fill level rises from the bottom like a well, then snaps back. Not a floating glow.' },
 ]
 
 function LabCard({
@@ -97,6 +97,9 @@ function LabCard({
     variant === 'ice' ? 'lab-card lab-card--ice' :
     variant === 'parallax' ? 'lab-card lab-card--parallax' :
     variant === 'charge' ? 'lab-card lab-card--charge' :
+    variant === 'liquid' ? 'lab-card lab-card--liquid' :
+    variant === 'aurora' ? 'lab-card lab-card--aurora' :
+    variant === 'sheen' ? 'lab-card lab-card--sheen' :
     'lab-card'
 
   return (
@@ -109,36 +112,55 @@ function LabCard({
       onPointerDown={variant === 'ice' ? e => e.currentTarget.classList.add('is-hot') : undefined}
       onPointerUp={variant === 'ice' ? e => e.currentTarget.classList.remove('is-hot') : undefined}
     >
-      {variant === 'glass' && (
-        <>
-          <div className="lab-glass-bloom" aria-hidden />
-          <div className="lab-glass-caustic" aria-hidden />
-          <div className="lab-glass-caustic lab-glass-caustic--slow" aria-hidden />
-        </>
-      )}
-      {variant === 'focus' && <div key={replayKey} className="lab-focus-glow" aria-hidden />}
-      {variant === 'parallax' && <div className="lab-parallax-glow" aria-hidden />}
-
       <div
         key={variant === 'focus' ? `focus-${replayKey}` : variant}
         className={cardClass}
         role="img"
         aria-label="LEGS up next preview"
       >
-        {variant === 'glass' && <div className="lab-glass-light" aria-hidden />}
+        {variant === 'glass' && (
+          <>
+            <div className="lab-glass-caustic" aria-hidden />
+            <div className="lab-glass-caustic lab-glass-caustic--slow" aria-hidden />
+            <div className="lab-glass-veil" aria-hidden />
+            <div className="lab-glass-light" aria-hidden />
+          </>
+        )}
         {variant === 'heat' && <div className="lab-heat-ring" aria-hidden />}
-        {variant === 'liquid' && <div className="lab-liquid" aria-hidden />}
-        {variant === 'aurora' && <div className="lab-aurora" aria-hidden />}
-        {variant === 'sweep' && <div className="lab-sweep-dot" aria-hidden />}
+        {variant === 'liquid' && (
+          <>
+            <div className="lab-liquid" aria-hidden />
+            <div className="lab-liquid lab-liquid--alt" aria-hidden />
+          </>
+        )}
+        {variant === 'aurora' && (
+          <>
+            <div className="lab-aurora lab-aurora--a" aria-hidden />
+            <div className="lab-aurora lab-aurora--b" aria-hidden />
+          </>
+        )}
+        {variant === 'sweep' && <div className="lab-sweep-tick" aria-hidden />}
+        {variant === 'focus' && <div className="lab-focus-flash" aria-hidden />}
         {variant === 'ice' && (
           <>
+            <div className="lab-ice-grain" aria-hidden />
             <div className="lab-ice-frost" aria-hidden />
             <div className="lab-ice-sheen" aria-hidden />
           </>
         )}
         {variant === 'sheen' && <div className="lab-sheen" aria-hidden />}
-        {variant === 'parallax' && <div className="lab-parallax-bg" aria-hidden />}
-        {variant === 'charge' && <div className="lab-charge" aria-hidden />}
+        {variant === 'parallax' && (
+          <>
+            <div className="lab-parallax-plane" aria-hidden />
+            <div className="lab-parallax-spec" aria-hidden />
+          </>
+        )}
+        {variant === 'charge' && (
+          <>
+            <div className="lab-charge" aria-hidden />
+            <div className="lab-charge-lip" aria-hidden />
+          </>
+        )}
 
         <div className="lab-card__row">
           <div className="lab-card__title-wrap">
