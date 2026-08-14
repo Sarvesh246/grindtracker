@@ -629,7 +629,7 @@ export default function DaySelect() {
               // Preview only active exercises so it matches what the live
               // workout will actually offer (17-exercise-active-flag.sql).
               const activeExs = exs.filter(e => e.active)
-              const description = activeExs.slice(0, 3).map(e => e.name).join(', ') + (activeExs.length > 3 ? '…' : '')
+              const description = activeExs.map(e => e.name).join(', ')
               const isUpNext = key === upNext
               const openSession = openByDay[key]
               const colorKey = categoryForDay(key, dayCategories)
@@ -726,7 +726,7 @@ export default function DaySelect() {
                       )}
                     </div>
                   </div>
-                  <div style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>
+                  <div style={{ fontSize: '14px', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
                     {description}
                   </div>
                 </button>

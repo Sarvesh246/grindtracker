@@ -1249,7 +1249,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
               const exs = grouped[dayKey] ?? []
               const activeExs = exs.filter(e => e.active)
               const description = activeExs.length
-                ? activeExs.slice(0, 3).map(e => e.name).join(', ') + (activeExs.length > 3 ? '…' : '')
+                ? activeExs.map(e => e.name).join(', ')
                 : undefined
               return (
                 <DayColorPicker
