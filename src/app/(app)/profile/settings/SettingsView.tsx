@@ -566,6 +566,14 @@ export default function SettingsView({
       <rect x="18" y="9" width="4" height="6" rx="1.5" />
     </svg>
   )
+  const labIcon = (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 3h6" />
+      <path d="M10 3v6L4.8 18.2A2 2 0 0 0 6.5 21h11a2 2 0 0 0 1.7-2.8L14 9V3" />
+      <path d="M8.5 14h7" />
+    </svg>
+  )
 
   return (
     <div className="page page--profile" style={{
@@ -1002,6 +1010,13 @@ export default function SettingsView({
             hint="Preview every workout-day glyph"
             href="/admin/icons"
             icon={galleryIcon}
+          />
+          <div style={dividerStyle} />
+          <NavRow
+            title="UP NEXT Card Lab"
+            hint="Try frosted glass, aurora, and other treatments"
+            href="/admin/lab"
+            icon={labIcon}
           />
         </Section>
       )}

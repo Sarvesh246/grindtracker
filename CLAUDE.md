@@ -463,8 +463,9 @@ src/
       profile/page.tsx + ProfileDashboard.tsx + BodyWeightCard.tsx + loading.tsx
       leaderboard/page.tsx + LeaderboardClient.tsx + FriendsAccordion.tsx + ShareCard.tsx
                   + [username]/page.tsx + FriendProfileView.tsx (read-only friend profile)
-      admin/feedback/page.tsx + FeedbackInbox.tsx — developer-only inbox (404s
-                                     for everyone else; RLS is the real gate)
+    admin/feedback/page.tsx + FeedbackInbox.tsx — developer-only inbox (404s
+      for everyone else; RLS is the real gate)
+    admin/lab/ — developer-only UP NEXT card-style playground (email gate only)
   components/
     BottomNav.tsx, TopNav.tsx, WorkoutCalendar.tsx, PlateCalculator.tsx, RestTimerBar.tsx
     FeedbackModal.tsx, ThemeToggle.tsx
