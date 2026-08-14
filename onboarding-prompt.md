@@ -43,51 +43,66 @@ Read via `useSyncExternalStore` (mirror the pattern already used for `grind_over
 
 ## Page-by-page walkthroughs (chained coach marks)
 
+Only one scripted tour runs at a time (`tourLock`). Later-added surfaces (Coach, photos, body weight, rest days, notifications, flex) are part of these walks — not a separate “what’s new” modal.
+
 ### Home (`(app)/home/HomeDashboard.tsx`) — tour id `home`
 1. Level/XP card — "This is your level. Every completed workout and PR earns XP toward the next one."
 2. Streak card — "Keep your streak alive by training on consecutive days — miss a day and it resets."
 3. Primary CTA ("START <DAY>") — "Tap here to jump into your suggested next workout. GRIND rotates through your days automatically."
 4. Stats row (Workouts this week/month, Total PRs) — "Track your volume at a glance."
 5. Workout history calendar — "See every day you've trained, and revisit or edit past sessions."
-(If `totalWorkouts === 0`, anchor step 3 to the welcome hero's CTA instead, and skip steps 1/2/4 since they're not meaningful yet — check for the empty-state before building the step list.)
+(If `totalWorkouts === 0`, anchor step 3 to the welcome hero's CTA instead, and skip steps 1/2/4 since they're not meaningful yet.)
+
+After Home finishes (or on any other `(app)` route), the **AI Coach FAB** runs its own 1-step tour id `coach`. Existing users who already finished Home still get Coach once.
+
+### AI Coach (floating G orb, `CoachFab.tsx`) — tour id `coach`
+1. The G orb — "Tap the G anytime for a coach that knows your lifts, streak, and program."
+Hidden during an active workout (`/log?day=`), same as the FAB. Waits until Home’s walkthrough is done so two marks never stack.
 
 ### Choose Your Day (`(app)/log/DaySelect.tsx`) — tour id `log-dayselect`
 1. Day cards — "Tap a day to start logging. UP NEXT highlights what GRIND suggests based on your rotation."
-2. MANAGE button (gear icon, top right) — "Add, edit, reorder, or remove your workout days and exercises here."
+2. MANAGE button — "Add, edit, reorder, or mark a day as flex (skip the rotation) here."
 3. "Log a past workout" link — "Forgot to log a session live? Add it retroactively here."
 
-### Progress (`(app)/progress/page.tsx` + `ProgressChart.tsx`) — tour id `progress`
-1. Exercise/metric selector — "Choose which lift or metric to chart."
-2. The chart itself — "Each point is a working set; the highlighted ones are PRs."
-(Read `(app)/progress/page.tsx` fully first to confirm the exact selector elements — it wasn't in the excerpt reviewed and may include an exercise picker in addition to the metric one.)
+### Workout Manager (sheet, not a scripted tour)
+First visit to a day's screen: one-off tooltip on the **Flex day** toggle (`wm-flex`).
+
+### Progress (`(app)/progress/page.tsx`) — tour id `progress`
+1. Progress photos row — "Log physique shots here and compare them over time."
+2. Exercise/metric selector — "Choose which lift or metric to chart."
+3. The chart itself — "Each point is a working set; the highlighted ones are PRs."
 
 ### Profile (`(app)/profile/ProfileDashboard.tsx`) — tour id `profile`
-1. Username edit pencil icon — "Tap the pencil to change your @handle."
-2. Weight unit toggle (KG/LBS pill) — "Switch how weights display app-wide. Everything is still stored consistently under the hood."
-3. Default Rest Time control — "Set your default rest between sets — override per-exercise from the rest timer during a workout."
-4. Badges section — "Tap a badge to see how to earn it." (this already has its own hover/tap tooltip built — the tour step just needs to point at the section header, not duplicate the per-badge tooltip.)
+1. Settings gear — "Units, rest days, theme, and notifications live here."
+2. Username edit pencil — "Tap the pencil to change your @handle."
+3. Body weight card — "Log today’s weight up top. Tap a chart dot to edit or delete a past day."
+4. Badges section — "Tap a badge to see how to earn it."
 
-### Leaderboard (`(app)/leaderboard/LeaderboardClient.tsx` + `FriendsAccordion.tsx`) — tour id `leaderboard`
-1. Friends accordion — "Add friends to compare progress. Rankings without friends only show you."
-2. Category tabs (PUSH/PULL/LEGS/OVERALL) — "Overall ranks by XP; the lift categories rank by heaviest working set."
-3. Share icon (top right) — "Share your current rank as an image."
+### Settings (`(app)/profile/settings/SettingsView.tsx`) — tour id `settings`
+1. Weight unit toggle
+2. Default rest time
+3. Rest days (weekday pills) — Rest today on Home spends one of these slots.
+4. Notifications — streak reminders and rest-end pings; iPhone needs Add to Home Screen.
 
-## Use-case-based tooltips inside the active workout (`(app)/log/ActiveWorkout.tsx`) — NOT a tour, one-off `Tooltip`s only
+### Leaderboard (`(app)/leaderboard/LeaderboardClient.tsx`) — tour id `leaderboard`
+1. Friends accordion
+2. Category tabs (PUSH/PULL/LEGS/OVERALL)
+3. Share icon (when the user has a ranked entry)
+
+## Use-case-based tooltips inside the active workout (`(app)/log/ActiveWorkout.tsx`) — NOT a tour
 
 Each fires the first time its condition is true, once ever, near the relevant control:
-- **First unchecked set row rendered** → tooltip near the check-mark button: "Tap the checkmark to log this set. Tap a logged set again to edit and re-save it." (covers `handleCheck`/`handleStartEdit`/`handleSaveEdit` — the check ⇄ edit ⇄ save affordance around line 2685-2738 of `ActiveWorkout.tsx`.)
-- **First time the plate-calculator icon (barbell glyph between the LBS/REPS column headers) is visible** → "Tap here to see which plates to load per side for your target weight."
-- **First time the "W" warm-up pill is visible** (first set of the first exercise) → "Mark warm-up sets — they're excluded from PR detection." (There's already a static caption under set 1 of every exercise; the tooltip should supplement it once, not repeat it every exercise.)
-- **First set checked, when the undo toast appears** → tooltip (or fold into the toast itself) noting "You have 5 seconds to undo a logged set."
-- **First time a set is marked a PR** (the "PR" pill appears) → "New personal record! GRIND compares against your best-ever weight for this exercise."
-- **First "+ ADD SET" tap available** (render once per user, on first exercise card) → "Need an extra set beyond the plan? Add one here."
-- **First bonus set / first planned set skip controls seen** → clarify the Delete-vs-Skip distinction: bonus sets get a trash icon (removes the slot), planned sets get a skip icon (marks not-done but keeps the slot). One tooltip covering whichever the user sees first is enough — don't fire both.
-- **First swap-exercise icon (double-arrow) seen** → "Swap this exercise for another from your catalog, or create a new one."
-- **First rest timer bar appears** (after the first non-warm-up set is checked) → tooltip near the "±" button: "Adjust your rest on the fly, or tap the timer to set a new default for this exercise."
-- **First per-set note chevron used or a note is present** → "Tap the chevron to add a note to this specific set."
-- **First workout, when the Exit (back arrow) button is tapped and the confirm sheet opens** — this one already explains itself via body copy in the confirm dialog; no extra tooltip needed, skip it.
-
-Keep this list as the source of truth but re-verify each trigger point against the current line numbers in `ActiveWorkout.tsx` before wiring — the file is ~2770 lines and these controls live in `SetRow`, `ExerciseCard`, and `RestTimerBar`.
+- **First unchecked set row** → check-mark: "Tap the checkmark to log this set…"
+- **Plate calculator icon** → plates per side
+- **"W" warm-up pill** → excluded from PRs
+- **Undo toast** → 5 seconds to undo
+- **PR pill** → volume-based personal record
+- **+ ADD SET**
+- **Skip vs delete** on planned vs bonus sets
+- **Swap-exercise icon**
+- **Rest timer ±**
+- **Per-set note chevron** → note or RPE
+- Exit confirm already explains itself — no extra tooltip.
 
 ## Visual spec (must match `CLAUDE.md` design system, not invent new tokens)
 - Surface: `var(--surface-elevated)`, border: `var(--border-strong)`, radius: `var(--radius-md)` (12px), shadow matching existing popovers (`0 4px 16px rgba(0,0,0,0.4-0.5)`).

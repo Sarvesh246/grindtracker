@@ -1,7 +1,11 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react'
+import { usePathname } from 'next/navigation'
 import { useMotionPref } from '@/lib/contexts/MotionContext'
+import { useOnboarding } from '@/lib/contexts/OnboardingContext'
+import { useTour, type TourStep } from '@/components/onboarding/Tour'
+import { useRunningTourId } from '@/components/onboarding/tourLock'
 import CoachFabIcon from './CoachFabIcon'
 import { useCoach, type CoachDockId } from './CoachProvider'
 import {
@@ -32,10 +36,29 @@ const VEL_EMA = 0.78
 /** Release glow fade (ms) — sustained hold uses --pressed, not this timer */
 const GLOW_RELEASE_MS = 450
 
+const COACH_TOUR_STEPS: TourStep[] = [
+  {
+    target: 'coach-fab',
+    title: 'AI Coach',
+    body: 'Tap the G anytime for a coach that knows your lifts, streak, and program. Ask it to build a workout, fix a logged set, or talk through what’s next.',
+  },
+]
+
 export default function CoachFab() {
   const { open, openCoach, dock, setDock, fabRef, quota, quotaLoaded } =
     useCoach()
   const { reduceMotion } = useMotionPref()
+  const pathname = usePathname()
+  const { hasSeenTour } = useOnboarding()
+  const runningTour = useRunningTourId()
+  const homeDoneOrElsewhere = hasSeenTour('home') || pathname !== '/home'
+  const coachTour = useTour('coach', COACH_TOUR_STEPS, {
+    active:
+      !open &&
+      homeDoneOrElsewhere &&
+      (runningTour == null || runningTour === 'coach'),
+    settleMs: 800,
+  })
   const capped =
     quotaLoaded &&
     quota != null &&
@@ -373,37 +396,41 @@ export default function CoachFab() {
         : undefined
 
   return (
-    <button
-      ref={fabRef}
-      type="button"
-      className={`coach-fab press${dragging ? ' coach-fab--dragging' : ''}${
-        settling ? ' coach-fab--settling' : ''
-      }${pressed ? ' coach-fab--pressed' : ''}${
-        alive ? ' coach-fab--alive' : ''
-      }${glowing && !pressed ? ' coach-fab--glow' : ''}${
-        capped ? ' coach-fab--capped' : ''
-      }`}
-      data-dock={dock}
-      data-haptic={dragging || settling || open ? undefined : 'light'}
-      aria-label="Open Coach"
-      aria-expanded={open}
-      aria-haspopup="dialog"
-      tabIndex={open ? -1 : 0}
-      aria-hidden={open || undefined}
-      style={live}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={endDrag}
-      onPointerCancel={endDrag}
-      onLostPointerCapture={onLostCapture}
-    >
-      <span className="coach-fab__float">
-        <span className="coach-fab__disc">
-          <span className="coach-fab__glyph">
-            <CoachFabIcon size={48} />
+    <>
+      {coachTour}
+      <button
+        ref={fabRef}
+        type="button"
+        className={`coach-fab press${dragging ? ' coach-fab--dragging' : ''}${
+          settling ? ' coach-fab--settling' : ''
+        }${pressed ? ' coach-fab--pressed' : ''}${
+          alive ? ' coach-fab--alive' : ''
+        }${glowing && !pressed ? ' coach-fab--glow' : ''}${
+          capped ? ' coach-fab--capped' : ''
+        }`}
+        data-onboard="coach-fab"
+        data-dock={dock}
+        data-haptic={dragging || settling || open ? undefined : 'light'}
+        aria-label="Open Coach"
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        tabIndex={open ? -1 : 0}
+        aria-hidden={open || undefined}
+        style={live}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+        onLostPointerCapture={onLostCapture}
+      >
+        <span className="coach-fab__float">
+          <span className="coach-fab__disc">
+            <span className="coach-fab__glyph">
+              <CoachFabIcon size={48} />
+            </span>
           </span>
         </span>
-      </span>
-    </button>
+      </button>
+    </>
   )
 }

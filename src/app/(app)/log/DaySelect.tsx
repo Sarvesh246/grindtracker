@@ -329,7 +329,7 @@ export default function DaySelect() {
   // blank slate). Paused while the manager sheet is open.
   const daySteps: TourStep[] = [
     { target: 'dayselect-days', title: 'Pick a day', body: 'Tap a day to start logging. UP NEXT highlights what GRIND suggests based on your rotation.' },
-    { target: 'dayselect-manage', title: 'Manage days', body: 'Add, edit, reorder, or remove your workout days and exercises here.' },
+    { target: 'dayselect-manage', title: 'Manage days', body: 'Add, edit, reorder, or mark a day as flex (skip the rotation — do it whenever) here.' },
     { target: 'dayselect-past', title: 'Log a past workout', body: 'Forgot to log a session live? Add it retroactively here.' },
   ]
   const dayTour = useTour('log-dayselect', daySteps, {

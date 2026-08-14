@@ -255,6 +255,7 @@ export default function BodyWeightCard() {
 
   return (
     <div
+      data-onboard="profile-weight"
       style={{
         backgroundColor: 'var(--surface)',
         border: '1px solid var(--border)',

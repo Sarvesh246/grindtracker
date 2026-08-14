@@ -14,7 +14,11 @@ import { createClient } from '@/lib/supabase/client'
  * matches that.
  *
  *   toursSeen       — ids of scripted walkthroughs the user finished or skipped.
- *   tooltipsSeen    — ids of one-off contextual hints (e.g. ActiveWorkout) shown once.
+ *                     Known ids: home, coach, log-dayselect, progress, profile,
+ *                     settings, leaderboard. Coach is its own tour so users who
+ *                     already finished Home still see the G orb once.
+ *   tooltipsSeen    — ids of one-off contextual hints (e.g. ActiveWorkout `aw-*`,
+ *                     Workout Manager flex `wm-flex`) shown once.
  *   skipAll         — the user hit "Skip tour" on any scripted walkthrough. Bailing
  *                     out of one is treated as bailing out of all of them, so this
  *                     suppresses every future *scripted tour* — but NOT the

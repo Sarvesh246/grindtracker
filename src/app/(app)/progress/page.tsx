@@ -389,6 +389,7 @@ export default function ProgressPage() {
   // Two-step walkthrough (hook must run before the early returns below). Only
   // active once exercises exist — the blank-slate hero has nothing to point at.
   const progressSteps: TourStep[] = [
+    { target: 'progress-photos', title: 'Progress photos', body: 'Log physique shots here and compare them over time — separate from the lift charts below.' },
     { target: 'progress-selector', title: 'Pick what to chart', body: 'Choose which lift or metric to chart.' },
     { target: 'progress-chart', title: 'Read your chart', body: 'Each point is a working set; the highlighted ones are PRs.' },
   ]
@@ -814,12 +815,13 @@ function PhotoEntryCard({
       : `Last logged ${latestDate ? formatShortDate(latestDate) : ''} · ${count} photo${count === 1 ? '' : 's'}`
 
   return (
-    <Card
-      as="section"
-      padding="sm"
-      onClick={onClick}
-      style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}
-    >
+    <div data-onboard="progress-photos">
+      <Card
+        as="section"
+        padding="sm"
+        onClick={onClick}
+        style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}
+      >
       <span style={{
         width: '42px', height: '42px', borderRadius: '9999px', flexShrink: 0,
         backgroundColor: 'var(--accent-wash)', color: 'var(--accent-text)',
@@ -848,6 +850,7 @@ function PhotoEntryCard({
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
         <polyline points="9 18 15 12 9 6" />
       </svg>
-    </Card>
+      </Card>
+    </div>
   )
 }
