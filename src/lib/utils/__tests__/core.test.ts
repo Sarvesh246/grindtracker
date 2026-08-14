@@ -8,6 +8,7 @@ import {
   uncoveredDatesBetween,
   isRestDay,
   skipTodayState,
+  restLeftThisWeekLabel,
   weekStartMonday,
   sameDateKeyList,
 } from '../restDays'
@@ -259,6 +260,18 @@ describe('skipTodayState', () => {
     })
     assert.equal(state.budget, 1)
     assert.equal(state.canSkip, true)
+  })
+})
+
+describe('restLeftThisWeekLabel', () => {
+  it('uses none / singular / plural for the weekly leftover', () => {
+    assert.equal(restLeftThisWeekLabel(0), 'None left this week')
+    assert.equal(restLeftThisWeekLabel(1), '1 left this week')
+    assert.equal(restLeftThisWeekLabel(2), '2 left this week')
+  })
+
+  it('floors negatives at none', () => {
+    assert.equal(restLeftThisWeekLabel(-1), 'None left this week')
   })
 })
 

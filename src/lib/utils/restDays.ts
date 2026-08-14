@@ -235,3 +235,14 @@ export function skipTodayState(
   const canSkip = !todayIsRest && budget > 0 && used < budget
   return { todayIsRest, todayIsOneOff, todayIsScheduled, canSkip, budget, used }
 }
+
+/**
+ * Home Rest today remaining line. Weekly budget resets Monday (see
+ * `weekStartMonday`); "this week" is the reset cue, not a separate sentence.
+ */
+export function restLeftThisWeekLabel(remaining: number): string {
+  const n = Math.max(0, remaining)
+  if (n === 0) return 'None left this week'
+  if (n === 1) return '1 left this week'
+  return `${n} left this week`
+}
