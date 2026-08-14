@@ -10,14 +10,16 @@ Paste and run [`sql/33-coach.sql`](sql/33-coach.sql), then
 [`sql/35-coach-conversations.sql`](sql/35-coach-conversations.sql), then
 [`sql/36-coach-actions.sql`](sql/36-coach-actions.sql), then
 [`sql/37-coach-correct-weights.sql`](sql/37-coach-correct-weights.sql), then
-[`sql/40-integrity-followups.sql`](sql/40-integrity-followups.sql) in the
+[`sql/40-integrity-followups.sql`](sql/40-integrity-followups.sql), then
+[`sql/47-coach-action-kinds.sql`](sql/47-coach-action-kinds.sql) in the
 Supabase SQL editor **before** relying on saved chats / Confirm actions. 33 creates
 `coach_messages` + RLS + rate-limit trigger; 34 adds a refund path for failed
 turns and the admin dev-unlimited toggle; 35 adds `coach_conversations` so
 threads can be listed, reopened, and deleted; 36 stores confirm-before-apply
 proposals; 37 updates past set weights in place (keeps skips + RPE); 40 restricts
 client inserts to `role = 'user'` (assistant replies go through
-`grind_insert_coach_assistant`) and freezes proposal `payload` after insert.
+`grind_insert_coach_assistant`) and freezes proposal `payload` after insert;
+47 widens proposal `kind` for the rest of the confirm-before-apply tools.
 
 Limits (also in `src/lib/coach/constants.ts` — change both):
 
@@ -123,6 +125,7 @@ existing RPCs (`grind_badge_metrics`, `grind_home_history`,
   days-active counts, body-weight log count, friend flag (boolean only)
 - Schedule: `last_trained_by_day` (when each day was last completed)
 - Rest days (weekly + recent one-offs, with weekday names)
+- Notification prefs (enabled flags, streak reminder hour, timezone)
 - Body weight: trend summary (latest, Δ7/30d, 90d min/max) + recent points
 - RPE summary from the recent-session window
 - Open/incomplete session (if any)
@@ -160,13 +163,27 @@ the user (or the prompt) to prescribe formatting per question.
 
 Coach can **propose** mutations via tools; it cannot write data until the user
 taps Confirm in chat. Apply [`sql/36-coach-actions.sql`](sql/36-coach-actions.sql)
-before relying on this.
+and [`sql/47-coach-action-kinds.sql`](sql/47-coach-action-kinds.sql) before
+relying on this.
 
 | Action | Tool | Execute path |
 | --- | --- | --- |
 | Correct past weights | `propose_correct_weights` | `coach_correct_session_weights` (in-place; preserves skips/RPE) + recompute |
 | Start today’s workout | `propose_start_workout` | `start_or_resume_session` → `/log?day=…` |
 | Create a new day | `propose_create_day` | `exercises` insert (+ optional category) → `/log` day picker (does **not** auto-start; use `propose_start_workout` only if they ask) |
+| Log / update body weight | `propose_log_body_weight` | `body_weights` upsert (`user_id,recorded_at`) — overwrites that date |
+| Delete body weight | `propose_delete_body_weight` | `body_weights` delete |
+| Finish open workout | `propose_finish_workout` | `complete_session` (+ rotation advance, same as Active Workout) |
+| Undo finish | `propose_undo_finish_workout` | `uncomplete_session` (10-minute window) |
+| Skip / unskip sets | `propose_skip_sets` | `session_logs` skip upsert / delete on the open session |
+| Rest today | `propose_toggle_rest_today` | `toggle_rest_today` |
+| Weekly rest weekday | `propose_set_rest_weekday` | `set_rest_weekday` (new days do not cover today) |
+| Edit exercise targets | `propose_edit_exercise` | `exercises` update (sets/reps/weight/active) |
+| Workout order | `propose_update_rotation` | `user_rotation` upsert (preserves `current_index`) |
+| Edit one logged set | `propose_edit_session_log` | `upsert_past_session` full-replace with reconstructed logs |
+| Notification prefs | `propose_update_notification_prefs` | `notification_prefs` upsert (same validation as `/api/push/prefs`) |
+
+Not in scope: friend management, account/data deletion, theme/motion/unit toggles, username/display-name.
 
 Flow:
 

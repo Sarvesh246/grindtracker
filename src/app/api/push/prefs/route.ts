@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { DEFAULT_NOTIFICATION_PREFS } from '@/lib/push/types'
-
-const HOURS = new Set([17, 18, 19, 20, 21])
+import { validateNotificationPrefsPatch } from '@/lib/push/validatePrefs'
 
 export async function GET() {
   const supabase = await createClient()
@@ -49,32 +48,15 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
+  const validated = validateNotificationPrefsPatch(body)
+  if (!validated.ok) {
+    return NextResponse.json({ error: validated.reason }, { status: 400 })
+  }
+
   const patch: Record<string, unknown> = {
     user_id: user.id,
     updated_at: new Date().toISOString(),
-  }
-
-  if (typeof body.enabled === 'boolean') patch.enabled = body.enabled
-  if (typeof body.rest_complete === 'boolean') patch.rest_complete = body.rest_complete
-  if (typeof body.rest_warning_10s === 'boolean') patch.rest_warning_10s = body.rest_warning_10s
-  if (typeof body.workout_status === 'boolean') patch.workout_status = body.workout_status
-  if (typeof body.streak_reminder === 'boolean') patch.streak_reminder = body.streak_reminder
-  if (typeof body.timezone === 'string' && body.timezone.trim()) {
-    const tz = body.timezone.trim().slice(0, 64)
-    // Reject non-IANA values so schedule_streak_reminders can't abort for everyone.
-    try {
-      Intl.DateTimeFormat('en-US', { timeZone: tz })
-      patch.timezone = tz
-    } catch {
-      return NextResponse.json({ error: 'Invalid timezone' }, { status: 400 })
-    }
-  }
-  if (typeof body.streak_reminder_hour === 'number') {
-    const h = Math.round(body.streak_reminder_hour)
-    if (!HOURS.has(h)) {
-      return NextResponse.json({ error: 'streak_reminder_hour must be 17–21' }, { status: 400 })
-    }
-    patch.streak_reminder_hour = h
+    ...validated.patch,
   }
 
   const { data, error } = await supabase

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { LBS_PER_KG } from '@/lib/utils/units'
+import { resolveExerciseByName } from './resolveExercise'
 import {
   fmtWeightForUnit,
   insertCoachProposal,
@@ -23,10 +24,6 @@ type PreviewInput = {
 function toCanonicalLbs(value: number, unit: 'lb' | 'kg'): number {
   if (unit === 'kg') return value * LBS_PER_KG
   return value
-}
-
-function normalizeName(s: string): string {
-  return s.trim().toLowerCase().replace(/\s+/g, ' ')
 }
 
 /**
@@ -53,49 +50,13 @@ export async function previewCorrectWeights(
     return { ok: false, reason: 'From and to weights are the same.' }
   }
 
-  const needle = normalizeName(args.input.exerciseName)
-  if (!needle) {
-    return { ok: false, reason: 'Exercise name is required.' }
-  }
-
-  const { data: exercises, error: exErr } = await supabase
-    .from('exercises')
-    .select('id, name')
-    .eq('user_id', args.userId)
-
-  if (exErr) {
-    return { ok: false, reason: 'Could not load your exercises.' }
-  }
-
-  const matchedExercises = (exercises ?? []).filter(e => {
-    const n = normalizeName(String(e.name ?? ''))
-    return n === needle || n.includes(needle) || needle.includes(n)
-  })
-
-  if (matchedExercises.length === 0) {
-    return {
-      ok: false,
-      reason: `No exercise matching "${args.input.exerciseName}" in your catalog.`,
-    }
-  }
-  if (matchedExercises.length > 1) {
-    // Prefer exact name match when several partials hit.
-    const exact = matchedExercises.filter(
-      e => normalizeName(String(e.name)) === needle,
-    )
-    if (exact.length !== 1) {
-      return {
-        ok: false,
-        reason: `Multiple exercises match "${args.input.exerciseName}". Be more specific (${matchedExercises
-          .map(e => e.name)
-          .slice(0, 4)
-          .join(', ')}).`,
-      }
-    }
-    matchedExercises.splice(0, matchedExercises.length, ...exact)
-  }
-
-  const exercise = matchedExercises[0]!
+  const resolved = await resolveExerciseByName(
+    supabase,
+    args.userId,
+    args.input.exerciseName,
+  )
+  if (!resolved.ok) return resolved
+  const exercise = resolved.exercise
   const exerciseId = String(exercise.id)
 
   const { data: sessions, error: sessErr } = await supabase

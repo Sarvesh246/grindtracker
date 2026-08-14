@@ -3,9 +3,8 @@ import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/admin'
 import {
   encodeNdjson,
+  executeConfirmedPayload,
   executeCorrectWeights,
-  executeCreateDay,
-  executeStartWorkout,
   formatCorrectWeightsMessage,
   getCoachProposal,
   isProposalExpired,
@@ -221,76 +220,22 @@ export async function POST(request: Request) {
   }
 
   try {
-    let message = ''
-    let href: string | undefined
-    let details: Record<string, unknown> = {}
-
-    if (payload.kind === 'correct_weights') {
-      const result = await executeCorrectWeights(supabase, payload.execute)
-      if (!result.ok) {
-        await updateCoachProposalStatus(serviceSupabase, {
-          userId: user.id,
-          proposalId,
-          status: 'failed',
-          result: { message: result.message },
-        })
-        return NextResponse.json(
-          { ok: false, status: 'failed', message: result.message },
-          { status: 500 },
-        )
-      }
-      message = formatCorrectWeightsMessage(result.updated, result.failed)
-      details = { updated: result.updated, failed: result.failed }
-    } else if (payload.kind === 'start_workout') {
-      const result = await executeStartWorkout(
-        supabase,
-        payload.execute.dayType,
-      )
-      if (!result.ok) {
-        await updateCoachProposalStatus(serviceSupabase, {
-          userId: user.id,
-          proposalId,
-          status: 'failed',
-          result: { message: result.message },
-        })
-        return NextResponse.json(
-          { ok: false, status: 'failed', message: result.message },
-          { status: 500 },
-        )
-      }
-      message = result.resumed
-        ? `Resuming ${payload.execute.dayType}.`
-        : `Starting ${payload.execute.dayType}.`
-      href = result.href
-      details = { resumed: result.resumed, dayType: payload.execute.dayType }
-    } else {
-      const result = await executeCreateDay(supabase, {
+    const executed = await executeConfirmedPayload(supabase, user.id, payload)
+    if (!executed.ok) {
+      await updateCoachProposalStatus(serviceSupabase, {
         userId: user.id,
-        dayKey: payload.execute.dayKey,
-        category: payload.execute.category,
-        exercises: payload.execute.exercises,
+        proposalId,
+        status: 'failed',
+        result: { message: executed.message },
       })
-      if (!result.ok) {
-        await updateCoachProposalStatus(serviceSupabase, {
-          userId: user.id,
-          proposalId,
-          status: 'failed',
-          result: { message: result.message },
-        })
-        return NextResponse.json(
-          { ok: false, status: 'failed', message: result.message },
-          { status: 500 },
-        )
-      }
-      message = `Created “${payload.execute.dayKey}” with ${result.inserted} exercise${result.inserted === 1 ? '' : 's'}. Pick it from Log when you want to train — it won’t start automatically.`
-      details = {
-        inserted: result.inserted,
-        dayKey: payload.execute.dayKey,
-      }
-      // Day select only — never /log?day=… (that opens ActiveWorkout).
-      // Starting requires an explicit propose_start_workout confirm.
-      href = '/log'
+      return NextResponse.json(
+        { ok: false, status: 'failed', message: executed.message },
+        { status: 500 },
+      )
     }
+    const message = executed.message
+    const href = executed.href
+    const details = executed.details
 
     await updateCoachProposalStatus(serviceSupabase, {
       userId: user.id,

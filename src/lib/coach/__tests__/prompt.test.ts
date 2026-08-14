@@ -220,6 +220,7 @@ describe('COACH_SYSTEM_PROMPT', () => {
     assert.match(COACH_SYSTEM_PROMPT, /schedule\.last_trained_by_day/i)
     assert.match(COACH_SYSTEM_PROMPT, /body_weight\.summary/i)
     assert.match(COACH_SYSTEM_PROMPT, /active_session/i)
+    assert.match(COACH_SYSTEM_PROMPT, /notifications/i)
     assert.match(COACH_SYSTEM_PROMPT, /when personalization IS Required or Useful/i)
   })
 
@@ -229,15 +230,23 @@ describe('COACH_SYSTEM_PROMPT', () => {
     assert.match(COACH_SYSTEM_PROMPT, /propose_correct_weights/i)
     assert.match(COACH_SYSTEM_PROMPT, /propose_start_workout/i)
     assert.match(COACH_SYSTEM_PROMPT, /propose_create_day/i)
+    assert.match(COACH_SYSTEM_PROMPT, /propose_log_body_weight/i)
+    assert.match(COACH_SYSTEM_PROMPT, /propose_delete_body_weight/i)
+    assert.match(COACH_SYSTEM_PROMPT, /propose_finish_workout/i)
+    assert.match(COACH_SYSTEM_PROMPT, /propose_undo_finish_workout/i)
+    assert.match(COACH_SYSTEM_PROMPT, /propose_skip_sets/i)
+    assert.match(COACH_SYSTEM_PROMPT, /propose_toggle_rest_today/i)
+    assert.match(COACH_SYSTEM_PROMPT, /propose_set_rest_weekday/i)
+    assert.match(COACH_SYSTEM_PROMPT, /propose_edit_exercise/i)
+    assert.match(COACH_SYSTEM_PROMPT, /propose_update_rotation/i)
+    assert.match(COACH_SYSTEM_PROMPT, /propose_edit_session_log/i)
+    assert.match(COACH_SYSTEM_PROMPT, /propose_update_notification_prefs/i)
     assert.match(COACH_SYSTEM_PROMPT, /Never claim a change is applied/i)
-    assert.match(
-      COACH_SYSTEM_PROMPT,
-      /must NOT start a workout/i,
-    )
-    assert.match(
-      COACH_SYSTEM_PROMPT,
-      /splitting across quota-burning turns/i,
-    )
+    assert.match(COACH_SYSTEM_PROMPT, /must NOT start a workout/i)
+    assert.match(COACH_SYSTEM_PROMPT, /GRIND mechanics/i)
+    assert.match(COACH_SYSTEM_PROMPT, /weight×reps/i)
+    assert.match(COACH_SYSTEM_PROMPT, /Skip markers/i)
+    assert.match(COACH_SYSTEM_PROMPT, /splitting across quota-burning turns/i)
   })
 
   it('prefers one clear recommendation and proportional workout formatting', () => {
@@ -263,7 +272,7 @@ describe('COACH_SYSTEM_PROMPT', () => {
 
   it('stays within a free-tier-friendly size budget', () => {
     assert.ok(
-      COACH_SYSTEM_PROMPT.length < 13000,
+      COACH_SYSTEM_PROMPT.length < 16000,
       `prompt too long: ${COACH_SYSTEM_PROMPT.length}`,
     )
     assert.ok(

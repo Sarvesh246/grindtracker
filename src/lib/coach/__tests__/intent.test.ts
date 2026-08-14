@@ -152,12 +152,57 @@ it('classifies mutation asks as actionable', () => {
       inferCoachIntent('Fix my bench weights from 90 to 95').intent,
       'actionable',
     )
+    assert.equal(inferCoachIntent('Log my body weight').intent, 'actionable')
+    assert.equal(inferCoachIntent('I weigh 180').intent, 'actionable')
+    assert.equal(
+      inferCoachIntent("Delete yesterday's weigh-in").intent,
+      'actionable',
+    )
+    assert.equal(inferCoachIntent('Finish my workout').intent, 'actionable')
+    assert.equal(inferCoachIntent("I'm done training").intent, 'actionable')
+    assert.equal(inferCoachIntent('Undo that finish').intent, 'actionable')
+    assert.equal(
+      inferCoachIntent('Skip the last set of bench').intent,
+      'actionable',
+    )
+    assert.equal(inferCoachIntent('Unskip squats').intent, 'actionable')
+    assert.equal(inferCoachIntent('Rest today').intent, 'actionable')
+    assert.equal(inferCoachIntent('Taking today off').intent, 'actionable')
+    assert.equal(inferCoachIntent('Always rest on Sunday').intent, 'actionable')
+    assert.equal(
+      inferCoachIntent('Change my bench to 4 sets').intent,
+      'actionable',
+    )
+    assert.equal(inferCoachIntent('Bump bench up a bit').intent, 'actionable')
+    assert.equal(inferCoachIntent('Reorder my days').intent, 'actionable')
+    assert.equal(
+      inferCoachIntent('that squat set was wrong, it was actually 8 not 5').intent,
+      'actionable',
+    )
+    assert.equal(inferCoachIntent('I actually did 8 reps').intent, 'actionable')
+    assert.equal(
+      inferCoachIntent('Turn off notifications').intent,
+      'actionable',
+    )
+    assert.equal(
+      inferCoachIntent('Move my streak reminder to 6pm').intent,
+      'actionable',
+    )
   })
 
   it('does not treat advisory start/weight questions as actionable', () => {
     const shouldStart = inferCoachIntent('Should I start my workout?')
     assert.notEqual(shouldStart.intent, 'actionable')
     assert.equal(shouldStart.intent, 'recommendation')
+    assert.notEqual(inferCoachIntent('Should I rest today?').intent, 'actionable')
+    assert.notEqual(
+      inferCoachIntent('Should I skip this set?').intent,
+      'actionable',
+    )
+    assert.notEqual(
+      inferCoachIntent('Can I turn off notifications?').intent,
+      'actionable',
+    )
   })
 })
 

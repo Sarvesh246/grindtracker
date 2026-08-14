@@ -334,6 +334,8 @@ Remember: intent before formatting — Understand intent → assess complexity �
     userId: user.id,
     conversationId,
     unit: unit === 'kg' ? 'kg' : 'lb',
+    localDate,
+    timeZone,
     proposals: [] as CoachProposalView[],
   }
   const tools = buildCoachProposalTools(toolCtx)

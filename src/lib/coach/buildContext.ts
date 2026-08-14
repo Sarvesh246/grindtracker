@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { DayCategory, UserRotation } from '@/lib/types'
 import { ALL_BADGES } from '@/lib/utils/badges'
 import { effectiveSequence, nextDay } from '@/lib/utils/rotation'
+import { DEFAULT_NOTIFICATION_PREFS } from '@/lib/push/types'
 import {
   summarizeBodyWeight,
   summarizeRpe,
@@ -150,6 +151,19 @@ export interface CoachContext {
     latest_note: string | null
   }
   /**
+   * Current notification preferences (defaults if the user has never saved).
+   * Coach uses this to describe a change before proposing one.
+   */
+  notifications: {
+    enabled: boolean
+    rest_complete: boolean
+    rest_warning_10s: boolean
+    workout_status: boolean
+    streak_reminder: boolean
+    streak_reminder_hour: number
+    timezone: string
+  }
+  /**
    * Tenure + layoff snapshot derived from all completed-session local dates.
    * Use for timelines / “how long have I been training” — recent_sessions alone
    * is too short a window for that.
@@ -251,6 +265,7 @@ export async function buildCoachContext(
     { data: activeRow },
     { count: photoCount },
     { data: latestPhoto },
+    { data: notificationPrefs },
   ] = await Promise.all([
     supabase
       .from('user_profiles')
@@ -325,6 +340,13 @@ export async function buildCoachContext(
       .eq('user_id', userId)
       .order('taken_date', { ascending: false })
       .limit(1)
+      .maybeSingle(),
+    supabase
+      .from('notification_prefs')
+      .select(
+        'enabled, rest_complete, rest_warning_10s, workout_status, streak_reminder, streak_reminder_hour, timezone',
+      )
+      .eq('user_id', userId)
       .maybeSingle(),
   ])
 
@@ -724,6 +746,22 @@ export async function buildCoachContext(
       latest_date: latestPhoto?.taken_date ?? null,
       latest_day_type: latestPhoto?.day_type ?? null,
       latest_note: latestPhoto?.note ?? null,
+    },
+    notifications: {
+      enabled: notificationPrefs?.enabled ?? DEFAULT_NOTIFICATION_PREFS.enabled,
+      rest_complete:
+        notificationPrefs?.rest_complete ?? DEFAULT_NOTIFICATION_PREFS.rest_complete,
+      rest_warning_10s:
+        notificationPrefs?.rest_warning_10s ??
+        DEFAULT_NOTIFICATION_PREFS.rest_warning_10s,
+      workout_status:
+        notificationPrefs?.workout_status ?? DEFAULT_NOTIFICATION_PREFS.workout_status,
+      streak_reminder:
+        notificationPrefs?.streak_reminder ?? DEFAULT_NOTIFICATION_PREFS.streak_reminder,
+      streak_reminder_hour:
+        notificationPrefs?.streak_reminder_hour ??
+        DEFAULT_NOTIFICATION_PREFS.streak_reminder_hour,
+      timezone: notificationPrefs?.timezone ?? DEFAULT_NOTIFICATION_PREFS.timezone,
     },
     training_history: summarizeTrainingHistory(
       ((historyDateRows ?? []) as { local_date: string | null }[]).map(r => r.local_date),
