@@ -483,6 +483,8 @@ export default function SettingsView({
   const settingsSteps: TourStep[] = [
     { target: 'profile-unit', title: 'Weight units', body: 'Switch how weights display app-wide. Everything is still stored consistently under the hood.' },
     { target: 'profile-rest', title: 'Default rest time', body: 'Set your default rest between sets — override per-exercise from the rest timer during a workout.' },
+    { target: 'profile-rest-days', title: 'Rest days', body: 'Pick weekly rest days so a day off doesn’t break your streak. Rest today on Home spends one of these slots.' },
+    { target: 'profile-notifications', title: 'Notifications', body: 'Streak reminders and rest-end pings. On iPhone, add GRIND to your Home Screen first so alerts can fire.' },
   ]
   const settingsTour = useTour('settings', settingsSteps, {
     active: !feedbackOpen && !deleteOpen,
@@ -741,7 +743,7 @@ export default function SettingsView({
 
         <div style={dividerStyle} />
 
-        <div>
+        <div data-onboard="profile-rest-days">
           <div style={{ marginBottom: '10px' }}>
             <div style={titleStyle}>Rest Days</div>
             <div style={hintStyle}>Weekly budget. Skip today from Home — turning a day on here starts the next time it comes around, not today.</div>
@@ -784,7 +786,7 @@ export default function SettingsView({
 
       {/* Notifications */}
       <Section label="Notifications">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+        <div data-onboard="profile-notifications" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
           <div>
             <div style={titleStyle}>Notifications</div>
             <div style={hintStyle}>

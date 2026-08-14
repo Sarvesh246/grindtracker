@@ -203,9 +203,11 @@ export default function ProfileDashboard({
     ? new Date(joinedAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
     : null
 
-  // Athlete walkthrough (settings has its own unit/rest tour).
+  // Athlete walkthrough (settings has its own units / rest / notifications tour).
   const profileSteps: TourStep[] = [
+    { target: 'profile-settings', title: 'Settings', body: 'Units, rest days, theme, and notifications live here — not on this page.' },
     { target: 'profile-username', title: 'Change your handle', body: 'Tap the pencil to change your @handle.' },
+    { target: 'profile-weight', title: 'Body weight', body: 'Log today’s weight up top. Tap a chart dot to edit or delete a past day.' },
     { target: 'profile-badges', title: 'Badges', body: 'Tap a badge to see how to earn it.' },
   ]
   const profileTour = useTour('profile', profileSteps, {
@@ -265,6 +267,7 @@ export default function ProfileDashboard({
           <Link
             href="/profile/settings"
             aria-label="Settings"
+            data-onboard="profile-settings"
             data-haptic="light"
             className="press"
             style={{

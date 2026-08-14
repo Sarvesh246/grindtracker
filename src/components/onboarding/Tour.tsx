@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useOnboarding } from '@/lib/contexts/OnboardingContext'
 import { onboardTarget } from './anchor'
 import CoachMark from './CoachMark'
+import { claimTour, releaseTour, useRunningTourId } from './tourLock'
 
 export interface TourStep {
   /** `data-onboard` attribute value of the element this step highlights. */
@@ -33,22 +34,36 @@ export interface UseTourOptions {
  *   skipping Home still meant getting stopped by Log's, Profile's, etc. as you
  *   explored — from the user's seat that reads as "skip didn't actually skip
  *   anything", so bailing out of any one walkthrough now opts out of all of them.
+ *
+ * Only one scripted tour runs at a time (`tourLock`). A waiting tour retries
+ * once the slot is free (e.g. Coach after Home).
  */
 export function useTour(tourId: string, steps: TourStep[], opts: UseTourOptions): React.ReactNode {
   const { hasSeenTour, markTourSeen, skipAllTours } = useOnboarding()
   const { active, settleMs = 500 } = opts
+  const running = useRunningTourId()
 
   const seen = hasSeenTour(tourId)
   const [started, setStarted] = useState(false)
   const [index, setIndex] = useState(0)
+  const blocked = running != null && running !== tourId
 
   // Start once, after the gate opens and a short settle delay. If the gate closes
-  // (a modal opens) before the timer fires, the start is cancelled.
+  // (a modal opens) before the timer fires, the start is cancelled. If another
+  // tour owns the slot, wait — `running` in the deps re-arms when it releases.
   useEffect(() => {
-    if (seen || started || !active || steps.length === 0) return
-    const t = window.setTimeout(() => setStarted(true), settleMs)
+    if (seen || started || !active || blocked || steps.length === 0) return
+    const t = window.setTimeout(() => {
+      if (!claimTour(tourId)) return
+      setStarted(true)
+    }, settleMs)
     return () => window.clearTimeout(t)
-  }, [seen, started, active, steps.length, settleMs])
+  }, [seen, started, active, blocked, steps.length, settleMs, tourId])
+
+  useEffect(() => {
+    if (!started) return
+    return () => releaseTour(tourId)
+  }, [started, tourId])
 
   const finish = useCallback(() => {
     setStarted(false)

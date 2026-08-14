@@ -2167,7 +2167,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
   })
   const hintNote = useFeatureTooltip('aw-note', {
     when: workoutReady, suppressed: hintsBlocked, getEl: () => onboardTarget('aw-note'),
-    body: 'Tap the chevron to add a note to this specific set.',
+    body: 'Tap the chevron to add a note or RPE for this set.',
     preferred: ['bottom', 'right', 'top'],
   })
   const hintSkip = useFeatureTooltip('aw-skip', {

@@ -8,6 +8,8 @@ import { autoSequence, effectiveSequence, orderedDayKeys } from '@/lib/utils/rot
 import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
 import { useToast } from '@/lib/contexts/ToastContext'
 import { useUnit } from '@/lib/contexts/UnitContext'
+import { useFeatureTooltip } from '@/components/onboarding/useFeatureTooltip'
+import { onboardTarget } from '@/components/onboarding/anchor'
 import { WORKOUT_TEMPLATES } from '@/lib/utils/workoutTemplates'
 import { applyWorkoutTemplate } from '@/lib/utils/applyWorkoutTemplate'
 
@@ -501,6 +503,15 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
     }
   }
 
+  const flexHint = useFeatureTooltip('wm-flex', {
+    when: screen.id === 'day',
+    suppressed: deleteTarget != null,
+    getEl: () => onboardTarget('wm-flex'),
+    title: 'Flex day',
+    body: 'Turn this on for days you do whenever — like abs or cardio. Flex days stay out of the auto rotation.',
+    preferred: ['top', 'bottom'],
+  })
+
   const title =
     screen.id === 'days' ? 'MANAGE WORKOUTS' :
     screen.id === 'setup-choice' ? 'GET STARTED' :
@@ -512,6 +523,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
 
   return (
     <>
+      {flexHint}
       {/* Backdrop */}
       <div
         className="wm-backdrop"
@@ -1264,6 +1276,10 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
 
                   {/* Flex day toggle */}
                   <button
+                    type="button"
+                    data-onboard="wm-flex"
+                    data-haptic="light"
+                    aria-pressed={flexDays.has(dayKey)}
                     onClick={() => toggleFlex(dayKey)}
                     style={{
                       width: '100%', textAlign: 'left',
