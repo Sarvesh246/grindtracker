@@ -95,14 +95,14 @@ export default function FinishUndoBanner() {
         maxWidth: '420px',
         backgroundColor: 'var(--surface-elevated)',
         border: '1px solid var(--border)',
-        borderRadius: '12px',
+        borderRadius: 'var(--radius-md)',
         padding: '12px 14px',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         gap: '12px',
         zIndex: 60,
-        boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+        boxShadow: 'var(--card-shadow)',
       }}
     >
       <div style={{ minWidth: 0 }}>
@@ -156,7 +156,7 @@ export default function FinishUndoBanner() {
             backgroundColor: 'var(--accent)',
             color: 'var(--on-accent)',
             border: 'none',
-            borderRadius: '8px',
+            borderRadius: 'var(--radius-sm)',
             fontFamily: "'Bebas Neue', sans-serif",
             fontSize: '15px',
             letterSpacing: '0.5px',

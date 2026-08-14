@@ -103,7 +103,13 @@ function normalizePath(pathname: string): string {
   return pathname
 }
 
-/** Test-only: wipe store + generation. */
+/**
+ * Wipe the entire store + generation counter. Call on sign-out — this cache
+ * is a module-level singleton with no user id in its keys, so without this
+ * the next account to sign in on the same tab/device can paint a prior
+ * user's cached exercises/history/body-weights until an unrelated write
+ * happens to bump the generation.
+ */
 export function resetAppDataCache(): void {
   generation = 0
   store.clear()

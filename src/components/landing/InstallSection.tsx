@@ -8,6 +8,7 @@ import {
   ensureInstallListeners,
   hasNativeInstallPrompt,
   isAppleMobileDevice,
+  isIOSSafari,
   isStandalonePwa,
   scrollToInstallSection,
   tryInstallApp,
@@ -101,6 +102,7 @@ export default function InstallSection() {
   const [standalone, setStandalone] = useState(false)
   const [showNativeInstall, setShowNativeInstall] = useState(false)
   const [appleDevice, setAppleDevice] = useState(true)
+  const [iosSafari, setIosSafari] = useState(true)
 
   useEffect(() => {
     ensureInstallListeners()
@@ -108,6 +110,7 @@ export default function InstallSection() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setStandalone(isStandalonePwa())
     setAppleDevice(isAppleMobileDevice())
+    setIosSafari(isIOSSafari())
 
     const syncPrompt = () => setShowNativeInstall(hasNativeInstallPrompt())
     syncPrompt()
@@ -133,7 +136,38 @@ export default function InstallSection() {
             The full gym experience is a PWA — no App Store. On your phone it feels like a native app
             once it lives on the Home Screen.
           </p>
-          {appleDevice ? (
+          {appleDevice && !iosSafari ? (
+            <>
+              <p className="landing-install__note">
+                You’re on an iPhone or iPad, but not in <strong>Safari</strong> — on iOS, only Safari
+                can add GRIND to your Home Screen as a real full-screen app. Chrome, Firefox, and other
+                iOS browsers can only bookmark this page, not install it.
+              </p>
+              <ol className="landing-install__steps">
+                <li>
+                  <span className="landing-install__step-n">1</span>
+                  <span>
+                    Copy this page’s link and open it in <strong>Safari</strong> (or tap the{' '}
+                    <strong>⋯</strong> / share menu in your current browser and choose{' '}
+                    <strong>Open in Safari</strong> if it’s offered)
+                  </span>
+                </li>
+                <li>
+                  <span className="landing-install__step-n">2</span>
+                  <span>
+                    In Safari, tap the <strong>Share</strong> icon at the bottom of the screen, then{' '}
+                    <strong>Add to Home Screen</strong>
+                  </span>
+                </li>
+                <li>
+                  <span className="landing-install__step-n">3</span>
+                  <span>
+                    Open <strong>GRIND</strong> from your Home Screen — full screen, offline-ready
+                  </span>
+                </li>
+              </ol>
+            </>
+          ) : appleDevice ? (
             <>
               <p className="landing-install__note">
                 <strong>How to install</strong> on this page only scrolls here — it cannot open Safari’s
@@ -220,11 +254,6 @@ export default function InstallSection() {
               </p>
             </>
           )}
-          {appleDevice && showNativeInstall ? (
-            <div className="landing-install__actions">
-              <InstallShortcut label="Install app" />
-            </div>
-          ) : null}
         </LandingRise>
       </div>
     </section>

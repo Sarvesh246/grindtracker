@@ -39,6 +39,22 @@ export function isAppleMobileDevice(): boolean {
   )
 }
 
+/**
+ * True only for actual Safari on iOS/iPadOS — not Chrome, Firefox, Edge, or
+ * Opera running on the same device, which all still report "Safari" in their
+ * UA string for compatibility (CriOS/FxiOS/EdgiOS/OPiOS tokens distinguish
+ * them). This matters because on iOS, "Add to Home Screen" producing a real
+ * standalone app (not just a browser bookmark) is a Safari-only capability —
+ * every other iOS browser lacks it, and Safari's Share-icon toolbar position
+ * this component describes doesn't apply to their chrome either.
+ */
+export function isIOSSafari(): boolean {
+  if (typeof window === 'undefined') return false
+  if (!isAppleMobileDevice()) return false
+  const ua = window.navigator.userAgent
+  return /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS|OPT\/|Mercury/.test(ua)
+}
+
 /** True once Chrome (etc.) has fired `beforeinstallprompt` and we captured it. */
 export function hasNativeInstallPrompt(): boolean {
   return deferredPrompt != null

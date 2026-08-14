@@ -1,6 +1,7 @@
 import { tool } from 'ai'
 import { z } from 'zod'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { LBS_PER_KG } from '@/lib/utils/units'
 import { previewCorrectWeights } from './correctWeights'
 import { previewCreateDay } from './createDay'
 import { previewStartWorkout } from './startWorkout'
@@ -128,7 +129,7 @@ export function buildCoachProposalTools(ctx: CoachToolContext) {
       }),
       execute: async input => {
         const toLbs = (v: number) =>
-          ctx.unit === 'kg' ? v * 2.2046 : v
+          ctx.unit === 'kg' ? v * LBS_PER_KG : v
         const result = await previewCreateDay(ctx.supabase, {
           userId: ctx.userId,
           conversationId: ctx.conversationId,

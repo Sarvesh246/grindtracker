@@ -26,6 +26,7 @@ import {
 } from '@/lib/coach/openCoachBus'
 import type { CoachChipHints } from '@/lib/coach/starterChips'
 import { titleFromMessage } from '@/lib/coach/conversations'
+import { markAppDataStale } from '@/lib/cache/appDataCache'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { localDateKey } from '@/lib/utils/formatting'
 import { focusWithoutRing } from '@/lib/utils/haptics'
@@ -837,6 +838,9 @@ export function CoachProvider({
               message: finalMessage,
             },
           )
+          // Coach mutated workout data server-side — Progress/Log/Home tab
+          // caches must revalidate, same as the manual-UI mutation paths.
+          if (ok) markAppDataStale()
           if (finalMessage) {
             setMessages(prev => [
               ...prev,
@@ -888,6 +892,9 @@ export function CoachProvider({
         }
 
         const message = body.message ?? 'Done.'
+        // Coach mutated workout data server-side — Progress/Log/Home tab
+        // caches must revalidate, same as the manual-UI mutation paths.
+        markAppDataStale()
         patchProposal(proposalId, { status: 'executed' }, {
           proposalId,
           phase: 'done',

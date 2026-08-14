@@ -2467,25 +2467,6 @@ html.reduce-motion .coach-history {
   gap: 8px;
   margin-top: 4px;
 }
-.coach-action-card__btn {
-  flex: 1;
-  min-height: 40px;
-  border-radius: var(--radius-md);
-  font-family: var(--font-sans);
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-  border: 1px solid var(--border);
-}
-.coach-action-card__btn--cancel {
-  background: var(--surface-elevated);
-  color: var(--text-primary);
-}
-.coach-action-card__btn--confirm {
-  background: var(--accent);
-  border-color: transparent;
-  color: var(--on-accent, #0f0f0f);
-}
 .coach-action__progress {
   margin-top: 2px;
   padding: 8px 10px;
@@ -4981,7 +4962,10 @@ html.light .landing-atmosphere {
   color: var(--text-secondary);
 }
 
-/* Friends / share mock - pins dark brand via existing .share-card-dark if present */
+/* Friends / share mock - the __card carries .share-card-dark (see JSX), which
+   pins --border/--surface/--text-primary/--accent-text etc. to the dark
+   palette regardless of page theme. Consume those vars, don't re-hardcode
+   the hex — a hardcoded copy silently drifts if .share-card-dark is retuned. */
 .landing-friends-mock {
   display: flex;
   flex-direction: column;
@@ -4992,25 +4976,25 @@ html.light .landing-atmosphere {
 .landing-friends-mock__card {
   width: min(240px, 100%);
   border-radius: var(--radius-lg);
-  border: 1px solid #2e2e2e;
-  background: #1a1a1a;
+  border: 1px solid var(--border);
+  background: var(--surface);
   padding: 24px 20px;
   text-align: center;
-  color: #f0f0f0;
+  color: var(--text-primary);
 }
 
 .landing-friends-mock__brand {
   font-family: var(--font-display);
   font-size: 22px;
   letter-spacing: 2px;
-  color: #c8f135;
+  color: var(--accent-text);
 }
 
 .landing-friends-mock__rank {
   margin-top: 16px;
   font-size: 12px;
   letter-spacing: 1px;
-  color: #888888;
+  color: var(--text-secondary);
   text-transform: uppercase;
 }
 
@@ -5025,7 +5009,7 @@ html.light .landing-atmosphere {
   font-family: var(--font-display);
   font-size: 40px;
   letter-spacing: 1px;
-  color: #c8f135;
+  color: var(--accent-text);
   line-height: 1;
 }
 

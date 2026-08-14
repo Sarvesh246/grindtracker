@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { LBS_PER_KG } from '@/lib/utils/units'
 import {
   fmtWeightForUnit,
   insertCoachProposal,
@@ -20,7 +21,7 @@ type PreviewInput = {
 }
 
 function toCanonicalLbs(value: number, unit: 'lb' | 'kg'): number {
-  if (unit === 'kg') return value * 2.20462
+  if (unit === 'kg') return value * LBS_PER_KG
   return value
 }
 

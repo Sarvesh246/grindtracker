@@ -12,7 +12,7 @@ import ThemeToggle from '@/components/ThemeToggle'
 import { useMotionPref } from '@/lib/contexts/MotionContext'
 import { useDemoMode } from '@/lib/contexts/DemoModeContext'
 import FeedbackModal from '@/components/FeedbackModal'
-import { markAppDataStale } from '@/lib/cache/appDataCache'
+import { markAppDataStale, resetAppDataCache } from '@/lib/cache/appDataCache'
 import { localDateKey } from '@/lib/utils/formatting'
 import {
   downloadJson,
@@ -387,6 +387,9 @@ export default function SettingsView({
 
   async function handleSignOut() {
     await supabase.auth.signOut()
+    // A stale cache from this account must never paint for the next person
+    // to sign in on this device (shared/gym computer, family tablet).
+    resetAppDataCache()
     router.push('/login')
   }
 
@@ -468,6 +471,7 @@ export default function SettingsView({
       const { error } = await supabase.rpc('delete_my_grind_data')
       if (error) throw error
       await supabase.auth.signOut()
+      resetAppDataCache()
       router.push('/login')
     } catch (err) {
       reportError(err, { operation: 'deleteMyData', route: '/profile/settings' })
@@ -1019,7 +1023,7 @@ export default function SettingsView({
             backgroundColor: 'var(--surface)',
             border: '1px solid var(--border)',
             borderBottom: 'none',
-            borderRadius: '20px 20px 0 0',
+            borderRadius: 'var(--radius-lg) var(--radius-lg) 0 0',
             padding: '20px 20px calc(28px + env(safe-area-inset-bottom))',
             display: 'flex',
             flexDirection: 'column',

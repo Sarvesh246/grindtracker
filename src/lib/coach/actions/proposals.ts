@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { LBS_PER_KG } from '@/lib/utils/units'
 import {
   COACH_PROPOSAL_TTL_MS,
   type CoachActionKind,
@@ -116,7 +117,7 @@ export function fmtWeightForUnit(
   unitLabel: 'lb' | 'kg',
 ): string {
   if (unitLabel === 'kg') {
-    const kg = lbs / 2.2046
+    const kg = lbs / LBS_PER_KG
     const rounded = Math.round(kg * 10) / 10
     return `${stripTrailingZero(rounded)} kg`
   }

@@ -1,8 +1,16 @@
 // Minimal offline-shell + Web Push service worker. Not a full precache/workbox
 // setup — just enough that a dead spot in the gym shows a branded retry screen,
 // already-fetched JS/CSS keep working, and lock-screen rest/streak pushes land.
-const CACHE_NAME = 'grind-shell-v5'
+const CACHE_NAME = 'grind-shell-v6'
 const PRECACHE_URLS = ['/offline.html', '/manifest.json', '/icon-192.png', '/icon-512.png']
+
+// Only these navigations are safe to cache-and-replay: nothing behind auth.
+// Every other route (/home, /log, /progress, /profile, ...) is per-account —
+// caching those by bare URL would let a stale authenticated page replay
+// after sign-out, or on a shared device, briefly show one user's dashboard
+// to the next person who opens the app offline. Private routes fall back to
+// the generic offline shell instead, never a cached copy of the page itself.
+const PUBLIC_NAV_PATHS = new Set(['/', '/login'])
 
 /** In-SW rest timers so rest-end can fire while the page is alive but cron hasn't. */
 const restTimeouts = new Map()
@@ -54,20 +62,28 @@ self.addEventListener('fetch', event => {
   }
 
   // Page navigations: always prefer the network (this is a signed-in app,
-  // content changes per session) and only fall back to whatever was last
-  // cached for this URL — or the offline shell — when the network is
-  // genuinely unreachable.
+  // content changes per session). Only public routes are cached-and-replayed
+  // offline; private/authenticated routes fall straight back to the offline
+  // shell so a signed-out or different user on this device never sees a
+  // stale copy of someone else's dashboard.
   if (request.mode === 'navigate') {
+    const isPublic = PUBLIC_NAV_PATHS.has(url.pathname)
     event.respondWith(
       fetch(request)
         .then(res => {
-          if (res.ok) {
+          if (res.ok && isPublic) {
             const copy = res.clone()
             caches.open(CACHE_NAME).then(cache => cache.put(request, copy))
           }
           return res
         })
-        .catch(async () => (await caches.match(request)) || caches.match('/offline.html')),
+        .catch(async () => {
+          if (isPublic) {
+            const cached = await caches.match(request)
+            if (cached) return cached
+          }
+          return caches.match('/offline.html')
+        }),
     )
   }
 })

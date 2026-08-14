@@ -12,7 +12,7 @@ import {
 const swatch: CSSProperties = {
   width: '56px',
   height: '56px',
-  borderRadius: '14px',
+  borderRadius: 'var(--radius-md)',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
@@ -199,7 +199,7 @@ export default function IconGallery() {
                   <span style={{
                     width: '40px',
                     height: '40px',
-                    borderRadius: '10px',
+                    borderRadius: 'var(--radius-md)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',

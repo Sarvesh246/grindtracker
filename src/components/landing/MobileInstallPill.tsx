@@ -5,6 +5,7 @@ import {
   ensureInstallListeners,
   hasNativeInstallPrompt,
   isAppleMobileDevice,
+  isIOSSafari,
   isStandalonePwa,
   scrollToInstallSection,
   tryInstallApp,
@@ -71,7 +72,9 @@ export default function MobileInstallPill() {
         canPrompt
           ? 'Install GRIND app'
           : isAppleMobileDevice()
-            ? 'Share → Add to Home Screen'
+            ? isIOSSafari()
+              ? 'Share → Add to Home Screen'
+              : 'Open in Safari to install'
             : 'Install GRIND',
       )
     }

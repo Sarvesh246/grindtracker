@@ -1,5 +1,6 @@
 'use client'
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
+import { LBS_PER_KG } from '@/lib/utils/units'
 
 type Unit = 'metric' | 'imperial'
 
@@ -7,7 +8,7 @@ const PREF_KEY = 'grind_unit_pref'
 
 // All weights are stored canonically in lbs. The toggle is a display preference:
 // in metric mode we convert lbs <-> kg at the display/input boundaries only.
-export const LBS_PER_KG = 2.20462
+export { LBS_PER_KG }
 
 interface UnitContextValue {
   unit: Unit

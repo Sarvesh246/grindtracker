@@ -56,6 +56,7 @@ is fully linked to migration history.
 | [41-upsert-past-session-skip.sql](sql/41-upsert-past-session-skip.sql) | 41 | **Paste this in Supabase.** Past-edit round-trips skips, warm-ups, notes, and RPE via `upsert_past_session` |
 | [42-rest-today-undo.sql](sql/42-rest-today-undo.sql) | 42 | **Paste this in Supabase.** Rest-today undo must be able to clear steal rows (`user_rest_cancels` DELETE is revoked; trigger is SECURITY DEFINER) |
 | [43-rest-weekday-history.sql](sql/43-rest-weekday-history.sql) | 43 | **Paste this in Supabase.** Soft-end rest weekdays (`effective_until`) so schedule changes do not erase past streak coverage |
+| [44-coach-rate-limit-lock.sql](sql/44-coach-rate-limit-lock.sql) | 44 | Per-user advisory lock in `enforce_coach_rate_limit` to close a TOCTOU race that let concurrent requests exceed the burst/daily Coach quota |
 
 See also [PUSH.md](PUSH.md) for VAPID keys, Vercel env, and cron setup.
 See [COACH.md](COACH.md) for Gemini env, rate limits, `/api/coach/chat`, and

@@ -5,6 +5,7 @@ import type {
   CoachActionStatus,
   CoachProposalView,
 } from '@/lib/coach'
+import Button from '@/components/ui/Button'
 import CoachActionProgress from './CoachActionProgress'
 
 type Props = {
@@ -100,22 +101,26 @@ export default function CoachActionCard({
 
         {pending ? (
           <div className="coach-action-card__actions">
-            <button
+            <Button
               type="button"
-              className="coach-action-card__btn coach-action-card__btn--cancel press"
-              data-haptic="light"
+              variant="secondary"
+              size="sm"
+              haptic="light"
+              style={{ flex: 1 }}
               onClick={() => onCancel(proposal.id)}
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              className="coach-action-card__btn coach-action-card__btn--confirm press"
-              data-haptic="medium"
+              variant="primary"
+              size="sm"
+              haptic="medium"
+              style={{ flex: 1 }}
               onClick={() => onConfirm(proposal.id)}
             >
               Confirm
-            </button>
+            </Button>
           </div>
         ) : null}
       </div>

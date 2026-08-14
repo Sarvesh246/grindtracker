@@ -6,7 +6,7 @@ begin;
 create or replace function upsert_past_session(
   p_day_type   text,
   p_local_date date,
-  p_logs       json,          -- [{exercise_id, set_number, weight?, reps?, is_warmup?, is_skipped?, note?}]
+  p_logs       json,          -- [{exercise_id, set_number, weight?, reps?, is_warmup?, is_skipped?, note?, rpe?}]
   p_session_id uuid default null,
   p_note       text default null
 )
@@ -25,6 +25,7 @@ declare
   v_xp       int := 0;
   v_editing  boolean := p_session_id is not null;
   v_skipped  boolean;
+  v_rpe      smallint;
 begin
   if v_user is null then
     raise exception 'AUTH_REQUIRED' using errcode = '28000';

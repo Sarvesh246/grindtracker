@@ -10,6 +10,7 @@ import {
   updateCoachProposalStatus,
   type CoachActionPayload,
 } from '@/lib/coach/actions'
+import { invalidateCoachContextCache } from '@/lib/coach/contextCache'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -169,6 +170,7 @@ export async function POST(request: Request) {
               status: 'executed',
               result: { message, updated: result.updated },
             })
+            invalidateCoachContextCache(user.id)
             // Mark final step done
             emit({
               type: 'step',
@@ -289,6 +291,7 @@ export async function POST(request: Request) {
       status: 'executed',
       result: { message, ...details, href },
     })
+    invalidateCoachContextCache(user.id)
 
     return NextResponse.json({
       ok: true,
