@@ -518,25 +518,38 @@ body.coach-fab-dragging .bottom-nav [data-haptic-overlay] {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
   margin-bottom: 22px;
+  /* Stretch is what turns iOS <button>s into ovals when aspect-ratio is ignored. */
+  align-items: start;
+  justify-items: stretch;
 }
 .day-color-swatch {
   position: relative;
+  display: block;
   width: 100%;
-  aspect-ratio: 1;
-  min-width: 44px;
-  min-height: 44px;
-  padding: 5px;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
   border: none;
   background: none;
   cursor: pointer;
-  border-radius: 50%;
+  appearance: none;
+  -webkit-appearance: none;
+  font-size: 0;
+  line-height: 0;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
 }
-.day-color-swatch__fill {
+/* Square via padding-bottom % (of width) — Safari often ignores aspect-ratio on buttons. */
+.day-color-swatch__slot {
   display: block;
   width: 100%;
-  height: 100%;
+  padding-bottom: 100%;
+  position: relative;
+}
+.day-color-swatch__fill {
+  position: absolute;
+  inset: 6px;
   border-radius: 50%;
   background: var(--day-swatch);
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18);
@@ -561,7 +574,7 @@ body.coach-fab-dragging .bottom-nav [data-haptic-overlay] {
 }
 .day-color-swatch__check {
   position: absolute;
-  inset: 0;
+  inset: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
