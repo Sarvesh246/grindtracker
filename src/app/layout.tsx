@@ -86,6 +86,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             `mobile-web-app-capable` meta tag. The apple-prefixed version is
             still required on iOS for proper standalone mode behaviour. */}
         <meta name="apple-mobile-web-app-capable" content="yes" />
+        {/* Same prefix gap as capable: keep the apple-prefixed status-bar
+            style explicit. `black-translucent` offsets the viewport ~59px
+            on iOS 26+ (taps land a status-bar lower than the pixels). */}
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         {SPLASH_SCREENS.map(s => (
           <link
             key={s.name}

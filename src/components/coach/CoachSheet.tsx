@@ -24,6 +24,7 @@ import {
 import { useExitingValue } from '@/lib/hooks/useExitingValue'
 import { useFocusTrap } from '@/lib/hooks/useFocusTrap'
 import { useKeyboardMetrics } from '@/lib/hooks/useKeyboardInset'
+import { healIosViewport } from '@/lib/utils/iosViewportHeal'
 import IconButton from '@/components/ui/IconButton'
 import CoachFabIcon from './CoachFabIcon'
 import CoachHistory from './CoachHistory'
@@ -555,11 +556,7 @@ export default function CoachSheet() {
       document.body.style.overflow = prev
       // Heal any residual visual-viewport pan from the focused composer when
       // the page sheet unmounts (close, or collapse back to compact).
-      try {
-        window.scrollTo(0, 0)
-      } catch {
-        // ignore
-      }
+      healIosViewport()
     }
   }, [open, closing, isPage, sizeMorphing])
 
