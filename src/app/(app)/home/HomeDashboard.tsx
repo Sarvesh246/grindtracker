@@ -7,6 +7,7 @@ import { demoSafeClient } from '@/lib/demoMode/demoSafeSupabase'
 import { Session, UserStats, UserRotation, CompleteSessionResult } from '@/lib/types'
 import { getLevel, getXpInCurrentLevel, getXpRequiredForLevel, getXpToNextLevel } from '@/lib/utils/gamification'
 import { formatHeaderDate, formatShortDate, localDateKey } from '@/lib/utils/formatting'
+import { homeGreeting } from '@/lib/utils/homeGreeting'
 import { advanceIndex, effectiveSequence, nextDay as nextDayFromRotation, overdueDays } from '@/lib/utils/rotation'
 import { deleteIncompleteSessions } from '@/lib/utils/sessions'
 import { flushQueuedOps, getQueuedOps, clearQueuedOpsForSession } from '@/lib/utils/offlineQueue'
@@ -192,10 +193,13 @@ export default function HomeDashboard({
   // confirmed — see CLAUDE.md → Rest days); a plain adjacent-day gap has no
   // days strictly between the endpoints, so uncoveredDates is empty either way.
   const [todayKey, setTodayKey] = useState(() => localDateKey())
+  const [hour, setHour] = useState(() => new Date().getHours())
   useEffect(() => {
     const sync = () => {
       const next = localDateKey()
       setTodayKey(prev => (prev === next ? prev : next))
+      const nextHour = new Date().getHours()
+      setHour(prev => (prev === nextHour ? prev : nextHour))
     }
     const onVis = () => {
       if (document.visibilityState === 'visible') sync()
@@ -246,6 +250,26 @@ export default function HomeDashboard({
     }
   }, [restDates, restDatesOverride, todayKey])
   const trainedToday = completedAt.includes(todayKey)
+  const greeting = useMemo(
+    () => homeGreeting({
+      hour,
+      firstName,
+      trainedToday,
+      inProgress: activeSessions.length > 0,
+      isRestDay: skipState.todayIsRest,
+      nextDay,
+      dateKey: todayKey,
+    }),
+    [
+      hour,
+      firstName,
+      trainedToday,
+      activeSessions.length,
+      skipState.todayIsRest,
+      nextDay,
+      todayKey,
+    ],
+  )
   const gapUncoveredDates = useMemo(
     () => lastWorkoutKey ? uncoveredDatesBetween(lastWorkoutKey, todayKey, recurringRestSet, effectiveRestDateSet, restOpts) : [],
     [lastWorkoutKey, todayKey, recurringRestSet, effectiveRestDateSet, restOpts],
@@ -749,7 +773,7 @@ export default function HomeDashboard({
           letterSpacing: '-0.5px',
           lineHeight: 1.1,
         }}>
-          Let&apos;s get after it, {firstName}.
+          {greeting}
         </h2>
       </div>
 
