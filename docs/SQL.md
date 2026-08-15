@@ -62,6 +62,7 @@ is fully linked to migration history.
 | [47-coach-action-kinds.sql](sql/47-coach-action-kinds.sql) | 47 | **Paste this in Supabase, deploy with the matching app change.** Widens `coach_action_proposals.kind` for 11 more confirm-before-apply Coach tools (body weight, finish/undo, skip, rest, exercise edit, rotation, session-log edit, notification prefs). No new RPCs. |
 | [48-week-start-sunday.sql](sql/48-week-start-sunday.sql) | 48 | **Paste this in Supabase, deploy with the matching app change.** `grind_week_start` is Sunday (not Monday) so rest budget and Home “this week” share a Sun–Sat week |
 | [49-user-day-colors.sql](sql/49-user-day-colors.sql) | 49 | **Paste this in Supabase, deploy with the matching app change.** Per-day color overrides (`user_day_colors`) for Log cards, calendar, and past-log pills |
+| [50-delete-my-data-complete.sql](sql/50-delete-my-data-complete.sql) | 50 | **Paste this in Supabase.** `delete_my_grind_data` also wipes `progress-photos` / `feedback-images` storage objects and orphan Coach messages |
 
 See also [PUSH.md](PUSH.md) for VAPID keys, Vercel env, and cron setup.
 See [COACH.md](COACH.md) for Gemini env, rate limits, `/api/coach/chat`, and

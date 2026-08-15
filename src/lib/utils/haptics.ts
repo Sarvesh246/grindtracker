@@ -30,6 +30,7 @@
 import {
   lastFingerPoint,
   pickSmallestContainingHost,
+  pointInRect,
   rectFromDOMRect,
   touchHitCandidates,
   type HitHost,
@@ -198,6 +199,10 @@ function hostIsAppChrome(host: HTMLElement): boolean {
 function resolveHapticHost(fallback: HTMLElement): HTMLElement {
   const finger = lastFingerPoint()
   if (!finger || typeof document === 'undefined') return fallback
+  // Overlay that actually contains the finger is already the right host —
+  // don't hunt siblings with ±VV-pan candidates (that retargeted Delete → Sign Out).
+  const fallbackRect = rectFromDOMRect(fallback.getBoundingClientRect())
+  if (pointInRect(finger, fallbackRect)) return fallback
   const vv = typeof window !== 'undefined' ? window.visualViewport : null
   const points = touchHitCandidates(
     finger.x,

@@ -89,4 +89,21 @@ describe('pickSmallestContainingHost', () => {
   it('returns null when nothing contains the point', () => {
     assert.equal(pickSmallestContainingHost([save, addSet], [{ x: 10, y: 10 }]), null)
   })
+
+  it('stacked same-size buttons: raw finger on the lower one wins over y-offset of the upper', () => {
+    const signOut: HitHost<string> = {
+      el: 'sign-out',
+      rect: { left: 16, top: 700, right: 360, bottom: 748, width: 344, height: 48 },
+    }
+    const deleteData: HitHost<string> = {
+      el: 'delete-data',
+      rect: { left: 16, top: 762, right: 360, bottom: 810, width: 344, height: 48 },
+    }
+    // Finger on Delete; leftover 59px pan also produces a candidate on Sign Out.
+    const points = touchHitCandidates(180, 786, 0, 59)
+    assert.equal(
+      pickSmallestContainingHost([signOut, deleteData], points),
+      'delete-data',
+    )
+  })
 })

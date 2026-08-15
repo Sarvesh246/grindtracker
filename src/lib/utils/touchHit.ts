@@ -90,23 +90,35 @@ export function touchHitCandidates(
 }
 
 /**
- * Prefer the smallest control whose box contains any candidate point so a
- * 44px check button wins over a larger parent that also matches.
+ * Prefer the smallest control whose box contains any of `points`.
+ *
+ * Rank the **raw finger point first** (points[0]). ±visualViewport candidates
+ * are a fallback for leftover pan, not a second chance to pick a stacked
+ * sibling: Sign Out and Delete My Data are the same size, 14px apart, so
+ * `y - offsetTop` on a Delete tap lands on Sign Out and used to win.
  */
 export function pickSmallestContainingHost<T>(
   hosts: HitHost<T>[],
   points: HitPoint[],
   slop: number = TOUCH_HIT_SLOP_PX,
 ): T | null {
+  if (points.length === 0) return null
+  const raw = pickSmallestContainingAny(hosts, points.slice(0, 1), slop)
+  if (raw) return raw
+  return pickSmallestContainingAny(hosts, points.slice(1), slop)
+}
+
+function pickSmallestContainingAny<T>(
+  hosts: HitHost<T>[],
+  points: HitPoint[],
+  slop: number,
+): T | null {
   let best: { el: T; area: number } | null = null
   for (const host of hosts) {
     if (host.rect.width < 1 || host.rect.height < 1) continue
-    for (const p of points) {
-      if (!pointInRect(p, host.rect, slop)) continue
-      const area = host.rect.width * host.rect.height
-      if (!best || area < best.area) best = { el: host.el, area }
-      break
-    }
+    if (!points.some(p => pointInRect(p, host.rect, slop))) continue
+    const area = host.rect.width * host.rect.height
+    if (!best || area < best.area) best = { el: host.el, area }
   }
   return best?.el ?? null
 }

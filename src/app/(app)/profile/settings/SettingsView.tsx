@@ -476,16 +476,30 @@ export default function SettingsView({
 
   async function handleDeleteMyData() {
     if (deletingData || !deletePhraseOk) return
+    if (demoMode) {
+      toast.show('Turn off Demo Mode first — delete is blocked so it cannot fake-wipe and sign you out')
+      return
+    }
     setDeletingData(true)
     try {
-      const { error } = await supabase.rpc('delete_my_grind_data')
+      // Never go through demoSafeClient: a no-op "success" used to sign out
+      // without touching the database.
+      const live = createClient()
+      const { error } = await live.rpc('delete_my_grind_data')
       if (error) throw error
-      await supabase.auth.signOut()
+      await live.auth.signOut()
       resetAppDataCache()
       router.push('/login')
     } catch (err) {
       reportError(err, { operation: 'deleteMyData', route: '/profile/settings' })
-      toast.show('Could not delete data — apply migration 29, then try again')
+      const msg = err && typeof err === 'object' && 'message' in err
+        ? String((err as { message: unknown }).message)
+        : ''
+      toast.show(
+        /could not find the function|schema cache/i.test(msg)
+          ? 'Could not delete data — apply migration 50, then try again'
+          : 'Could not delete data — check your connection and try again',
+      )
       setDeletingData(false)
     }
   }
@@ -1072,6 +1086,11 @@ export default function SettingsView({
         >
           SIGN OUT
         </button>
+      </Section>
+
+      {/* Kept out of the Account card so a leftover iOS tap-offset cannot
+          land a Delete tap on Sign Out (same-size stacked haptic buttons). */}
+      <Section label="Danger zone">
         <button
           type="button"
           data-haptic="light"
