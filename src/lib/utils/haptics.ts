@@ -212,6 +212,14 @@ function nearestScrollParent(
   return null
 }
 
+function hostIsSwipeSurface(host: HTMLElement): boolean {
+  try {
+    return !!host.closest('.toast-slide, [data-swipe-ignore]')
+  } catch {
+    return false
+  }
+}
+
 /**
  * Inject a transparent switch overlay covering `el` so a finger tap ticks iOS
  * system haptics, then re-dispatch click to the host so React onClick runs.
@@ -239,8 +247,11 @@ export function attachHapticOverlay(el: HTMLElement): () => void {
 
   const ownsDrag = hostOwnsDragGesture(el)
   const isAppChrome = hostIsAppChrome(el)
-  // No scroll-forward wait / drag-cancel on chrome or drag-owned hosts.
-  const skipScrollForward = ownsDrag || isAppChrome
+  const isSwipeSurface = hostIsSwipeSurface(el)
+  // No scroll-forward wait / drag-cancel on chrome, drag-owned hosts, or
+  // swipe-to-dismiss toasts — forwarding those pans is what scrolled the page
+  // under a notification swipe.
+  const skipScrollForward = ownsDrag || isAppChrome || isSwipeSurface
 
   const sw = document.createElement('input')
   sw.type = 'checkbox'

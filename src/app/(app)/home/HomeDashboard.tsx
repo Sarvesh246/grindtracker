@@ -1625,6 +1625,7 @@ export default function HomeDashboard({
           key={actionToastExit.data}
           edge="bottom"
           exiting={actionToastExit.closing}
+          onDismiss={() => setActionToast(null)}
           role="status"
           style={{
             bottom: 'calc(84px + env(safe-area-inset-bottom))',
@@ -1640,7 +1641,6 @@ export default function HomeDashboard({
             fontWeight: 600,
             boxShadow: '0 6px 20px rgba(0,0,0,0.35)',
             textAlign: 'center',
-            pointerEvents: 'none',
           }}
         >
           {actionToastExit.data}

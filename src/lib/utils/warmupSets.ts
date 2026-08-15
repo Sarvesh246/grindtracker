@@ -70,15 +70,17 @@ export function planWarmupRamp(
   sets: WarmupRampSet[],
   setsTarget: number,
   previousBest: number | null | undefined,
+  fractions: number[] = [0.4, 0.6, 0.8],
 ): WarmupRampPlan {
   const working = workingWeightForRamp(sets, previousBest)
   if (working == null) return { ok: false, reason: 'no-weight' }
 
-  const ramp = warmupRampWeights(working)
+  const ramp = warmupRampWeights(working, fractions)
   if (ramp.length === 0) return { ok: false, reason: 'no-weight' }
 
   const total = sets.length
-  const leading = [1, 2, 3].map(n => setAt(sets, n))
+  const leadingNums = ramp.map((_, i) => i + 1)
+  const leading = leadingNums.map(n => setAt(sets, n))
   const locked = leading.some(s => s && (s.checked || s.skipped))
   const alreadyRamped =
     leading.every(s => s && s.isWarmup && !s.checked && !s.skipped) &&

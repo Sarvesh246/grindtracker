@@ -22,14 +22,15 @@ export function useToast(): ToastAPI {
 }
 
 /**
- * App-wide passive confirmation toast — one bottom-anchored, non-interactive
- * pill that reassures the user an action persisted ("Weight logged", "Request
- * sent"), then slides off on its own. Mounted once in the (app) layout so any
- * page can call `useToast().show(...)` without wiring up its own toast state.
+ * App-wide confirmation toast — one bottom-anchored pill that reassures the
+ * user an action persisted ("Weight logged", "Request sent"), then slides off
+ * on its own. Swipe it any direction to dismiss early. Mounted once in the
+ * (app) layout so any page can call `useToast().show(...)` without wiring
+ * up its own toast state.
  *
- * It's `pointer-events: none` so it can never swallow a tap on the content
- * beneath it, and it rides above the on-screen keyboard so a confirmation fired
- * right after an edit stays visible while typing.
+ * The full-width anchor is `pointer-events: none` so only the pill itself is
+ * hittable — never the page underneath. It rides above the on-screen keyboard
+ * so a confirmation fired right after an edit stays visible while typing.
  *
  * ActiveWorkout keeps its own bespoke save toast — that one is positioned to
  * clear the live workout's finish/rest bars, which this generic offset can't
@@ -49,6 +50,11 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     timer.current = setTimeout(() => setPayload(null), 1900)
   }, [])
 
+  const dismiss = useCallback(() => {
+    if (timer.current) clearTimeout(timer.current)
+    setPayload(null)
+  }, [])
+
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current) }, [])
 
   const isError = exit.data?.variant === 'error'
@@ -62,6 +68,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
           key={exit.data.id}
           edge="bottom"
           exiting={exit.closing}
+          onDismiss={dismiss}
           role="status"
           aria-live="polite"
           style={{
@@ -89,7 +96,6 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             // exercise toggle, itself at 500).
             zIndex: 700,
             boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
-            pointerEvents: 'none',
           }}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>

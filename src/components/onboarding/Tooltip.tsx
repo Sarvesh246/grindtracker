@@ -1,6 +1,7 @@
 'use client'
 import { useLayoutEffect, useRef, useState } from 'react'
 import { placePopover, useAnchorRect, type Side } from './anchor'
+import { useSwipeDismiss } from '@/lib/hooks/useSwipeDismiss'
 
 /**
  * Generic small popup hint, anchored to a target element in viewport coords so
@@ -56,6 +57,7 @@ export default function Tooltip({ getEl, body, title, onDismiss, onSkip, closing
 
   const placed = anchor && size ? placePopover(anchor, size.w, size.h, { preferred, offset: 10 }) : null
   const ready = !!placed
+  const swipe = useSwipeDismiss(onDismiss, closing || !ready)
 
   // Pointer sits on the edge facing the anchor.
   const side = placed?.side ?? 'bottom'
@@ -76,6 +78,8 @@ export default function Tooltip({ getEl, body, title, onDismiss, onSkip, closing
       ref={cardRef}
       role="status"
       aria-live="polite"
+      data-swipe-ignore=""
+      {...swipe.handlers}
       style={{
         position: 'fixed',
         top: placed ? placed.top : -9999,
@@ -90,6 +94,7 @@ export default function Tooltip({ getEl, body, title, onDismiss, onSkip, closing
         opacity: ready ? 1 : 0,
         pointerEvents: ready && !closing ? 'auto' : 'none',
         animation: !ready ? 'none' : closing ? 'onboard-tip-out 160ms ease forwards' : 'onboard-tip-in 160ms ease',
+        ...swipe.style,
       }}
     >
       <span style={pointerStyle} aria-hidden="true" />

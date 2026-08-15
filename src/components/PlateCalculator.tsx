@@ -1,7 +1,7 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useUnit } from '@/lib/contexts/UnitContext'
-import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
+import Dialog from '@/components/ui/Dialog'
 
 // Plate / bar denominations differ by unit system. The calculator works entirely in the
 // active display unit and converts back to canonical lbs at the apply boundary.
@@ -42,7 +42,6 @@ interface Props {
 
 export default function PlateCalculator({ initialTarget, onClose, onApply }: Props) {
   const { unitLabel, fromDisplay } = useUnit()
-  const keyboardInset = useKeyboardInset()
   const metric = unitLabel === 'kg'
   const plateSet = metric ? PLATES_KG : PLATES_LB
   const barPresets = metric ? BAR_PRESETS_KG : BAR_PRESETS_LB
@@ -51,6 +50,7 @@ export default function PlateCalculator({ initialTarget, onClose, onApply }: Pro
   const [target, setTarget] = useState<string>(
     initialTarget && initialTarget > 0 ? String(Math.round(initialTarget * 10) / 10) : '',
   )
+  const sheetRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     localStorage.setItem(`grind.barWeight.${unitLabel}`, String(bar))
@@ -62,36 +62,21 @@ export default function PlateCalculator({ initialTarget, onClose, onApply }: Pro
   const remainder = valid ? targetNum - usable : 0
 
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        backgroundColor: 'rgba(0,0,0,0.7)',
-        display: 'flex',
-        alignItems: 'flex-end',
-        justifyContent: 'center',
-        zIndex: 600,
-        // Lift the sheet above the iOS keyboard so the result + USE button stay
-        // visible while the target weight is being typed.
-        paddingBottom: keyboardInset > 0 ? keyboardInset : 0,
-        transition: 'padding-bottom 180ms ease',
-      }}
+    <Dialog
+      open
+      onClose={onClose}
+      title="Plate calculator"
+      zIndex={600}
+      avoidKeyboard
+      initialFocusRef={target === '' ? undefined : sheetRef}
+      panelStyle={{ maxWidth: '480px' }}
     >
       <div
-        onClick={e => e.stopPropagation()}
-        role="dialog"
-        aria-label="Plate calculator"
+        ref={sheetRef}
+        tabIndex={-1}
         style={{
           width: '100%',
-          maxWidth: '480px',
-          // Cap against the keyboard-adjusted viewport and scroll internally —
-          // without this, paddingBottom (below) can push a sheet taller than the
-          // remaining space above the keyboard clean off the top of the screen,
-          // leaving only the full-height dark backdrop visible. Matches the same
-          // `calc(92dvh - lift)` pattern used by every other keyboard-lifted
-          // sheet in the app (WorkoutManager, the exercise-swap sheet, etc.).
-          maxHeight: keyboardInset > 0 ? `calc(92dvh - ${keyboardInset}px)` : '92dvh',
+          maxHeight: 'calc(92dvh - var(--grind-keyboard-inset, 0px))',
           overflowY: 'auto',
           backgroundColor: 'var(--surface)',
           borderRadius: 'var(--radius-lg) var(--radius-lg) 0 0',
@@ -101,6 +86,8 @@ export default function PlateCalculator({ initialTarget, onClose, onApply }: Pro
           display: 'flex',
           flexDirection: 'column',
           gap: '16px',
+          animation: 'sheet-up 220ms ease',
+          outline: 'none',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -296,6 +283,6 @@ export default function PlateCalculator({ initialTarget, onClose, onApply }: Pro
           USE {valid ? targetNum : '—'} {unitLabel.toUpperCase()}
         </button>
       </div>
-    </div>
+    </Dialog>
   )
 }

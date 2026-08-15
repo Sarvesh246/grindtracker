@@ -7,6 +7,14 @@ import { demoSafeClient } from '@/lib/demoMode/demoSafeSupabase'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { useToast } from '@/lib/contexts/ToastContext'
 import { getDefaultRest, setDefaultRest, getPauseRestOnExit, setPauseRestOnExit } from '@/lib/hooks/useRestTimer'
+import {
+  DEFAULT_WARMUP_PERCENTS,
+  MAX_WARMUP_SETS,
+  clampWarmupPercent,
+  formatWarmupPercentsList,
+  readWarmupPercents,
+  writeWarmupPercents,
+} from '@/lib/utils/warmupPrefs'
 import { useTheme } from '@/lib/contexts/ThemeContext'
 import ThemeToggle from '@/components/ThemeToggle'
 import { useMotionPref } from '@/lib/contexts/MotionContext'
@@ -241,6 +249,7 @@ export default function SettingsView({
   const [restMin, setRestMin] = useState(2)
   const [restSec, setRestSec] = useState(0)
   const [pauseRestOnExit, setPauseRestOnExitState] = useState(true)
+  const [warmupPercents, setWarmupPercents] = useState(DEFAULT_WARMUP_PERCENTS)
 
   const [notifPrefs, setNotifPrefs] = useState<NotificationPrefs | null>(null)
   const [notifBusy, setNotifBusy] = useState(false)
@@ -259,6 +268,7 @@ export default function SettingsView({
     setRestMin(Math.floor(total / 60))
     setRestSec(total % 60)
     setPauseRestOnExitState(getPauseRestOnExit())
+    setWarmupPercents(readWarmupPercents())
     setStandalone(isStandalonePwa())
     void fetchNotificationPrefs().then(prefs => {
       if (prefs) setNotifPrefs(prefs)
@@ -747,6 +757,127 @@ export default function SettingsView({
             onClick={togglePauseRestOnExit}
             ariaLabel="Pause rest timer on exit"
           />
+        </div>
+
+        <div style={dividerStyle} />
+
+        <div>
+          <div style={{ marginBottom: '10px' }}>
+            <div style={titleStyle}>Warm-up ramp</div>
+            <div style={hintStyle}>
+              {warmupPercents.length === 0
+                ? 'Off — Warm-up % is hidden during a live workout'
+                : `${warmupPercents.length} set${warmupPercents.length === 1 ? '' : 's'} at ${formatWarmupPercentsList(warmupPercents)} of working weight`}
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '6px', marginBottom: warmupPercents.length > 0 ? '12px' : 0 }}>
+            {Array.from({ length: MAX_WARMUP_SETS + 1 }, (_, n) => {
+              const active = warmupPercents.length === n
+              return (
+                <button
+                  key={n}
+                  type="button"
+                  data-haptic="light"
+                  onClick={() => {
+                    const next: number[] = []
+                    for (let i = 0; i < n; i++) {
+                      next.push(
+                        warmupPercents[i]
+                          ?? DEFAULT_WARMUP_PERCENTS[i]
+                          ?? clampWarmupPercent((next[next.length - 1] ?? 40) + 10),
+                      )
+                    }
+                    setWarmupPercents(next)
+                    writeWarmupPercents(next)
+                  }}
+                  aria-pressed={active}
+                  aria-label={n === 0 ? 'No warm-up sets' : `${n} warm-up set${n === 1 ? '' : 's'}`}
+                  className="press"
+                  style={{
+                    flex: 1,
+                    height: '36px',
+                    borderRadius: 'var(--radius-sm)',
+                    border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+                    backgroundColor: active ? 'var(--accent-wash)' : 'var(--surface-elevated)',
+                    color: active ? 'var(--accent-text)' : 'var(--text-secondary)',
+                    fontFamily: "'DM Sans', sans-serif",
+                    fontSize: '13px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {n}
+                </button>
+              )
+            })}
+          </div>
+          {warmupPercents.length > 0 && (
+            <div style={{ display: 'flex', gap: '8px' }}>
+              {warmupPercents.map((p, i) => (
+                <label
+                  key={i}
+                  style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 0 }}
+                >
+                  <span style={{
+                    fontSize: '10px',
+                    letterSpacing: 'var(--tracking-label)',
+                    color: 'var(--text-muted)',
+                    textTransform: 'uppercase',
+                    fontWeight: 500,
+                  }}>
+                    Set {i + 1}
+                  </span>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    backgroundColor: 'var(--surface-elevated)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-sm)',
+                    height: '40px',
+                    padding: '0 8px',
+                  }}>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={5}
+                      max={95}
+                      value={p}
+                      aria-label={`Warm-up set ${i + 1} percent`}
+                      onChange={e => {
+                        const n = Number(e.target.value)
+                        if (!Number.isFinite(n)) return
+                        const next = [...warmupPercents]
+                        next[i] = n
+                        setWarmupPercents(next)
+                      }}
+                      onBlur={() => {
+                        const next = warmupPercents.map(clampWarmupPercent)
+                        setWarmupPercents(next)
+                        writeWarmupPercents(next)
+                      }}
+                      onFocus={e => e.target.select()}
+                      style={{
+                        width: '100%',
+                        background: 'transparent',
+                        border: 'none',
+                        outline: 'none',
+                        color: 'var(--text-primary)',
+                        fontFamily: "'JetBrains Mono', monospace",
+                        fontSize: '16px',
+                        textAlign: 'center',
+                      }}
+                    />
+                    <span style={{
+                      color: 'var(--text-muted)',
+                      fontFamily: "'JetBrains Mono', monospace",
+                      fontSize: '12px',
+                      flexShrink: 0,
+                    }}>%</span>
+                  </div>
+                </label>
+              ))}
+            </div>
+          )}
         </div>
 
         <div style={dividerStyle} />

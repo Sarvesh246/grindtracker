@@ -87,6 +87,7 @@ export default function FinishUndoBanner() {
       key={token.sessionId}
       edge="bottom"
       exiting={closing}
+      onDismiss={() => { if (closing) return; clearFinishUndoToken(); setToken(null) }}
       role="status"
       aria-live="polite"
       style={{

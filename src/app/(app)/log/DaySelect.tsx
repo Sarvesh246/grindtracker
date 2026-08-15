@@ -199,7 +199,7 @@ export default function DaySelect() {
   const flashToast = useCallback((msg: string) => {
     setActionToast(msg)
     setTimeout(() => setActionToast(null), 4000)
-  }, [])
+  }, [setActionToast])
 
   const openByDay = useMemo(() => {
     const map: Record<string, OpenSession> = {}
@@ -782,6 +782,7 @@ export default function DaySelect() {
           key={actionToastExit.data}
           edge="bottom"
           exiting={actionToastExit.closing}
+          onDismiss={() => setActionToast(null)}
           role="status"
           style={{
             bottom: 'calc(84px + env(safe-area-inset-bottom))',
@@ -797,7 +798,6 @@ export default function DaySelect() {
             fontWeight: 600,
             boxShadow: '0 6px 20px rgba(0,0,0,0.35)',
             textAlign: 'center',
-            pointerEvents: 'none',
           }}
         >
           {actionToastExit.data}

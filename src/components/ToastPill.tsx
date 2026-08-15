@@ -1,5 +1,6 @@
 'use client'
 import type { CSSProperties, HTMLAttributes, ReactNode } from 'react'
+import { useSwipeDismiss } from '@/lib/hooks/useSwipeDismiss'
 
 /** Keep in sync with `.toast-slide` durations in `globals.css`. */
 export const TOAST_SLIDE_OUT_MS = 480
@@ -8,6 +9,12 @@ type Props = {
   /** Nearest viewport edge — enter from and exit toward this side. */
   edge: 'top' | 'bottom'
   exiting?: boolean
+  /**
+   * When set, the pill captures a drag and dismisses on a swipe left, right,
+   * up, or down. Interactive children (UNDO, Dismiss) still receive taps —
+   * a drag only starts after a few pixels of movement.
+   */
+  onDismiss?: () => void
   children: ReactNode
   style?: CSSProperties
   className?: string
@@ -21,10 +28,15 @@ type Props = {
  * Positioning (top/bottom/z-index) lives on a full-width flex anchor so the
  * pill can animate `translateY` without fighting a centering `translateX(-50%)`
  * on the same node — that conflict skipped or aborted the slide on iOS.
+ *
+ * Swipe-to-dismiss (when `onDismiss` is passed) follows the finger, then flies
+ * off in the swipe direction. The full-width anchor stays `pointer-events:
+ * none` so only the pill itself is hittable — never the page underneath.
  */
 export default function ToastPill({
   edge,
   exiting = false,
+  onDismiss,
   children,
   style,
   className,
@@ -38,8 +50,11 @@ export default function ToastPill({
     right: _right,
     position: _position,
     transform: _transform,
+    pointerEvents: _pointerEvents,
     ...visualStyle
   } = style ?? {}
+
+  const swipe = useSwipeDismiss(onDismiss, exiting)
 
   return (
     <div
@@ -58,13 +73,20 @@ export default function ToastPill({
     >
       <div
         {...rest}
+        {...swipe.handlers}
+        data-swipe-ignore=""
         className={[
           'toast-slide',
           edge === 'top' ? 'toast-slide--top' : 'toast-slide--bottom',
           exiting ? 'toast-slide--exiting' : '',
+          swipe.dragging ? 'toast-slide--dragging' : '',
+          swipe.flying ? 'toast-slide--swipe-out' : '',
           className,
         ].filter(Boolean).join(' ')}
-        style={visualStyle}
+        style={{
+          ...visualStyle,
+          ...swipe.style,
+        }}
       >
         {children}
       </div>

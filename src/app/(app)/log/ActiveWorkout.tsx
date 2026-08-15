@@ -22,6 +22,7 @@ import {
 } from '@/lib/utils/offlineQueue'
 import { reportError } from '@/lib/utils/reportError'
 import { planWarmupRamp } from '@/lib/utils/warmupSets'
+import { formatWarmupPercentsList, percentsToFractions, readWarmupPercents } from '@/lib/utils/warmupPrefs'
 import type { UserRotation, UserStats, CompleteSessionResult } from '@/lib/types'
 import {
   emptySetState,
@@ -199,6 +200,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const skippingKeysRef = useRef<Set<string>>(new Set())
   const addingIdsRef = useRef<Set<string>>(new Set())
   const [plateCalcTarget, setPlateCalcTarget] = useState<{ key: string; current: number } | null>(null)
+  const [warmupUndo, setWarmupUndo] = useState<Record<string, { extrasBefore: number; logsBefore: LogMap }>>({})
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   const restTimer = useRestTimer()
   const keyboardInset = useKeyboardInset()
@@ -1266,18 +1268,27 @@ export default function ActiveWorkout({ day }: { day: string }) {
     showSaveToast('Set added')
   }
 
-  /** Prefill 40/60/80% warm-ups in front of working sets, adding slots if needed. */
+  /** Prefill configured warm-up percents in front of working sets, adding slots if needed. */
   function applyWarmupRamp(exerciseId: string) {
     const ex = exercises.find(e => e.id === exerciseId)
     if (!ex) return
+    const fractions = percentsToFractions(readWarmupPercents())
+    if (fractions.length === 0) {
+      setResumeToast('Set warm-up percents in Settings first.')
+      setTimeout(() => setResumeToast(null), 4000)
+      return
+    }
     const currentExtras = extraSets[exerciseId] ?? 0
     const total = ex.sets_target + currentExtras
     const currentLogs = logsRef.current
-    const snapshot = []
+    const snapshot: LogMap = {}
+    const rows = []
     for (let n = 1; n <= total; n++) {
-      const row = currentLogs[`${exerciseId}-${n}`]
+      const key = `${exerciseId}-${n}`
+      const row = currentLogs[key]
       if (!row) continue
-      snapshot.push({
+      snapshot[key] = { ...row }
+      rows.push({
         setNumber: n,
         weight: row.weight,
         isWarmup: row.isWarmup,
@@ -1285,7 +1296,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         skipped: row.skipped,
       })
     }
-    const plan = planWarmupRamp(snapshot, ex.sets_target, previousBests[exerciseId])
+    const plan = planWarmupRamp(rows, ex.sets_target, previousBests[exerciseId], fractions)
     if (!plan.ok) {
       setResumeToast(
         plan.reason === 'nothing-to-fill'
@@ -1296,6 +1307,10 @@ export default function ActiveWorkout({ day }: { day: string }) {
       return
     }
 
+    setWarmupUndo(prev => ({
+      ...prev,
+      [exerciseId]: { extrasBefore: currentExtras, logsBefore: snapshot },
+    }))
     if (plan.extraToAdd > 0) {
       setExtraSets(prev => ({ ...prev, [exerciseId]: currentExtras + plan.extraToAdd }))
     }
@@ -1315,6 +1330,51 @@ export default function ActiveWorkout({ day }: { day: string }) {
     showSaveToast('Warm-up ramp applied')
   }
 
+  async function undoWarmupRamp(exerciseId: string) {
+    const snap = warmupUndo[exerciseId]
+    const ex = exercises.find(e => e.id === exerciseId)
+    if (!snap || !ex) return
+    const extrasNow = extraSets[exerciseId] ?? 0
+    const totalNow = ex.sets_target + extrasNow
+    const restoredTotal = ex.sets_target + snap.extrasBefore
+
+    setLogs(prev => {
+      const next = { ...prev }
+      for (let n = 1; n <= totalNow; n++) delete next[`${exerciseId}-${n}`]
+      for (const [key, row] of Object.entries(snap.logsBefore)) next[key] = row
+      return next
+    })
+    setExtraSets(prev => ({ ...prev, [exerciseId]: snap.extrasBefore }))
+    setWarmupUndo(prev => {
+      if (!(exerciseId in prev)) return prev
+      const next = { ...prev }
+      delete next[exerciseId]
+      return next
+    })
+
+    if (sessionId && totalNow > restoredTotal) {
+      let anyFailed = false
+      for (let s = restoredTotal + 1; s <= totalNow; s++) {
+        const { error } = await runWithRetry(() =>
+          supabase
+            .from('session_logs')
+            .delete()
+            .eq('session_id', sessionId)
+            .eq('exercise_id', exerciseId)
+            .eq('set_number', s),
+        )
+        if (error) {
+          anyFailed = true
+          // Same click-triggered async handler as handleDeleteSet, not render.
+          // eslint-disable-next-line react-hooks/purity
+          queueOp({ kind: 'delete', sessionId, exerciseId, setNumber: s, queuedAt: Date.now() })
+        }
+      }
+      if (anyFailed) showQueuedSyncToast()
+    }
+    showSaveToast('Warm-up undone')
+  }
+
   /**
    * Remove an added (bonus) set entirely — as opposed to skipping, which keeps
    * the slot but marks it not-done. Only valid for sets beyond sets_target.
@@ -1326,7 +1386,11 @@ export default function ActiveWorkout({ day }: { day: string }) {
     if (!ex) return
     const currentExtras = extraSets[exerciseId] ?? 0
     const total = ex.sets_target + currentExtras
-    if (setNumber <= ex.sets_target || setNumber > total) return
+    const entry = logs[`${exerciseId}-${setNumber}`]
+    const isBonus = setNumber > ex.sets_target
+    const canDeleteWarmup = !!entry?.isWarmup && currentExtras > 0
+    if (setNumber < 1 || setNumber > total) return
+    if (!isBonus && !canDeleteWarmup) return
 
     // Compute the shifted end-state locally first — every later bonus set's
     // data moves down one slot to fill the gap. The DB writes below are
@@ -1817,6 +1881,12 @@ export default function ActiveWorkout({ day }: { day: string }) {
 
     setSwapTarget(null)
     showSaveToast(`Swapped in ${newExercise.name}`)
+    setWarmupUndo(prev => {
+      if (!(swapTarget in prev)) return prev
+      const next = { ...prev }
+      delete next[swapTarget]
+      return next
+    })
   }
 
   async function ensurePriors(exercise: Exercise): Promise<{
@@ -2587,6 +2657,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
           key={resumeToastExit.data}
           edge="top"
           exiting={resumeToastExit.closing}
+          onDismiss={() => setResumeToast(null)}
           role="status"
           aria-live="polite"
           style={{
@@ -2600,7 +2671,6 @@ export default function ActiveWorkout({ day }: { day: string }) {
             fontWeight: 500,
             zIndex: 300,
             boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
-            pointerEvents: 'none',
           }}
         >
           {resumeToastExit.data}
@@ -2614,6 +2684,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
           key={undoToastExit.data.key}
           edge="top"
           exiting={undoToastExit.closing}
+          onDismiss={() => setUndoState(null)}
           role="status"
           aria-live="polite"
           style={{
@@ -2672,6 +2743,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
           key={saveToastExit.data}
           edge="bottom"
           exiting={saveToastExit.closing}
+          onDismiss={() => setSaveToast(null)}
           role="status"
           aria-live="polite"
           style={{
@@ -2689,7 +2761,6 @@ export default function ActiveWorkout({ day }: { day: string }) {
             whiteSpace: 'nowrap',
             zIndex: 60,
             boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
-            pointerEvents: 'none',
           }}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
@@ -3100,6 +3171,8 @@ export default function ActiveWorkout({ day }: { day: string }) {
               onUnskipExercise={handleUnskipExercise}
               onToggleWarmup={toggleWarmup}
               onWarmupRamp={() => applyWarmupRamp(ex.id)}
+              onUndoWarmupRamp={() => { void undoWarmupRamp(ex.id) }}
+              canUndoWarmup={!!warmupUndo[ex.id]}
               onAddSet={() => handleAddSet(ex.id)}
               onStartEdit={handleStartEdit}
               onSaveEdit={handleSaveEdit}
@@ -3309,6 +3382,8 @@ interface ExerciseCardProps {
   onUnskipExercise: (exerciseId: string) => void
   onToggleWarmup: (exerciseId: string, setNumber: number) => void
   onWarmupRamp: () => void
+  onUndoWarmupRamp: () => void
+  canUndoWarmup: boolean
   onAddSet: () => void
   onStartEdit: (key: string) => void
   onSaveEdit: (exerciseId: string, setNumber: number) => void
@@ -3321,10 +3396,11 @@ function ExerciseCard({
   onCheck, onUpdate, onSwap,
   onSkipSet, onUnskipSet, onDeleteSet,
   onSkipExercise, onUnskipExercise,
-  onToggleWarmup, onWarmupRamp, onAddSet, onStartEdit, onSaveEdit, onPersistNote,
+  onToggleWarmup, onWarmupRamp, onUndoWarmupRamp, canUndoWarmup, onAddSet, onStartEdit, onSaveEdit, onPersistNote,
   onOpenPlateCalc,
 }: ExerciseCardProps) {
   const { unitLabel, fmt, toDisplay } = useUnit()
+  const warmupPercents = readWarmupPercents()
   const totalSets = exercise.sets_target + extraSets
   const setNumbers = Array.from({ length: totalSets }, (_, i) => i + 1)
   const anySkipped = setNumbers.some(s => logs[`${exercise.id}-${s}`]?.skipped)
@@ -3538,20 +3614,23 @@ function ExerciseCard({
               onSkip={() => onSkipSet(exercise.id, setNum)}
               onUnskip={() => onUnskipSet(exercise.id, setNum)}
               onDelete={() => onDeleteSet(exercise.id, setNum)}
+              canDelete={isBonus || (!!logEntry.isWarmup && extraSets > 0)}
             />
           )
         })}
 
         <div style={{ padding: '6px 16px 10px', display: 'flex', gap: '8px', alignItems: 'center' }}>
+          {warmupPercents.length > 0 && (
           <button
             type="button"
             className="press"
             data-haptic="light"
             onClick={() => {
               setWarmupHelpOpen(false)
-              onWarmupRamp()
+              if (canUndoWarmup) onUndoWarmupRamp()
+              else onWarmupRamp()
             }}
-            aria-label={`Apply warm-up ramp for ${exercise.name}`}
+            aria-label={canUndoWarmup ? `Undo warm-up ramp for ${exercise.name}` : `Apply warm-up ramp for ${exercise.name}`}
             style={{
               position: 'relative',
               flex: 1,
@@ -3559,7 +3638,7 @@ function ExerciseCard({
               backgroundColor: 'transparent',
               border: '1px dashed var(--border-strong)',
               borderRadius: 'var(--radius-sm)',
-              color: 'var(--text-secondary)',
+              color: canUndoWarmup ? 'var(--accent-text)' : 'var(--text-secondary)',
               fontFamily: 'var(--font-sans)',
               fontSize: '12px',
               fontWeight: 600,
@@ -3567,8 +3646,9 @@ function ExerciseCard({
               cursor: 'pointer',
             }}
           >
-            WARM-UP %
+            {canUndoWarmup ? 'UNDO WARM-UP' : 'WARM-UP %'}
           </button>
+          )}
           <button
             ref={warmupHelpBtnRef}
             type="button"
@@ -3625,7 +3705,11 @@ function ExerciseCard({
           <Tooltip
             getEl={() => warmupHelpBtnRef.current}
             title="Warm-up %"
-            body="Fills your first 3 sets as easy warm-ups — 40%, 60%, then 80% of the weight you're about to lift. Your real sets stay after those. Warm-ups don't count as PRs."
+            body={
+              warmupPercents.length === 0
+                ? 'Turned off. Set how many warm-up sets and what percent of your working weight in Settings.'
+                : `Fills ${warmupPercents.length} easy warm-up${warmupPercents.length === 1 ? '' : 's'} — ${formatWarmupPercentsList(warmupPercents)} of the weight you're about to lift. Your real sets stay after those. Warm-ups don't count as PRs. Tap UNDO WARM-UP if you applied by accident.`
+            }
             onDismiss={() => setWarmupHelpOpen(false)}
             preferred={['top', 'bottom']}
             maxWidth={260}
@@ -4175,6 +4259,7 @@ interface SetRowProps {
   onSkip: () => void
   onUnskip: () => void
   onDelete: () => void
+  canDelete?: boolean
 }
 
 function SetRow({
@@ -4182,7 +4267,7 @@ function SetRow({
   showPR, logEntry, prevReps,
   onCheck, onSaveEdit, onStartEdit,
   onWeightChange, onRepsChange, onNoteChange, onNoteBlur, onRpeChange,
-  onToggleWarmup, onSkip, onUnskip, onDelete,
+  onToggleWarmup, onSkip, onUnskip, onDelete, canDelete,
 }: SetRowProps) {
   const { fromDisplay, fmt } = useUnit()
   const [justChecked, setJustChecked] = useState(false)
@@ -4584,10 +4669,9 @@ function SetRow({
           </div>
         </div>
 
-        {/* Bonus sets (added via + ADD SET) get a Delete button that removes the
-            slot entirely — skipping doesn't make sense for a set that isn't part
-            of the planned workout. Sets that are part of the day keep Skip/Undo. */}
-        {isBonus ? (
+        {/* Bonus sets (added via + ADD SET) and ramp warm-ups can be deleted
+            entirely. Planned working sets keep Skip/Undo. */}
+        {canDelete ? (
           <button
             className="press"
             onClick={onDelete}
