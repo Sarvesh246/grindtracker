@@ -33,6 +33,10 @@ import {
   overlayQueuedOps,
   extraSetsFromLogs,
   ensureLogSlots,
+  mergeSessionExercises,
+  readSessionExtraIds,
+  writeSessionExtraIds,
+  clearSessionExtraIds,
   type LogMap,
   type SetState,
 } from './sessionLogState'
@@ -178,6 +182,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const [showExitConfirm, setShowExitConfirm] = useState(false)
   const [allExercises, setAllExercises] = useState<Exercise[]>([])
   const [swapTarget, setSwapTarget] = useState<string | null>(null)
+  const [addExerciseOpen, setAddExerciseOpen] = useState(false)
   const [extraSets, setExtraSets] = useState<Record<string, number>>({})
   const [workoutNote, setWorkoutNote] = useState('')
   const [undoState, setUndoState] = useState<UndoState | null>(null)
@@ -192,6 +197,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const discardingRef = useRef(false)
   const finishingRef = useRef(false)
   const skippingKeysRef = useRef<Set<string>>(new Set())
+  const addingIdsRef = useRef<Set<string>>(new Set())
   const [plateCalcTarget, setPlateCalcTarget] = useState<{ key: string; current: number } | null>(null)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   const restTimer = useRestTimer()
@@ -582,12 +588,44 @@ export default function ActiveWorkout({ day }: { day: string }) {
       ? resumePayload.logs
       : []
 
-    // Re-include disabled exercises that already have logs on this session.
     const loggedExerciseIds = new Set(existingLogs.map(l => l.exercise_id))
-    const fullExs = allDayExs.filter(ex => ex.active || loggedExerciseIds.has(ex.id))
-    if (fullExs.length > 0 && fullExs.length !== exs.length) {
-      exs = fullExs
+    for (const q of getQueuedOps(sid)) loggedExerciseIds.add(q.exerciseId)
+    for (const id of readSessionExtraIds(sid)) loggedExerciseIds.add(id)
+    let sessionExs = allDayExs.filter(ex => ex.active || loggedExerciseIds.has(ex.id))
+    if (sessionExs.length === 0) sessionExs = allDayExs
+    sessionExs = mergeSessionExercises(sessionExs, allExsData ?? [], loggedExerciseIds)
+    if (sessionExs.length !== exs.length || sessionExs.some((e, i) => e.id !== exs[i]?.id)) {
+      exs = sessionExs
       setExercises(exs)
+    }
+
+    const missingPriorIds = exs.filter(e => !(e.id in bests)).map(e => e.id)
+    if (missingPriorIds.length > 0) {
+      const [{ data: extraLastRows, error: extraLastError }, { data: extraBestRows }] = await Promise.all([
+        supabase.rpc('get_exercise_last_weights', { p_exercise_ids: missingPriorIds }),
+        supabase.rpc('get_exercise_bests', { p_exercise_ids: missingPriorIds }),
+      ])
+      for (const row of (extraLastRows ?? []) as { exercise_id: string; last_weight: number | null }[]) {
+        bests[row.exercise_id] = normalizePriorVolume(row.last_weight)
+      }
+      for (const row of (extraBestRows ?? []) as {
+        exercise_id: string
+        max_weight: number | null
+        max_volume: number | null
+      }[]) {
+        if (extraLastError) bests[row.exercise_id] = normalizePriorVolume(row.max_weight)
+        bestVolumes[row.exercise_id] = normalizePriorVolume(row.max_volume)
+      }
+      for (const id of missingPriorIds) {
+        if (!(id in bests)) bests[id] = null
+        if (!(id in bestVolumes)) bestVolumes[id] = null
+        const row = exs.find(e => e.id === id)
+        fillWeights[id] = row?.weight_target ?? bests[id]
+      }
+      setPreviousBests({ ...bests })
+      setBaselineBests({ ...bests })
+      setPreviousBestVolumes({ ...bestVolumes })
+      setBaselineBestVolumes({ ...bestVolumes })
     }
 
     if (existingLogs.length > 0 || resumePayload.resumed) {
@@ -1733,13 +1771,15 @@ export default function ActiveWorkout({ day }: { day: string }) {
     setBaselineBests(prev => (prev[newExercise.id] !== undefined ? prev : { ...prev, [newExercise.id]: prevBest }))
     setBaselineBestVolumes(prev => (prev[newExercise.id] !== undefined ? prev : { ...prev, [newExercise.id]: prevBestVolume }))
 
-    setExercises(prev => {
-      const idx = prev.findIndex(e => e.id === swapTarget)
-      if (idx === -1) return prev
-      const next = [...prev]
+    const nextExercises = (() => {
+      const idx = exercises.findIndex(e => e.id === swapTarget)
+      if (idx === -1) return exercises
+      const next = [...exercises]
       next[idx] = newExercise
       return next
-    })
+    })()
+    setExercises(nextExercises)
+    persistSessionExtras(nextExercises)
 
     // Same precedence as the initial prefill: the exercise's own weight_target
     // (docs/sql/25) when set, else last session's weight (prevBest, which also
@@ -1781,16 +1821,113 @@ export default function ActiveWorkout({ day }: { day: string }) {
     showSaveToast(`Swapped in ${newExercise.name}`)
   }
 
+  async function ensurePriors(exercise: Exercise): Promise<{
+    prevBest: number | null
+    prevBestVolume: number | null
+  }> {
+    let prevBest: number | null = previousBests[exercise.id] !== undefined
+      ? previousBests[exercise.id]
+      : null
+    let prevBestVolume: number | null = previousBestVolumes[exercise.id] !== undefined
+      ? previousBestVolumes[exercise.id]
+      : null
+
+    if (previousBests[exercise.id] === undefined) {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const [{ data: lastWeightRows, error: lastWeightError }, { data: bestRows }] = await Promise.all([
+          supabase.rpc('get_exercise_last_weights', { p_exercise_ids: [exercise.id] }),
+          supabase.rpc('get_exercise_bests', { p_exercise_ids: [exercise.id] }),
+        ])
+        if (lastWeightError) {
+          console.error('get_exercise_last_weights failed, falling back to all-time best:', lastWeightError)
+        }
+        const lastWeightRow = (lastWeightRows ?? [])[0] as { last_weight: number | null } | undefined
+        const bestRow = (bestRows ?? [])[0] as { max_weight: number | null; max_volume: number | null } | undefined
+        prevBest = lastWeightError
+          ? normalizePriorVolume(bestRow?.max_weight)
+          : normalizePriorVolume(lastWeightRow?.last_weight)
+        prevBestVolume = normalizePriorVolume(bestRow?.max_volume)
+        setPreviousBests(prev => ({ ...prev, [exercise.id]: prevBest }))
+        setPreviousBestVolumes(prev => ({ ...prev, [exercise.id]: prevBestVolume }))
+      }
+    }
+    setBaselineBests(prev => (prev[exercise.id] !== undefined ? prev : { ...prev, [exercise.id]: prevBest }))
+    setBaselineBestVolumes(prev => (prev[exercise.id] !== undefined ? prev : { ...prev, [exercise.id]: prevBestVolume }))
+    return { prevBest, prevBestVolume }
+  }
+
+  function seedExerciseLogs(exercise: Exercise, prevBest: number | null) {
+    const fillWeight = exercise.weight_target ?? prevBest
+    setLogs(prev => {
+      const next = { ...prev }
+      for (let s = 1; s <= exercise.sets_target; s++) {
+        const key = `${exercise.id}-${s}`
+        if (!next[key]) next[key] = emptySetState(fillWeight !== null ? String(fillWeight) : '')
+      }
+      return next
+    })
+  }
+
+  function persistSessionExtras(nextExercises: Exercise[]) {
+    if (!sessionId) return
+    const defaultIds = new Set(
+      allExercises.filter(e => e.day_type === day && e.active).map(e => e.id),
+    )
+    writeSessionExtraIds(
+      sessionId,
+      nextExercises.map(e => e.id).filter(id => !defaultIds.has(id)),
+    )
+  }
+
+  function scrollToExercise(id: string) {
+    window.setTimeout(() => {
+      document.getElementById(`wo-ex-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 60)
+  }
+
+  async function handleAddExercise(newExercise: Exercise) {
+    if (!sessionId) return
+    if (exercises.some(e => e.id === newExercise.id) || addingIdsRef.current.has(newExercise.id)) {
+      setAddExerciseOpen(false)
+      showSaveToast(`${newExercise.name} is already in this workout`)
+      return
+    }
+    addingIdsRef.current.add(newExercise.id)
+    try {
+      const { prevBest } = await ensurePriors(newExercise)
+      let nextExercises: Exercise[] | null = null
+      setExercises(prev => {
+        if (prev.some(e => e.id === newExercise.id)) return prev
+        nextExercises = [...prev, newExercise]
+        return nextExercises
+      })
+      if (!nextExercises) {
+        setAddExerciseOpen(false)
+        showSaveToast(`${newExercise.name} is already in this workout`)
+        return
+      }
+      persistSessionExtras(nextExercises)
+      seedExerciseLogs(newExercise, prevBest)
+      setAddExerciseOpen(false)
+      showSaveToast(`Added ${newExercise.name}`)
+      scrollToExercise(newExercise.id)
+    } finally {
+      addingIdsRef.current.delete(newExercise.id)
+    }
+  }
+
   /**
-   * Create a brand-new exercise from the swap sheet (when the one the user wants
-   * isn't in any of their days yet) and immediately swap it into the current
-   * slot. The exercise is added to THIS day's catalog so it persists past the
-   * session, mirroring WorkoutManager's insert (owner-stamped, appended to the
-   * end of the day's sort order). Returns the created row, or null on failure so
-   * the modal can surface an error and keep the form open.
+   * Create a brand-new exercise from the swap/add sheet (when the one the user
+   * wants isn't in any of their days yet). The exercise is added to THIS day's
+   * catalog so it persists past the session, mirroring WorkoutManager's insert.
    */
-  async function createAndSwapExercise(name: string, sets: number, reps: string): Promise<Exercise | null> {
-    if (!swapTarget) return null
+  async function createExerciseForDay(
+    name: string,
+    sets: number,
+    reps: string,
+    weightTarget: number | null,
+  ): Promise<Exercise | null> {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return null
 
@@ -1806,17 +1943,62 @@ export default function ActiveWorkout({ day }: { day: string }) {
         day_type: day,
         sets_target: sets,
         reps_target: reps.trim(),
+        weight_target: weightTarget,
         sort_order: sortOrder,
       })
       .select()
       .maybeSingle()
 
-    if (error || !data) return null
+    if (error) return null
 
-    const created = data as Exercise
-    // Keep the in-memory catalog in sync so a subsequent swap sees the new row.
+    const created = data
+      ? (data as Exercise)
+      : demoMode
+        ? {
+            id: crypto.randomUUID(),
+            name: name.trim(),
+            day_type: day,
+            sets_target: sets,
+            reps_target: reps.trim(),
+            weight_target: weightTarget,
+            sort_order: sortOrder,
+            active: true,
+            created_at: new Date().toISOString(),
+          } satisfies Exercise
+        : null
+    if (!created) return null
+
     setAllExercises(prev => [...prev, created])
+    markAppDataStale()
+    return created
+  }
+
+  /**
+   * Create a brand-new exercise from the swap sheet and immediately swap it into
+   * the current slot.
+   */
+  async function createAndSwapExercise(
+    name: string,
+    sets: number,
+    reps: string,
+    weightTarget: number | null,
+  ): Promise<Exercise | null> {
+    if (!swapTarget) return null
+    const created = await createExerciseForDay(name, sets, reps, weightTarget)
+    if (!created) return null
     await handleSwapExercise(created)
+    return created
+  }
+
+  async function createAndAddExercise(
+    name: string,
+    sets: number,
+    reps: string,
+    weightTarget: number | null,
+  ): Promise<Exercise | null> {
+    const created = await createExerciseForDay(name, sets, reps, weightTarget)
+    if (!created) return null
+    await handleAddExercise(created)
     return created
   }
 
@@ -1849,7 +2031,10 @@ export default function ActiveWorkout({ day }: { day: string }) {
       return
     }
 
-    if (sessionId) clearQueuedOpsForSession(sessionId)
+    if (sessionId) {
+      clearQueuedOpsForSession(sessionId)
+      clearSessionExtraIds(sessionId)
+    }
     setSessionId(null)
     discardingRef.current = false
     setDiscarding(false)
@@ -2119,6 +2304,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         currentStreak: result.current_streak,
         isNewBestStreak: result.current_streak > 1 && result.current_streak === result.longest_streak,
       })
+      clearSessionExtraIds(sessionId)
       markAppDataStale()
     } catch (err) {
       // The workout is untouched (or safely resumable) — tell the user and let
@@ -2141,7 +2327,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
   // counting — during an active rest countdown, so a hint never lands over a
   // modal or distracts mid-rest. A coordinator inside the hook shows one at a
   // time so eligible hints queue rather than stack.
-  const anyModalOpen = !!plateCalcTarget || !!swapTarget || !!completionData || showExitConfirm
+  const anyModalOpen = !!plateCalcTarget || !!swapTarget || addExerciseOpen || !!completionData || showExitConfirm
   const restCounting = restTimer.active && !restTimer.paused
   const hintsBlocked = anyModalOpen || restCounting
   const workoutReady = !loading && exercises.length > 0
@@ -2292,15 +2478,19 @@ export default function ActiveWorkout({ day }: { day: string }) {
         />
       )}
 
-      {swapTarget && (
+      {(swapTarget || addExerciseOpen) && (
         <ExerciseSwapModal
+          intent={addExerciseOpen ? 'add' : 'swap'}
           currentExerciseId={swapTarget}
           day={day}
           allExercises={allExercises}
           currentExercises={exercises}
-          onSelect={handleSwapExercise}
-          onCreate={createAndSwapExercise}
-          onClose={() => setSwapTarget(null)}
+          onSelect={addExerciseOpen ? handleAddExercise : handleSwapExercise}
+          onCreate={addExerciseOpen ? createAndAddExercise : createAndSwapExercise}
+          onClose={() => {
+            setSwapTarget(null)
+            setAddExerciseOpen(false)
+          }}
         />
       )}
 
@@ -2754,6 +2944,39 @@ export default function ActiveWorkout({ day }: { day: string }) {
                 </button>
               )
             })}
+            <button
+              type="button"
+              className="wo-jump-item press"
+              data-haptic="light"
+              onClick={() => {
+                setSwapTarget(null)
+                setAddExerciseOpen(true)
+              }}
+              aria-label="Add an exercise to this workout"
+              style={{
+                display: 'flex', alignItems: 'center', gap: '8px',
+                width: '100%', textAlign: 'left',
+                border: '1px dashed var(--border-strong)', borderRadius: 'var(--radius-sm)',
+                padding: '7px 8px', cursor: 'pointer',
+                marginTop: '4px',
+                color: 'var(--text-secondary)',
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: '13px',
+                fontWeight: 600,
+              }}
+            >
+              <span style={{
+                width: '16px', height: '16px', borderRadius: '9999px', flexShrink: 0,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                border: '1.5px solid var(--border-strong)',
+                color: 'var(--text-muted)',
+              }}>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+                  <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+              </span>
+              Add exercise
+            </button>
           </div>
         </aside>
 
@@ -2877,6 +3100,33 @@ export default function ActiveWorkout({ day }: { day: string }) {
               onOpenPlateCalc={(key, current) => setPlateCalcTarget({ key, current })}
             />
           ))}
+
+          <button
+            type="button"
+            className="press"
+            data-haptic="light"
+            onClick={() => {
+              setSwapTarget(null)
+              setAddExerciseOpen(true)
+            }}
+            aria-label="Add an exercise to this workout"
+            style={{
+              position: 'relative',
+              width: '100%',
+              height: '44px',
+              backgroundColor: 'transparent',
+              border: '1px dashed var(--border-strong)',
+              borderRadius: 'var(--radius-md)',
+              color: 'var(--text-secondary)',
+              fontFamily: 'var(--font-sans)',
+              fontSize: '13px',
+              fontWeight: 600,
+              letterSpacing: '0.5px',
+              cursor: 'pointer',
+            }}
+          >
+            + ADD EXERCISE
+          </button>
 
           {/* Workout note */}
           <div
@@ -3381,16 +3631,20 @@ function ExerciseCard({
 // ─── Exercise Swap Modal ───────────────────────────────────────────────────────
 
 interface ExerciseSwapModalProps {
-  currentExerciseId: string
+  intent: 'swap' | 'add'
+  currentExerciseId: string | null
   day: string
   allExercises: Exercise[]
   currentExercises: Exercise[]
   onSelect: (exercise: Exercise) => void
-  onCreate: (name: string, sets: number, reps: string) => Promise<Exercise | null>
+  onCreate: (name: string, sets: number, reps: string, weightTarget: number | null) => Promise<Exercise | null>
   onClose: () => void
 }
 
-function ExerciseSwapModal({ currentExerciseId, day, allExercises, currentExercises, onSelect, onCreate, onClose }: ExerciseSwapModalProps) {
+function ExerciseSwapModal({
+  intent, currentExerciseId, day, allExercises, currentExercises, onSelect, onCreate, onClose,
+}: ExerciseSwapModalProps) {
+  const { unitLabel, fromDisplay } = useUnit()
   const [query, setQuery] = useState('')
   // 'search' lists existing exercises; 'create' is the inline new-exercise form
   // reached when the one you want isn't in any of your days yet.
@@ -3398,15 +3652,21 @@ function ExerciseSwapModal({ currentExerciseId, day, allExercises, currentExerci
   const [formName, setFormName] = useState('')
   const [formSets, setFormSets] = useState('3')
   const [formReps, setFormReps] = useState('8-12')
+  const [formWeight, setFormWeight] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const keyboardInset = useKeyboardInset()
 
-  const available = allExercises.filter(
-    ex => ex.id === currentExerciseId || !currentExercises.find(ce => ce.id === ex.id)
-  )
+  const available = intent === 'add'
+    ? allExercises.filter(ex => !currentExercises.find(ce => ce.id === ex.id))
+    : allExercises.filter(
+        ex => ex.id === currentExerciseId || !currentExercises.find(ce => ce.id === ex.id),
+      )
   const q = query.trim().toLowerCase()
   const filtered = q ? available.filter(ex => ex.name.toLowerCase().includes(q)) : available
+  const alreadyInSession = intent === 'add' && q
+    ? currentExercises.filter(ex => ex.name.toLowerCase().includes(q))
+    : []
 
   const dayTypes = [...new Set(filtered.map(e => e.day_type))].sort()
   const grouped: Record<string, Exercise[]> = {}
@@ -3427,6 +3687,7 @@ function ExerciseSwapModal({ currentExerciseId, day, allExercises, currentExerci
     setFormName(trimmedQuery)
     setFormSets('3')
     setFormReps('8-12')
+    setFormWeight('')
     setError('')
     setMode('create')
   }
@@ -3438,6 +3699,15 @@ function ExerciseSwapModal({ currentExerciseId, day, allExercises, currentExerci
     const sets = parseInt(formSets, 10)
     if (!sets || sets < 1 || sets > 20) { setError('Sets must be between 1 and 20.'); return }
     if (!formReps.trim()) { setError('Reps is required.'); return }
+    let weightTarget: number | null = null
+    if (formWeight.trim()) {
+      const parsed = parseFloat(formWeight)
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        setError(`Default weight must be 0 or more ${unitLabel}.`)
+        return
+      }
+      weightTarget = fromDisplay(parsed)
+    }
     // Same duplicate guard WorkoutManager enforces: unique name within a day.
     const dupInDay = allExercises.some(
       ex => ex.day_type === day && ex.name.trim().toLowerCase() === name.toLowerCase()
@@ -3446,7 +3716,7 @@ function ExerciseSwapModal({ currentExerciseId, day, allExercises, currentExerci
 
     setSaving(true)
     setError('')
-    const created = await onCreate(name, sets, formReps.trim())
+    const created = await onCreate(name, sets, formReps.trim(), weightTarget)
     if (!created) {
       setSaving(false)
       setError('Could not create exercise. Check your connection and try again.')
@@ -3506,12 +3776,12 @@ function ExerciseSwapModal({ currentExerciseId, day, allExercises, currentExerci
               </button>
             )}
             <h2 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '22px', color: 'var(--text-primary)', letterSpacing: '1px', fontWeight: 'normal', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {mode === 'create' ? 'NEW EXERCISE' : 'SWAP EXERCISE'}
+              {mode === 'create' ? 'NEW EXERCISE' : intent === 'add' ? 'ADD EXERCISE' : 'SWAP EXERCISE'}
             </h2>
           </div>
           <button
             onClick={onClose}
-            aria-label="Close swap dialog"
+            aria-label={intent === 'add' ? 'Close add dialog' : 'Close swap dialog'}
             style={{
               background: 'none', border: 'none', cursor: 'pointer',
               width: '44px', height: '44px', flexShrink: 0,
@@ -3555,6 +3825,8 @@ function ExerciseSwapModal({ currentExerciseId, day, allExercises, currentExerci
                   the user is never stuck when what they want isn't listed. */}
               {canOfferCreate && (
                 <button
+                  type="button"
+                  data-haptic="light"
                   onClick={openCreate}
                   style={{
                     width: '100%', textAlign: 'left',
@@ -3590,9 +3862,59 @@ function ExerciseSwapModal({ currentExerciseId, day, allExercises, currentExerci
                 </button>
               )}
 
-              {dayTypes.length === 0 && !canOfferCreate && (
-                <div style={{ padding: '24px 16px', color: 'var(--text-muted)', fontSize: '13px', textAlign: 'center' }}>
-                  No matches.
+              {dayTypes.length === 0 && !canOfferCreate && alreadyInSession.length === 0 && (
+                <div style={{ padding: '24px 16px', color: 'var(--text-muted)', fontSize: '13px', textAlign: 'center', lineHeight: 1.5 }}>
+                  {intent === 'add' && !q && available.length === 0
+                    ? 'Every exercise is already in this workout. Type a name to create a new one.'
+                    : 'No matches.'}
+                </div>
+              )}
+              {alreadyInSession.length > 0 && (
+                <div>
+                  <div style={{
+                    padding: '12px 16px 6px',
+                    fontSize: '10px', color: 'var(--text-muted)',
+                    textTransform: 'uppercase', letterSpacing: '1.5px',
+                  }}>
+                    Already in this workout
+                  </div>
+                  {alreadyInSession.map(ex => (
+                    <div
+                      key={ex.id}
+                      style={{
+                        width: '100%',
+                        borderBottom: '1px solid var(--border)',
+                        padding: '14px 16px',
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        gap: '12px',
+                        opacity: 0.7,
+                      }}
+                    >
+                      <div>
+                        <div style={{
+                          fontSize: '15px', fontWeight: 600,
+                          color: 'var(--text-secondary)',
+                          fontFamily: "'DM Sans', sans-serif",
+                          marginBottom: '2px',
+                        }}>
+                          {ex.name}
+                        </div>
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
+                          {ex.sets_target} sets × {ex.reps_target} reps
+                        </div>
+                      </div>
+                      <span style={{
+                        fontSize: '10px', color: 'var(--text-muted)',
+                        backgroundColor: 'var(--surface-elevated)',
+                        border: '1px solid var(--border)',
+                        borderRadius: '9999px', padding: '2px 8px',
+                        fontFamily: "'DM Sans', sans-serif", fontWeight: 600,
+                        flexShrink: 0,
+                      }}>
+                        ADDED
+                      </span>
+                    </div>
+                  ))}
                 </div>
               )}
               {dayTypes.map(dayType => {
@@ -3608,7 +3930,7 @@ function ExerciseSwapModal({ currentExerciseId, day, allExercises, currentExerci
                       {dayType.replace(/-/g, ' ').toUpperCase()}
                     </div>
                     {exs.map(ex => {
-                      const isCurrent = ex.id === currentExerciseId
+                      const isCurrent = intent === 'swap' && ex.id === currentExerciseId
                       return (
                         <button
                           key={ex.id}
@@ -3751,8 +4073,38 @@ function ExerciseSwapModal({ currentExerciseId, day, allExercises, currentExerci
                 </div>
               </div>
 
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label htmlFor="swap-new-weight" style={{
+                  fontSize: '10px', letterSpacing: 'var(--tracking-label)',
+                  color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 500,
+                }}>
+                  Default weight ({unitLabel}) — optional
+                </label>
+                <input
+                  id="swap-new-weight"
+                  type="number"
+                  inputMode="decimal"
+                  value={formWeight}
+                  onChange={e => { setFormWeight(e.target.value); if (error) setError('') }}
+                  onFocus={e => e.target.select()}
+                  placeholder="Prefills a fresh set"
+                  style={{
+                    width: '100%',
+                    backgroundColor: 'var(--surface-elevated)',
+                    border: '1px solid var(--border-strong)',
+                    borderRadius: 'var(--radius-sm)',
+                    color: 'var(--text-primary)',
+                    fontFamily: "'JetBrains Mono', monospace",
+                    fontSize: '16px',
+                    padding: '11px 12px',
+                    outline: 'none',
+                  }}
+                />
+              </div>
+
               <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                Added to your <span style={{ color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{day.replace(/-/g, ' ')}</span> day and swapped in for this workout.
+                Added to your <span style={{ color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{day.replace(/-/g, ' ')}</span> day
+                {intent === 'add' ? ' and appended to this workout.' : ' and swapped in for this workout.'}
               </div>
 
               {error && (
@@ -3762,9 +4114,13 @@ function ExerciseSwapModal({ currentExerciseId, day, allExercises, currentExerci
               )}
 
               <button
+                type="button"
+                className="press"
+                data-haptic="medium"
                 onClick={submitCreate}
                 disabled={saving}
                 style={{
+                  position: 'relative',
                   width: '100%', height: '52px',
                   backgroundColor: 'var(--accent)', color: 'var(--on-accent)',
                   border: 'none', borderRadius: 'var(--radius-md)',
@@ -3775,7 +4131,7 @@ function ExerciseSwapModal({ currentExerciseId, day, allExercises, currentExerci
                   transition: 'opacity 150ms ease',
                 }}
               >
-                {saving ? 'CREATING…' : 'CREATE & SWAP IN'}
+                {saving ? 'CREATING…' : intent === 'add' ? 'CREATE & ADD' : 'CREATE & SWAP IN'}
               </button>
             </div>
           </div>

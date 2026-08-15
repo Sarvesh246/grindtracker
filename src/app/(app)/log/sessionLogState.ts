@@ -173,3 +173,68 @@ export function overlayQueuedOps(map: LogMap, sid: string) {
     }
   }
 }
+
+const SESSION_EXTRAS_KEY = (sessionId: string) => `grind-session-extras:${sessionId}`
+
+/** Parse persisted extra exercise ids (localStorage JSON array of strings). */
+export function parseSessionExtraIds(raw: string | null): string[] {
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string' && id.length > 0) : []
+  } catch {
+    return []
+  }
+}
+
+export function readSessionExtraIds(sessionId: string): string[] {
+  if (typeof window === 'undefined') return []
+  try {
+    return parseSessionExtraIds(localStorage.getItem(SESSION_EXTRAS_KEY(sessionId)))
+  } catch {
+    return []
+  }
+}
+
+export function writeSessionExtraIds(sessionId: string, ids: string[]) {
+  if (typeof window === 'undefined') return
+  const unique = [...new Set(ids)]
+  try {
+    if (unique.length === 0) localStorage.removeItem(SESSION_EXTRAS_KEY(sessionId))
+    else localStorage.setItem(SESSION_EXTRAS_KEY(sessionId), JSON.stringify(unique))
+  } catch {
+    /* quota / private mode */
+  }
+}
+
+export function clearSessionExtraIds(sessionId: string) {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.removeItem(SESSION_EXTRAS_KEY(sessionId))
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * Exercises logged (or queued) on this session that aren't already in the day's
+ * list — typically an other-day movement swapped or added mid-workout. Appended
+ * after the day's own rows so resume doesn't drop them.
+ */
+export function mergeSessionExercises<T extends { id: string }>(
+  dayExercises: T[],
+  catalog: T[],
+  extraIds: Iterable<string>,
+): T[] {
+  const have = new Set(dayExercises.map(e => e.id))
+  const byId = new Map(catalog.map(e => [e.id, e]))
+  const extra: T[] = []
+  for (const id of extraIds) {
+    if (have.has(id)) continue
+    const row = byId.get(id)
+    if (!row) continue
+    extra.push(row)
+    have.add(id)
+  }
+  return extra.length === 0 ? dayExercises : [...dayExercises, ...extra]
+}

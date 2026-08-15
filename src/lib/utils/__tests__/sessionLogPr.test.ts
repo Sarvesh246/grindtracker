@@ -5,6 +5,8 @@ import {
   liveSetIsPR,
   normalizePriorVolume,
   emptySetState,
+  mergeSessionExercises,
+  parseSessionExtraIds,
 } from '../../../app/(app)/log/sessionLogState'
 
 describe('normalizePriorVolume', () => {
@@ -71,5 +73,35 @@ describe('liveSetIsPR', () => {
     const set2 = { ...emptySetState('80'), reps: '12', checked: true }
     // Set 1 already logged 80×12 this session; baseline stays the old 900.
     assert.equal(liveSetIsPR(set2, 900), true)
+  })
+})
+
+describe('mergeSessionExercises', () => {
+  it('appends catalog rows that have logs but are not on this day', () => {
+    const day = [{ id: 'a' }, { id: 'b' }]
+    const catalog = [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }]
+    const merged = mergeSessionExercises(day, catalog, ['c', 'a', 'missing'])
+    assert.deepEqual(merged.map(e => e.id), ['a', 'b', 'c'])
+  })
+
+  it('returns the same array when there is nothing extra', () => {
+    const day = [{ id: 'a' }]
+    const catalog = [{ id: 'a' }, { id: 'b' }]
+    const merged = mergeSessionExercises(day, catalog, ['a'])
+    assert.equal(merged, day)
+  })
+})
+
+describe('parseSessionExtraIds', () => {
+  it('reads a JSON string array and drops junk', () => {
+    assert.deepEqual(parseSessionExtraIds('["a","b",""]'), ['a', 'b'])
+    assert.deepEqual(parseSessionExtraIds('[1,"c",null]'), ['c'])
+  })
+
+  it('returns empty for missing or invalid values', () => {
+    assert.deepEqual(parseSessionExtraIds(null), [])
+    assert.deepEqual(parseSessionExtraIds(''), [])
+    assert.deepEqual(parseSessionExtraIds('{nope}'), [])
+    assert.deepEqual(parseSessionExtraIds('"x"'), [])
   })
 })
