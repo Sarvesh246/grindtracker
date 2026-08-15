@@ -765,6 +765,19 @@ body.coach-fab-dragging .bottom-nav [data-haptic-overlay] {
 .toast-slide--bottom.toast-slide--exiting {
   animation: toast-slide-out-bottom 480ms cubic-bezier(0.32, 0.08, 0.24, 1) forwards;
 }
+/* Finger-follow / fly-off must not compete with the enter/exit keyframes. */
+.toast-slide--dragging,
+.toast-slide--swipe-out,
+.toast-slide--dragging.toast-slide--exiting,
+.toast-slide--swipe-out.toast-slide--exiting,
+.toast-slide--top.toast-slide--dragging,
+.toast-slide--bottom.toast-slide--dragging,
+.toast-slide--top.toast-slide--swipe-out,
+.toast-slide--bottom.toast-slide--swipe-out,
+.toast-slide--top.toast-slide--exiting.toast-slide--swipe-out,
+.toast-slide--bottom.toast-slide--exiting.toast-slide--swipe-out {
+  animation: none !important;
+}
 
 /* ---------------------------------------------------------------------------
    Onboarding (coach marks / tours / contextual tooltips). Subtle 150ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ200ms

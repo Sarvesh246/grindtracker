@@ -1,6 +1,7 @@
 'use client'
 import { useLayoutEffect, useRef, useState } from 'react'
 import { placePopover, useAnchorRect, type Side } from './anchor'
+import { useSwipeDismiss } from '@/lib/hooks/useSwipeDismiss'
 
 /**
  * Generic small popup hint, anchored to a target element in viewport coords so
@@ -47,6 +48,7 @@ export default function Tooltip({ getEl, body, title, onDismiss, onSkip, closing
   const anchor = useAnchorRect(getEl, true)
   const cardRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState<{ w: number; h: number } | null>(null)
+  const swipe = useSwipeDismiss(onDismiss, !!closing)
 
   useLayoutEffect(() => {
     if (!cardRef.current) return
@@ -76,6 +78,8 @@ export default function Tooltip({ getEl, body, title, onDismiss, onSkip, closing
       ref={cardRef}
       role="status"
       aria-live="polite"
+      data-swipe-ignore=""
+      {...swipe.handlers}
       style={{
         position: 'fixed',
         top: placed ? placed.top : -9999,
@@ -87,9 +91,14 @@ export default function Tooltip({ getEl, body, title, onDismiss, onSkip, closing
         borderRadius: 'var(--radius-sm)',
         boxShadow: '0 4px 16px rgba(0,0,0,0.45)',
         padding: onDismiss ? '10px 30px 10px 12px' : '10px 12px',
-        opacity: ready ? 1 : 0,
+        animation: !ready
+          ? 'none'
+          : swipe.flying
+            ? 'none'
+            : closing ? 'onboard-tip-out 160ms ease forwards' : 'onboard-tip-in 160ms ease',
+        ...swipe.style,
         pointerEvents: ready && !closing ? 'auto' : 'none',
-        animation: !ready ? 'none' : closing ? 'onboard-tip-out 160ms ease forwards' : 'onboard-tip-in 160ms ease',
+        opacity: !ready ? 0 : (swipe.style.opacity ?? 1),
       }}
     >
       <span style={pointerStyle} aria-hidden="true" />

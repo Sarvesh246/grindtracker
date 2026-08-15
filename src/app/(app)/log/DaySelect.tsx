@@ -195,10 +195,16 @@ export default function DaySelect() {
   const [discardConfirmId, setDiscardConfirmId] = useState<string | null>(null)
   const [actionToast, setActionToast] = useState<string | null>(null)
   const actionToastExit = useExitingValue(actionToast, TOAST_SLIDE_OUT_MS)
+  const actionToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const flashToast = useCallback((msg: string) => {
     setActionToast(msg)
-    setTimeout(() => setActionToast(null), 4000)
+    if (actionToastTimer.current) clearTimeout(actionToastTimer.current)
+    actionToastTimer.current = setTimeout(() => setActionToast(null), 4000)
+  }, [setActionToast])
+
+  useEffect(() => () => {
+    if (actionToastTimer.current) clearTimeout(actionToastTimer.current)
   }, [])
 
   const openByDay = useMemo(() => {
@@ -782,6 +788,10 @@ export default function DaySelect() {
           key={actionToastExit.data}
           edge="bottom"
           exiting={actionToastExit.closing}
+          onDismiss={() => {
+            if (actionToastTimer.current) clearTimeout(actionToastTimer.current)
+            setActionToast(null)
+          }}
           role="status"
           style={{
             bottom: 'calc(84px + env(safe-area-inset-bottom))',
@@ -797,7 +807,6 @@ export default function DaySelect() {
             fontWeight: 600,
             boxShadow: '0 6px 20px rgba(0,0,0,0.35)',
             textAlign: 'center',
-            pointerEvents: 'none',
           }}
         >
           {actionToastExit.data}

@@ -691,6 +691,7 @@ export default function FeedbackInbox({
           key={toastExit.data}
           edge="bottom"
           exiting={toastExit.closing}
+          onDismiss={() => setToast(null)}
           role="status"
           style={{
             bottom: 'calc(var(--nav-h) + env(safe-area-inset-bottom) + 16px)',
@@ -701,7 +702,6 @@ export default function FeedbackInbox({
             padding: '11px 14px',
             fontSize: '12px', color: 'var(--danger)',
             boxShadow: '0 8px 28px rgba(0,0,0,0.4)',
-            pointerEvents: 'none',
           }}
         >
           {toastExit.data}

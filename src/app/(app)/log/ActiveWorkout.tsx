@@ -183,6 +183,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const [undoState, setUndoState] = useState<UndoState | null>(null)
   const [editingKey, setEditingKey] = useState<string | null>(null)
   const [resumeToast, setResumeToast] = useState<string | null>(null)
+  const resumeToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Passive "X saved" confirmation, anchored at the bottom. Distinct from the
   // top undo toast (which is actionable): this one just reassures the user that
   // an edit/note/swap actually persisted, then fades on its own.
@@ -367,9 +368,28 @@ export default function ActiveWorkout({ day }: { day: string }) {
     saveToastTimer.current = setTimeout(() => setSaveToast(null), 1900)
   }, [])
 
+  const dismissSaveToast = useCallback(() => {
+    if (saveToastTimer.current) clearTimeout(saveToastTimer.current)
+    setSaveToast(null)
+  }, [])
+
+  const showResumeToast = useCallback((msg: string, ms = 4000) => {
+    setResumeToast(msg)
+    if (resumeToastTimer.current) clearTimeout(resumeToastTimer.current)
+    resumeToastTimer.current = setTimeout(() => setResumeToast(null), ms)
+  }, [])
+
+  const dismissResumeToast = useCallback(() => {
+    if (resumeToastTimer.current) clearTimeout(resumeToastTimer.current)
+    setResumeToast(null)
+  }, [])
+
   // Clear the pending save-toast timer on unmount so it can't fire into a
   // torn-down component.
-  useEffect(() => () => { if (saveToastTimer.current) clearTimeout(saveToastTimer.current) }, [])
+  useEffect(() => () => {
+    if (saveToastTimer.current) clearTimeout(saveToastTimer.current)
+    if (resumeToastTimer.current) clearTimeout(resumeToastTimer.current)
+  }, [])
   // Clear the pending notification debounce timer on unmount
   useEffect(() => () => { if (setCompletionNotifyDebounce.current) clearTimeout(setCompletionNotifyDebounce.current) }, [])
   // handleCheck reads this after an `await`, by which point another set may have
@@ -559,8 +579,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
 
     if (resumeError || !resumeData) {
       setLoading(false)
-      setResumeToast('Could not start workout. Check your connection and try again.')
-      setTimeout(() => setResumeToast(null), 4000)
+      showResumeToast('Could not start workout. Check your connection and try again.')
       return
     }
 
@@ -636,8 +655,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       const ageMs = Date.now() - sessionStart.getTime()
       if (ageMs > 60_000) {
         const mins = Math.round(ageMs / 60_000)
-        setResumeToast(`Resumed workout from ${mins} min ago`)
-        setTimeout(() => setResumeToast(null), 4000)
+        showResumeToast(`Resumed workout from ${mins} min ago`)
       }
     } else {
       const prefilled: LogMap = {}
@@ -669,7 +687,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
     setElapsed(Math.floor((Date.now() - sessionStart.getTime()) / 1000))
     setLoading(false)
     markAppDataStale()
-  }, [day, supabase, router])
+  }, [day, supabase, router, showResumeToast])
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { initSession() }, [initSession])
@@ -788,8 +806,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
     if (!sessionId) return
     const synced = await flushQueuedOps(sessionId, supabase)
     if (synced.length === 0) {
-      setResumeToast('Still waiting for a connection…')
-      setTimeout(() => setResumeToast(null), 3000)
+      showResumeToast('Still waiting for a connection…', 3000)
       return
     }
     setLogs(prev => {
@@ -965,8 +982,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
           rpe,
           queuedAt: Date.now(),
         })
-        setResumeToast('Saved on this device — will sync once back online.')
-        setTimeout(() => setResumeToast(null), 4000)
+        showResumeToast('Saved on this device — will sync once back online.')
       } else {
         removeQueuedOp(sessionId, exerciseId, setNumber)
       }
@@ -1094,8 +1110,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
     if (error) {
       // Re-queue a delete so the row still gets cleared when back online.
       queueOp({ kind: 'delete', sessionId, exerciseId, setNumber, queuedAt: Date.now() })
-      setResumeToast('Undo saved on this device — will sync once back online.')
-      setTimeout(() => setResumeToast(null), 4000)
+      showResumeToast('Undo saved on this device — will sync once back online.')
     }
 
     setLogs(prev => {
@@ -1129,8 +1144,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       logEntry.checked &&
       (weight === null || reps === null || !Number.isFinite(weight) || !Number.isFinite(reps))
     ) {
-      setResumeToast('Enter weight and reps to save this set.')
-      setTimeout(() => setResumeToast(null), 3000)
+      showResumeToast('Enter weight and reps to save this set.', 3000)
       return
     }
 
@@ -1178,8 +1192,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         rpe,
         queuedAt: Date.now(),
       })
-      setResumeToast('Saved on this device — will sync once back online.')
-      setTimeout(() => setResumeToast(null), 4000)
+      showResumeToast('Saved on this device — will sync once back online.')
     }
 
     setLogs(prev => {
@@ -1249,12 +1262,11 @@ export default function ActiveWorkout({ day }: { day: string }) {
     }
     const plan = planWarmupRamp(snapshot, ex.sets_target, previousBests[exerciseId])
     if (!plan.ok) {
-      setResumeToast(
+      showResumeToast(
         plan.reason === 'nothing-to-fill'
           ? 'Warm-ups go on the first sets. Undo those first.'
           : 'Enter a working weight first, then apply warm-ups.',
       )
-      setTimeout(() => setResumeToast(null), 4000)
       return
     }
 
@@ -1429,8 +1441,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
   }
 
   function showQueuedSyncToast() {
-    setResumeToast('Saved on this device — will sync once back online.')
-    setTimeout(() => setResumeToast(null), 4000)
+    showResumeToast('Saved on this device — will sync once back online.')
   }
 
   /** Queues a skip marker for each set (same fallback as handleCheck/handleSaveEdit)
@@ -1685,8 +1696,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       .eq('exercise_id', swapTarget)
 
     if (deleteError) {
-      setResumeToast('Could not swap exercise. Check your connection and try again.')
-      setTimeout(() => setResumeToast(null), 4000)
+      showResumeToast('Could not swap exercise. Check your connection and try again.')
       return
     }
 
@@ -1844,8 +1854,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
     if (!result.ok) {
       discardingRef.current = false
       setDiscarding(false)
-      setResumeToast('Could not discard workout. Try again.')
-      setTimeout(() => setResumeToast(null), 4000)
+      showResumeToast('Could not discard workout. Try again.')
       return
     }
 
@@ -1861,8 +1870,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
     // Shared helper: uncomplete_session + rotation restore + clear token.
     const ok = await performFinishUndo(supabase)
     if (!ok) {
-      setResumeToast('Could not undo. Try again.')
-      setTimeout(() => setResumeToast(null), 4000)
+      showResumeToast('Could not undo. Try again.')
       return false
     }
     markAppDataStale()
@@ -1875,8 +1883,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
     if (!hasWorkingSet()) {
       // Align with server grind_session_has_working_set — warmups / empty weight
       // don't count, even if the UI shows them as checked.
-      setResumeToast('Log at least one set with weight and reps before finishing.')
-      setTimeout(() => setResumeToast(null), 4000)
+      showResumeToast('Log at least one set with weight and reps before finishing.')
       return
     }
     // Haptic: data-haptic="heavy" on FINISH (delegated / overlay).
@@ -1898,8 +1905,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       // server may see NO_WORKING_SETS or finish with missing sets/wrong XP.
       await flushQueuedOps(sessionId, supabase)
       if (getQueuedOps(sessionId).length > 0) {
-        setResumeToast('Still syncing sets — check your connection and try again.')
-        setTimeout(() => setResumeToast(null), 5000)
+        showResumeToast('Still syncing sets — check your connection and try again.', 5000)
         return
       }
       setLogs(prev => {
@@ -1952,8 +1958,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
           console.error('[grind] complete_session failed', finishError, finishData)
           const msg = String((finishError as { message?: string } | null)?.message ?? '')
           if (msg.includes('NO_WORKING_SETS')) {
-            setResumeToast('Log at least one set with weight and reps before finishing.')
-            setTimeout(() => setResumeToast(null), 5000)
+            showResumeToast('Log at least one set with weight and reps before finishing.', 5000)
             return
           }
           throw finishError ?? new Error('Finish failed')
@@ -2126,8 +2131,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       // miss. Log the underlying error too: if the toast keeps firing on a good
       // connection it's a server-side RPC failure, and this is the only trace.
       reportError(err, { operation: 'handleFinish', route: '/log' })
-      setResumeToast('Could not finish workout. Check your connection and try again.')
-      setTimeout(() => setResumeToast(null), 5000)
+      showResumeToast('Could not finish workout. Check your connection and try again.', 5000)
     } finally {
       finishingRef.current = false
       setFinishing(false)
@@ -2162,7 +2166,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
   })
   const hintPlate = useFeatureTooltip('aw-plate', {
     when: workoutReady, suppressed: hintsBlocked, getEl: () => onboardTarget('aw-plate'),
-    body: 'Tap here to see which plates to load per side for your target weight.',
+    body: 'Tap the plates button to see which plates to load per side for your target weight.',
     preferred: ['top', 'bottom'],
   })
   const hintNote = useFeatureTooltip('aw-note', {
@@ -2390,6 +2394,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
           key={resumeToastExit.data}
           edge="top"
           exiting={resumeToastExit.closing}
+          onDismiss={dismissResumeToast}
           role="status"
           aria-live="polite"
           style={{
@@ -2403,7 +2408,6 @@ export default function ActiveWorkout({ day }: { day: string }) {
             fontWeight: 500,
             zIndex: 300,
             boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
-            pointerEvents: 'none',
           }}
         >
           {resumeToastExit.data}
@@ -2417,6 +2421,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
           key={undoToastExit.data.key}
           edge="top"
           exiting={undoToastExit.closing}
+          onDismiss={() => setUndoState(null)}
           role="status"
           aria-live="polite"
           style={{
@@ -2432,7 +2437,6 @@ export default function ActiveWorkout({ day }: { day: string }) {
             justifyContent: 'space-between',
             zIndex: 300,
             boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
-            pointerEvents: 'auto',
           }}
         >
           <span style={{ display: 'flex', flexDirection: 'column', gap: '1px', minWidth: 0 }}>
@@ -2467,7 +2471,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         </ToastPill>
       )}
 
-      {/* Passive "saved" confirmation — bottom-anchored, non-interactive.
+      {/* Saved confirmation — bottom-anchored, swipe-dismissable.
           Sits above the finish/rest bar, and rides up above the keyboard when
           one is open so it stays visible while editing. */}
       {saveToastExit.data && (
@@ -2475,6 +2479,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
           key={saveToastExit.data}
           edge="bottom"
           exiting={saveToastExit.closing}
+          onDismiss={dismissSaveToast}
           role="status"
           aria-live="polite"
           style={{
@@ -2492,7 +2497,6 @@ export default function ActiveWorkout({ day }: { day: string }) {
             whiteSpace: 'nowrap',
             zIndex: 60,
             boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
-            pointerEvents: 'none',
           }}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
@@ -2580,8 +2584,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
                     pushPrefsRef.current = prefs
                   }
                 } else {
-                  setResumeToast(result.error || 'Could not enable notifications')
-                  setTimeout(() => setResumeToast(null), 4000)
+                  showResumeToast(result.error || 'Could not enable notifications')
                 }
               }}
               style={{
@@ -3073,6 +3076,21 @@ function ExerciseCard({
   const allSkipped = setNumbers.every(s => logs[`${exercise.id}-${s}`]?.skipped)
   const [warmupHelpOpen, setWarmupHelpOpen] = useState(false)
   const warmupHelpBtnRef = useRef<HTMLButtonElement>(null)
+  const warmupHelpTipRef = useRef<HTMLDivElement>(null)
+  const warmupHelpLockUntil = useRef(0)
+
+  useEffect(() => {
+    if (!warmupHelpOpen) return
+    const onPointerDown = (e: PointerEvent) => {
+      const t = e.target
+      if (!(t instanceof Node)) return
+      if (warmupHelpBtnRef.current?.contains(t)) return
+      if (warmupHelpTipRef.current?.contains(t)) return
+      setWarmupHelpOpen(false)
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => document.removeEventListener('pointerdown', onPointerDown)
+  }, [warmupHelpOpen])
 
   return (
     <div id={`wo-ex-${exercise.id}`} style={{
@@ -3190,13 +3208,12 @@ function ExerciseCard({
       <div style={{ height: '1px', backgroundColor: 'var(--border)' }} />
 
       <div style={{ padding: '8px 0' }}>
-        {/* Column headers. The two leading spacers mirror the SET label and W columns.
-           The plate calc button is position:absolute so it sits visually between LBS
-           and REPS without displacing either label — both stay centered over their inputs. */}
+        {/* Column headers. The two leading spacers mirror the SET label and W columns
+           so LBS/REPS sit centered over their inputs. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0 16px 6px' }}>
           <span aria-hidden style={{ minWidth: '38px', flexShrink: 0 }} />
           <span aria-hidden style={{ width: '38px', flexShrink: 0 }} />
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', position: 'relative' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <span style={{
               width: '56px', textAlign: 'center',
               fontSize: '10px', fontWeight: 600, letterSpacing: '0.5px',
@@ -3205,42 +3222,6 @@ function ExerciseCard({
             }}>
               {unitLabel}
             </span>
-            {/* Absolutely positioned so it doesn't affect the flex layout of LBS/REPS */}
-            <button
-              data-onboard={firstExercise ? 'aw-plate' : undefined}
-              data-haptic="light"
-              onClick={() => {
-                // Prefer first unchecked+unskipped set; fall back to set 1 when all are done.
-                const target = setNumbers.find(s => {
-                  const e = logs[`${exercise.id}-${s}`]
-                  return e && !e.checked && !e.skipped
-                }) ?? setNumbers[0]
-                if (target == null) return
-                const key = `${exercise.id}-${target}`
-                const entry = logs[key]
-                const cur = entry?.weight !== '' ? parseFloat(entry?.weight ?? '') : NaN
-                onOpenPlateCalc(key, Number.isFinite(cur) ? toDisplay(cur) : 0)
-              }}
-              aria-label="Open plate calculator"
-              title="Plate calculator"
-              style={{
-                position: 'absolute',
-                left: '50%',
-                top: '50%',
-                transform: 'translate(-50%, -50%)',
-                width: '44px', height: '44px',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                backgroundColor: 'transparent', border: 'none',
-                cursor: 'pointer', padding: 0,
-                color: 'var(--text-muted)',
-              }}
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="9" y="3" width="6" height="18" rx="1" />
-                <line x1="6" y1="8" x2="6" y2="16" />
-                <line x1="18" y1="8" x2="18" y2="16" />
-              </svg>
-            </button>
             <span style={{
               width: '56px', textAlign: 'center',
               fontSize: '10px', fontWeight: 600, letterSpacing: '0.5px',
@@ -3285,61 +3266,150 @@ function ExerciseCard({
         })}
 
         <div style={{ padding: '6px 16px 10px', display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <button
-            type="button"
-            className="press"
-            data-haptic="light"
-            onClick={() => {
-              setWarmupHelpOpen(false)
-              onWarmupRamp()
-            }}
-            aria-label={`Apply warm-up ramp for ${exercise.name}`}
+          {/* Warm-up ramp: dashed sibling of + ADD SET. Help lives inside the
+              control (left) as its own button — not nested — so a tap on "?"
+              never also fires the ramp, and the bulk of the pill stays the
+              apply action. While the tip is open the "?" is inert so a fat
+              finger can't toggle it repeatedly. */}
+          <div
             style={{
               position: 'relative',
               flex: 1,
               height: '40px',
+              display: 'flex',
+              alignItems: 'center',
+              minWidth: 0,
               backgroundColor: 'transparent',
               border: '1px dashed var(--border-strong)',
               borderRadius: 'var(--radius-sm)',
-              color: 'var(--text-secondary)',
-              fontFamily: 'var(--font-sans)',
-              fontSize: '12px',
-              fontWeight: 600,
-              letterSpacing: '0.5px',
-              cursor: 'pointer',
             }}
           >
-            WARM-UP %
-          </button>
+            <button
+              ref={warmupHelpBtnRef}
+              type="button"
+              className="press"
+              data-haptic="light"
+              aria-label="What warm-up percent does"
+              aria-expanded={warmupHelpOpen}
+              aria-disabled={warmupHelpOpen}
+              aria-controls={warmupHelpOpen ? `warmup-help-${exercise.id}` : undefined}
+              onClick={e => {
+                e.preventDefault()
+                e.stopPropagation()
+                if (warmupHelpOpen) return
+                if (Date.now() < warmupHelpLockUntil.current) return
+                warmupHelpLockUntil.current = Date.now() + 700
+                setWarmupHelpOpen(true)
+              }}
+              style={{
+                width: '28px',
+                height: '28px',
+                flexShrink: 0,
+                margin: '0 2px 0 5px',
+                borderRadius: '9999px',
+                border: warmupHelpOpen ? '1px solid var(--border-strong)' : '1px solid var(--border)',
+                backgroundColor: warmupHelpOpen ? 'var(--surface-elevated)' : 'transparent',
+                color: warmupHelpOpen ? 'var(--text-secondary)' : 'var(--text-muted)',
+                fontFamily: 'var(--font-sans)',
+                fontSize: '13px',
+                fontWeight: 700,
+                cursor: warmupHelpOpen ? 'default' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                lineHeight: 1,
+                padding: 0,
+                pointerEvents: warmupHelpOpen ? 'none' : 'auto',
+              }}
+            >
+              ?
+            </button>
+            <span
+              aria-hidden
+              style={{
+                width: '1px',
+                height: '16px',
+                flexShrink: 0,
+                backgroundColor: 'var(--border)',
+                marginRight: '2px',
+              }}
+            />
+            <button
+              type="button"
+              className="press"
+              data-haptic="light"
+              onClick={() => {
+                setWarmupHelpOpen(false)
+                onWarmupRamp()
+              }}
+              aria-label={`Apply warm-up ramp for ${exercise.name}`}
+              style={{
+                position: 'relative',
+                flex: 1,
+                minWidth: 0,
+                height: '100%',
+                backgroundColor: 'transparent',
+                border: 'none',
+                borderRadius: '0 var(--radius-sm) var(--radius-sm) 0',
+                color: 'var(--text-secondary)',
+                fontFamily: 'var(--font-sans)',
+                fontSize: '12px',
+                fontWeight: 600,
+                letterSpacing: '0.5px',
+                cursor: 'pointer',
+                padding: '0 8px 0 6px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              WARM-UP %
+            </button>
+          </div>
           <button
-            ref={warmupHelpBtnRef}
             type="button"
             className="press"
+            data-onboard={firstExercise ? 'aw-plate' : undefined}
             data-haptic="light"
-            aria-label="What warm-up percent does"
-            aria-expanded={warmupHelpOpen}
-            onClick={() => setWarmupHelpOpen(open => !open)}
+            onClick={() => {
+              setWarmupHelpOpen(false)
+              // Prefer first unchecked+unskipped set; fall back to set 1 when all are done.
+              const target = setNumbers.find(s => {
+                const e = logs[`${exercise.id}-${s}`]
+                return e && !e.checked && !e.skipped
+              }) ?? setNumbers[0]
+              if (target == null) return
+              const key = `${exercise.id}-${target}`
+              const entry = logs[key]
+              const cur = entry?.weight !== '' ? parseFloat(entry?.weight ?? '') : NaN
+              onOpenPlateCalc(key, Number.isFinite(cur) ? toDisplay(cur) : 0)
+            }}
+            aria-label="Open plate calculator"
+            title="Plate calculator"
             style={{
               width: '40px',
               height: '40px',
               flexShrink: 0,
-              borderRadius: '9999px',
-              border: '1px solid var(--border-strong)',
-              backgroundColor: warmupHelpOpen ? 'var(--surface-elevated)' : 'transparent',
-              color: 'var(--text-secondary)',
-              fontFamily: 'var(--font-sans)',
-              fontSize: '16px',
-              fontWeight: 700,
-              cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              lineHeight: 1,
+              backgroundColor: 'var(--surface-elevated)',
+              border: '1px solid var(--border-strong)',
+              borderRadius: 'var(--radius-sm)',
+              cursor: 'pointer',
+              padding: 0,
+              color: 'var(--text-secondary)',
             }}
           >
-            ?
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <rect x="9" y="3" width="6" height="18" rx="1" />
+              <line x1="6" y1="8" x2="6" y2="16" />
+              <line x1="18" y1="8" x2="18" y2="16" />
+            </svg>
           </button>
           <button
+            type="button"
+            className="press"
             data-onboard={firstExercise ? 'aw-addset' : undefined}
             data-haptic="light"
             onClick={onAddSet}
@@ -3364,14 +3434,16 @@ function ExerciseCard({
           </button>
         </div>
         {warmupHelpOpen && (
-          <Tooltip
-            getEl={() => warmupHelpBtnRef.current}
-            title="Warm-up %"
-            body="Fills your first 3 sets as easy warm-ups — 40%, 60%, then 80% of the weight you're about to lift. Your real sets stay after those. Warm-ups don't count as PRs."
-            onDismiss={() => setWarmupHelpOpen(false)}
-            preferred={['top', 'bottom']}
-            maxWidth={260}
-          />
+          <div ref={warmupHelpTipRef} id={`warmup-help-${exercise.id}`}>
+            <Tooltip
+              getEl={() => warmupHelpBtnRef.current}
+              title="Warm-up %"
+              body="Fills your first 3 sets as easy warm-ups — 40%, 60%, then 80% of the weight you're about to lift. Your real sets stay after those. Warm-ups don't count as PRs."
+              onDismiss={() => setWarmupHelpOpen(false)}
+              preferred={['top', 'bottom']}
+              maxWidth={260}
+            />
+          </div>
         )}
       </div>
     </div>
