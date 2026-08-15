@@ -35,7 +35,7 @@ const INTERACTIVE_SEL =
   'button, a[href], input, textarea, select, [role="button"], [data-haptic]'
 
 const SKIP_RETARGET_SEL =
-  '.recharts-wrapper, [data-haptic-overlay], [data-no-touch-retarget]'
+  '.recharts-wrapper, [data-haptic-overlay], [data-no-touch-retarget], .toast-slide, [data-swipe-ignore]'
 
 export function isIosTouchDevice(): boolean {
   if (typeof window === 'undefined' || typeof navigator === 'undefined') return false
