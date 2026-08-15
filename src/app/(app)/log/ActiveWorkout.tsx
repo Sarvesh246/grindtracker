@@ -3282,6 +3282,7 @@ function ExerciseCard({
               backgroundColor: 'transparent',
               border: '1px dashed var(--border-strong)',
               borderRadius: 'var(--radius-sm)',
+              padding: '0 2px 0 0',
             }}
           >
             <button
@@ -3305,9 +3306,9 @@ function ExerciseCard({
                 width: '28px',
                 height: '28px',
                 flexShrink: 0,
-                margin: '0 2px 0 5px',
+                margin: '0 4px 0 6px',
                 borderRadius: '9999px',
-                border: warmupHelpOpen ? '1px solid var(--border-strong)' : '1px solid var(--border)',
+                border: 'none',
                 backgroundColor: warmupHelpOpen ? 'var(--surface-elevated)' : 'transparent',
                 color: warmupHelpOpen ? 'var(--text-secondary)' : 'var(--text-muted)',
                 fontFamily: 'var(--font-sans)',
@@ -3328,10 +3329,11 @@ function ExerciseCard({
               aria-hidden
               style={{
                 width: '1px',
-                height: '16px',
+                height: '14px',
                 flexShrink: 0,
                 backgroundColor: 'var(--border)',
-                marginRight: '2px',
+                marginRight: '4px',
+                opacity: 0.9,
               }}
             />
             <button
@@ -3401,7 +3403,7 @@ function ExerciseCard({
               color: 'var(--text-secondary)',
             }}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
               <rect x="9" y="3" width="6" height="18" rx="1" />
               <line x1="6" y1="8" x2="6" y2="16" />
               <line x1="18" y1="8" x2="18" y2="16" />
