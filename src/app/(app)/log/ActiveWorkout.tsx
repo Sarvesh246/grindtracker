@@ -1771,15 +1771,13 @@ export default function ActiveWorkout({ day }: { day: string }) {
     setBaselineBests(prev => (prev[newExercise.id] !== undefined ? prev : { ...prev, [newExercise.id]: prevBest }))
     setBaselineBestVolumes(prev => (prev[newExercise.id] !== undefined ? prev : { ...prev, [newExercise.id]: prevBestVolume }))
 
-    const nextExercises = (() => {
-      const idx = exercises.findIndex(e => e.id === swapTarget)
-      if (idx === -1) return exercises
-      const next = [...exercises]
+    commitExercises(prev => {
+      const idx = prev.findIndex(e => e.id === swapTarget)
+      if (idx === -1) return prev
+      const next = [...prev]
       next[idx] = newExercise
       return next
-    })()
-    setExercises(nextExercises)
-    persistSessionExtras(nextExercises)
+    })
 
     // Same precedence as the initial prefill: the exercise's own weight_target
     // (docs/sql/25) when set, else last session's weight (prevBest, which also
@@ -1880,6 +1878,16 @@ export default function ActiveWorkout({ day }: { day: string }) {
     )
   }
 
+  function commitExercises(updater: (prev: Exercise[]) => Exercise[]) {
+    let next: Exercise[] = exercises
+    setExercises(prev => {
+      next = updater(prev)
+      persistSessionExtras(next)
+      return next
+    })
+    return next
+  }
+
   function scrollToExercise(id: string) {
     window.setTimeout(() => {
       document.getElementById(`wo-ex-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -1896,18 +1904,17 @@ export default function ActiveWorkout({ day }: { day: string }) {
     addingIdsRef.current.add(newExercise.id)
     try {
       const { prevBest } = await ensurePriors(newExercise)
-      let nextExercises: Exercise[] | null = null
-      setExercises(prev => {
+      let added = false
+      commitExercises(prev => {
         if (prev.some(e => e.id === newExercise.id)) return prev
-        nextExercises = [...prev, newExercise]
-        return nextExercises
+        added = true
+        return [...prev, newExercise]
       })
-      if (!nextExercises) {
+      if (!added) {
         setAddExerciseOpen(false)
         showSaveToast(`${newExercise.name} is already in this workout`)
         return
       }
-      persistSessionExtras(nextExercises)
       seedExerciseLogs(newExercise, prevBest)
       setAddExerciseOpen(false)
       showSaveToast(`Added ${newExercise.name}`)
@@ -3123,6 +3130,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
               fontWeight: 600,
               letterSpacing: '0.5px',
               cursor: 'pointer',
+              transition: 'border-color 150ms ease, color 150ms ease',
             }}
           >
             + ADD EXERCISE
