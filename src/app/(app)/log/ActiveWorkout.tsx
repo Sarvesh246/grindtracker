@@ -3407,6 +3407,22 @@ function ExerciseCard({
   const allSkipped = setNumbers.every(s => logs[`${exercise.id}-${s}`]?.skipped)
   const [warmupHelpOpen, setWarmupHelpOpen] = useState(false)
   const warmupHelpBtnRef = useRef<HTMLButtonElement>(null)
+  const warmupHelpTipRef = useRef<HTMLDivElement>(null)
+  const warmupHelpLockUntil = useRef(0)
+  const showWarmupControl = warmupPercents.length > 0 || canUndoWarmup
+
+  useEffect(() => {
+    if (!warmupHelpOpen) return
+    const onPointerDown = (e: PointerEvent) => {
+      const t = e.target
+      if (!(t instanceof Node)) return
+      if (warmupHelpBtnRef.current?.contains(t)) return
+      if (warmupHelpTipRef.current?.contains(t)) return
+      setWarmupHelpOpen(false)
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => document.removeEventListener('pointerdown', onPointerDown)
+  }, [warmupHelpOpen])
 
   return (
     <div id={`wo-ex-${exercise.id}`} style={{
@@ -3620,63 +3636,109 @@ function ExerciseCard({
         })}
 
         <div style={{ padding: '6px 16px 10px', display: 'flex', gap: '8px', alignItems: 'center' }}>
-          {warmupPercents.length > 0 && (
-          <button
-            type="button"
-            className="press"
-            data-haptic="light"
-            onClick={() => {
-              setWarmupHelpOpen(false)
-              if (canUndoWarmup) onUndoWarmupRamp()
-              else onWarmupRamp()
-            }}
-            aria-label={canUndoWarmup ? `Undo warm-up ramp for ${exercise.name}` : `Apply warm-up ramp for ${exercise.name}`}
+          {/* Help lives inside the dashed Warm-up % control so it isn't a
+              third sibling of Warm-up / Add set. The "?" is its own button
+              (not nested) so a tap never also fires the ramp. */}
+          {showWarmupControl && (
+          <div
             style={{
               position: 'relative',
               flex: 1,
               height: '40px',
+              display: 'flex',
+              alignItems: 'center',
+              minWidth: 0,
               backgroundColor: 'transparent',
               border: '1px dashed var(--border-strong)',
               borderRadius: 'var(--radius-sm)',
-              color: canUndoWarmup ? 'var(--accent-text)' : 'var(--text-secondary)',
-              fontFamily: 'var(--font-sans)',
-              fontSize: '12px',
-              fontWeight: 600,
-              letterSpacing: '0.5px',
-              cursor: 'pointer',
+              padding: '0 2px 0 0',
             }}
           >
-            {canUndoWarmup ? 'UNDO WARM-UP' : 'WARM-UP %'}
-          </button>
+            <button
+              ref={warmupHelpBtnRef}
+              type="button"
+              className="press"
+              data-haptic="light"
+              aria-label="What warm-up percent does"
+              aria-expanded={warmupHelpOpen}
+              aria-disabled={warmupHelpOpen}
+              aria-controls={warmupHelpOpen ? `warmup-help-${exercise.id}` : undefined}
+              onClick={e => {
+                e.preventDefault()
+                e.stopPropagation()
+                if (warmupHelpOpen) return
+                if (Date.now() < warmupHelpLockUntil.current) return
+                warmupHelpLockUntil.current = Date.now() + 700
+                setWarmupHelpOpen(true)
+              }}
+              style={{
+                width: '28px',
+                height: '28px',
+                flexShrink: 0,
+                margin: '0 4px 0 6px',
+                borderRadius: '9999px',
+                border: 'none',
+                backgroundColor: warmupHelpOpen ? 'var(--surface-elevated)' : 'transparent',
+                color: warmupHelpOpen ? 'var(--text-secondary)' : 'var(--text-muted)',
+                fontFamily: 'var(--font-sans)',
+                fontSize: '13px',
+                fontWeight: 700,
+                cursor: warmupHelpOpen ? 'default' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                lineHeight: 1,
+                padding: 0,
+                pointerEvents: warmupHelpOpen ? 'none' : 'auto',
+              }}
+            >
+              ?
+            </button>
+            <span
+              aria-hidden
+              style={{
+                width: '1px',
+                height: '14px',
+                flexShrink: 0,
+                backgroundColor: 'var(--border)',
+                marginRight: '4px',
+                opacity: 0.9,
+              }}
+            />
+            <button
+              type="button"
+              className="press"
+              data-haptic="light"
+              onClick={() => {
+                setWarmupHelpOpen(false)
+                if (canUndoWarmup) onUndoWarmupRamp()
+                else onWarmupRamp()
+              }}
+              aria-label={canUndoWarmup ? `Undo warm-up ramp for ${exercise.name}` : `Apply warm-up ramp for ${exercise.name}`}
+              style={{
+                position: 'relative',
+                flex: 1,
+                minWidth: 0,
+                height: '100%',
+                backgroundColor: 'transparent',
+                border: 'none',
+                borderRadius: '0 var(--radius-sm) var(--radius-sm) 0',
+                color: canUndoWarmup ? 'var(--accent-text)' : 'var(--text-secondary)',
+                fontFamily: 'var(--font-sans)',
+                fontSize: '12px',
+                fontWeight: 600,
+                letterSpacing: '0.5px',
+                cursor: 'pointer',
+                padding: '0 8px 0 6px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              {canUndoWarmup ? 'UNDO WARM-UP' : 'WARM-UP %'}
+            </button>
+          </div>
           )}
-          <button
-            ref={warmupHelpBtnRef}
-            type="button"
-            className="press"
-            data-haptic="light"
-            aria-label="What warm-up percent does"
-            aria-expanded={warmupHelpOpen}
-            onClick={() => setWarmupHelpOpen(open => !open)}
-            style={{
-              width: '40px',
-              height: '40px',
-              flexShrink: 0,
-              borderRadius: '9999px',
-              border: '1px solid var(--border-strong)',
-              backgroundColor: warmupHelpOpen ? 'var(--surface-elevated)' : 'transparent',
-              color: 'var(--text-secondary)',
-              fontFamily: 'var(--font-sans)',
-              fontSize: '16px',
-              fontWeight: 700,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              lineHeight: 1,
-            }}
-          >
-            ?
-          </button>
           <button
             data-onboard={firstExercise ? 'aw-addset' : undefined}
             data-haptic="light"
@@ -3702,18 +3764,20 @@ function ExerciseCard({
           </button>
         </div>
         {warmupHelpOpen && (
-          <Tooltip
-            getEl={() => warmupHelpBtnRef.current}
-            title="Warm-up %"
-            body={
-              warmupPercents.length === 0
-                ? 'Turned off. Set how many warm-up sets and what percent of your working weight in Settings.'
-                : `Fills ${warmupPercents.length} easy warm-up${warmupPercents.length === 1 ? '' : 's'} — ${formatWarmupPercentsList(warmupPercents)} of the weight you're about to lift. Your real sets stay after those. Warm-ups don't count as PRs. Tap UNDO WARM-UP if you applied by accident.`
-            }
-            onDismiss={() => setWarmupHelpOpen(false)}
-            preferred={['top', 'bottom']}
-            maxWidth={260}
-          />
+          <div ref={warmupHelpTipRef} id={`warmup-help-${exercise.id}`}>
+            <Tooltip
+              getEl={() => warmupHelpBtnRef.current}
+              title="Warm-up %"
+              body={
+                warmupPercents.length === 0
+                  ? 'Turned off. Set how many warm-up sets and what percent of your working weight in Settings.'
+                  : `Fills ${warmupPercents.length} easy warm-up${warmupPercents.length === 1 ? '' : 's'} — ${formatWarmupPercentsList(warmupPercents)} of the weight you're about to lift. Your real sets stay after those. Warm-ups don't count as PRs. Tap UNDO WARM-UP if you applied by accident.`
+              }
+              onDismiss={() => setWarmupHelpOpen(false)}
+              preferred={['top', 'bottom']}
+              maxWidth={260}
+            />
+          </div>
         )}
       </div>
     </div>
