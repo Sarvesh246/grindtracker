@@ -64,6 +64,7 @@ is fully linked to migration history.
 | [49-user-day-colors.sql](sql/49-user-day-colors.sql) | 49 | **Paste this in Supabase, deploy with the matching app change.** Per-day color overrides (`user_day_colors`) for Log cards, calendar, and past-log pills |
 | [50-delete-my-data-complete.sql](sql/50-delete-my-data-complete.sql) | 50 | **Paste this in Supabase.** `delete_my_grind_data` also wipes `progress-photos` / `feedback-images` storage objects and orphan Coach messages |
 | [51-first-session-baseline-pr.sql](sql/51-first-session-baseline-pr.sql) | 51 | **Paste this in Supabase, deploy with the matching app change.** First completed session per exercise is the PR baseline (not a PR); later sessions must beat that volume. Sets `grind.allow_session_complete` so the SQL editor can recompute `is_pr` on completed logs (same GUC as `complete_session`) |
+| [52-audit-fixes.sql](sql/52-audit-fixes.sql) | 52 | **Paste this in Supabase.** Full-codebase audit fixes: dedupe the +50 streak-milestone XP bonus per date (was double-paid on a flex-day milestone), `grind_safe_local_date` STABLE not IMMUTABLE, `award_earned_badges`'s weekly window aligned to `grind_week_start` (Sunday) instead of UTC Monday, `sessions.day_type` locked once a session is completed |
 
 See also [PUSH.md](PUSH.md) for VAPID keys, Vercel env, and cron setup.
 See [COACH.md](COACH.md) for Gemini env, rate limits, `/api/coach/chat`, and

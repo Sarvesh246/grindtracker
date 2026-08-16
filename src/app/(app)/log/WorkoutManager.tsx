@@ -263,6 +263,34 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
         return
       }
 
+      // The `active` flag (docs/sql/17-exercise-active-flag.sql) exists
+      // specifically so an exercise can be retired "without deleting it
+      // (keeps history/PR bar)" — a hard delete here is only safe for an
+      // exercise nobody has ever logged a set against. Check first: whether
+      // or not the FK is ON DELETE CASCADE, an exercise with logged history
+      // should be disabled, not deleted, or that history silently vanishes.
+      const exerciseIds = deleteTarget.type === 'day'
+        ? exercises.filter(e => e.day_type === deleteTarget.key).map(e => e.id)
+        : [deleteTarget.id]
+      if (exerciseIds.length > 0) {
+        const { count: loggedCount, error: checkError } = await supabase
+          .from('session_logs')
+          .select('id', { count: 'exact', head: true })
+          .in('exercise_id', exerciseIds)
+        if (checkError) {
+          setDeleteError('Could not verify history. Check your connection and try again.')
+          return
+        }
+        if ((loggedCount ?? 0) > 0) {
+          setDeleteError(
+            deleteTarget.type === 'day'
+              ? 'This day has logged history. Disable its exercises instead of deleting — that keeps your history and PR bar.'
+              : 'This exercise has logged history. Disable it instead of deleting — that keeps your history and PR bar.',
+          )
+          return
+        }
+      }
+
       const { error } = deleteTarget.type === 'day'
         // Scope the day-wide delete to the owner explicitly. RLS ("own
         // exercises") already constrains this, but a delete whose only filter

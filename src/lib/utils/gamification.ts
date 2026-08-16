@@ -5,7 +5,10 @@ export function getXpRequiredForLevel(level: number): number {
 }
 
 export function getLevel(xpTotal: number): number {
-  return Math.floor((1 + Math.sqrt(1 + 8 * xpTotal / 500)) / 2)
+  // Mirrors grind_level_for_xp's greatest() clamps (docs/sql/11-server-side-xp.sql) —
+  // change one, change both.
+  const xp = Math.max(xpTotal, 0)
+  return Math.max(1, Math.floor((1 + Math.sqrt(1 + 8 * xp / 500)) / 2))
 }
 
 export function getXpInCurrentLevel(xpTotal: number): number {

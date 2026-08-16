@@ -229,7 +229,8 @@ export default function DaySelect() {
       if (error || !data) throw error ?? new Error('Save failed')
       const result = data as CompleteSessionResult
 
-      let prevRotationIndex = -1
+      // null (not -1) means "never actually advanced" — see FinishUndoToken.
+      let prevRotationIndex: number | null = null
       try {
         const [{ data: dayTypeRows }, { data: rotationRow }, { data: flexRows }] = await Promise.all([
           supabase.from('exercises').select('day_type'),

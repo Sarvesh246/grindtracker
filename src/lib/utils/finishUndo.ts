@@ -23,9 +23,12 @@ export interface FinishUndoToken {
   /**
    * Rotation pointer to restore. Stats are NOT stored here: undo calls
    * `uncomplete_session`, which reopens the session and lets the server
-   * re-derive every stat from the logs.
+   * re-derive every stat from the logs. Null means the rotation fetch/advance
+   * itself failed (or never ran) at finish time, so current_index was never
+   * actually changed — undo must leave it alone rather than stomping it with
+   * a stale/default value.
    */
-  prevRotationIndex: number
+  prevRotationIndex: number | null
   expiresAt: number
 }
 
@@ -100,10 +103,12 @@ export async function performFinishUndo(
   })
   if (undoError) return false
 
-  await supabase
-    .from('user_rotation')
-    .update({ current_index: token.prevRotationIndex })
-    .eq('user_id', user.id)
+  if (token.prevRotationIndex !== null) {
+    await supabase
+      .from('user_rotation')
+      .update({ current_index: token.prevRotationIndex })
+      .eq('user_id', user.id)
+  }
 
   clearFinishUndoToken()
   return true

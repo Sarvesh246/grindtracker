@@ -1222,6 +1222,12 @@ export default function ActiveWorkout({ day }: { day: string }) {
       })
       setResumeToast('Saved on this device — will sync once back online.')
       setTimeout(() => setResumeToast(null), 4000)
+    } else {
+      // A prior failed check/skip on this slot may have left a stale queued
+      // op — this successful write is now the source of truth, so drop it
+      // (same as handleCheck's success branch) or a later flush/resume would
+      // silently overwrite this edit with the old queued data.
+      removeQueuedOp(sessionId, exerciseId, setNumber)
     }
 
     setLogs(prev => {
@@ -1454,6 +1460,11 @@ export default function ActiveWorkout({ day }: { day: string }) {
             queuedAt: Date.now(),
           })
           next[`${exerciseId}-${s}`] = { ...entry, pendingSync: true }
+        } else {
+          // This write is now authoritative for the slot — drop any queued
+          // op left over from an earlier failed check/edit/skip, or a later
+          // flush/resume would replay the stale data over this shift.
+          removeQueuedOp(sessionId, exerciseId, s)
         }
       }
       const { error: deleteError } = await runWithRetry(() =>
@@ -1469,6 +1480,8 @@ export default function ActiveWorkout({ day }: { day: string }) {
         // Same click-triggered async handler as above, not render.
         // eslint-disable-next-line react-hooks/purity
         queueOp({ kind: 'delete', sessionId, exerciseId, setNumber: total, queuedAt: Date.now() })
+      } else {
+        removeQueuedOp(sessionId, exerciseId, total)
       }
       if (anyFailed) showQueuedSyncToast()
     }
@@ -1515,6 +1528,10 @@ export default function ActiveWorkout({ day }: { day: string }) {
         { onConflict: 'session_id,exercise_id,set_number' },
       ),
     )
+    // This write is now authoritative for these slots — drop any queued op
+    // left over from an earlier failed check/edit, or a later flush/resume
+    // would replay stale (non-skipped) data over this skip.
+    if (!error) for (const s of setNumbers) removeQueuedOp(sessionId, exerciseId, s)
     return { error }
   }
 
@@ -1529,6 +1546,10 @@ export default function ActiveWorkout({ day }: { day: string }) {
         .eq('exercise_id', exerciseId)
         .in('set_number', setNumbers),
     )
+    // Same reasoning as persistSkip: a successful unskip is authoritative,
+    // so any stale queued op for these slots (e.g. a failed skip that never
+    // synced) must not survive to resurrect on a later flush/resume.
+    if (!error) for (const s of setNumbers) removeQueuedOp(sessionId, exerciseId, s)
     return { error }
   }
 
@@ -2316,7 +2337,8 @@ export default function ActiveWorkout({ day }: { day: string }) {
       // Advance the rotation pointer so the home page suggests the next day
       // after this one. Best-effort — a failure here must never block
       // completion.
-      let prevRotationIndex = -1
+      // null (not -1) means "never actually advanced" — see FinishUndoToken.
+      let prevRotationIndex: number | null = null
       try {
         const [{ data: dayTypeRows }, { data: rotationRow }, { data: flexRows }] = await Promise.all([
           supabase.from('exercises').select('day_type'),

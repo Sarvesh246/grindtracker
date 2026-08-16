@@ -34,9 +34,12 @@ import {
 // the viewer's and would bucket a workout into the wrong week/month right
 // around the boundary. Same reasoning as `overdueDays`, computed client-side below.
 // Week is Sunday–Saturday (`weekStart` in restDays.ts, SQL `grind_week_start`).
-function getMonthStart(): Date {
-  const now = new Date()
-  return new Date(now.getFullYear(), now.getMonth(), 1)
+// Takes `dateKey` (todayKey) rather than reading `new Date()` itself, same as
+// `weekStart` — plain string slicing on a YYYY-MM-DD key, so the result stays
+// in step with todayKey (and the local-day-rollover re-sync effect below)
+// instead of being frozen at whatever moment the memo first ran.
+function getMonthStart(dateKey: string): string {
+  return `${dateKey.slice(0, 7)}-01`
 }
 
 // The dismissed-overdue signature lives in localStorage and is read via
@@ -460,7 +463,8 @@ export default function HomeDashboard({
       if (error || !data) throw error ?? new Error('Save failed')
       const result = data as CompleteSessionResult
 
-      let prevRotationIndex = -1
+      // null (not -1) means "never actually advanced" — see FinishUndoToken.
+      let prevRotationIndex: number | null = null
       try {
         const [{ data: dayTypeRows }, { data: rotationRow }, { data: flexRows }] = await Promise.all([
           supabase.from('exercises').select('day_type'),
@@ -603,13 +607,12 @@ export default function HomeDashboard({
     }).length
   }, [completedAt, todayKey])
   const monthlyWorkouts = useMemo(() => {
-    const start = getMonthStart()
-    const startKey = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`
+    const startKey = getMonthStart(todayKey)
     return completedAt.filter(d => {
       const key = d.includes('T') ? localDateKey(new Date(d)) : d
       return key >= startKey
     }).length
-  }, [completedAt])
+  }, [completedAt, todayKey])
 
   const exercisePreview = nextDayExercises.length <= 2
     ? nextDayExercises.join(', ')

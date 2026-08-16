@@ -148,6 +148,27 @@ export function nextDay(seq: string[], currentIndex: number): string | null {
   return seq[i]
 }
 
+/** Repairs a stored `currentIndex` that no longer points at the day it should
+ *  (the day most recently completed) after the sequence has shifted underneath
+ *  it — e.g. a day was added, removed, or reordered since the pointer was last
+ *  advanced. `advanceIndex` always leaves the pointer ON the completed day's
+ *  slot, so `seq[currentIndex] === lastCompletedDay` is an invariant that holds
+ *  until the sequence itself changes; when it breaks, re-locate the day by name
+ *  instead of trusting the now-stale numeric index (which `nextDay`'s modulo
+ *  wrap only protects against being out of *range*, not pointing at the wrong
+ *  slot within range). Falls back to `currentIndex` unchanged when the
+ *  completed day is unknown or no longer in the sequence at all. */
+export function resolveCurrentIndex(
+  seq: string[],
+  currentIndex: number,
+  lastCompletedDay: string | null,
+): number {
+  if (!lastCompletedDay || seq.length === 0) return currentIndex
+  if (seq[currentIndex] === lastCompletedDay) return currentIndex
+  const idx = seq.indexOf(lastCompletedDay)
+  return idx === -1 ? currentIndex : idx
+}
+
 /** Advance the pointer after completing `completedDayKey`: the first slot at or
  *  after `currentIndex + 1` (wrapping once) that equals the completed day. If the
  *  day isn't in the sequence, the pointer is left unchanged. Deterministic, and

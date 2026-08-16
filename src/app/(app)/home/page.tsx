@@ -3,7 +3,7 @@ import { createClient, getAuthUser } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import HomeDashboard from './HomeDashboard'
 import type { UserRotation } from '@/lib/types'
-import { effectiveSequence, nextDay as nextDayFromRotation } from '@/lib/utils/rotation'
+import { effectiveSequence, nextDay as nextDayFromRotation, resolveCurrentIndex } from '@/lib/utils/rotation'
 import { isAdminEmail } from '@/lib/utils/admin'
 import {
   DEMO_IDENTITY,
@@ -154,7 +154,16 @@ export default async function HomePage() {
   const rotation = (rotationRow as UserRotation | null)
   const flexDays = new Set((flexRows ?? []).map(r => r.day_key))
   const seq = effectiveSequence(rotation, dayKeys, flexDays)
-  const nextDay = nextDayFromRotation(seq, rotation?.current_index ?? -1) ?? dayKeys.sort()[0] ?? 'push'
+  // A day added/removed/reordered since the pointer was last advanced can
+  // leave current_index pointing at the wrong slot (in-range but no longer
+  // the completed day) — repair it against the actual last-completed session
+  // before deriving "up next" so the suggestion doesn't lag a full cycle.
+  const resolvedRotationIndex = resolveCurrentIndex(
+    seq,
+    rotation?.current_index ?? -1,
+    lastSession?.day_type ?? null,
+  )
+  const nextDay = nextDayFromRotation(seq, resolvedRotationIndex) ?? dayKeys.sort()[0] ?? 'push'
 
   // grind_home_history backs "This Week"/"This Month" counts, the overdue-day
   // nudge, and last-trained-per-day — a silently blank result here is
@@ -210,7 +219,7 @@ export default async function HomePage() {
       nextDayExercises={(nextDayExercises ?? []).map(e => e.name)}
       hasDays={dayKeys.length > 0}
       rotationSeq={seq}
-      rotationIndex={rotation?.current_index ?? -1}
+      rotationIndex={resolvedRotationIndex}
       lastTrainedByDay={lastTrainedByDay}
       firstName={firstName}
       completedAt={demoMode ? demoCompletedLocalDates() : completedLocalDates}
