@@ -10,9 +10,12 @@
 -- A set is now a PR only when an earlier completed session exists for that
 -- exercise AND this set's volume beats that prior best.
 --
--- Body is the 15-volume-based-prs definition with only the flags CTE
--- predicate changed. Later migrations (39/43) updated grind_dates_connected
--- in place; this replace still calls those helpers.
+-- Body is the 15-volume-based-prs definition with the flags CTE predicate
+-- changed and grind.allow_session_complete set so a SQL-editor apply can
+-- UPDATE completed session_logs / sessions.xp_earned (the definer bypass
+-- does not fire when current_user = session_user). Later migrations (39/43)
+-- updated grind_dates_connected in place; this replace still calls those
+-- helpers.
 
 begin;
 
@@ -37,6 +40,11 @@ declare
   v_n           int;
   v_i           int;
 begin
+  -- SQL editor / owner-as-invoker: current_user = session_user, so the
+  -- security-definer bypass in grind_guard_completed_session_logs and
+  -- grind_guard_session_write does not fire. Same GUC complete_session sets.
+  perform set_config('grind.allow_session_complete', '1', true);
+
   -- 1. Recompute PR flags.
   --    A set is a PR when its VOLUME (weight x reps) beats the best
   --    non-warm-up volume from any EARLIER completed session for the same
@@ -204,10 +212,13 @@ revoke all on function public.grind_recompute_stats(uuid, date) from public, ano
 
 -- Recompute existing users so first-session is_pr flags and XP drop in line
 -- with the new rule. Badges already awarded are left as-is (award-only).
+-- The GUC is also set here so a dashboard paste still works if this block
+-- is run on its own after a previous 51 attempt replaced the function.
 do $$
 declare
   uid uuid;
 begin
+  perform set_config('grind.allow_session_complete', '1', true);
   for uid in
     select distinct user_id from public.sessions
   loop

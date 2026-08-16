@@ -63,7 +63,7 @@ is fully linked to migration history.
 | [48-week-start-sunday.sql](sql/48-week-start-sunday.sql) | 48 | **Paste this in Supabase, deploy with the matching app change.** `grind_week_start` is Sunday (not Monday) so rest budget and Home “this week” share a Sun–Sat week |
 | [49-user-day-colors.sql](sql/49-user-day-colors.sql) | 49 | **Paste this in Supabase, deploy with the matching app change.** Per-day color overrides (`user_day_colors`) for Log cards, calendar, and past-log pills |
 | [50-delete-my-data-complete.sql](sql/50-delete-my-data-complete.sql) | 50 | **Paste this in Supabase.** `delete_my_grind_data` also wipes `progress-photos` / `feedback-images` storage objects and orphan Coach messages |
-| [51-first-session-baseline-pr.sql](sql/51-first-session-baseline-pr.sql) | 51 | **Paste this in Supabase, deploy with the matching app change.** First completed session per exercise is the PR baseline (not a PR); later sessions must beat that volume |
+| [51-first-session-baseline-pr.sql](sql/51-first-session-baseline-pr.sql) | 51 | **Paste this in Supabase, deploy with the matching app change.** First completed session per exercise is the PR baseline (not a PR); later sessions must beat that volume. Sets `grind.allow_session_complete` so the SQL editor can recompute `is_pr` on completed logs (same GUC as `complete_session`) |
 
 See also [PUSH.md](PUSH.md) for VAPID keys, Vercel env, and cron setup.
 See [COACH.md](COACH.md) for Gemini env, rate limits, `/api/coach/chat`, and
