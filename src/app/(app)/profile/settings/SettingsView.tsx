@@ -506,7 +506,7 @@ export default function SettingsView({
 
   const settingsSteps: TourStep[] = [
     { target: 'profile-unit', title: 'Weight units', body: 'Switch how weights display app-wide. Everything is still stored consistently under the hood.' },
-    { target: 'profile-rest', title: 'Default rest time', body: 'Set your default rest between sets — override per-exercise from the rest timer during a workout.' },
+    { target: 'profile-rest', title: 'Default rest time', body: 'Set your default rest between sets — override for a workout from the rest timer.' },
     { target: 'profile-rest-days', title: 'Rest days', body: 'Pick weekly rest days so a day off doesn’t break your streak. Rest today on Home spends one of these slots.' },
     { target: 'profile-notifications', title: 'Notifications', body: 'Streak reminders and rest-end pings. On iPhone, add GRIND to your Home Screen first so alerts can fire.' },
   ]

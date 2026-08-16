@@ -1,10 +1,11 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { REST_PRESETS, getExerciseRest, setExerciseRest } from '@/lib/hooks/useRestTimer'
+import { REST_PRESETS, resolveRestSeconds, setExerciseRest, setSessionRest } from '@/lib/utils/restPref'
 
 interface Props {
   exerciseId: string
   exerciseName: string
+  sessionId?: string | null
   remainingMs: number
   durationMs: number
   paused: boolean
@@ -12,6 +13,8 @@ interface Props {
   onAdd: (sec: number) => void
   onPause: () => void
   onResume: () => void
+  /** Apply a newly picked default to the running countdown. */
+  onDefaultChange?: (sec: number) => void
 }
 
 const ADJUST_OPTIONS: { label: string; sec: number }[] = [
@@ -33,6 +36,7 @@ function fmt(ms: number): string {
 export default function RestTimerBar({
   exerciseId,
   exerciseName,
+  sessionId,
   remainingMs,
   durationMs,
   paused,
@@ -40,17 +44,18 @@ export default function RestTimerBar({
   onAdd,
   onPause,
   onResume,
+  onDefaultChange,
 }: Props) {
   const [open, setOpen] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
-  const [rest, setRest] = useState<number>(() => getExerciseRest(exerciseId))
+  const [rest, setRest] = useState<number>(() => resolveRestSeconds(exerciseId, sessionId))
 
-  // Re-sync the per-exercise rest preference from localStorage whenever the
-  // active exercise changes (an external store, read client-side only).
+  // Re-sync the session / per-exercise rest preference whenever the active
+  // exercise (or session) changes — localStorage is the source of truth.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setRest(getExerciseRest(exerciseId))
-  }, [exerciseId])
+    setRest(resolveRestSeconds(exerciseId, sessionId))
+  }, [exerciseId, sessionId])
 
   const pct = durationMs > 0 ? Math.min(100, (remainingMs / durationMs) * 100) : 0
   const done = !paused && remainingMs <= 0
@@ -371,7 +376,9 @@ export default function RestTimerBar({
                 data-haptic="light"
                 onClick={() => {
                   setExerciseRest(exerciseId, sec)
+                  if (sessionId) setSessionRest(sessionId, sec)
                   setRest(sec)
+                  onDefaultChange?.(sec)
                 }}
                 aria-pressed={selected}
                 style={{

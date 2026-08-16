@@ -49,7 +49,7 @@ export function findCarryReps(logs: LogMap, exerciseId: string, setNumber: numbe
 /**
  * Coerce a get_exercise_bests / state volume to a finite number.
  * PostgREST often returns Postgres `numeric` as a string; missing / invalid
- * priors must be null so the first lift is a PR (not `undefined > n` → false).
+ * priors must be null so the first lift is a baseline, not a PR.
  */
 export function normalizePriorVolume(value: unknown): number | null {
   if (value == null || value === '') return null
@@ -59,8 +59,9 @@ export function normalizePriorVolume(value: unknown): number | null {
 
 /**
  * Local volume-PR hint for open sessions (server recomputes on finish).
- * Matches grind_recompute_stats: volume > coalesce(prior_best, -1).
- * Null / undefined / non-numeric prior ⇒ first lift is a PR.
+ * Matches grind_recompute_stats: volume > prior_best, and only when a prior
+ * completed session exists. Null / undefined / non-numeric prior ⇒ first
+ * lift is the baseline, not a PR.
  */
 export function computeLocalIsPR(
   isWarmup: boolean,
@@ -72,7 +73,8 @@ export function computeLocalIsPR(
     return false
   }
   const prior = normalizePriorVolume(prevBestVolume)
-  return weight * reps > (prior ?? -1)
+  if (prior == null) return false
+  return weight * reps > prior
 }
 
 /** Live reps-box badge: checked working set that beats the prior-session baseline. */

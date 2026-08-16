@@ -3,7 +3,7 @@
 ## Status: COMPLETE ✅
 Core phases (1–7) plus later ships (flex days, photos, onboarding, web push,
 weight targets, offline set queue, RPE, data export) — single-user PWA in daily use.
-Schema migrations run through `docs/sql/48-*.sql`.
+Schema migrations run through `docs/sql/51-*.sql`.
 
 ## Git Workflow
 Single-user repo, no review process. Commit and push directly to `main` —
@@ -202,7 +202,8 @@ a configured rest day (recurring or one-off confirmed — see Rest days below);
 any other gap resets to 1. Home page zeroes a stale streak when the gap since
 the last workout isn't fully covered by rest days.
 PR: weight × reps (volume) > max non-warm-up volume in any previous completed
-session for that exercise (migration `15-volume-based-prs.sql`).
+session for that exercise (migration `15-volume-based-prs.sql`). The first
+completed session for an exercise is the baseline, not a PR (migration `51`).
 
 ## Badges (src/lib/utils/badges.ts)
 35 badges — streak/workout-count/PR-count/level tiers, plus lifetime volume

@@ -28,12 +28,12 @@ describe('normalizePriorVolume', () => {
 })
 
 describe('computeLocalIsPR', () => {
-  it('matches grind_recompute_stats: first lift (null prior) is a PR', () => {
-    assert.equal(computeLocalIsPR(false, 80, 12, null), true)
+  it('matches grind_recompute_stats: first lift (null prior) is the baseline, not a PR', () => {
+    assert.equal(computeLocalIsPR(false, 80, 12, null), false)
   })
 
-  it('treats undefined prior like null — not `n > undefined` → false', () => {
-    assert.equal(computeLocalIsPR(false, 80, 12, undefined), true)
+  it('treats undefined prior like null — first lift is not a PR', () => {
+    assert.equal(computeLocalIsPR(false, 80, 12, undefined), false)
   })
 
   it('treats numeric strings from get_exercise_bests as numbers', () => {
@@ -62,11 +62,16 @@ describe('liveSetIsPR', () => {
     assert.equal(liveSetIsPR(entry, 960), false)
   })
 
+  it('hides the badge on the first lift (no prior baseline)', () => {
+    const entry = { ...emptySetState('80'), reps: '12', checked: true }
+    assert.equal(liveSetIsPR(entry, null), false)
+  })
+
   it('hides the badge on skipped / unchecked / warmup rows', () => {
     const base = { ...emptySetState('80'), reps: '12', checked: true }
-    assert.equal(liveSetIsPR({ ...base, skipped: true }, null), false)
-    assert.equal(liveSetIsPR({ ...base, checked: false }, null), false)
-    assert.equal(liveSetIsPR({ ...base, isWarmup: true }, null), false)
+    assert.equal(liveSetIsPR({ ...base, skipped: true }, 900), false)
+    assert.equal(liveSetIsPR({ ...base, checked: false }, 900), false)
+    assert.equal(liveSetIsPR({ ...base, isWarmup: true }, 900), false)
   })
 
   it('still badges later sets against the prior-session baseline (not raised mid-session)', () => {

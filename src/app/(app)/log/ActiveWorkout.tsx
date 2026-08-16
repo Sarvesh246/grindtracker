@@ -42,6 +42,7 @@ import {
   type SetState,
 } from './sessionLogState'
 import { useRestTimer, getPauseRestOnExit } from '@/lib/hooks/useRestTimer'
+import { resolveRestSeconds, setSessionRest, clearSessionRest } from '@/lib/utils/restPref'
 import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
 import { useExitingValue } from '@/lib/hooks/useExitingValue'
 import RestTimerBar from '@/components/RestTimerBar'
@@ -156,15 +157,16 @@ export default function ActiveWorkout({ day }: { day: string }) {
   // `previousBestVolumes` tracks the session's running best volume (for undo/
   // edit recomputes / display). Live PR *badges* pin to `baselineBestVolumes`
   // (prior-session get_exercise_bests only) so later sets that beat the prior
-  // best still badge — matching server grind_recompute_stats (docs/sql/15).
+  // best still badge — matching server grind_recompute_stats (docs/sql/15 + 51).
+  // A missing prior is the first-session baseline (not a PR).
   // `baselineBests`/`baselineBestVolumes` stay frozen at the DB values from
   // session start.
   const [previousBests, setPreviousBests] = useState<PreviousBest>({})
   const [baselineBests, setBaselineBests] = useState<PreviousBest>({})
   const [previousBestVolumes, setPreviousBestVolumes] = useState<PreviousBest>({})
   const [baselineBestVolumes, setBaselineBestVolumes] = useState<PreviousBest>({})
-  // handleCheck/saveEdit read this so a stale render can't treat a missing
-  // prior as "not a PR" (undefined fails `=== null` and `n > undefined`).
+  // handleCheck/saveEdit read this so PostgREST numeric strings and missing
+  // priors normalize the same way as the server (null prior = baseline).
   // Synced in a layout effect (not during render) so the ref write can't be
   // read as a render-time side effect, while still landing before any event
   // handler could plausibly fire against a stale value.
@@ -955,11 +957,11 @@ export default function ActiveWorkout({ day }: { day: string }) {
 
       const prevBestVolume = normalizePriorVolume(baselineBestVolumesRef.current[exerciseId])
       const volume = weight * reps
-      // Match server grind_recompute_stats: first-ever volume for an exercise is
-      // a PR (prior best treated as -1), not only improvements over a known best.
-      // Badge eligibility pins to prior-session baseline only (not raised mid-
-      // session) so a later set that beats the old PR still badges even if set 1
-      // already did. Client always writes is_pr:false; local isPR is UI-only until finish.
+      // Match server grind_recompute_stats: first-ever volume is the baseline
+      // (not a PR). Badge eligibility pins to prior-session baseline only (not
+      // raised mid-session) so a later set that beats the old PR still badges
+      // even if set 1 already did. Client always writes is_pr:false; local isPR
+      // is UI-only until finish.
       const isPR = computeLocalIsPR(logEntry.isWarmup, weight, reps, prevBestVolume)
       const rpe = parseRpe(logEntry.rpe)
 
@@ -1102,7 +1104,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         // Finish is next — clear any leftover rest from an earlier set.
         if (restTimer.active) restTimer.stop()
       } else if (!logEntry.isWarmup) {
-        restTimer.start(exerciseId)
+        restTimer.start(exerciseId, resolveRestSeconds(exerciseId, sessionId))
       }
     } finally {
       checkingKeysRef.current.delete(key)
@@ -1177,7 +1179,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
     // Badge eligibility pins to prior-session baseline (server volume-PR rules).
     // Session bests are recomputed below via bestVolumeFromLogs for display/undo.
     const prevBestVolume = normalizePriorVolume(baselineBestVolumesRef.current[exerciseId])
-    // Match server: null prior best ⇒ first lift is a PR. Client writes is_pr:false.
+    // Match server: null prior best ⇒ first lift is the baseline, not a PR.
     const isPR =
       reps !== null && computeLocalIsPR(logEntry.isWarmup, weight, reps, prevBestVolume)
     const rpe = parseRpe(logEntry.rpe)
@@ -2111,6 +2113,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
     if (sessionId) {
       clearQueuedOpsForSession(sessionId)
       clearSessionExtraIds(sessionId)
+      clearSessionRest(sessionId)
     }
     setSessionId(null)
     discardingRef.current = false
@@ -2382,6 +2385,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         isNewBestStreak: result.current_streak > 1 && result.current_streak === result.longest_streak,
       })
       clearSessionExtraIds(sessionId)
+      clearSessionRest(sessionId)
       markAppDataStale()
     } catch (err) {
       // The workout is untouched (or safely resumable) — tell the user and let
@@ -2459,7 +2463,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
     when: restTimer.active && restTimer.remainingMs > 0,
     suppressed: anyModalOpen,
     getEl: () => onboardTarget('aw-rest-adjust'),
-    body: 'Adjust your rest on the fly, or tap the timer to set a new default for this exercise.',
+    body: 'Adjust your rest on the fly, or tap the timer to set a new default for this workout.',
     preferred: ['top'],
   })
   const activeWorkoutHints = (
@@ -2874,13 +2878,21 @@ export default function ActiveWorkout({ day }: { day: string }) {
         <RestTimerBar
           exerciseId={restTimer.exerciseId}
           exerciseName={exercises.find(e => e.id === restTimer.exerciseId)?.name ?? ''}
+          sessionId={sessionId}
           remainingMs={restTimer.remainingMs}
           durationMs={restTimer.durationMs}
           paused={restTimer.paused}
           onStop={restTimer.stop}
-          onAdd={restTimer.addSeconds}
+          onAdd={(sec) => {
+            restTimer.addSeconds(sec)
+            if (sessionId) {
+              const next = Math.max(5, Math.round(restTimer.durationMs / 1000) + sec)
+              setSessionRest(sessionId, next)
+            }
+          }}
           onPause={restTimer.pause}
           onResume={restTimer.resume}
+          onDefaultChange={(sec) => restTimer.start(restTimer.exerciseId!, sec)}
         />
       )}
 

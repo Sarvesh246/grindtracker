@@ -1,52 +1,22 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import { haptic, supportsVibrate } from '@/lib/utils/haptics'
+import { resolveRestSeconds } from '@/lib/utils/restPref'
 
-export const REST_PRESETS = [60, 90, 120, 180] as const
-const STORAGE_PREFIX = 'grind.rest.'
-const DEFAULT_REST_KEY = 'grind.rest.default'
-export const DEFAULT_REST = 120
-
-/** User's global default rest, configurable in Settings. Falls back to DEFAULT_REST. */
-export function getDefaultRest(): number {
-  if (typeof window === 'undefined') return DEFAULT_REST
-  const v = localStorage.getItem(DEFAULT_REST_KEY)
-  const n = v ? Number(v) : NaN
-  return Number.isFinite(n) && n > 0 ? n : DEFAULT_REST
-}
-
-export function setDefaultRest(seconds: number) {
-  if (typeof window === 'undefined') return
-  localStorage.setItem(DEFAULT_REST_KEY, String(seconds))
-}
-
-export function getExerciseRest(exerciseId: string): number {
-  if (typeof window === 'undefined') return getDefaultRest()
-  const v = localStorage.getItem(STORAGE_PREFIX + exerciseId)
-  const n = v ? Number(v) : NaN
-  return Number.isFinite(n) && n > 0 ? n : getDefaultRest()
-}
-
-export function setExerciseRest(exerciseId: string, seconds: number) {
-  if (typeof window === 'undefined') return
-  localStorage.setItem(STORAGE_PREFIX + exerciseId, String(seconds))
-}
-
-const PAUSE_ON_EXIT_KEY = 'grind.rest.pause_on_exit'
-
-/**
- * Whether "Save & Exit" freezes the active rest timer where it was (default)
- * or lets it keep counting down in the background. Configurable in Settings.
- */
-export function getPauseRestOnExit(): boolean {
-  if (typeof window === 'undefined') return true
-  return localStorage.getItem(PAUSE_ON_EXIT_KEY) !== 'false'
-}
-
-export function setPauseRestOnExit(value: boolean) {
-  if (typeof window === 'undefined') return
-  localStorage.setItem(PAUSE_ON_EXIT_KEY, String(value))
-}
+export {
+  REST_PRESETS,
+  DEFAULT_REST,
+  getDefaultRest,
+  setDefaultRest,
+  getExerciseRest,
+  setExerciseRest,
+  getSessionRest,
+  setSessionRest,
+  clearSessionRest,
+  resolveRestSeconds,
+  getPauseRestOnExit,
+  setPauseRestOnExit,
+} from '@/lib/utils/restPref'
 
 interface TimerState {
   exerciseId: string | null
@@ -200,7 +170,7 @@ export function useRestTimer() {
   }, [state.exerciseId, state.remainingMs, state.paused])
 
   function start(exerciseId: string, durationSec?: number) {
-    const seconds = durationSec ?? getExerciseRest(exerciseId)
+    const seconds = durationSec ?? resolveRestSeconds(exerciseId)
     tenSecFired.current = false
     zeroFired.current = false
     setState({
