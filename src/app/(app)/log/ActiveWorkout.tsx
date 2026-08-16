@@ -3540,13 +3540,13 @@ function ExerciseCard({
       <div style={{ height: '1px', backgroundColor: 'var(--border)' }} />
 
       <div style={{ padding: '8px 0' }}>
-        {/* Column headers. The two leading spacers mirror the SET label and W columns.
-           The plate calc button is position:absolute so it sits visually between LBS
-           and REPS without displacing either label — both stay centered over their inputs. */}
+        {/* Column headers. The two leading spacers mirror the SET label and W columns
+           so LBS/REPS sit centered over their inputs. Plate calc lives in the
+           Warm-up / plates / Add set row below — not here, where it crowded the labels. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0 16px 6px' }}>
           <span aria-hidden style={{ minWidth: '38px', flexShrink: 0 }} />
           <span aria-hidden style={{ width: '38px', flexShrink: 0 }} />
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', position: 'relative' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <span style={{
               width: '56px', textAlign: 'center',
               fontSize: '10px', fontWeight: 600, letterSpacing: '0.5px',
@@ -3555,42 +3555,6 @@ function ExerciseCard({
             }}>
               {unitLabel}
             </span>
-            {/* Absolutely positioned so it doesn't affect the flex layout of LBS/REPS */}
-            <button
-              data-onboard={firstExercise ? 'aw-plate' : undefined}
-              data-haptic="light"
-              onClick={() => {
-                // Prefer first unchecked+unskipped set; fall back to set 1 when all are done.
-                const target = setNumbers.find(s => {
-                  const e = logs[`${exercise.id}-${s}`]
-                  return e && !e.checked && !e.skipped
-                }) ?? setNumbers[0]
-                if (target == null) return
-                const key = `${exercise.id}-${target}`
-                const entry = logs[key]
-                const cur = entry?.weight !== '' ? parseFloat(entry?.weight ?? '') : NaN
-                onOpenPlateCalc(key, Number.isFinite(cur) ? toDisplay(cur) : 0)
-              }}
-              aria-label="Open plate calculator"
-              title="Plate calculator"
-              style={{
-                position: 'absolute',
-                left: '50%',
-                top: '50%',
-                transform: 'translate(-50%, -50%)',
-                width: '44px', height: '44px',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                backgroundColor: 'transparent', border: 'none',
-                cursor: 'pointer', padding: 0,
-                color: 'var(--text-muted)',
-              }}
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="9" y="3" width="6" height="18" rx="1" />
-                <line x1="6" y1="8" x2="6" y2="16" />
-                <line x1="18" y1="8" x2="18" y2="16" />
-              </svg>
-            </button>
             <span style={{
               width: '56px', textAlign: 'center',
               fontSize: '10px', fontWeight: 600, letterSpacing: '0.5px',
@@ -3636,9 +3600,9 @@ function ExerciseCard({
         })}
 
         <div style={{ padding: '6px 16px 10px', display: 'flex', gap: '8px', alignItems: 'center' }}>
-          {/* Help lives inside the dashed Warm-up % control so it isn't a
-              third sibling of Warm-up / Add set. The "?" is its own button
-              (not nested) so a tap never also fires the ramp. */}
+          {/* Row is Warm-up % | plates | + Add set. Help lives inside the
+              dashed Warm-up control as its own button so a tap on "?" never
+              also fires the ramp. */}
           {showWarmupControl && (
           <div
             style={{
@@ -3739,6 +3703,47 @@ function ExerciseCard({
             </button>
           </div>
           )}
+          <button
+            type="button"
+            className="press"
+            data-onboard={firstExercise ? 'aw-plate' : undefined}
+            data-haptic="light"
+            onClick={() => {
+              setWarmupHelpOpen(false)
+              // Prefer first unchecked+unskipped set; fall back to set 1 when all are done.
+              const target = setNumbers.find(s => {
+                const e = logs[`${exercise.id}-${s}`]
+                return e && !e.checked && !e.skipped
+              }) ?? setNumbers[0]
+              if (target == null) return
+              const key = `${exercise.id}-${target}`
+              const entry = logs[key]
+              const cur = entry?.weight !== '' ? parseFloat(entry?.weight ?? '') : NaN
+              onOpenPlateCalc(key, Number.isFinite(cur) ? toDisplay(cur) : 0)
+            }}
+            aria-label="Open plate calculator"
+            title="Plate calculator"
+            style={{
+              width: '40px',
+              height: '40px',
+              flexShrink: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: 'var(--surface-elevated)',
+              border: '1px solid var(--border-strong)',
+              borderRadius: 'var(--radius-sm)',
+              cursor: 'pointer',
+              padding: 0,
+              color: 'var(--text-secondary)',
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <rect x="9" y="3" width="6" height="18" rx="1" />
+              <line x1="6" y1="8" x2="6" y2="16" />
+              <line x1="18" y1="8" x2="18" y2="16" />
+            </svg>
+          </button>
           <button
             data-onboard={firstExercise ? 'aw-addset' : undefined}
             data-haptic="light"
