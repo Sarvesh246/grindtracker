@@ -177,13 +177,18 @@ export function restBudgetForWeek(
   if (!weekEnd) return 0
 
   if (opts?.intervals && opts.intervals.length > 0) {
-    let n = 0
+    // Count WEEKDAYS, not rows. `user_rest_days` is keyed on
+    // (user, day_of_week, effective_from), so the same weekday can legitimately
+    // hold several rows once it has been turned off and back on; counting rows
+    // would then hand out a bigger weekly budget than the user configured.
+    const counted = new Set<number>()
     for (const i of opts.intervals) {
       if (i.effectiveUntil != null) continue
+      if (counted.has(i.dayOfWeek)) continue
       const from = i.effectiveFrom && i.effectiveFrom !== '1970-01-01' ? i.effectiveFrom : null
-      if (!from || from <= weekEnd) n += 1
+      if (!from || from <= weekEnd) counted.add(i.dayOfWeek)
     }
-    return n
+    return counted.size
   }
 
   let n = 0

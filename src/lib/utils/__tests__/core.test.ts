@@ -11,8 +11,10 @@ import {
   restLeftThisWeekLabel,
   weekStart,
   sameDateKeyList,
+  restBudgetForWeek,
 } from '../restDays'
 import { extraSetsFromLogs, emptySetState, type LogMap } from '../../../app/(app)/log/sessionLogState'
+import { slugDayKey, logDayHref } from '../dayKeys'
 
 describe('gamification level curve', () => {
   it('level 1 at 0 XP', () => {
@@ -334,5 +336,91 @@ describe('extraSetsFromLogs', () => {
     }
     const extras = extraSetsFromLogs(logs, [{ id: exId, sets_target: 3 }])
     assert.equal(extras[exId], 0)
+  })
+})
+
+describe('slugDayKey', () => {
+  it('lowercases and hyphenates whitespace', () => {
+    assert.equal(slugDayKey('  Upper   Body '), 'upper-body')
+  })
+
+  it('strips characters that would break a ?day= query param', () => {
+    // "arms-&-abs" truncated at the & and opened a workout for "arms-".
+    assert.equal(slugDayKey('Arms & Abs'), 'arms-abs')
+    assert.equal(slugDayKey('Push/Pull'), 'push-pull')
+    assert.equal(slugDayKey('Day #1'), 'day-1')
+    assert.equal(slugDayKey('100% Legs'), '100-legs')
+    assert.equal(slugDayKey('push+pull'), 'push-pull')
+  })
+
+  it('never emits leading, trailing, or doubled hyphens', () => {
+    assert.equal(slugDayKey('---abs---'), 'abs')
+    assert.equal(slugDayKey('abs   &&   core'), 'abs-core')
+  })
+
+  it('is empty when nothing usable remains', () => {
+    assert.equal(slugDayKey('   '), '')
+    assert.equal(slugDayKey('&&&'), '')
+  })
+
+  it('is idempotent on an already-slugged key', () => {
+    assert.equal(slugDayKey('upper-body'), 'upper-body')
+  })
+})
+
+describe('logDayHref', () => {
+  it('percent-encodes keys that predate slugDayKey', () => {
+    assert.equal(logDayHref('arms-&-abs'), '/log?day=arms-%26-abs')
+    // The Coach's create_day allows spaces and underscores.
+    assert.equal(logDayHref('push 2'), '/log?day=push%202')
+  })
+
+  it('leaves a clean key alone', () => {
+    assert.equal(logDayHref('upper-body'), '/log?day=upper-body')
+  })
+})
+
+describe('restBudgetForWeek', () => {
+  const week = '2026-08-19' // Wednesday
+
+  it('counts active weekday intervals', () => {
+    const budget = restBudgetForWeek(week, new Set(), {
+      intervals: [
+        { dayOfWeek: 0, effectiveFrom: '1970-01-01', effectiveUntil: null },
+        { dayOfWeek: 6, effectiveFrom: '1970-01-01', effectiveUntil: null },
+      ],
+    })
+    assert.equal(budget, 2)
+  })
+
+  it('ignores soft-ended intervals', () => {
+    const budget = restBudgetForWeek(week, new Set(), {
+      intervals: [
+        { dayOfWeek: 0, effectiveFrom: '1970-01-01', effectiveUntil: '2026-08-01' },
+        { dayOfWeek: 6, effectiveFrom: '1970-01-01', effectiveUntil: null },
+      ],
+    })
+    assert.equal(budget, 1)
+  })
+
+  it('counts a weekday once even with several open rows', () => {
+    // (user_id, day_of_week, effective_from) is the PK, so off→on cycles can
+    // leave more than one row for the same weekday. Budget is weekdays, not rows.
+    const budget = restBudgetForWeek(week, new Set(), {
+      intervals: [
+        { dayOfWeek: 6, effectiveFrom: '1970-01-01', effectiveUntil: null },
+        { dayOfWeek: 6, effectiveFrom: '2026-08-01', effectiveUntil: null },
+      ],
+    })
+    assert.equal(budget, 1)
+  })
+
+  it('excludes a weekday that only takes effect after this week', () => {
+    const budget = restBudgetForWeek(week, new Set(), {
+      intervals: [
+        { dayOfWeek: 1, effectiveFrom: '2026-09-07', effectiveUntil: null },
+      ],
+    })
+    assert.equal(budget, 0)
   })
 })

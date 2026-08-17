@@ -65,6 +65,12 @@ export default function WorkoutCalendar() {
   })
   const [workoutDays, setWorkoutDays] = useState<Record<string, string[]>>({})
   const [dayColors, setDayColors] = useState<Record<string, string>>({})
+  // Every day type the user has in their catalog. The custom-day palette is
+  // assigned by position in this list, so it has to come from something stable
+  // — deriving it from the visible month alone (as this used to) re-indexed the
+  // colors every time you paged the calendar: a day could be purple in January
+  // and pink in February purely because a different set of days was trained.
+  const [catalogDayTypes, setCatalogDayTypes] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
 
   const loadMonth = useCallback(async () => {
@@ -75,6 +81,7 @@ export default function WorkoutCalendar() {
     if (demoMode) {
       setWorkoutDays(demoCalendarWorkoutDays(year, month))
       setDayColors({})
+      setCatalogDayTypes([])
       setLoading(false)
       return
     }
@@ -87,7 +94,7 @@ export default function WorkoutCalendar() {
     const lastDay = new Date(year, month + 1, 0).getDate()
     const monthEnd = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
 
-    const [{ data }, { data: colorRows, error: colorErr }] = await Promise.all([
+    const [{ data }, { data: colorRows, error: colorErr }, { data: catalogRows }] = await Promise.all([
       supabase
         .from('sessions')
         .select('local_date, day_type')
@@ -101,6 +108,7 @@ export default function WorkoutCalendar() {
         .from('user_day_colors')
         .select('day_key, color')
         .eq('user_id', user.id),
+      supabase.from('exercises').select('day_type').eq('user_id', user.id),
     ])
 
     const map: Record<string, string[]> = {}
@@ -111,6 +119,9 @@ export default function WorkoutCalendar() {
     }
     setWorkoutDays(map)
     setDayColors(colorErr ? {} : mapDayColorRows(colorRows))
+    setCatalogDayTypes(
+      [...new Set((catalogRows ?? []).map(r => r.day_type as string))].sort(),
+    )
     setLoading(false)
   }, [supabase, currentMonth, demoMode])
 
@@ -132,11 +143,22 @@ export default function WorkoutCalendar() {
   const isOnCurrentMonth =
     year === todayDate.getFullYear() && month === todayDate.getMonth()
 
-  // Resolve colors dynamically so any extra day types get a unique color
+  // Resolve colors from the full day catalog first (sorted, so the index a
+  // custom day gets is the same on every month) and only then append day types
+  // that appear in this month's history but no longer exist in the catalog —
+  // a deleted day still needs *a* color, it just can't displace a live one.
   const allTypes = Object.values(workoutDays).flat()
-  const extraTypes = [...new Set(allTypes.filter(t => !NAMED_DAY_COLORS[t]))]
+  const extraTypes = [
+    ...new Set([...catalogDayTypes, ...allTypes].filter(t => !NAMED_DAY_COLORS[t])),
+  ]
   // Always show all named day types; append any unrecognised ones from this month's data
-  const legendTypes = [...Object.keys(NAMED_DAY_COLORS), ...extraTypes]
+  const legendTypes = [
+    ...Object.keys(NAMED_DAY_COLORS),
+    // Legend lists only what's actually on screen this month; extraTypes is the
+    // wider palette basis and would otherwise print every custom day the user
+    // has ever had under a month where none of them were trained.
+    ...extraTypes.filter(t => allTypes.includes(t)),
+  ]
 
   function handlePrev() {
     setCurrentMonth(m => new Date(m.getFullYear(), m.getMonth() - 1, 1))

@@ -6,7 +6,7 @@ import { useDemoMode } from '@/lib/contexts/DemoModeContext'
 import { demoSafeClient } from '@/lib/demoMode/demoSafeSupabase'
 import { Session, UserStats, UserRotation, CompleteSessionResult } from '@/lib/types'
 import { getLevel, getXpInCurrentLevel, getXpRequiredForLevel, getXpToNextLevel } from '@/lib/utils/gamification'
-import { formatHeaderDate, formatShortDate, localDateKey } from '@/lib/utils/formatting'
+import { formatShortDate, localDateKey } from '@/lib/utils/formatting'
 import { homeGreeting } from '@/lib/utils/homeGreeting'
 import { advanceIndex, effectiveSequence, nextDay as nextDayFromRotation, overdueDays } from '@/lib/utils/rotation'
 import { deleteIncompleteSessions } from '@/lib/utils/sessions'
@@ -28,6 +28,8 @@ import {
   FINISH_UNDO_TTL_MS,
   writeFinishUndoToken,
 } from '@/lib/utils/finishUndo'
+import { logDayHref } from '@/lib/utils/dayKeys'
+import TodayLabel from '@/components/TodayLabel'
 
 // "This week"/"this month" start in the VIEWER's local timezone — computed here
 // (client) rather than on the server, whose clock/timezone is very often not
@@ -432,7 +434,7 @@ export default function HomeDashboard({
   }, [])
 
   function handleResume(session: ActiveSession) {
-    router.push(`/log?day=${session.day_type}`)
+    router.push(logDayHref(session.day_type))
   }
 
   // Quick-save from the dashboard. Same authoritative finish path as
@@ -732,7 +734,7 @@ export default function HomeDashboard({
           <button
             data-onboard="home-welcome-cta"
             data-haptic="medium"
-            onClick={() => router.push(hasDays ? `/log?day=${nextDay}` : '/log?new=1')}
+            onClick={() => router.push(hasDays ? logDayHref(nextDay) : '/log?new=1')}
             style={{
               position: 'relative',
               marginTop: '4px',
@@ -759,15 +761,14 @@ export default function HomeDashboard({
 
       {/* Greeting — the visual starting point of the dashboard. */}
       <div>
-        <div style={{
+        <TodayLabel style={{
+          display: 'block',
           fontSize: '13px',
           color: 'var(--text-muted)',
           textTransform: 'uppercase',
           letterSpacing: '1.5px',
           marginBottom: '10px',
-        }}>
-          {formatHeaderDate()}
-        </div>
+        }} />
         <h2 style={{
           fontFamily: "'DM Sans', sans-serif",
           fontSize: '34px',
@@ -859,7 +860,7 @@ export default function HomeDashboard({
         ) : (
         <button
           data-onboard="home-streak"
-          onClick={() => router.push(hasDays ? `/log?day=${nextDay}` : '/log')}
+          onClick={() => router.push(hasDays ? logDayHref(nextDay) : '/log')}
           style={{
             ...card,
             width: '100%',
@@ -1176,7 +1177,7 @@ export default function HomeDashboard({
       <button
         data-onboard="home-cta"
         data-haptic="medium"
-        onClick={() => router.push(hasDays ? `/log?day=${nextDay}` : '/log')}
+        onClick={() => router.push(hasDays ? logDayHref(nextDay) : '/log')}
         title={hasDays ? DAY_MUSCLES[nextDay] : undefined}
         style={{
           position: 'relative',
@@ -1372,7 +1373,7 @@ export default function HomeDashboard({
             </svg>
           </span>
           <button
-            onClick={() => router.push(`/log?day=${overdue[0].dayType}`)}
+            onClick={() => router.push(logDayHref(overdue[0].dayType))}
             style={{
               flex: 1,
               minWidth: 0,

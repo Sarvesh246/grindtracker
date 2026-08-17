@@ -7,6 +7,7 @@ import { WORKOUT_TEMPLATES } from '@/lib/utils/workoutTemplates'
 import { applyWorkoutTemplate } from '@/lib/utils/applyWorkoutTemplate'
 import type { DayCategory } from '@/lib/types'
 import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
+import { slugDayKey } from '@/lib/utils/dayKeys'
 
 const CATEGORIES: { value: DayCategory; label: string }[] = [
   { value: 'push', label: 'Push' },
@@ -81,7 +82,7 @@ export default function WorkoutStep({
   }
 
   async function handleCreateCustomDay() {
-    const key = dayName.trim().toLowerCase().replace(/\s+/g, '-')
+    const key = slugDayKey(dayName)
     if (!key) {
       setError('Enter a day name.')
       return

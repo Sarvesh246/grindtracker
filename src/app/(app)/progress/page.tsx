@@ -5,10 +5,11 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useDemoMode } from '@/lib/contexts/DemoModeContext'
 import { Exercise } from '@/lib/types'
-import { formatHeaderDate, formatShortDate } from '@/lib/utils/formatting'
+import { formatShortDate } from '@/lib/utils/formatting'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { useTour, type TourStep } from '@/components/onboarding/Tour'
 import Card from '@/components/ui/Card'
+import TodayLabel from '@/components/TodayLabel'
 import { CACHE_KEYS, getUiState, setUiState } from '@/lib/cache/appDataCache'
 import { useCachedQuery } from '@/lib/cache/useCachedQuery'
 
@@ -423,9 +424,7 @@ export default function ProgressPage() {
           }}>
             PROGRESS
           </h1>
-          <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-            {formatHeaderDate()}
-          </span>
+          <TodayLabel style={{ fontSize: '13px', color: 'var(--text-muted)' }} />
         </div>
 
         <div style={{ padding: '0 16px 8px' }}>
@@ -495,9 +494,7 @@ export default function ProgressPage() {
         }}>
           PROGRESS
         </h1>
-        <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-          {formatHeaderDate()}
-        </span>
+        <TodayLabel style={{ fontSize: '13px', color: 'var(--text-muted)' }} />
       </div>
 
       <div style={{ padding: '0 16px 16px' }}>

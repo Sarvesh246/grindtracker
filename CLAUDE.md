@@ -428,6 +428,24 @@ streaks for users not in UTC. Stored `YYYY-MM-DD` keys are parsed back at local
 noon (`new Date(key + 'T12:00:00')`) before comparison. The profile "days active"
 count is computed client-side (user's timezone) for the same reason.
 
+A date the *viewer* should read (not a stored key) must not be produced during
+SSR: both `/home` and `/progress` render server-side first, so calling
+`formatHeaderDate()` in their JSX printed Vercel's UTC day and then mismatched
+on hydration. Render it through `<TodayLabel />`
+(`src/components/TodayLabel.tsx`), whose `useSyncExternalStore` server snapshot
+is null and which re-reads on focus so an app left open past midnight rolls over.
+
+### Day keys
+A day key (`exercises.day_type`, `user_day_categories.day_key`, rotation
+`sequence` entries) doubles as the `?day=` query param `/log` reads, so it has
+to be URL-safe. Build new ones with `slugDayKey()` in
+`src/lib/utils/dayKeys.ts` — lowercase, everything outside `[a-z0-9]` collapsed
+to a single hyphen — and navigate with `logDayHref()` from the same module,
+never a bare `` `/log?day=${key}` ``. Both halves matter: the slug keeps new
+keys clean, and the percent-encoding rescues keys that already exist (a day
+named "Arms & Abs" used to slug to `arms-&-abs` and open a workout for
+`arms-`, and the Coach's `create_day` still allows spaces and underscores).
+
 ### Units
 All weights are stored canonically in **lbs** in Supabase. `UnitContext` (kg/lbs,
 persisted in localStorage, defaults to imperial/lbs) is a display preference that

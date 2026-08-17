@@ -13,10 +13,11 @@ export interface SetState {
   logId?: string
   /** Checked locally but the write to Supabase failed even after retries. */
   pendingSync?: boolean
-  /** Pre-skip backup: preserve weight/reps/note so unskip can restore them */
+  /** Pre-skip backup: preserve weight/reps/note/RPE so unskip can restore them */
   skippedWeight?: string
   skippedReps?: string
   skippedNote?: string
+  skippedRpe?: string
 }
 
 export type LogMap = Record<string, SetState>

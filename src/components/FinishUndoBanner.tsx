@@ -23,6 +23,7 @@ import {
   readFinishUndoToken,
   sameFinishUndoToken,
 } from '@/lib/utils/finishUndo'
+import { logDayHref } from '@/lib/utils/dayKeys'
 
 function formatRemaining(ms: number): string {
   const totalSec = Math.max(0, Math.ceil(ms / 1000))
@@ -77,7 +78,7 @@ export default function FinishUndoBanner() {
     }
     setToken(null)
     markAppDataStale()
-    router.push(`/log?day=${day}`)
+    router.push(logDayHref(day))
   }
 
   if (!token) return null
