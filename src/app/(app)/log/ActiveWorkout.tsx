@@ -1278,6 +1278,22 @@ export default function ActiveWorkout({ day }: { day: string }) {
     if (!error) showSaveToast(logEntry.note ? 'Note saved' : 'Note cleared')
   }
 
+  /** Same as persistSetNote, but RPE is a tap (not a blur) so the new value is passed in. */
+  async function persistSetRpe(exerciseId: string, setNumber: number, raw: string) {
+    if (!sessionId) return
+    const key = `${exerciseId}-${setNumber}`
+    const logEntry = logsRef.current[key]
+    if (!logEntry?.checked) return
+    const rpe = parseRpe(raw)
+    const { error } = await supabase
+      .from('session_logs')
+      .update({ rpe })
+      .eq('session_id', sessionId)
+      .eq('exercise_id', exerciseId)
+      .eq('set_number', setNumber)
+    if (!error) showSaveToast(rpe != null ? `RPE ${rpe}` : 'RPE cleared')
+  }
+
   function handleAddSet(exerciseId: string) {
     const ex = exercises.find(e => e.id === exerciseId)
     if (!ex) return
@@ -3426,6 +3442,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
               onStartEdit={handleStartEdit}
               onSaveEdit={handleSaveEdit}
               onPersistNote={persistSetNote}
+              onPersistRpe={persistSetRpe}
               onOpenPlateCalc={(key, current) => setPlateCalcTarget({ key, current })}
             />
           ))}
@@ -3639,6 +3656,7 @@ interface ExerciseCardProps {
   onStartEdit: (key: string) => void
   onSaveEdit: (exerciseId: string, setNumber: number) => void
   onPersistNote: (exerciseId: string, setNumber: number) => void
+  onPersistRpe: (exerciseId: string, setNumber: number, raw: string) => void
   onOpenPlateCalc: (key: string, current: number) => void
 }
 
@@ -3647,7 +3665,7 @@ function ExerciseCard({
   onCheck, onUpdate, onSwap, canRemove, onRemove,
   onSkipSet, onUnskipSet, onDeleteSet,
   onSkipExercise, onUnskipExercise,
-  onToggleWarmup, onWarmupRamp, onUndoWarmupRamp, canUndoWarmup, onAddSet, onStartEdit, onSaveEdit, onPersistNote,
+  onToggleWarmup, onWarmupRamp, onUndoWarmupRamp, canUndoWarmup, onAddSet, onStartEdit, onSaveEdit, onPersistNote, onPersistRpe,
   onOpenPlateCalc,
 }: ExerciseCardProps) {
   const { unitLabel, fmt, toDisplay } = useUnit()
@@ -3873,7 +3891,10 @@ function ExerciseCard({
               onRepsChange={(v) => onUpdate(key, 'reps', v)}
               onNoteChange={(v) => onUpdate(key, 'note', v)}
               onNoteBlur={() => onPersistNote(exercise.id, setNum)}
-              onRpeChange={(v) => onUpdate(key, 'rpe', v)}
+              onRpeChange={(v) => {
+                onUpdate(key, 'rpe', v)
+                if (logEntry.checked) onPersistRpe(exercise.id, setNum, v)
+              }}
               onToggleWarmup={() => onToggleWarmup(exercise.id, setNum)}
               onSkip={() => onSkipSet(exercise.id, setNum)}
               onUnskip={() => onUnskipSet(exercise.id, setNum)}
@@ -4831,7 +4852,7 @@ function SetRow({
             stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
             style={{
               // Accent when a note exists so it's findable while collapsed.
-              color: logEntry.note ? 'var(--accent-text)' : 'var(--text-muted)',
+              color: (logEntry.note || logEntry.rpe) ? 'var(--accent-text)' : 'var(--text-muted)',
               transform: noteVisible ? 'rotate(180deg)' : 'none',
               transition: 'transform 150ms ease',
               marginLeft: '6px',
@@ -5186,44 +5207,69 @@ function SetRow({
             = 4px of clearance needed, not 2px — with only 2px the ring's top
             edge (and the input's own top border under it) got sliced off. */}
         <div inert={!noteVisible} style={{ padding: '4px 16px 8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <label
-              htmlFor={`rpe-${setNumber}`}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <span
+              id={`rpe-${setNumber}-label`}
               style={{
                 fontSize: '11px',
                 color: 'var(--text-muted)',
                 fontFamily: "'DM Sans', sans-serif",
                 fontWeight: 600,
                 letterSpacing: '0.5px',
-                flexShrink: 0,
               }}
             >
               RPE
-            </label>
-            <select
-              id={`rpe-${setNumber}`}
-              value={logEntry.rpe}
-              disabled={inputsLocked}
-              onChange={e => onRpeChange(e.target.value)}
+            </span>
+            <div
+              role="listbox"
+              aria-labelledby={`rpe-${setNumber}-label`}
               aria-label={`RPE for set ${setNumber}`}
+              aria-disabled={logEntry.skipped}
               style={{
-                flex: 1,
-                height: '36px',
-                backgroundColor: 'var(--surface-elevated)',
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--radius-sm)',
-                color: 'var(--text-primary)',
-                fontFamily: 'var(--font-sans)',
-                fontSize: '16px',
-                padding: '0 8px',
-                outline: 'none',
+                display: 'grid',
+                gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
+                gap: '6px',
+                opacity: logEntry.skipped ? 0.5 : 1,
+                pointerEvents: logEntry.skipped ? 'none' : 'auto',
               }}
             >
-              <option value="">—</option>
-              {[6, 7, 8, 9, 10].map(n => (
-                <option key={n} value={String(n)}>{n}</option>
-              ))}
-            </select>
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => {
+                const selected = logEntry.rpe === String(n)
+                return (
+                  <button
+                    key={n}
+                    type="button"
+                    role="option"
+                    aria-selected={selected}
+                    data-haptic="light"
+                    disabled={logEntry.skipped}
+                    onPointerDown={() => {
+                      if (logEntry.checked && !logEntry.skipped && !inEdit) beginEdit()
+                    }}
+                    onClick={() => {
+                      if (logEntry.skipped) return
+                      if (logEntry.checked && !inEdit) beginEdit()
+                      onRpeChange(selected ? '' : String(n))
+                    }}
+                    style={{
+                      position: 'relative',
+                      height: '36px',
+                      borderRadius: 'var(--radius-sm)',
+                      border: `1px solid ${selected ? 'var(--accent)' : 'var(--border)'}`,
+                      backgroundColor: selected ? 'var(--accent)' : 'var(--surface-elevated)',
+                      color: selected ? 'var(--on-accent)' : 'var(--text-primary)',
+                      fontFamily: "'JetBrains Mono', monospace",
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      cursor: logEntry.skipped ? 'default' : 'pointer',
+                      transition: 'border-color 150ms ease, background-color 150ms ease, color 150ms ease',
+                    }}
+                  >
+                    {n}
+                  </button>
+                )
+              })}
+            </div>
           </div>
           <input
             type="text"
