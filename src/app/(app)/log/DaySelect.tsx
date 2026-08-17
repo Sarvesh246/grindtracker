@@ -29,6 +29,7 @@ import { useExitingValue } from '@/lib/hooks/useExitingValue'
 import { useTour, type TourStep } from '@/components/onboarding/Tour'
 import { CACHE_KEYS, markAppDataStale } from '@/lib/cache/appDataCache'
 import { useCachedQuery } from '@/lib/cache/useCachedQuery'
+import { logDayHref } from '@/lib/utils/dayKeys'
 
 type OpenSession = {
   id: string
@@ -510,7 +511,7 @@ export default function DaySelect() {
                         data-haptic="medium"
                         className="press"
                         disabled={busy}
-                        onClick={() => router.push(`/log?day=${session.day_type}`)}
+                        onClick={() => router.push(logDayHref(session.day_type))}
                         style={{
                           position: 'relative',
                           height: '40px', padding: '0 16px', flexShrink: 0,
@@ -651,7 +652,7 @@ export default function DaySelect() {
                   data-onboard={idx === 0 ? 'dayselect-days' : undefined}
                   data-haptic="heavy"
                   onClick={() => {
-                    router.push(`/log?day=${key}`)
+                    router.push(logDayHref(key))
                   }}
                   style={{
                     '--i': idx,

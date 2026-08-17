@@ -12,6 +12,7 @@ import { useFeatureTooltip } from '@/components/onboarding/useFeatureTooltip'
 import { onboardTarget } from '@/components/onboarding/anchor'
 import { WORKOUT_TEMPLATES } from '@/lib/utils/workoutTemplates'
 import { applyWorkoutTemplate } from '@/lib/utils/applyWorkoutTemplate'
+import { slugDayKey } from '@/lib/utils/dayKeys'
 import DayColorPicker from '@/components/DayColorPicker'
 import { useTheme } from '@/lib/contexts/ThemeContext'
 import {
@@ -468,10 +469,6 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
     } finally {
       if (seq === colorSaveSeq.current) setSavingColor(false)
     }
-  }
-
-  function slugDayKey(raw: string): string {
-    return raw.trim().toLowerCase().replace(/\s+/g, '-')
   }
 
   function openColorPicker(dayKey: string, from: 'day' | 'new-day') {

@@ -10,6 +10,9 @@ const MAX_BYTES = 8 * 1024 * 1024 // mirrors the bucket's file_size_limit
 const SIGNED_URL_TTL = 60 * 60 * 2 // 2hr — longer than the admin inbox's 1hr,
 // since this is a PWA a user may leave backgrounded while browsing photos.
 
+/** Group ids per `.in()` batch — keeps each GET URL inside the request-line limit. */
+const GROUP_ID_CHUNK = 200
+
 // Mirrors the DAY_ORDER map in progress/page.tsx.
 const DAY_ORDER: Record<string, number> = { push: 0, pull: 1, legs: 2 }
 
@@ -96,15 +99,23 @@ export function useProgressPhotos() {
     const groupRows = (groups ?? []) as Pick<ProgressPhotoGroup, 'id' | 'taken_date' | 'day_type'>[]
     if (groupRows.length === 0) return []
 
-    const { data: photos, error: photosError } = await supabase
-      .from('progress_photos')
-      .select('id, group_id, storage_path, sort_order')
-      .in('group_id', groupRows.map(g => g.id))
-      .order('sort_order', { ascending: true })
-    if (photosError) throw photosError
+    // Chunked: unlike fetchGroupsPage (capped at pageSize) this covers EVERY
+    // group the user has, and a single `.in()` over hundreds of uuids builds a
+    // GET URL long enough to be rejected — which threw and left the timeline
+    // lightbox empty for exactly the users with the most photos.
+    const photos: ProgressPhoto[] = []
+    for (let i = 0; i < groupRows.length; i += GROUP_ID_CHUNK) {
+      const { data: chunk, error: photosError } = await supabase
+        .from('progress_photos')
+        .select('id, group_id, storage_path, sort_order')
+        .in('group_id', groupRows.slice(i, i + GROUP_ID_CHUNK).map(g => g.id))
+        .order('sort_order', { ascending: true })
+      if (photosError) throw photosError
+      photos.push(...((chunk ?? []) as ProgressPhoto[]))
+    }
 
     const meta = new Map(groupRows.map(g => [g.id, g]))
-    return ((photos ?? []) as ProgressPhoto[])
+    return photos
       .map(p => {
         const g = meta.get(p.group_id)
         return g ? { id: p.id, group_id: p.group_id, storage_path: p.storage_path, taken_date: g.taken_date, day_type: g.day_type } : null

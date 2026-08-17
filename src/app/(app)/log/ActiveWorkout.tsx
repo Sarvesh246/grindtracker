@@ -1242,22 +1242,73 @@ export default function ActiveWorkout({ day }: { day: string }) {
   }
 
   /**
-   * Persist a note edit on an already-saved set. Called on blur from SetRow
-   * when the row is checked and not in editing mode — without this the typed
-   * note lives only in local state and is lost on refresh/resume.
+   * Persist the note/RPE drawer on an already-saved set. Without this the
+   * typed note and the picked RPE live only in local state and are lost on
+   * refresh/resume.
+   *
+   * Both fields go in one UPDATE. RPE previously had no persistence path at
+   * all: its `<select>` only called `onUpdate(key, 'rpe', v)`, and changing a
+   * select doesn't blur the note input, so the note-only writer here never ran
+   * for it — a set logged with RPE 8 came back blank on resume and finished
+   * with `rpe` null in `session_logs`.
+   *
+   * `overrides` exists because the RPE select commits through React state: the
+   * handler that fires on change still closes over the PREVIOUS `logs`, so the
+   * newly picked value is passed through explicitly rather than read back from
+   * a snapshot that doesn't have it yet.
+   *
+   * A failure falls back to the offline queue like every other write on this
+   * screen — silently dropping the edit (as this used to) meant a note the user
+   * watched themselves type just wasn't there next time.
    */
-  async function persistSetNote(exerciseId: string, setNumber: number) {
+  async function persistSetMeta(
+    exerciseId: string,
+    setNumber: number,
+    overrides?: { note?: string; rpe?: string },
+  ) {
     if (!sessionId) return
     const key = `${exerciseId}-${setNumber}`
-    const logEntry = logs[key]
-    if (!logEntry || !logEntry.checked) return
-    const { error } = await supabase
-      .from('session_logs')
-      .update({ note: logEntry.note || null })
-      .eq('session_id', sessionId)
-      .eq('exercise_id', exerciseId)
-      .eq('set_number', setNumber)
-    if (!error) showSaveToast(logEntry.note ? 'Note saved' : 'Note cleared')
+    const logEntry = logsRef.current[key] ?? logs[key]
+    if (!logEntry || !logEntry.checked || logEntry.skipped) return
+    const note = (overrides?.note ?? logEntry.note) || null
+    const rpe = parseRpe(overrides?.rpe ?? logEntry.rpe)
+    const { error } = await runWithRetry(() =>
+      supabase
+        .from('session_logs')
+        .update({ note, rpe })
+        .eq('session_id', sessionId)
+        .eq('exercise_id', exerciseId)
+        .eq('set_number', setNumber),
+    )
+    if (error) {
+      const weight = logEntry.weight !== '' ? parseFloat(logEntry.weight) : null
+      const reps = logEntry.reps !== '' ? parseInt(logEntry.reps, 10) : null
+      queueOp({
+        kind: 'upsert',
+        sessionId,
+        exerciseId,
+        setNumber,
+        weight: weight !== null && Number.isFinite(weight) ? weight : null,
+        reps: reps !== null && Number.isFinite(reps) ? reps : null,
+        isPR: logEntry.isPR,
+        isWarmup: logEntry.isWarmup,
+        note,
+        isSkipped: false,
+        rpe,
+        // Timestamping a queued retry inside a blur/change handler, never
+        // during render — same as handleDeleteSet / undoWarmupRamp below.
+        // eslint-disable-next-line react-hooks/purity
+        queuedAt: Date.now(),
+      })
+      commitLogs(prev =>
+        prev[key] ? { ...prev, [key]: { ...prev[key], pendingSync: true } } : prev,
+      )
+      showQueuedSyncToast()
+      return
+    }
+    removeQueuedOp(sessionId, exerciseId, setNumber)
+    if (overrides?.rpe !== undefined) showSaveToast(rpe === null ? 'RPE cleared' : `RPE ${rpe} saved`)
+    else showSaveToast(note ? 'Note saved' : 'Note cleared')
   }
 
   function handleAddSet(exerciseId: string) {
@@ -1610,6 +1661,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
           skippedWeight: entry?.weight || '',
           skippedReps: entry?.reps || '',
           skippedNote: entry?.note || '',
+          skippedRpe: entry?.rpe || '',
           // Clear the active fields
           weight: '',
           reps: '',
@@ -1654,10 +1706,12 @@ export default function ActiveWorkout({ day }: { day: string }) {
           weight: entry?.skippedWeight || '',
           reps: entry?.skippedReps || '',
           note: entry?.skippedNote || '',
+          rpe: entry?.skippedRpe || '',
           // Clear the backup fields
           skippedWeight: undefined,
           skippedReps: undefined,
           skippedNote: undefined,
+          skippedRpe: undefined,
         },
       }
     })
@@ -1707,6 +1761,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
           skippedWeight: entry?.weight || '',
           skippedReps: entry?.reps || '',
           skippedNote: entry?.note || '',
+          skippedRpe: entry?.rpe || '',
           // Clear active fields
           weight: '',
           reps: '',
@@ -1771,9 +1826,11 @@ export default function ActiveWorkout({ day }: { day: string }) {
             weight: entry.skippedWeight || '',
             reps: entry.skippedReps || '',
             note: entry.skippedNote || '',
+            rpe: entry.skippedRpe || '',
             skippedWeight: undefined,
             skippedReps: undefined,
             skippedNote: undefined,
+            skippedRpe: undefined,
           }
         }
       }
@@ -3210,7 +3267,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
               onAddSet={() => handleAddSet(ex.id)}
               onStartEdit={handleStartEdit}
               onSaveEdit={handleSaveEdit}
-              onPersistNote={persistSetNote}
+              onPersistMeta={persistSetMeta}
               onOpenPlateCalc={(key, current) => setPlateCalcTarget({ key, current })}
             />
           ))}
@@ -3421,7 +3478,11 @@ interface ExerciseCardProps {
   onAddSet: () => void
   onStartEdit: (key: string) => void
   onSaveEdit: (exerciseId: string, setNumber: number) => void
-  onPersistNote: (exerciseId: string, setNumber: number) => void
+  onPersistMeta: (
+    exerciseId: string,
+    setNumber: number,
+    overrides?: { note?: string; rpe?: string },
+  ) => void
   onOpenPlateCalc: (key: string, current: number) => void
 }
 
@@ -3430,7 +3491,7 @@ function ExerciseCard({
   onCheck, onUpdate, onSwap,
   onSkipSet, onUnskipSet, onDeleteSet,
   onSkipExercise, onUnskipExercise,
-  onToggleWarmup, onWarmupRamp, onUndoWarmupRamp, canUndoWarmup, onAddSet, onStartEdit, onSaveEdit, onPersistNote,
+  onToggleWarmup, onWarmupRamp, onUndoWarmupRamp, canUndoWarmup, onAddSet, onStartEdit, onSaveEdit, onPersistMeta,
   onOpenPlateCalc,
 }: ExerciseCardProps) {
   const { unitLabel, fmt, toDisplay } = useUnit()
@@ -3622,8 +3683,12 @@ function ExerciseCard({
               onWeightChange={(v) => onUpdate(key, 'weight', v)}
               onRepsChange={(v) => onUpdate(key, 'reps', v)}
               onNoteChange={(v) => onUpdate(key, 'note', v)}
-              onNoteBlur={() => onPersistNote(exercise.id, setNum)}
-              onRpeChange={(v) => onUpdate(key, 'rpe', v)}
+              onNoteBlur={() => onPersistMeta(exercise.id, setNum)}
+              onRpeChange={(v) => {
+                onUpdate(key, 'rpe', v)
+                // Pass the new value through: `logs` in this closure predates it.
+                void onPersistMeta(exercise.id, setNum, { rpe: v })
+              }}
               onToggleWarmup={() => onToggleWarmup(exercise.id, setNum)}
               onSkip={() => onSkipSet(exercise.id, setNum)}
               onUnskip={() => onUnskipSet(exercise.id, setNum)}

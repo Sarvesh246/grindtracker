@@ -50,6 +50,10 @@ const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Frid
 /** Typed confirmation for wiping the account — case-insensitive. */
 const DELETE_DATA_PHRASE = 'DELETE'
 
+/** Session ids per `.in()` batch when exporting — keeps each GET URL well under
+ *  the request-line limit a few thousand workouts would otherwise blow past. */
+const EXPORT_ID_CHUNK = 200
+
 const sectionLabelStyle: CSSProperties = {
   fontSize: '12px',
   color: 'var(--text-muted)',
@@ -428,17 +432,30 @@ export default function SettingsView({
         supabase.from('user_stats').select('*').eq('user_id', user.id).maybeSingle(),
       ])
 
+      // Fetch the logs in batches. A single `.in('session_id', […])` over every
+      // session id is a GET whose URL grows ~40 bytes per session: past a
+      // few hundred workouts it blows the request-line limit and comes back as
+      // an error, which the old `{ data }`-only destructure swallowed — the
+      // export then wrote out zero sets and still reported success. Chunking
+      // bounds each URL, and a failed chunk now aborts the export instead of
+      // silently truncating it.
       const sessionIds = (sessions ?? []).map(s => s.id)
-      const { data: logs } = sessionIds.length
-        ? await supabase.from('session_logs').select('*').in('session_id', sessionIds)
-        : { data: [] as unknown[] }
+      const logs: unknown[] = []
+      for (let i = 0; i < sessionIds.length; i += EXPORT_ID_CHUNK) {
+        const { data: chunk, error: chunkError } = await supabase
+          .from('session_logs')
+          .select('*')
+          .in('session_id', sessionIds.slice(i, i + EXPORT_ID_CHUNK))
+        if (chunkError) throw chunkError
+        if (chunk) logs.push(...chunk)
+      }
 
       if (format === 'csv') {
         const names: Record<string, string> = {}
         for (const ex of exercises ?? []) names[ex.id] = ex.name
         downloadText(
           exportFilename('grind-sets').replace(/\.json$/, '.csv'),
-          sessionsLogsToCsv(sessions ?? [], (logs ?? []) as never[], names),
+          sessionsLogsToCsv(sessions ?? [], logs as never[], names),
           'text/csv;charset=utf-8',
         )
         toast.show('Exported sets as CSV')
@@ -451,7 +468,7 @@ export default function SettingsView({
         profile: { username, display_name: displayName },
         stats: statsRow ?? null,
         sessions: sessions ?? [],
-        session_logs: logs ?? [],
+        session_logs: logs,
         exercises: exercises ?? [],
         body_weights: bodyWeights ?? [],
         badges: badges ?? [],
