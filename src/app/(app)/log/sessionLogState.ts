@@ -240,3 +240,59 @@ export function mergeSessionExercises<T extends { id: string }>(
   }
   return extra.length === 0 ? dayExercises : [...dayExercises, ...extra]
 }
+
+/** True when this exercise was added/swapped in for this session, not the day's catalog. */
+export function isSessionExtra(exerciseId: string, originalDayIds: Iterable<string>): boolean {
+  const orig = originalDayIds instanceof Set ? originalDayIds : new Set(originalDayIds)
+  return !orig.has(exerciseId)
+}
+
+export function sessionExtraIdsFor(
+  sessionExerciseIds: string[],
+  originalDayIds: Iterable<string>,
+): string[] {
+  const orig = originalDayIds instanceof Set ? originalDayIds : new Set(originalDayIds)
+  return sessionExerciseIds.filter(id => !orig.has(id))
+}
+
+/**
+ * Reconstruct the day's original active ids on resume: everything that was
+ * already on the day, minus extras persisted for this session (including
+ * newly created this-day rows that would otherwise look like catalog).
+ */
+export function originalDayIdsFromCatalog(
+  dayActiveIds: string[],
+  extraIds: Iterable<string>,
+): string[] {
+  const extras = extraIds instanceof Set ? extraIds : new Set(extraIds)
+  return dayActiveIds.filter(id => !extras.has(id))
+}
+
+/** Non-warmup, non-skipped set with weight + reps — same bar as finishing a workout. */
+export function extraHasWorkingSet(
+  logs: LogMap,
+  exerciseId: string,
+  setCount: number,
+): boolean {
+  for (let s = 1; s <= setCount; s++) {
+    const l = logs[`${exerciseId}-${s}`]
+    if (!l?.checked || l.skipped || l.isWarmup) continue
+    if (l.weight === '' || l.reps === '') continue
+    const w = parseFloat(l.weight)
+    const r = parseInt(l.reps, 10)
+    if (Number.isFinite(w) && Number.isFinite(r)) return true
+  }
+  return false
+}
+
+/**
+ * Keep a live-session extra on this day's catalog only when it is still in
+ * the session at finish AND was actually trained. Removing it (or leaving it
+ * blank/skipped) must not bring it back next time.
+ */
+export function shouldPersistSessionExtra(
+  stillInSession: boolean,
+  hasWorkingSet: boolean,
+): boolean {
+  return stillInSession && hasWorkingSet
+}

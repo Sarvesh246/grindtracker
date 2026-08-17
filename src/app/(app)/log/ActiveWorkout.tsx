@@ -38,6 +38,11 @@ import {
   readSessionExtraIds,
   writeSessionExtraIds,
   clearSessionExtraIds,
+  isSessionExtra,
+  sessionExtraIdsFor,
+  originalDayIdsFromCatalog,
+  extraHasWorkingSet,
+  shouldPersistSessionExtra,
   type LogMap,
   type SetState,
 } from './sessionLogState'
@@ -201,6 +206,10 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const finishingRef = useRef(false)
   const skippingKeysRef = useRef<Set<string>>(new Set())
   const addingIdsRef = useRef<Set<string>>(new Set())
+  const removingIdsRef = useRef<Set<string>>(new Set())
+  /** Active catalog ids this day had when the session started — extras are anything else. */
+  const originalDayIdsRef = useRef<Set<string>>(new Set())
+  const createdThisSessionIdsRef = useRef<Set<string>>(new Set())
   const [plateCalcTarget, setPlateCalcTarget] = useState<{ key: string; current: number } | null>(null)
   const [warmupUndo, setWarmupUndo] = useState<Record<string, { extrasBefore: number; logsBefore: LogMap }>>({})
   const timerRef = useRef<NodeJS.Timeout | null>(null)
@@ -458,6 +467,8 @@ export default function ActiveWorkout({ day }: { day: string }) {
 
   const initSession = useCallback(async () => {
     setLoading(true)
+    originalDayIdsRef.current = new Set()
+    createdThisSessionIdsRef.current = new Set()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/login'); return }
 
@@ -594,7 +605,14 @@ export default function ActiveWorkout({ day }: { day: string }) {
 
     const loggedExerciseIds = new Set(existingLogs.map(l => l.exercise_id))
     for (const q of getQueuedOps(sid)) loggedExerciseIds.add(q.exerciseId)
-    for (const id of readSessionExtraIds(sid)) loggedExerciseIds.add(id)
+    const persistedExtraIds = readSessionExtraIds(sid)
+    for (const id of persistedExtraIds) loggedExerciseIds.add(id)
+    originalDayIdsRef.current = new Set(
+      originalDayIdsFromCatalog(
+        allDayExs.filter(ex => ex.active).map(ex => ex.id),
+        persistedExtraIds,
+      ),
+    )
     let sessionExs = allDayExs.filter(ex => ex.active || loggedExerciseIds.has(ex.id))
     if (sessionExs.length === 0) sessionExs = allDayExs
     sessionExs = mergeSessionExercises(sessionExs, allExsData ?? [], loggedExerciseIds)
@@ -1910,6 +1928,9 @@ export default function ActiveWorkout({ day }: { day: string }) {
       delete next[swapTarget]
       return next
     })
+    if (oldExercise && isSessionExtra(oldExercise.id, originalDayIdsRef.current)) {
+      void retireThisDayExtra(oldExercise)
+    }
   }
 
   async function ensurePriors(exercise: Exercise): Promise<{
@@ -1962,12 +1983,9 @@ export default function ActiveWorkout({ day }: { day: string }) {
 
   function persistSessionExtras(nextExercises: Exercise[]) {
     if (!sessionId) return
-    const defaultIds = new Set(
-      allExercises.filter(e => e.day_type === day && e.active).map(e => e.id),
-    )
     writeSessionExtraIds(
       sessionId,
-      nextExercises.map(e => e.id).filter(id => !defaultIds.has(id)),
+      sessionExtraIdsFor(nextExercises.map(e => e.id), originalDayIdsRef.current),
     )
   }
 
@@ -1979,6 +1997,158 @@ export default function ActiveWorkout({ day }: { day: string }) {
       return next
     })
     return next
+  }
+
+  function clearExerciseLocalState(exerciseId: string, oldExercise?: Exercise, oldExtras = 0) {
+    const total = (oldExercise?.sets_target ?? 0) + oldExtras
+    setLogs(prev => {
+      const next = { ...prev }
+      for (let s = 1; s <= total; s++) delete next[`${exerciseId}-${s}`]
+      return next
+    })
+    setExtraSets(prev => {
+      if (!(exerciseId in prev)) return prev
+      const next = { ...prev }
+      delete next[exerciseId]
+      return next
+    })
+    if (editingKey?.startsWith(`${exerciseId}-`)) setEditingKey(null)
+    setWarmupUndo(prev => {
+      if (!(exerciseId in prev)) return prev
+      const next = { ...prev }
+      delete next[exerciseId]
+      return next
+    })
+  }
+
+  /**
+   * Drop a this-day session extra from the catalog so the next workout doesn't
+   * offer it. Other-day rows are left alone (they're still on their own day).
+   * Hard-delete only when nothing has ever been logged against it.
+   */
+  async function retireThisDayExtra(exercise: Exercise) {
+    if (exercise.day_type !== day) return
+    if (!isSessionExtra(exercise.id, originalDayIdsRef.current)) return
+
+    const { count } = await supabase
+      .from('session_logs')
+      .select('id', { count: 'exact', head: true })
+      .eq('exercise_id', exercise.id)
+
+    if ((count ?? 0) > 0) {
+      const { error } = await supabase
+        .from('exercises')
+        .update({ active: false })
+        .eq('id', exercise.id)
+      if (error) return
+      setAllExercises(prev => prev.map(e => e.id === exercise.id ? { ...e, active: false } : e))
+      markAppDataStale()
+      return
+    }
+
+    // Only hard-delete rows minted during this live session. An existing
+    // disabled catalog row that was added then removed must stay in Manage.
+    if (!createdThisSessionIdsRef.current.has(exercise.id)) {
+      const { error } = await supabase
+        .from('exercises')
+        .update({ active: false })
+        .eq('id', exercise.id)
+      if (error) return
+      setAllExercises(prev => prev.map(e => e.id === exercise.id ? { ...e, active: false } : e))
+      markAppDataStale()
+      return
+    }
+
+    const { error } = await supabase.from('exercises').delete().eq('id', exercise.id)
+    if (error) {
+      const { error: disableError } = await supabase
+        .from('exercises')
+        .update({ active: false })
+        .eq('id', exercise.id)
+      if (disableError) return
+      setAllExercises(prev => prev.map(e => e.id === exercise.id ? { ...e, active: false } : e))
+      markAppDataStale()
+      return
+    }
+    setAllExercises(prev => prev.filter(e => e.id !== exercise.id))
+    markAppDataStale()
+  }
+
+  /** Keep a trained extra on this day's catalog for the next session. */
+  async function persistExtraToDay(exercise: Exercise) {
+    if (exercise.day_type === day) {
+      if (exercise.active) return
+      const { error } = await supabase
+        .from('exercises')
+        .update({ active: true })
+        .eq('id', exercise.id)
+      if (error) return
+      setAllExercises(prev => prev.map(e => e.id === exercise.id ? { ...e, active: true } : e))
+      markAppDataStale()
+      return
+    }
+
+    const nameKey = exercise.name.trim().toLowerCase()
+    const existing = allExercises.find(
+      e => e.day_type === day && e.name.trim().toLowerCase() === nameKey,
+    )
+    if (existing) {
+      if (existing.active) return
+      const { error } = await supabase
+        .from('exercises')
+        .update({ active: true })
+        .eq('id', existing.id)
+      if (error) return
+      setAllExercises(prev => prev.map(e => e.id === existing.id ? { ...e, active: true } : e))
+      markAppDataStale()
+      return
+    }
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    const sortOrder = allExercises
+      .filter(e => e.day_type === day)
+      .reduce((m, e) => Math.max(m, e.sort_order), 0) + 1
+    const { data, error } = await supabase
+      .from('exercises')
+      .insert({
+        user_id: user.id,
+        name: exercise.name,
+        day_type: day,
+        sets_target: exercise.sets_target,
+        reps_target: exercise.reps_target,
+        weight_target: exercise.weight_target,
+        sort_order: sortOrder,
+        active: true,
+      })
+      .select()
+      .maybeSingle()
+    if (error) return
+    const created = (data as Exercise | null) ?? (
+      demoMode
+        ? {
+            ...exercise,
+            id: crypto.randomUUID(),
+            day_type: day,
+            sort_order: sortOrder,
+            active: true,
+          }
+        : null
+    )
+    if (created) {
+      setAllExercises(prev => [...prev, created])
+      markAppDataStale()
+    }
+  }
+
+  async function reconcileSessionExtras(remaining: Exercise[], remainingLogs: LogMap) {
+    for (const ex of remaining) {
+      if (!isSessionExtra(ex.id, originalDayIdsRef.current)) continue
+      const setCount = ex.sets_target + (extraSets[ex.id] ?? 0)
+      const trained = extraHasWorkingSet(remainingLogs, ex.id, setCount)
+      if (shouldPersistSessionExtra(true, trained)) await persistExtraToDay(ex)
+      else await retireThisDayExtra(ex)
+    }
   }
 
   function scrollToExercise(id: string) {
@@ -2017,10 +2187,45 @@ export default function ActiveWorkout({ day }: { day: string }) {
     }
   }
 
+  async function handleRemoveExercise(exerciseId: string) {
+    if (!sessionId) return
+    if (!isSessionExtra(exerciseId, originalDayIdsRef.current)) return
+    if (exercises.length <= 1) {
+      showSaveToast('Add another exercise before removing this one')
+      return
+    }
+    if (removingIdsRef.current.has(exerciseId)) return
+    const oldExercise = exercises.find(e => e.id === exerciseId)
+    if (!oldExercise) return
+    removingIdsRef.current.add(exerciseId)
+
+    const { error: deleteError } = await supabase
+      .from('session_logs')
+      .delete()
+      .eq('session_id', sessionId)
+      .eq('exercise_id', exerciseId)
+
+    if (deleteError) {
+      removingIdsRef.current.delete(exerciseId)
+      setResumeToast('Could not remove exercise. Check your connection and try again.')
+      setTimeout(() => setResumeToast(null), 4000)
+      return
+    }
+
+    clearQueuedOpsForExercise(sessionId, exerciseId)
+    const oldExtras = extraSets[exerciseId] ?? 0
+    commitExercises(prev => prev.filter(e => e.id !== exerciseId))
+    clearExerciseLocalState(exerciseId, oldExercise, oldExtras)
+    await retireThisDayExtra(oldExercise)
+    removingIdsRef.current.delete(exerciseId)
+    showSaveToast(`Removed ${oldExercise.name}`)
+  }
+
   /**
    * Create a brand-new exercise from the swap/add sheet (when the one the user
-   * wants isn't in any of their days yet). The exercise is added to THIS day's
-   * catalog so it persists past the session, mirroring WorkoutManager's insert.
+   * wants isn't in any of their days yet). Inserted onto THIS day as inactive
+   * so a discarded / removed extra does not reappear next session. Finishing
+   * with a working set activates it for next time.
    */
   async function createExerciseForDay(
     name: string,
@@ -2045,6 +2250,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         reps_target: reps.trim(),
         weight_target: weightTarget,
         sort_order: sortOrder,
+        active: false,
       })
       .select()
       .maybeSingle()
@@ -2062,13 +2268,14 @@ export default function ActiveWorkout({ day }: { day: string }) {
             reps_target: reps.trim(),
             weight_target: weightTarget,
             sort_order: sortOrder,
-            active: true,
+            active: false,
             created_at: new Date().toISOString(),
           } satisfies Exercise
         : null
     if (!created) return null
 
     setAllExercises(prev => [...prev, created])
+    createdThisSessionIdsRef.current.add(created.id)
     markAppDataStale()
     return created
   }
@@ -2129,6 +2336,11 @@ export default function ActiveWorkout({ day }: { day: string }) {
       setResumeToast('Could not discard workout. Try again.')
       setTimeout(() => setResumeToast(null), 4000)
       return
+    }
+
+    const extrasToDrop = exercises.filter(e => isSessionExtra(e.id, originalDayIdsRef.current))
+    for (const ex of extrasToDrop) {
+      await retireThisDayExtra(ex)
     }
 
     if (sessionId) {
@@ -2406,6 +2618,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         currentStreak: result.current_streak,
         isNewBestStreak: result.current_streak > 1 && result.current_streak === result.longest_streak,
       })
+      await reconcileSessionExtras(exercises, logsRef.current)
       clearSessionExtraIds(sessionId)
       clearSessionRest(sessionId)
       markAppDataStale()
@@ -3198,6 +3411,8 @@ export default function ActiveWorkout({ day }: { day: string }) {
               onCheck={handleCheck}
               onUpdate={updateLog}
               onSwap={() => setSwapTarget(ex.id)}
+              canRemove={isSessionExtra(ex.id, originalDayIdsRef.current) && exercises.length > 1}
+              onRemove={() => { void handleRemoveExercise(ex.id) }}
               onSkipSet={handleSkipSet}
               onUnskipSet={handleUnskipSet}
               onDeleteSet={handleDeleteSet}
@@ -3409,6 +3624,8 @@ interface ExerciseCardProps {
   onCheck: (exerciseId: string, setNumber: number) => void
   onUpdate: (key: string, field: 'weight' | 'reps' | 'note' | 'rpe', value: string) => void
   onSwap: () => void
+  canRemove: boolean
+  onRemove: () => void
   onSkipSet: (exerciseId: string, setNumber: number) => void
   onUnskipSet: (exerciseId: string, setNumber: number) => void
   onDeleteSet: (exerciseId: string, setNumber: number) => void
@@ -3427,7 +3644,7 @@ interface ExerciseCardProps {
 
 function ExerciseCard({
   exercise, firstExercise, extraSets, logs, previousBest, priorVolume, editingKey,
-  onCheck, onUpdate, onSwap,
+  onCheck, onUpdate, onSwap, canRemove, onRemove,
   onSkipSet, onUnskipSet, onDeleteSet,
   onSkipExercise, onUnskipExercise,
   onToggleWarmup, onWarmupRamp, onUndoWarmupRamp, canUndoWarmup, onAddSet, onStartEdit, onSaveEdit, onPersistNote,
@@ -3559,6 +3776,39 @@ function ExerciseCard({
                 <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
               </svg>
             </button>
+            {canRemove && (
+              <button
+                type="button"
+                data-haptic="medium"
+                onClick={onRemove}
+                title="Remove from this workout"
+                aria-label={`Remove ${exercise.name} from this workout`}
+                style={{
+                  position: 'relative',
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  padding: '2px 6px', opacity: 0.5,
+                  display: 'flex', alignItems: 'center', gap: '3px',
+                  borderRadius: '4px',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
+                onMouseLeave={e => (e.currentTarget.style.opacity = '0.5')}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--danger)' }}>
+                  <polyline points="3 6 5 6 21 6"/>
+                  <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                  <path d="M10 11v6M14 11v6"/>
+                  <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+                </svg>
+                <span style={{
+                  fontSize: '10px',
+                  color: 'var(--danger)',
+                  fontFamily: "'Bebas Neue', sans-serif",
+                  letterSpacing: '0.5px',
+                }}>
+                  REMOVE
+                </span>
+              </button>
+            )}
           </div>
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

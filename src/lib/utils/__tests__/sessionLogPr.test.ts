@@ -7,6 +7,11 @@ import {
   emptySetState,
   mergeSessionExercises,
   parseSessionExtraIds,
+  isSessionExtra,
+  sessionExtraIdsFor,
+  originalDayIdsFromCatalog,
+  extraHasWorkingSet,
+  shouldPersistSessionExtra,
 } from '../../../app/(app)/log/sessionLogState'
 
 describe('normalizePriorVolume', () => {
@@ -108,5 +113,39 @@ describe('parseSessionExtraIds', () => {
     assert.deepEqual(parseSessionExtraIds(''), [])
     assert.deepEqual(parseSessionExtraIds('{nope}'), [])
     assert.deepEqual(parseSessionExtraIds('"x"'), [])
+  })
+})
+
+describe('session extras vs the day catalog', () => {
+  it('treats anything not on the original day list as a session extra', () => {
+    assert.equal(isSessionExtra('a', ['a', 'b']), false)
+    assert.equal(isSessionExtra('c', ['a', 'b']), true)
+  })
+
+  it('persists extra ids excluding the original day catalog (including new this-day rows)', () => {
+    assert.deepEqual(sessionExtraIdsFor(['a', 'b', 'new'], ['a', 'b']), ['new'])
+  })
+
+  it('on resume, newly created this-day extras stay extras even if they are already active', () => {
+    assert.deepEqual(originalDayIdsFromCatalog(['a', 'b', 'new'], ['new']), ['a', 'b'])
+  })
+
+  it('detects a working set the same way finish does', () => {
+    const logs = {
+      'ex-1': { ...emptySetState('80'), reps: '8', checked: true },
+      'ex-2': { ...emptySetState('80'), reps: '8', checked: true, isWarmup: true },
+      'ex-3': { ...emptySetState('80'), reps: '8', checked: true, skipped: true },
+    }
+    assert.equal(extraHasWorkingSet(logs, 'ex', 3), true)
+    assert.equal(extraHasWorkingSet({
+      'ex-1': { ...emptySetState('80'), reps: '8', checked: true, isWarmup: true },
+    }, 'ex', 1), false)
+  })
+
+  it('saves an extra for next time only when it stayed in the session and was trained', () => {
+    assert.equal(shouldPersistSessionExtra(true, true), true)
+    assert.equal(shouldPersistSessionExtra(true, false), false)
+    assert.equal(shouldPersistSessionExtra(false, true), false)
+    assert.equal(shouldPersistSessionExtra(false, false), false)
   })
 })
