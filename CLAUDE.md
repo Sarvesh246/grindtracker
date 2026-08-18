@@ -253,6 +253,28 @@ change both.** Every RPC takes `p_local_date` because streaks depend on the
 user's calendar day and Postgres only sees UTC; it's clamped to ±1 day of UTC so
 it can't be used to farm streak bonuses. `sessions.local_date` stores it.
 
+### Failed reads vs. empty accounts
+A dropped Supabase read returns `{ data: null }`, and dashboard reads are
+destructured as `{ data }` with the error discarded — so one transient failure
+among the home page's dozen parallel reads rendered an established user the
+FIRST-RUN dashboard: welcome hero, level 0, streak 0, "log your first session".
+Reopening the app "fixed" it, which is exactly what made it read as data loss.
+Two rules keep it from coming back:
+
+- Reads that decide *"is this a returning user"* go through `readWithRetry`
+  (`src/lib/supabase/readWithRetry.ts`) — one retry, then `reportError`, never a
+  silent empty result.
+- **A missing `user_stats` row is a failed read, never a new user.** Every
+  account is seeded one at signup (`grind_seed_user_stats`, migration `11`) and
+  the client has no insert/delete on it, so `stats == null` can only mean the
+  read failed. `home/page.tsx` passes `statsUnavailable`; `HomeDashboard` shows a
+  "couldn't load your stats" card with a retry instead of zeros, and every
+  first-run branch (hero, streak card, primary CTA, tour steps, overdue nudge) is
+  gated on `isNewUser` = `!statsUnavailable && totalWorkouts === 0` — never on
+  `totalWorkouts === 0` alone. `restDataUnavailable` is the same idea for the
+  rest-day reads: without those rows every gap looks uncovered, and the client
+  would zero a streak the user never broke.
+
 ### Security model
 - **RLS is the boundary, never the UI.** Route guards (`isAdminEmail`) only pick
   404-vs-render; `is_grind_admin()` in Postgres is the real gate.

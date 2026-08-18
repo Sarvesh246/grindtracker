@@ -1,5 +1,6 @@
 import { cookies } from 'next/headers'
 import { createClient, getAuthUser } from '@/lib/supabase/server'
+import { readWithRetry } from '@/lib/supabase/readWithRetry'
 import { redirect } from 'next/navigation'
 import HomeDashboard from './HomeDashboard'
 import type { UserRotation } from '@/lib/types'
@@ -22,6 +23,14 @@ export default async function HomePage() {
 
   // Parallelize independent dashboard reads. History uses bounded SQL aggregates
   // (docs/sql/20-production-hardening.sql) instead of fetching every session row.
+  //
+  // The reads that decide "is this a returning user" go through `readWithRetry`.
+  // Every result here is destructured as `{ data }` with the error dropped, so
+  // one transient failure among a dozen parallel reads used to render an
+  // established account its first-run dashboard (welcome hero, level 0, streak
+  // 0) — indistinguishable from a genuinely empty account, and "fixed" only by
+  // reopening the app. Retry first; then refuse to render the empty state (see
+  // `statsUnavailable` / `restDataUnavailable` below).
   const [
     { data: profile },
     { data: stats },
@@ -30,14 +39,21 @@ export default async function HomePage() {
     { data: dayTypeRows },
     { data: rotationRow },
     { data: flexRows },
-    { data: history, error: historyError },
+    { data: history },
     { count: totalPRs },
-    { data: restDayRows },
-    { data: restDateRows },
-    { data: restCancelRows },
+    { data: restDayRows, error: restDayError },
+    { data: restDateRows, error: restDateError },
+    { data: restCancelRows, error: restCancelError },
   ] = await Promise.all([
     supabase.from('user_profiles').select('display_name, username').eq('id', user.id).maybeSingle(),
-    supabase.from('user_stats').select('*').eq('user_id', user.id).maybeSingle(),
+    // Every account is seeded a `user_stats` row at signup and the client has no
+    // delete privilege on it (migration `11-server-side-xp.sql`), so a null row
+    // is ALWAYS a failed read — never a new user. Retry it like an error.
+    readWithRetry(
+      'home:user_stats',
+      () => supabase.from('user_stats').select('*').eq('user_id', user.id).maybeSingle(),
+      { failed: r => r.error != null || r.data == null },
+    ),
     supabase
       .from('sessions')
       .select('id, day_type, started_at')
@@ -45,33 +61,56 @@ export default async function HomePage() {
       .is('completed_at', null)
       .order('started_at', { ascending: false })
       .limit(10),
-    supabase
-      .from('sessions')
-      .select('*')
-      .eq('user_id', user.id)
-      .not('completed_at', 'is', null)
-      .order('completed_at', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-    supabase.from('exercises').select('day_type'),
+    readWithRetry('home:last_session', () =>
+      supabase
+        .from('sessions')
+        .select('*')
+        .eq('user_id', user.id)
+        .not('completed_at', 'is', null)
+        .order('completed_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ),
+    // Empty here means "no days configured", which drives `hasDays` and the
+    // "set up your first day" copy — worth a retry before believing it.
+    readWithRetry('home:exercise_days', () => supabase.from('exercises').select('day_type')),
     supabase.from('user_rotation').select('*').eq('user_id', user.id).maybeSingle(),
     supabase.from('user_flex_days').select('day_key').eq('user_id', user.id),
-    supabase.rpc('grind_home_history', { p_lookback_days: 90 }),
+    readWithRetry('home:history', () => supabase.rpc('grind_home_history', { p_lookback_days: 90 })),
     supabase
       .from('session_logs')
       .select('sessions!inner(user_id)', { count: 'exact', head: true })
       .eq('is_pr', true)
       .eq('sessions.user_id', user.id),
-    supabase
-      .from('user_rest_days')
-      .select('day_of_week, effective_from, effective_until')
-      .eq('user_id', user.id),
-    supabase.from('user_rest_dates').select('rest_date').eq('user_id', user.id),
-    supabase.from('user_rest_cancels').select('rest_date').eq('user_id', user.id),
+    // Rest days decide whether a gap since the last workout broke the streak.
+    // A failed read here reads as "no rest days configured", which is exactly
+    // the input that makes the client zero a perfectly good streak.
+    readWithRetry('home:rest_days', () =>
+      supabase
+        .from('user_rest_days')
+        .select('day_of_week, effective_from, effective_until')
+        .eq('user_id', user.id),
+    ),
+    readWithRetry('home:rest_dates', () =>
+      supabase.from('user_rest_dates').select('rest_date').eq('user_id', user.id),
+    ),
+    readWithRetry('home:rest_cancels', () =>
+      supabase.from('user_rest_cancels').select('rest_date').eq('user_id', user.id),
+    ),
   ])
 
   const demoModePref = (await cookies()).get('grind_demo_mode_pref')?.value
   const demoMode = demoModePref === 'on' && isAdminEmail(user.email)
+
+  // Stats row missing after the retry above = the read failed, full stop. The
+  // dashboard renders an explicit "couldn't load" state for this instead of
+  // level 0 / streak 0 / "log your first session", which is what an existing
+  // user actually saw when one read blipped.
+  const statsUnavailable = !demoMode && !stats
+  // Same idea for the rest-day reads: without them the client can't tell a
+  // covered gap from a broken streak, so it must not zero the streak.
+  const restDataUnavailable =
+    !demoMode && (restDayError != null || restDateError != null || restCancelError != null)
 
   const fullName = ((user.user_metadata?.full_name as string) || profile?.display_name || '').trim()
   const firstName = demoMode
@@ -167,11 +206,9 @@ export default async function HomePage() {
 
   // grind_home_history backs "This Week"/"This Month" counts, the overdue-day
   // nudge, and last-trained-per-day — a silently blank result here is
-  // indistinguishable from a genuinely brand-new account, so log the failure
-  // rather than let it pass as if there were nothing to show.
-  if (historyError) {
-    console.error('[grind] grind_home_history failed', historyError)
-  }
+  // indistinguishable from a genuinely brand-new account, so it goes through
+  // `readWithRetry` above, which retries and reports the failure rather than
+  // letting an empty result pass as if there were nothing to show.
   const historyPayload = (history ?? {}) as {
     last_trained_by_day?: Record<string, string | null>
     recent_local_dates?: string[]
@@ -202,6 +239,8 @@ export default async function HomePage() {
   return (
     <HomeDashboard
       stats={demoMode ? demoHomeStats() : stats}
+      statsUnavailable={statsUnavailable}
+      restDataUnavailable={restDataUnavailable}
       recurringRestDays={(restDayRows ?? [])
         .filter(r => r.effective_until == null)
         .map(r => r.day_of_week)}

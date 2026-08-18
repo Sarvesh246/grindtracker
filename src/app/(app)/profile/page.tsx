@@ -1,5 +1,6 @@
 import { cookies } from 'next/headers'
 import { createClient, getAuthUser } from '@/lib/supabase/server'
+import { readWithRetry } from '@/lib/supabase/readWithRetry'
 import { redirect } from 'next/navigation'
 import ProfileDashboard from './ProfileDashboard'
 import { isAdminEmail } from '@/lib/utils/admin'
@@ -48,11 +49,20 @@ export default async function ProfilePage() {
     historyRes,
     profileRes,
   ] = await Promise.all([
-    supabase
-      .from('user_stats')
-      .select('xp_total, level, current_streak, longest_streak, total_workouts')
-      .eq('user_id', user.id)
-      .maybeSingle(),
+    // Same guard as the home dashboard: every account is seeded a `user_stats`
+    // row at signup (migration `11-server-side-xp.sql`), so a null row is a
+    // failed read — one transient blip must not paint an established profile
+    // as level 1 with no streak.
+    readWithRetry(
+      'profile:user_stats',
+      () =>
+        supabase
+          .from('user_stats')
+          .select('xp_total, level, current_streak, longest_streak, total_workouts')
+          .eq('user_id', user.id)
+          .maybeSingle(),
+      { failed: r => r.error != null || r.data == null },
+    ),
     supabase.from('user_badges').select('badge_id, earned_at').eq('user_id', user.id),
     supabase
       .from('session_logs')

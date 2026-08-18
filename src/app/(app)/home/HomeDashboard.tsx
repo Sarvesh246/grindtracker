@@ -92,6 +92,14 @@ interface ActiveSession {
 
 interface Props {
   stats: UserStats | null
+  /**
+   * The `user_stats` read failed (server retried — see home/page.tsx). Every
+   * account is seeded a stats row at signup, so this is never "new user": the
+   * dashboard must say it couldn't load rather than render zeros.
+   */
+  statsUnavailable?: boolean
+  /** The rest-day reads failed — don't judge a gap as a broken streak. */
+  restDataUnavailable?: boolean
   activeSessions: ActiveSession[]
   lastSession: Session | null
   lastSessionLogs: { exercise_name: string; weight: number | null; sets: number; reps: number | null }[]
@@ -145,6 +153,8 @@ export default function HomeDashboard({
   // `userId` is gone: the stale-streak reset now calls the `refresh_stats` RPC,
   // which resolves the caller from the session rather than a passed-in id.
   stats,
+  statsUnavailable = false,
+  restDataUnavailable = false,
   activeSessions,
   lastSession,
   lastSessionLogs,
@@ -190,6 +200,21 @@ export default function HomeDashboard({
   const xpPercent = (xpInLevel / levelSize) * 100
   const longestStreak = stats?.longest_streak ?? 0
   const totalWorkouts = stats?.total_workouts ?? 0
+  // The first-run dashboard (welcome hero, "your streak starts here", no
+  // primary CTA) is reserved for an account we KNOW has never trained. A
+  // failed stats read reads as zero workouts too, so gate every first-run
+  // branch on this rather than on `totalWorkouts === 0` directly.
+  const isNewUser = !statsUnavailable && totalWorkouts === 0
+  const [retryingStats, setRetryingStats] = useState(false)
+  function retryStats() {
+    if (retryingStats) return
+    setRetryingStats(true)
+    // Re-runs the server component (and its retrying reads). A successful
+    // refresh replaces this card with the real level/streak; a failed one
+    // leaves the card in place, tappable again.
+    router.refresh()
+    setTimeout(() => setRetryingStats(false), 1500)
+  }
 
   // Stale-streak reset, using the viewer's own local "today" (a server component
   // would otherwise use the server's clock/timezone — see getMonthStart
@@ -287,10 +312,14 @@ export default function HomeDashboard({
   const restBannerSig = gapUncoveredDates.join(',')
   const restBannerDismissedSig = useSyncExternalStore(restDismissStore.subscribe, restDismissStore.read, () => null)
   const showRestBanner =
+    !restDataUnavailable &&
     (stats?.current_streak ?? 0) > 0 && gapEligibleForPrompt && restBannerDismissedSig !== restBannerSig
   const correctedStaleStreak = useRef(false)
   useEffect(() => {
     if (correctedStaleStreak.current) return
+    // Without the rest-day rows every gap looks uncovered, which would zero a
+    // streak the user never actually broke. Wait for a load that has them.
+    if (restDataUnavailable) return
     if (!stats || stats.current_streak <= 0 || !stats.last_workout_date) return
     if (gapUncoveredDates.length === 0) return // no real gap, or fully rest-day-covered — nothing to correct
     // A small, plausibly-a-rest-day gap gets the banner instead of an
@@ -310,7 +339,7 @@ export default function HomeDashboard({
       if (error) console.error('[grind] refresh_stats failed (stale streak correction)', error)
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stats?.current_streak, stats?.last_workout_date, gapUncoveredDates, gapEligibleForPrompt, restBannerDismissedSig])
+  }, [stats?.current_streak, stats?.last_workout_date, gapUncoveredDates, gapEligibleForPrompt, restBannerDismissedSig, restDataUnavailable])
   const currentStreak = streakOverride ?? stats?.current_streak ?? 0
 
   async function confirmRestBanner() {
@@ -624,7 +653,7 @@ export default function HomeDashboard({
   // you jumped over isn't lost. Computed client-side so daysSince uses the viewer's
   // timezone. The position system still picks `nextDay`; this never surfaces the
   // merely-next/earliest day, only one trained out of order and left behind.
-  const overdue = totalWorkouts > 0 ? overdueDays(rotationSeq, rotationIndex, lastTrainedByDay) : []
+  const overdue = !isNewUser ? overdueDays(rotationSeq, rotationIndex, lastTrainedByDay) : []
   const overdueSig = overdue.map(d => d.dayType).join(',')
 
   // Dismissal is keyed to the overdue set, so hiding it sticks across reloads but
@@ -646,7 +675,7 @@ export default function HomeDashboard({
   // First-run walkthrough. Empty-state users (no workouts yet) get only the two
   // meaningful steps — the primary CTA (anchored to the welcome hero) and the
   // history calendar; level/streak/stats aren't meaningful with zero data.
-  const homeSteps: TourStep[] = totalWorkouts === 0
+  const homeSteps: TourStep[] = isNewUser
     ? [
         { target: 'home-welcome-cta', title: 'Start a workout', body: 'Tap here to jump into your suggested next workout. GRIND rotates through your days automatically.' },
         { target: 'home-calendar', title: 'Workout history', body: "See every day you've trained, and revisit or edit past sessions." },
@@ -661,7 +690,9 @@ export default function HomeDashboard({
   // Don't fire over the resume/exit flow; wait for mount so the active-session
   // state is real.
   const homeTour = useTour('home', homeSteps, {
-    active: mounted && noActiveForUi && !discardConfirmId,
+    // A stats-less render has no level/streak targets to point at, and its step
+    // list would be the wrong one — don't burn the one-time tour on it.
+    active: mounted && noActiveForUi && !discardConfirmId && !statsUnavailable,
   })
 
   return (
@@ -687,7 +718,7 @@ export default function HomeDashboard({
           duplicate CTA + streak button below are suppressed while it shows.
           Yields entirely to the resume block when a workout is mid-flight — a
           user picking up an interrupted session isn't "brand new" anymore. */}
-      {totalWorkouts === 0 && noActiveForUi && (
+      {isNewUser && noActiveForUi && (
         <div
           style={{
             ...card,
@@ -781,6 +812,49 @@ export default function HomeDashboard({
         </h2>
       </div>
 
+      {/* Stats read failed. Rendering level 0 / "your streak starts here" here
+          would tell an established user their account reset — it's the exact
+          bug this state exists to prevent (see `statsUnavailable`). Say what
+          actually happened and offer a retry instead. */}
+      {statsUnavailable ? (
+        <div style={card} data-onboard="home-level">
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
+            <span style={{ color: 'var(--text-muted)', flexShrink: 0, marginTop: '2px' }} aria-hidden>
+              <FlameIcon size={26} />
+            </span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '4px' }}>
+                Couldn&rsquo;t load your stats
+              </div>
+              <div style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+                Your level and streak are safe &mdash; this is a connection hiccup, not a reset.
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={retryStats}
+            disabled={retryingStats}
+            className="press"
+            style={{
+              marginTop: '16px',
+              width: '100%',
+              height: '40px',
+              backgroundColor: 'var(--surface-elevated)',
+              color: 'var(--text-primary)',
+              border: '1px solid var(--border)',
+              borderRadius: '10px',
+              fontFamily: 'var(--font-display)',
+              fontSize: '15px',
+              letterSpacing: '1px',
+              cursor: retryingStats ? 'default' : 'pointer',
+              opacity: retryingStats ? 0.6 : 1,
+            }}
+          >
+            {retryingStats ? 'RETRYING\u2026' : 'RETRY'}
+          </button>
+        </div>
+      ) : (
+      <>
       {/* Level + XP Card */}
       <div style={card} data-onboard="home-level">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
@@ -835,7 +909,7 @@ export default function HomeDashboard({
             nudge back into the next workout;
           • active → the live streak + best. */}
       {currentStreak === 0 ? (
-        totalWorkouts === 0 ? (
+        isNewUser ? (
           <div
             style={{
               ...card,
@@ -924,6 +998,8 @@ export default function HomeDashboard({
             <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>DAYS</div>
           </div>
         </div>
+      )}
+      </>
       )}
 
       {/* Rest-day banner — offered only for a small, plausibly-a-rest-day gap
@@ -1172,7 +1248,7 @@ export default function HomeDashboard({
           whose single primary action is the welcome hero above, and hidden while
           a workout is in progress (the resume block owns the slot). This keeps one
           clear next step instead of competing "start" affordances. */}
-      {noActiveForUi && totalWorkouts > 0 && (
+      {noActiveForUi && !isNewUser && (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
       <button
         data-onboard="home-cta"
