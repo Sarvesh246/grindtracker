@@ -21,6 +21,7 @@ import { useMotionPref } from '@/lib/contexts/MotionContext'
 import { useDemoMode } from '@/lib/contexts/DemoModeContext'
 import FeedbackModal from '@/components/FeedbackModal'
 import { markAppDataStale, resetAppDataCache } from '@/lib/cache/appDataCache'
+import { clearLastKnownStats } from '@/lib/cache/lastKnownStats'
 import { localDateKey } from '@/lib/utils/formatting'
 import {
   downloadJson,
@@ -404,6 +405,7 @@ export default function SettingsView({
     // A stale cache from this account must never paint for the next person
     // to sign in on this device (shared/gym computer, family tablet).
     resetAppDataCache()
+    clearLastKnownStats()
     router.push('/login')
   }
 
@@ -506,6 +508,7 @@ export default function SettingsView({
       if (error) throw error
       await live.auth.signOut()
       resetAppDataCache()
+      clearLastKnownStats()
       router.push('/login')
     } catch (err) {
       reportError(err, { operation: 'deleteMyData', route: '/profile/settings' })

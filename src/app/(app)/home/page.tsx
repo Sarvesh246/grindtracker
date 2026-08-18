@@ -52,7 +52,10 @@ export default async function HomePage() {
     readWithRetry(
       'home:user_stats',
       () => supabase.from('user_stats').select('*').eq('user_id', user.id).maybeSingle(),
-      { failed: r => r.error != null || r.data == null },
+      // Three attempts, not the default two: this is the one read whose absence
+      // changes what kind of account the dashboard thinks it's rendering, and
+      // the client-side recovery in HomeDashboard is a fallback, not a plan.
+      { attempts: 3, failed: r => r.error != null || r.data == null },
     ),
     supabase
       .from('sessions')
@@ -239,6 +242,7 @@ export default async function HomePage() {
   return (
     <HomeDashboard
       stats={demoMode ? demoHomeStats() : stats}
+      userId={user.id}
       statsUnavailable={statsUnavailable}
       restDataUnavailable={restDataUnavailable}
       recurringRestDays={(restDayRows ?? [])

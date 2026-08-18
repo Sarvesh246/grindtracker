@@ -264,13 +264,23 @@ Two rules keep it from coming back:
 - Reads that decide *"is this a returning user"* go through `readWithRetry`
   (`src/lib/supabase/readWithRetry.ts`) — one retry, then `reportError`, never a
   silent empty result.
+- **A launch never shows a stats error if it can help it.** The server retries
+  (3 attempts), then `HomeDashboard` recovers client-side: it re-reads
+  `user_stats` from the browser client (its own connection and token, so it
+  usually succeeds where the server render just failed) and, in parallel,
+  paints the user's last-known level/streak from `grind_last_stats` in
+  localStorage (`src/lib/cache/lastKnownStats.ts`, keyed to the user id and
+  cleared on sign-out beside `resetAppDataCache()`). A shimmer covers the gap.
+  The "couldn't load your stats" card with its RETRY is the terminal state
+  only — server, client, and cache all failed — not the first thing a flaky
+  launch shows.
 - **A missing `user_stats` row is a failed read, never a new user.** Every
   account is seeded one at signup (`grind_seed_user_stats`, migration `11`) and
   the client has no insert/delete on it, so `stats == null` can only mean the
   read failed. `home/page.tsx` passes `statsUnavailable`; `HomeDashboard` shows a
   "couldn't load your stats" card with a retry instead of zeros, and every
   first-run branch (hero, streak card, primary CTA, tour steps, overdue nudge) is
-  gated on `isNewUser` = `!statsUnavailable && totalWorkouts === 0` — never on
+  gated on `isNewUser` = `!!effectiveStats && totalWorkouts === 0` — never on
   `totalWorkouts === 0` alone. `restDataUnavailable` is the same idea for the
   rest-day reads: without those rows every gap looks uncovered, and the client
   would zero a streak the user never broke.

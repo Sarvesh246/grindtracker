@@ -23,6 +23,7 @@ import { useTour, type TourStep } from '@/components/onboarding/Tour'
 import FlameIcon from '@/components/FlameIcon'
 import DayIcon from '@/components/DayIcon'
 import { markAppDataStale } from '@/lib/cache/appDataCache'
+import { readLastKnownStats, writeLastKnownStats } from '@/lib/cache/lastKnownStats'
 import { reportError } from '@/lib/utils/reportError'
 import {
   FINISH_UNDO_TTL_MS,
@@ -92,6 +93,8 @@ interface ActiveSession {
 
 interface Props {
   stats: UserStats | null
+  /** Owner of this dashboard — keys the last-known-stats cache. */
+  userId: string
   /**
    * The `user_stats` read failed (server retried — see home/page.tsx). Every
    * account is seeded a stats row at signup, so this is never "new user": the
@@ -153,6 +156,7 @@ export default function HomeDashboard({
   // `userId` is gone: the stale-streak reset now calls the `refresh_stats` RPC,
   // which resolves the caller from the session rather than a passed-in id.
   stats,
+  userId,
   statsUnavailable = false,
   restDataUnavailable = false,
   activeSessions,
@@ -192,19 +196,65 @@ export default function HomeDashboard({
     trainedDates: new Set(completedAt),
   }), [restCancels, restIntervals, completedAt])
 
-  const xpTotal = stats?.xp_total ?? 0
+  // Client-side recovery for a stats read the server couldn't complete. The
+  // browser has its own connection and a fresh token, so a re-read here usually
+  // succeeds where the server render's just failed; failing that, the user's
+  // last-known numbers come out of localStorage. Either way the dashboard
+  // paints real stats instead of asking the user to tap a retry button.
+  const [recoveredStats, setRecoveredStats] = useState<UserStats | null>(null)
+  const [statsRecoveryFailed, setStatsRecoveryFailed] = useState(false)
+  const effectiveStats = stats ?? recoveredStats
+  // Only true once BOTH the server and the client have failed and there is no
+  // cached copy — the rare terminal case that still owes the user an honest
+  // "couldn't load" rather than zeros.
+  const statsMissing = statsUnavailable && !effectiveStats
+
+  useEffect(() => {
+    if (demoMode || !stats) return
+    writeLastKnownStats(userId, stats)
+  }, [stats, userId, demoMode])
+
+  useEffect(() => {
+    if (!statsUnavailable || demoMode) return
+    let cancelled = false
+    void (async () => {
+      // Paint last-known immediately — offline, this is the whole recovery.
+      const cached = readLastKnownStats(userId)
+      if (!cancelled && cached) setRecoveredStats(cached)
+      for (let attempt = 0; attempt < 3 && !cancelled; attempt++) {
+        if (attempt > 0) await new Promise(resolve => setTimeout(resolve, 400 * attempt))
+        if (cancelled) return
+        const { data } = await supabase
+          .from('user_stats')
+          .select('*')
+          .eq('user_id', userId)
+          .maybeSingle()
+        if (cancelled) return
+        if (data) {
+          const fresh = data as UserStats
+          setRecoveredStats(fresh)
+          writeLastKnownStats(userId, fresh)
+          return
+        }
+      }
+      if (!cancelled && !cached) setStatsRecoveryFailed(true)
+    })()
+    return () => { cancelled = true }
+  }, [statsUnavailable, demoMode, userId, supabase])
+
+  const xpTotal = effectiveStats?.xp_total ?? 0
   const level = getLevel(xpTotal)
   const xpInLevel = getXpInCurrentLevel(xpTotal)
   const levelSize = getXpRequiredForLevel(level)
   const xpToNext = getXpToNextLevel(xpTotal)
   const xpPercent = (xpInLevel / levelSize) * 100
-  const longestStreak = stats?.longest_streak ?? 0
-  const totalWorkouts = stats?.total_workouts ?? 0
+  const longestStreak = effectiveStats?.longest_streak ?? 0
+  const totalWorkouts = effectiveStats?.total_workouts ?? 0
   // The first-run dashboard (welcome hero, "your streak starts here", no
-  // primary CTA) is reserved for an account we KNOW has never trained. A
-  // failed stats read reads as zero workouts too, so gate every first-run
-  // branch on this rather than on `totalWorkouts === 0` directly.
-  const isNewUser = !statsUnavailable && totalWorkouts === 0
+  // primary CTA) is reserved for an account we KNOW has never trained. Stats we
+  // never loaded read as zero workouts too, so gate every first-run branch on
+  // having actual stats in hand rather than on `totalWorkouts === 0` directly.
+  const isNewUser = !!effectiveStats && totalWorkouts === 0
   const [retryingStats, setRetryingStats] = useState(false)
   function retryStats() {
     if (retryingStats) return
@@ -241,7 +291,7 @@ export default function HomeDashboard({
       window.removeEventListener('focus', sync)
     }
   }, [])
-  const lastWorkoutKey = stats?.last_workout_date ?? null
+  const lastWorkoutKey = effectiveStats?.last_workout_date ?? null
   const [streakOverride, setStreakOverride] = useState<number | null>(null)
   const [restBannerBusy, setRestBannerBusy] = useState(false)
   const [restTodayBusy, setRestTodayBusy] = useState(false)
@@ -313,14 +363,14 @@ export default function HomeDashboard({
   const restBannerDismissedSig = useSyncExternalStore(restDismissStore.subscribe, restDismissStore.read, () => null)
   const showRestBanner =
     !restDataUnavailable &&
-    (stats?.current_streak ?? 0) > 0 && gapEligibleForPrompt && restBannerDismissedSig !== restBannerSig
+    (effectiveStats?.current_streak ?? 0) > 0 && gapEligibleForPrompt && restBannerDismissedSig !== restBannerSig
   const correctedStaleStreak = useRef(false)
   useEffect(() => {
     if (correctedStaleStreak.current) return
     // Without the rest-day rows every gap looks uncovered, which would zero a
     // streak the user never actually broke. Wait for a load that has them.
     if (restDataUnavailable) return
-    if (!stats || stats.current_streak <= 0 || !stats.last_workout_date) return
+    if (!effectiveStats || effectiveStats.current_streak <= 0 || !effectiveStats.last_workout_date) return
     if (gapUncoveredDates.length === 0) return // no real gap, or fully rest-day-covered — nothing to correct
     // A small, plausibly-a-rest-day gap gets the banner instead of an
     // immediate correction — wait for the user's Yes/No before settling.
@@ -339,8 +389,8 @@ export default function HomeDashboard({
       if (error) console.error('[grind] refresh_stats failed (stale streak correction)', error)
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stats?.current_streak, stats?.last_workout_date, gapUncoveredDates, gapEligibleForPrompt, restBannerDismissedSig, restDataUnavailable])
-  const currentStreak = streakOverride ?? stats?.current_streak ?? 0
+  }, [effectiveStats?.current_streak, effectiveStats?.last_workout_date, gapUncoveredDates, gapEligibleForPrompt, restBannerDismissedSig, restDataUnavailable])
+  const currentStreak = streakOverride ?? effectiveStats?.current_streak ?? 0
 
   async function confirmRestBanner() {
     if (restBannerBusy) return
@@ -692,7 +742,7 @@ export default function HomeDashboard({
   const homeTour = useTour('home', homeSteps, {
     // A stats-less render has no level/streak targets to point at, and its step
     // list would be the wrong one — don't burn the one-time tour on it.
-    active: mounted && noActiveForUi && !discardConfirmId && !statsUnavailable,
+    active: mounted && noActiveForUi && !discardConfirmId && !statsMissing,
   })
 
   return (
@@ -812,11 +862,13 @@ export default function HomeDashboard({
         </h2>
       </div>
 
-      {/* Stats read failed. Rendering level 0 / "your streak starts here" here
-          would tell an established user their account reset — it's the exact
-          bug this state exists to prevent (see `statsUnavailable`). Say what
-          actually happened and offer a retry instead. */}
-      {statsUnavailable ? (
+      {/* Stats read failed and neither the client re-read nor the last-known
+          cache has answered yet. Rendering level 0 / "your streak starts here"
+          here would tell an established user their account reset — the exact
+          bug this state exists to prevent. Shimmer while recovery is in
+          flight; only a total failure gets the honest error card. */}
+      {statsMissing ? (
+        statsRecoveryFailed ? (
         <div style={card} data-onboard="home-level">
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
             <span style={{ color: 'var(--text-muted)', flexShrink: 0, marginTop: '2px' }} aria-hidden>
@@ -853,6 +905,12 @@ export default function HomeDashboard({
             {retryingStats ? 'RETRYING\u2026' : 'RETRY'}
           </button>
         </div>
+        ) : (
+          <>
+            <div className="shimmer" style={{ width: '100%', height: '158px', borderRadius: '20px' }} />
+            <div className="shimmer" style={{ width: '100%', height: '92px', borderRadius: '20px' }} />
+          </>
+        )
       ) : (
       <>
       {/* Level + XP Card */}
