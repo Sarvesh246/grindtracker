@@ -815,6 +815,136 @@ body.coach-fab-dragging .bottom-nav [data-haptic-overlay] {
   from { transform: translateY(100%); }
   to { transform: translateY(0); }
 }
+@keyframes sheet-down {
+  from { transform: translateY(0); }
+  to { transform: translateY(100%); }
+}
+@keyframes sheet-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes sheet-backdrop-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* Live-workout add/swap picker — portaled bottom sheet. Enter/exit are CSS so
+   reduce-motion zeroes them; fill-mode on close is `forwards` only while the
+   sheet stays mounted for the exit (parent unmounts after). */
+.grind-sheet-backdrop {
+  animation: sheet-backdrop-in 280ms ease backwards;
+  overflow: hidden;
+}
+.grind-sheet-backdrop[data-closing='true'] {
+  animation: sheet-backdrop-out 280ms ease forwards;
+}
+.grind-sheet {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-height: calc(88dvh - var(--grind-keyboard-inset, 0px));
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  box-shadow: 0 -16px 48px rgba(0, 0, 0, 0.45);
+  min-height: 0;
+}
+.grind-sheet--enter {
+  animation: sheet-up 320ms cubic-bezier(0.32, 0.72, 0, 1) backwards;
+}
+.grind-sheet--closing {
+  animation: sheet-down 300ms cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+.grind-sheet--dragging {
+  animation: none;
+  transition: none;
+}
+.grind-sheet__grabber {
+  width: 36px;
+  height: 4px;
+  border-radius: 9999px;
+  background: var(--border-strong);
+  margin: 10px auto 0;
+  flex-shrink: 0;
+  pointer-events: none;
+}
+.grind-sheet__header {
+  touch-action: none;
+  cursor: grab;
+  flex-shrink: 0;
+}
+.grind-sheet__header:active {
+  cursor: grabbing;
+}
+.grind-sheet__list {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+}
+.grind-sheet-backdrop[data-keyboard='true'] .grind-sheet__list {
+  /* Keyboard already covers the home indicator — extra safe-area is a gap. */
+  padding-bottom: 8px;
+}
+.grind-sheet input[type='search'] {
+  appearance: none;
+  -webkit-appearance: none;
+}
+.grind-sheet__row {
+  position: relative;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  padding: 14px 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.grind-sheet__row[aria-current='true'] {
+  background: var(--accent-wash);
+  cursor: default;
+}
+
+/* Workout chrome: icon/text ghost buttons. Hover only on real pointers so iOS
+   PWA doesn't leave a stuck :hover after the first tap. */
+.wo-ghost-btn {
+  position: relative;
+  background: none;
+  border: none;
+  cursor: pointer;
+  opacity: 0.5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: opacity 150ms ease;
+}
+.wo-ghost-btn:active {
+  opacity: 1;
+}
+.wo-dashed-add {
+  position: relative;
+  transition: border-color 150ms ease, color 150ms ease, background-color 150ms ease;
+}
+.wo-dashed-add:active {
+  border-color: var(--accent-dim);
+  color: var(--accent-text);
+  background-color: var(--accent-wash);
+}
+@media (hover: hover) and (pointer: fine) {
+  .wo-ghost-btn:hover { opacity: 1; }
+  .wo-dashed-add:hover {
+    border-color: var(--accent-dim);
+    color: var(--accent-text);
+  }
+}
 
 /* Small inline popovers (rest-timer adjust grid, default-rest row) ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ quick
    fade + settle so they don't just snap into existence. */
@@ -999,6 +1129,21 @@ html.reduce-motion .toast-slide--top,
 html.reduce-motion .toast-slide--bottom,
 html.reduce-motion .toast-slide--top.toast-slide--exiting,
 html.reduce-motion .toast-slide--bottom.toast-slide--exiting {
+  animation: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .grind-sheet--enter,
+  .grind-sheet--closing,
+  .grind-sheet-backdrop,
+  .grind-sheet-backdrop[data-closing='true'] {
+    animation: none !important;
+  }
+}
+html.reduce-motion .grind-sheet--enter,
+html.reduce-motion .grind-sheet--closing,
+html.reduce-motion .grind-sheet-backdrop,
+html.reduce-motion .grind-sheet-backdrop[data-closing='true'] {
   animation: none !important;
 }
 

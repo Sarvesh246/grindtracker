@@ -53,6 +53,7 @@ import { useExitingValue } from '@/lib/hooks/useExitingValue'
 import RestTimerBar from '@/components/RestTimerBar'
 import ToastPill, { TOAST_SLIDE_OUT_MS } from '@/components/ToastPill'
 import { requestOpenCoach } from '@/lib/coach/openCoachBus'
+import ExercisePickerSheet, { EXERCISE_PICKER_EXIT_MS } from './ExercisePickerSheet'
 import PlateCalculator from '@/components/PlateCalculator'
 import CompletionModal from './CompletionModal'
 import {
@@ -209,6 +210,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const removingIdsRef = useRef<Set<string>>(new Set())
   /** Active catalog ids this day had when the session started — extras are anything else. */
   const originalDayIdsRef = useRef<Set<string>>(new Set())
+  const [originalDayIds, setOriginalDayIds] = useState<Set<string>>(() => new Set())
   const createdThisSessionIdsRef = useRef<Set<string>>(new Set())
   const [plateCalcTarget, setPlateCalcTarget] = useState<{ key: string; current: number } | null>(null)
   const [warmupUndo, setWarmupUndo] = useState<Record<string, { extrasBefore: number; logsBefore: LogMap }>>({})
@@ -220,6 +222,9 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const undoToastExit = useExitingValue(undoState, TOAST_SLIDE_OUT_MS)
   const resumeToastExit = useExitingValue(resumeToast, TOAST_SLIDE_OUT_MS)
   const saveToastExit = useExitingValue(saveToast, TOAST_SLIDE_OUT_MS)
+  const pickerKey = addExerciseOpen ? 'add' : swapTarget ? `swap:${swapTarget}` : null
+  const pickerExit = useExitingValue(pickerKey, EXERCISE_PICKER_EXIT_MS)
+  const [enteredExerciseId, setEnteredExerciseId] = useState<string | null>(null)
   const { hasSeenTooltip, markTooltipSeen } = useOnboarding()
 
   // Web Push prefs + wake lock (rest-end / hybrid status while backgrounded).
@@ -468,6 +473,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const initSession = useCallback(async () => {
     setLoading(true)
     originalDayIdsRef.current = new Set()
+    setOriginalDayIds(new Set())
     createdThisSessionIdsRef.current = new Set()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/login'); return }
@@ -613,6 +619,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         persistedExtraIds,
       ),
     )
+    setOriginalDayIds(originalDayIdsRef.current)
     let sessionExs = allDayExs.filter(ex => ex.active || loggedExerciseIds.has(ex.id))
     if (sessionExs.length === 0) sessionExs = allDayExs
     sessionExs = mergeSessionExercises(sessionExs, allExsData ?? [], loggedExerciseIds)
@@ -1978,6 +1985,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
     if (editingKey?.startsWith(`${swapTarget}-`)) setEditingKey(null)
 
     setSwapTarget(null)
+    setEnteredExerciseId(newExercise.id)
     showSaveToast(`Swapped in ${newExercise.name}`)
     setWarmupUndo(prev => {
       if (!(swapTarget in prev)) return prev
@@ -2211,7 +2219,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
   function scrollToExercise(id: string) {
     window.setTimeout(() => {
       document.getElementById(`wo-ex-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }, 60)
+    }, EXERCISE_PICKER_EXIT_MS + 40)
   }
 
   async function handleAddExercise(newExercise: Exercise) {
@@ -2237,6 +2245,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       }
       seedExerciseLogs(newExercise, prevBest)
       setAddExerciseOpen(false)
+      setEnteredExerciseId(newExercise.id)
       showSaveToast(`Added ${newExercise.name}`)
       scrollToExercise(newExercise.id)
     } finally {
@@ -2700,7 +2709,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
   // counting — during an active rest countdown, so a hint never lands over a
   // modal or distracts mid-rest. A coordinator inside the hook shows one at a
   // time so eligible hints queue rather than stack.
-  const anyModalOpen = !!plateCalcTarget || !!swapTarget || addExerciseOpen || !!completionData || showExitConfirm
+  const anyModalOpen = !!plateCalcTarget || !!pickerExit.data || !!completionData || showExitConfirm
   const restCounting = restTimer.active && !restTimer.paused
   const hintsBlocked = anyModalOpen || restCounting
   const workoutReady = !loading && exercises.length > 0
@@ -2851,15 +2860,16 @@ export default function ActiveWorkout({ day }: { day: string }) {
         />
       )}
 
-      {(swapTarget || addExerciseOpen) && (
-        <ExerciseSwapModal
-          intent={addExerciseOpen ? 'add' : 'swap'}
-          currentExerciseId={swapTarget}
+      {pickerExit.data && (
+        <ExercisePickerSheet
+          intent={pickerExit.data === 'add' ? 'add' : 'swap'}
+          currentExerciseId={pickerExit.data === 'add' ? null : pickerExit.data.slice('swap:'.length)}
           day={day}
           allExercises={allExercises}
           currentExercises={exercises}
-          onSelect={addExerciseOpen ? handleAddExercise : handleSwapExercise}
-          onCreate={addExerciseOpen ? createAndAddExercise : createAndSwapExercise}
+          closing={pickerExit.closing}
+          onSelect={pickerExit.data === 'add' ? handleAddExercise : handleSwapExercise}
+          onCreate={pickerExit.data === 'add' ? createAndAddExercise : createAndSwapExercise}
           onClose={() => {
             setSwapTarget(null)
             setAddExerciseOpen(false)
@@ -3328,7 +3338,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
             })}
             <button
               type="button"
-              className="wo-jump-item press"
+              className="wo-jump-item press wo-dashed-add"
               data-haptic="light"
               onClick={() => {
                 setSwapTarget(null)
@@ -3467,8 +3477,12 @@ export default function ActiveWorkout({ day }: { day: string }) {
               editingKey={editingKey}
               onCheck={handleCheck}
               onUpdate={updateLog}
-              onSwap={() => setSwapTarget(ex.id)}
-              canRemove={isSessionExtra(ex.id, originalDayIdsRef.current) && exercises.length > 1}
+              className={enteredExerciseId === ex.id ? 'swap-in' : undefined}
+              onSwap={() => {
+                setAddExerciseOpen(false)
+                setSwapTarget(ex.id)
+              }}
+              canRemove={isSessionExtra(ex.id, originalDayIds) && exercises.length > 1}
               onRemove={() => { void handleRemoveExercise(ex.id) }}
               onSkipSet={handleSkipSet}
               onUnskipSet={handleUnskipSet}
@@ -3489,7 +3503,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
 
           <button
             type="button"
-            className="press"
+            className="press wo-dashed-add"
             data-haptic="light"
             onClick={() => {
               setSwapTarget(null)
@@ -3509,7 +3523,6 @@ export default function ActiveWorkout({ day }: { day: string }) {
               fontWeight: 600,
               letterSpacing: '0.5px',
               cursor: 'pointer',
-              transition: 'border-color 150ms ease, color 150ms ease',
             }}
           >
             + ADD EXERCISE
@@ -3701,6 +3714,7 @@ interface ExerciseCardProps {
     overrides?: { note?: string; rpe?: string },
   ) => void
   onOpenPlateCalc: (key: string, current: number) => void
+  className?: string
 }
 
 function ExerciseCard({
@@ -3710,6 +3724,7 @@ function ExerciseCard({
   onSkipExercise, onUnskipExercise,
   onToggleWarmup, onWarmupRamp, onUndoWarmupRamp, canUndoWarmup, onAddSet, onStartEdit, onSaveEdit, onPersistMeta,
   onOpenPlateCalc,
+  className,
 }: ExerciseCardProps) {
   const { unitLabel, fmt, toDisplay } = useUnit()
   const warmupPercents = readWarmupPercents()
@@ -3737,7 +3752,7 @@ function ExerciseCard({
   }, [warmupHelpOpen])
 
   return (
-    <div id={`wo-ex-${exercise.id}`} style={{
+    <div id={`wo-ex-${exercise.id}`} className={className} style={{
       backgroundColor: 'var(--surface)',
       border: `1px solid ${anySkipped ? 'rgba(239,68,68,0.2)' : 'var(--border)'}`,
       borderRadius: '12px',
@@ -3780,19 +3795,13 @@ function ExerciseCard({
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
             {/* Skip/Undo exercise button */}
             <button
+              type="button"
+              className="wo-ghost-btn"
               onClick={() => allSkipped ? onUnskipExercise(exercise.id) : onSkipExercise(exercise.id)}
               title={allSkipped ? 'Undo skip' : 'Skip exercise'}
               aria-label={allSkipped ? `Undo skip on ${exercise.name}` : `Skip ${exercise.name}`}
               data-haptic="light"
-              style={{
-                position: 'relative',
-                background: 'none', border: 'none', cursor: 'pointer',
-                padding: '2px 6px', opacity: 0.5,
-                display: 'flex', alignItems: 'center', gap: '3px',
-                borderRadius: '4px',
-              }}
-              onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
-              onMouseLeave={e => (e.currentTarget.style.opacity = '0.5')}
+              style={{ padding: '2px 6px', gap: '3px' }}
             >
               {allSkipped ? (
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent-text)' }}>
@@ -3815,20 +3824,14 @@ function ExerciseCard({
 
             {/* Swap button */}
             <button
+              type="button"
+              className="wo-ghost-btn"
               data-onboard={firstExercise ? 'aw-swap' : undefined}
               data-haptic="light"
               onClick={onSwap}
               title="Swap exercise"
               aria-label={`Swap ${exercise.name} for another exercise`}
-              style={{
-                position: 'relative',
-                background: 'none', border: 'none', cursor: 'pointer',
-                padding: '2px', flexShrink: 0,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                opacity: 0.5,
-              }}
-              onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
-              onMouseLeave={e => (e.currentTarget.style.opacity = '0.5')}
+              style={{ padding: '2px', flexShrink: 0 }}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-secondary)' }}>
                 <polyline points="17 1 21 5 17 9"/>
@@ -3840,19 +3843,12 @@ function ExerciseCard({
             {canRemove && (
               <button
                 type="button"
+                className="wo-ghost-btn"
                 data-haptic="medium"
                 onClick={onRemove}
                 title="Remove from this workout"
                 aria-label={`Remove ${exercise.name} from this workout`}
-                style={{
-                  position: 'relative',
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  padding: '2px 6px', opacity: 0.5,
-                  display: 'flex', alignItems: 'center', gap: '3px',
-                  borderRadius: '4px',
-                }}
-                onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
-                onMouseLeave={e => (e.currentTarget.style.opacity = '0.5')}
+                style={{ padding: '2px 6px', gap: '3px' }}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--danger)' }}>
                   <polyline points="3 6 5 6 21 6"/>
@@ -4094,6 +4090,8 @@ function ExerciseCard({
             </svg>
           </button>
           <button
+            type="button"
+            className="press wo-dashed-add"
             data-onboard={firstExercise ? 'aw-addset' : undefined}
             data-haptic="light"
             onClick={onAddSet}
@@ -4111,7 +4109,6 @@ function ExerciseCard({
               fontWeight: 600,
               letterSpacing: '0.5px',
               cursor: 'pointer',
-              transition: 'border-color 150ms ease, color 150ms ease',
             }}
           >
             + ADD SET
@@ -4138,518 +4135,6 @@ function ExerciseCard({
   )
 }
 
-// ─── Exercise Swap Modal ───────────────────────────────────────────────────────
-
-interface ExerciseSwapModalProps {
-  intent: 'swap' | 'add'
-  currentExerciseId: string | null
-  day: string
-  allExercises: Exercise[]
-  currentExercises: Exercise[]
-  onSelect: (exercise: Exercise) => void
-  onCreate: (name: string, sets: number, reps: string, weightTarget: number | null) => Promise<Exercise | null>
-  onClose: () => void
-}
-
-function ExerciseSwapModal({
-  intent, currentExerciseId, day, allExercises, currentExercises, onSelect, onCreate, onClose,
-}: ExerciseSwapModalProps) {
-  const { unitLabel, fromDisplay } = useUnit()
-  const [query, setQuery] = useState('')
-  // 'search' lists existing exercises; 'create' is the inline new-exercise form
-  // reached when the one you want isn't in any of your days yet.
-  const [mode, setMode] = useState<'search' | 'create'>('search')
-  const [formName, setFormName] = useState('')
-  const [formSets, setFormSets] = useState('3')
-  const [formReps, setFormReps] = useState('8-12')
-  const [formWeight, setFormWeight] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const keyboardInset = useKeyboardInset()
-
-  const available = intent === 'add'
-    ? allExercises.filter(ex => !currentExercises.find(ce => ce.id === ex.id))
-    : allExercises.filter(
-        ex => ex.id === currentExerciseId || !currentExercises.find(ce => ce.id === ex.id),
-      )
-  const q = query.trim().toLowerCase()
-  const filtered = q ? available.filter(ex => ex.name.toLowerCase().includes(q)) : available
-  const alreadyInSession = intent === 'add' && q
-    ? currentExercises.filter(ex => ex.name.toLowerCase().includes(q))
-    : []
-
-  const dayTypes = [...new Set(filtered.map(e => e.day_type))].sort()
-  const grouped: Record<string, Exercise[]> = {}
-  for (const dt of dayTypes) {
-    grouped[dt] = filtered.filter(e => e.day_type === dt)
-  }
-
-  // Offer to create only when what's typed doesn't already exist anywhere in the
-  // catalog (case-insensitive) — no point minting a duplicate of something
-  // that's already selectable in the list.
-  const trimmedQuery = query.trim()
-  const exactExists = allExercises.some(
-    ex => ex.name.trim().toLowerCase() === trimmedQuery.toLowerCase()
-  )
-  const canOfferCreate = trimmedQuery.length > 0 && !exactExists
-
-  function openCreate() {
-    setFormName(trimmedQuery)
-    setFormSets('3')
-    setFormReps('8-12')
-    setFormWeight('')
-    setError('')
-    setMode('create')
-  }
-
-  async function submitCreate() {
-    if (saving) return
-    const name = formName.trim()
-    if (!name) { setError('Exercise name is required.'); return }
-    const sets = parseInt(formSets, 10)
-    if (!sets || sets < 1 || sets > 20) { setError('Sets must be between 1 and 20.'); return }
-    if (!formReps.trim()) { setError('Reps is required.'); return }
-    let weightTarget: number | null = null
-    if (formWeight.trim()) {
-      const parsed = parseFloat(formWeight)
-      if (!Number.isFinite(parsed) || parsed < 0) {
-        setError(`Default weight must be 0 or more ${unitLabel}.`)
-        return
-      }
-      weightTarget = fromDisplay(parsed)
-    }
-    // Same duplicate guard WorkoutManager enforces: unique name within a day.
-    const dupInDay = allExercises.some(
-      ex => ex.day_type === day && ex.name.trim().toLowerCase() === name.toLowerCase()
-    )
-    if (dupInDay) { setError('An exercise with this name already exists for this day.'); return }
-
-    setSaving(true)
-    setError('')
-    const created = await onCreate(name, sets, formReps.trim(), weightTarget)
-    if (!created) {
-      setSaving(false)
-      setError('Could not create exercise. Check your connection and try again.')
-      return
-    }
-    // On success the parent swaps it in and closes this sheet — nothing else to do.
-  }
-
-  // On iOS the keyboard shrinks only the visual viewport, so a fixed
-  // bottom-anchored sheet stays pinned behind it. Lift the sheet by the keyboard
-  // height (via backdrop padding) and cap its height to what's still visible, so
-  // the search field and results — or the create form — stay above the keyboard.
-  const lift = keyboardInset
-  const sheetMaxHeight = lift > 0 ? `calc(92dvh - ${lift}px)` : '72vh'
-
-  return (
-    <div
-      style={{
-        position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)',
-        zIndex: 300, display: 'flex', alignItems: 'flex-end',
-        paddingBottom: lift > 0 ? `${lift}px` : 0,
-        transition: 'padding-bottom 180ms ease',
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          width: '100%', backgroundColor: 'var(--surface)',
-          borderRadius: '16px 16px 0 0',
-          maxHeight: sheetMaxHeight, display: 'flex', flexDirection: 'column',
-          border: '1px solid var(--border)', borderBottom: 'none',
-        }}
-        onClick={e => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div style={{
-          padding: '20px 16px 14px',
-          borderBottom: '1px solid var(--border)',
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          gap: '8px',
-          flexShrink: 0,
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0 }}>
-            {mode === 'create' && (
-              <button
-                onClick={() => { setMode('search'); setError('') }}
-                aria-label="Back to search"
-                style={{
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  width: '32px', height: '32px', marginLeft: '-6px', flexShrink: 0,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}
-              >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-secondary)' }}>
-                  <polyline points="15 18 9 12 15 6" />
-                </svg>
-              </button>
-            )}
-            <h2 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '22px', color: 'var(--text-primary)', letterSpacing: '1px', fontWeight: 'normal', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {mode === 'create' ? 'NEW EXERCISE' : intent === 'add' ? 'ADD EXERCISE' : 'SWAP EXERCISE'}
-            </h2>
-          </div>
-          <button
-            onClick={onClose}
-            aria-label={intent === 'add' ? 'Close add dialog' : 'Close swap dialog'}
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              width: '44px', height: '44px', flexShrink: 0,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-secondary)' }}>
-              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-            </svg>
-          </button>
-        </div>
-
-        {mode === 'search' ? (
-          <>
-            {/* Search */}
-            <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-              <input
-                type="search"
-                value={query}
-                onChange={e => setQuery(e.target.value)}
-                placeholder="Search or add an exercise..."
-                aria-label="Search exercises"
-                autoFocus
-                style={{
-                  width: '100%',
-                  backgroundColor: 'var(--surface-elevated)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 'var(--radius-sm)',
-                  color: 'var(--text-primary)',
-                  fontFamily: 'var(--font-sans)',
-                  fontSize: '16px', // ≥16px — anything smaller makes iOS auto-zoom on focus
-                  padding: '10px 12px',
-                  outline: 'none',
-                }}
-              />
-            </div>
-
-            {/* List */}
-            <div style={{ overflowY: 'auto', flex: 1, paddingBottom: 'env(safe-area-inset-bottom)' }}>
-              {/* Create affordance — shown as soon as the typed name is new, so
-                  the user is never stuck when what they want isn't listed. */}
-              {canOfferCreate && (
-                <button
-                  type="button"
-                  data-haptic="light"
-                  onClick={openCreate}
-                  style={{
-                    width: '100%', textAlign: 'left',
-                    background: 'var(--accent-wash)',
-                    border: 'none',
-                    borderBottom: '1px solid var(--border)',
-                    padding: '14px 16px',
-                    cursor: 'pointer',
-                    display: 'flex', alignItems: 'center', gap: '12px',
-                  }}
-                >
-                  <span style={{
-                    width: '28px', height: '28px', borderRadius: '9999px', flexShrink: 0,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    backgroundColor: 'var(--accent)', color: 'var(--on-accent)',
-                  }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-                    </svg>
-                  </span>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{
-                      fontSize: '15px', fontWeight: 600, color: 'var(--accent-text)',
-                      fontFamily: "'DM Sans', sans-serif",
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    }}>
-                      Create “{trimmedQuery}”
-                    </div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
-                      New exercise for this day
-                    </div>
-                  </div>
-                </button>
-              )}
-
-              {dayTypes.length === 0 && !canOfferCreate && alreadyInSession.length === 0 && (
-                <div style={{ padding: '24px 16px', color: 'var(--text-muted)', fontSize: '13px', textAlign: 'center', lineHeight: 1.5 }}>
-                  {intent === 'add' && !q && available.length === 0
-                    ? 'Every exercise is already in this workout. Type a name to create a new one.'
-                    : 'No matches.'}
-                </div>
-              )}
-              {alreadyInSession.length > 0 && (
-                <div>
-                  <div style={{
-                    padding: '12px 16px 6px',
-                    fontSize: '10px', color: 'var(--text-muted)',
-                    textTransform: 'uppercase', letterSpacing: '1.5px',
-                  }}>
-                    Already in this workout
-                  </div>
-                  {alreadyInSession.map(ex => (
-                    <div
-                      key={ex.id}
-                      style={{
-                        width: '100%',
-                        borderBottom: '1px solid var(--border)',
-                        padding: '14px 16px',
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        gap: '12px',
-                        opacity: 0.7,
-                      }}
-                    >
-                      <div>
-                        <div style={{
-                          fontSize: '15px', fontWeight: 600,
-                          color: 'var(--text-secondary)',
-                          fontFamily: "'DM Sans', sans-serif",
-                          marginBottom: '2px',
-                        }}>
-                          {ex.name}
-                        </div>
-                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
-                          {ex.sets_target} sets × {ex.reps_target} reps
-                        </div>
-                      </div>
-                      <span style={{
-                        fontSize: '10px', color: 'var(--text-muted)',
-                        backgroundColor: 'var(--surface-elevated)',
-                        border: '1px solid var(--border)',
-                        borderRadius: '9999px', padding: '2px 8px',
-                        fontFamily: "'DM Sans', sans-serif", fontWeight: 600,
-                        flexShrink: 0,
-                      }}>
-                        ADDED
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {dayTypes.map(dayType => {
-                const exs = grouped[dayType]
-                if (!exs || exs.length === 0) return null
-                return (
-                  <div key={dayType}>
-                    <div style={{
-                      padding: '12px 16px 6px',
-                      fontSize: '10px', color: 'var(--text-muted)',
-                      textTransform: 'uppercase', letterSpacing: '1.5px',
-                    }}>
-                      {dayType.replace(/-/g, ' ').toUpperCase()}
-                    </div>
-                    {exs.map(ex => {
-                      const isCurrent = intent === 'swap' && ex.id === currentExerciseId
-                      return (
-                        <button
-                          key={ex.id}
-                          data-haptic={isCurrent ? undefined : 'light'}
-                          onClick={() => !isCurrent && onSelect(ex)}
-                          style={{
-                            position: 'relative',
-                            width: '100%', textAlign: 'left',
-                            background: isCurrent ? 'var(--accent-wash)' : 'none',
-                            border: 'none',
-                            borderBottom: '1px solid var(--border)',
-                            padding: '14px 16px',
-                            cursor: isCurrent ? 'default' : 'pointer',
-                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                            gap: '12px',
-                          }}
-                        >
-                          <div>
-                            <div style={{
-                              fontSize: '15px', fontWeight: 600,
-                              color: isCurrent ? 'var(--accent-text)' : 'var(--text-primary)',
-                              fontFamily: "'DM Sans', sans-serif",
-                              marginBottom: '2px',
-                            }}>
-                              {ex.name}
-                            </div>
-                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
-                              {ex.sets_target} sets × {ex.reps_target} reps
-                            </div>
-                          </div>
-                          {isCurrent && (
-                            <span style={{
-                              fontSize: '10px', color: 'var(--accent-text)',
-                              backgroundColor: 'var(--accent-wash)',
-                              border: '1px solid var(--accent-border)',
-                              borderRadius: '9999px', padding: '2px 8px',
-                              fontFamily: "'DM Sans', sans-serif", fontWeight: 600,
-                              flexShrink: 0,
-                            }}>
-                              CURRENT
-                            </span>
-                          )}
-                        </button>
-                      )
-                    })}
-                  </div>
-                )
-              })}
-            </div>
-          </>
-        ) : (
-          /* ── Create form ──────────────────────────────────────────────────── */
-          <div style={{ overflowY: 'auto', flex: 1, paddingBottom: 'env(safe-area-inset-bottom)' }}>
-            <div style={{ padding: '18px 16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label htmlFor="swap-new-name" style={{
-                  fontSize: '10px', letterSpacing: 'var(--tracking-label)',
-                  color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 500,
-                }}>
-                  Name
-                </label>
-                <input
-                  id="swap-new-name"
-                  type="text"
-                  value={formName}
-                  onChange={e => { setFormName(e.target.value); if (error) setError('') }}
-                  placeholder="e.g. Incline Dumbbell Press"
-                  autoFocus={formName === ''}
-                  style={{
-                    width: '100%',
-                    backgroundColor: 'var(--surface-elevated)',
-                    border: '1px solid var(--border-strong)',
-                    borderRadius: 'var(--radius-sm)',
-                    color: 'var(--text-primary)',
-                    fontFamily: 'var(--font-sans)',
-                    fontSize: '16px',
-                    padding: '11px 12px',
-                    outline: 'none',
-                  }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', gap: '12px' }}>
-                <div style={{ flex: '0 0 96px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label htmlFor="swap-new-sets" style={{
-                    fontSize: '10px', letterSpacing: 'var(--tracking-label)',
-                    color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 500,
-                  }}>
-                    Sets
-                  </label>
-                  <input
-                    id="swap-new-sets"
-                    type="number"
-                    inputMode="numeric"
-                    value={formSets}
-                    onChange={e => { setFormSets(e.target.value); if (error) setError('') }}
-                    onFocus={e => e.target.select()}
-                    min={1}
-                    max={20}
-                    style={{
-                      width: '100%',
-                      backgroundColor: 'var(--surface-elevated)',
-                      border: '1px solid var(--border-strong)',
-                      borderRadius: 'var(--radius-sm)',
-                      color: 'var(--text-primary)',
-                      fontFamily: "'JetBrains Mono', monospace",
-                      fontSize: '16px',
-                      padding: '11px 12px',
-                      textAlign: 'center',
-                      outline: 'none',
-                    }}
-                  />
-                </div>
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label htmlFor="swap-new-reps" style={{
-                    fontSize: '10px', letterSpacing: 'var(--tracking-label)',
-                    color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 500,
-                  }}>
-                    Reps
-                  </label>
-                  <input
-                    id="swap-new-reps"
-                    type="text"
-                    value={formReps}
-                    onChange={e => { setFormReps(e.target.value); if (error) setError('') }}
-                    onFocus={e => e.target.select()}
-                    placeholder="e.g. 8-12"
-                    style={{
-                      width: '100%',
-                      backgroundColor: 'var(--surface-elevated)',
-                      border: '1px solid var(--border-strong)',
-                      borderRadius: 'var(--radius-sm)',
-                      color: 'var(--text-primary)',
-                      fontFamily: 'var(--font-sans)',
-                      fontSize: '16px',
-                      padding: '11px 12px',
-                      outline: 'none',
-                    }}
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label htmlFor="swap-new-weight" style={{
-                  fontSize: '10px', letterSpacing: 'var(--tracking-label)',
-                  color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 500,
-                }}>
-                  Default weight ({unitLabel}) — optional
-                </label>
-                <input
-                  id="swap-new-weight"
-                  type="number"
-                  inputMode="decimal"
-                  value={formWeight}
-                  onChange={e => { setFormWeight(e.target.value); if (error) setError('') }}
-                  onFocus={e => e.target.select()}
-                  placeholder="Prefills a fresh set"
-                  style={{
-                    width: '100%',
-                    backgroundColor: 'var(--surface-elevated)',
-                    border: '1px solid var(--border-strong)',
-                    borderRadius: 'var(--radius-sm)',
-                    color: 'var(--text-primary)',
-                    fontFamily: "'JetBrains Mono', monospace",
-                    fontSize: '16px',
-                    padding: '11px 12px',
-                    outline: 'none',
-                  }}
-                />
-              </div>
-
-              <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                Added to your <span style={{ color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{day.replace(/-/g, ' ')}</span> day
-                {intent === 'add' ? ' and appended to this workout.' : ' and swapped in for this workout.'}
-              </div>
-
-              {error && (
-                <div role="alert" style={{ fontSize: '13px', color: 'var(--danger)' }}>
-                  {error}
-                </div>
-              )}
-
-              <button
-                type="button"
-                className="press"
-                data-haptic="medium"
-                onClick={submitCreate}
-                disabled={saving}
-                style={{
-                  position: 'relative',
-                  width: '100%', height: '52px',
-                  backgroundColor: 'var(--accent)', color: 'var(--on-accent)',
-                  border: 'none', borderRadius: 'var(--radius-md)',
-                  fontFamily: "'Bebas Neue', sans-serif",
-                  fontSize: '20px', letterSpacing: '1px',
-                  cursor: saving ? 'default' : 'pointer',
-                  opacity: saving ? 0.6 : 1,
-                  transition: 'opacity 150ms ease',
-                }}
-              >
-                {saving ? 'CREATING…' : intent === 'add' ? 'CREATE & ADD' : 'CREATE & SWAP IN'}
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
 
 // ─── Set Row ───────────────────────────────────────────────────────────────────
 

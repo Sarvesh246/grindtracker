@@ -4,6 +4,7 @@ import {
   useEffect,
   useId,
   useRef,
+  useState,
   type CSSProperties,
   type ReactNode,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -28,11 +29,15 @@ export default function Dialog({
   children,
   style,
   panelStyle,
+  className,
+  panelClassName,
   role = 'dialog',
   initialFocusRef,
   closeOnBackdrop = true,
   zIndex = 300,
   avoidKeyboard = false,
+  closing = false,
+  focusPanel = false,
 }: {
   open: boolean
   onClose?: () => void
@@ -43,6 +48,8 @@ export default function Dialog({
   children: ReactNode
   style?: CSSProperties
   panelStyle?: CSSProperties
+  className?: string
+  panelClassName?: string
   role?: 'dialog' | 'alertdialog'
   initialFocusRef?: React.RefObject<HTMLElement | null>
   closeOnBackdrop?: boolean
@@ -52,14 +59,34 @@ export default function Dialog({
    * `--grind-keyboard-inset` CSS var on the panel, so callers can shrink their
    * own max-height cap via `calc(Ndvh - var(--grind-keyboard-inset))` instead
    * of each hand-rolling `useKeyboardInset()` + the same padding/cap formula.
+   *
+   * Inset is already spring-smoothed in `useKeyboardInset` — do not add a CSS
+   * padding transition on top or the sheet lags then overshoots the keyboard.
    */
   avoidKeyboard?: boolean
+  /**
+   * Play an exit animation while staying mounted. Freezes the keyboard lift so
+   * a dismissing keyboard doesn't drop the sheet mid-slide, and ignores further
+   * dismiss gestures.
+   */
+  closing?: boolean
+  /** Focus the panel itself instead of the first input — avoids popping the
+   *  keyboard before the user has seen the sheet (iOS PWA). */
+  focusPanel?: boolean
 }) {
   const panelRef = useRef<HTMLDivElement>(null)
-  const keyboardInset = useKeyboardInset()
+  const liveInset = useKeyboardInset()
+  const [freeze, setFreeze] = useState<{ on: boolean; inset: number }>({ on: false, inset: 0 })
+  if (closing && !freeze.on) {
+    setFreeze({ on: true, inset: liveInset })
+  } else if (!closing && freeze.on) {
+    setFreeze({ on: false, inset: 0 })
+  }
+  const keyboardInset = freeze.on ? freeze.inset : liveInset
   const previouslyFocused = useRef<HTMLElement | null>(null)
   const autoTitleId = useId()
   const titleId = labelledBy ?? (title ? autoTitleId : undefined)
+  const canDismiss = !!onClose && !closing
 
   // Scroll lock on the app main scroller + body.
   useEffect(() => {
@@ -79,7 +106,7 @@ export default function Dialog({
 
   // Initial focus.
   useEffect(() => {
-    if (!open) return
+    if (!open || closing) return
     const t = window.setTimeout(() => {
       if (initialFocusRef?.current) {
         initialFocusRef.current.focus()
@@ -87,17 +114,21 @@ export default function Dialog({
       }
       const panel = panelRef.current
       if (!panel) return
+      if (focusPanel) {
+        panel.focus()
+        return
+      }
       const first = panel.querySelector<HTMLElement>(FOCUSABLE)
       ;(first ?? panel).focus()
     }, 10)
     return () => window.clearTimeout(t)
-  }, [open, initialFocusRef])
+  }, [open, closing, initialFocusRef, focusPanel])
 
   const onKeyDown = useCallback(
     (e: ReactKeyboardEvent) => {
-      if (e.key === 'Escape' && onClose) {
+      if (e.key === 'Escape' && canDismiss) {
         e.stopPropagation()
-        onClose()
+        onClose?.()
         return
       }
       if (e.key !== 'Tab' || !panelRef.current) return
@@ -119,7 +150,7 @@ export default function Dialog({
         first.focus()
       }
     },
-    [onClose],
+    [canDismiss, onClose],
   )
 
   if (!open) return null
@@ -128,9 +159,12 @@ export default function Dialog({
   return createPortal(
     <div
       role="presentation"
+      className={className}
+      data-closing={closing ? 'true' : undefined}
+      data-keyboard={avoidKeyboard && keyboardInset > 8 ? 'true' : undefined}
       onClick={e => {
-        if (!closeOnBackdrop || !onClose) return
-        if (e.target === e.currentTarget) onClose()
+        if (!closeOnBackdrop || !canDismiss) return
+        if (e.target === e.currentTarget) onClose?.()
       }}
       style={{
         position: 'fixed',
@@ -140,9 +174,8 @@ export default function Dialog({
         display: 'flex',
         alignItems: 'flex-end',
         justifyContent: 'center',
-        ...(avoidKeyboard
-          ? { paddingBottom: keyboardInset, transition: 'padding-bottom 180ms ease' }
-          : null),
+        pointerEvents: closing ? 'none' : undefined,
+        ...(avoidKeyboard ? { paddingBottom: keyboardInset } : null),
         ...style,
       }}
     >
@@ -153,12 +186,14 @@ export default function Dialog({
         aria-labelledby={titleId}
         aria-describedby={describedBy}
         tabIndex={-1}
+        className={panelClassName}
         onKeyDown={onKeyDown}
         onClick={e => e.stopPropagation()}
         style={{
           width: '100%',
           maxWidth: '480px',
           outline: 'none',
+          overscrollBehavior: 'contain',
           ...(avoidKeyboard
             ? ({ '--grind-keyboard-inset': `${keyboardInset}px` } as CSSProperties)
             : null),
