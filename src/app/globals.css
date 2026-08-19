@@ -842,7 +842,10 @@ body.coach-fab-dragging .bottom-nav [data-haptic-overlay] {
   display: flex;
   flex-direction: column;
   width: 100%;
-  max-height: calc(88dvh - var(--grind-keyboard-inset, 0px));
+  /* Cap to the visible frame above the keyboard. Do NOT also subtract the
+     inset from 88dvh — the backdrop already lifts by that amount, and
+     `88dvh - inset` on a short iPhone left only a sliver for search + CTA. */
+  max-height: min(88dvh, calc(100dvh - var(--grind-keyboard-inset, 0px) - 8px));
   background-color: var(--surface);
   border: 1px solid var(--border);
   border-bottom: none;
@@ -868,6 +871,10 @@ body.coach-fab-dragging .bottom-nav [data-haptic-overlay] {
   margin: 10px auto 0;
   flex-shrink: 0;
   pointer-events: none;
+  transition: margin 150ms ease;
+}
+.grind-sheet-backdrop[data-keyboard='true'] .grind-sheet__grabber {
+  margin-top: 6px;
 }
 .grind-sheet__header {
   touch-action: none;
@@ -876,6 +883,60 @@ body.coach-fab-dragging .bottom-nav [data-haptic-overlay] {
 }
 .grind-sheet__header:active {
   cursor: grabbing;
+}
+.grind-sheet__search {
+  flex-shrink: 0;
+  padding: 8px 16px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.grind-sheet__search-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.grind-sheet__search-field input {
+  width: 100%;
+  background-color: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  padding: 10px 44px 10px 12px;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.grind-sheet__search-field input:focus {
+  border-color: var(--accent-border-strong);
+}
+.grind-sheet__search-clear {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 44px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.grind-sheet__create-offer {
+  flex-shrink: 0;
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: var(--accent-wash);
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  cursor: pointer;
 }
 .grind-sheet__list {
   overflow-y: auto;
@@ -889,7 +950,18 @@ body.coach-fab-dragging .bottom-nav [data-haptic-overlay] {
   /* Keyboard already covers the home indicator — extra safe-area is a gap. */
   padding-bottom: 8px;
 }
-.grind-sheet input[type='search'] {
+.grind-sheet__footer {
+  flex-shrink: 0;
+  padding: 10px 16px max(12px, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+.grind-sheet-backdrop[data-keyboard='true'] .grind-sheet__footer {
+  padding-bottom: 10px;
+}
+.grind-sheet input[type='search'],
+.grind-sheet input[type='text'],
+.grind-sheet input[type='number'] {
   appearance: none;
   -webkit-appearance: none;
 }

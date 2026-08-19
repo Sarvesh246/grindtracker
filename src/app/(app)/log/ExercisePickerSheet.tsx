@@ -4,6 +4,7 @@ import { useEffect, useId, useMemo, useRef, useState, type PointerEvent as React
 import Dialog from '@/components/ui/Dialog'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { sheetShouldDismiss } from '@/lib/utils/sheetDismiss'
+import { resolveSearchSubmit } from '@/lib/utils/exercisePickerSearch'
 import type { Exercise } from '@/lib/types'
 
 /** Matches `.grind-sheet--closing` / backdrop fade. Keep in sync with CSS. */
@@ -67,6 +68,7 @@ export default function ExercisePickerSheet({
     active: boolean
   } | null>(null)
 
+  const searchInputRef = useRef<HTMLInputElement>(null)
   const [query, setQuery] = useState('')
   const [mode, setMode] = useState<'search' | 'create'>('search')
   const [formName, setFormName] = useState('')
@@ -118,12 +120,23 @@ export default function ExercisePickerSheet({
   }
 
   function openCreate() {
+    dismissKeyboard()
     setFormName(trimmedQuery)
     setFormSets('3')
     setFormReps('8-12')
     setFormWeight('')
     setError('')
     setMode('create')
+  }
+
+  function submitSearch() {
+    const action = resolveSearchSubmit(query, available, canOfferCreate)
+    if (action.type === 'pick') {
+      const ex = available.find(e => e.id === action.id)
+      if (ex) pick(ex)
+      return
+    }
+    if (action.type === 'create') openCreate()
   }
 
   function pick(ex: Exercise) {
@@ -161,14 +174,6 @@ export default function ExercisePickerSheet({
       setError('Could not create exercise. Check your connection and try again.')
     }
   }
-
-  useEffect(() => {
-    if (mode !== 'create' || closing) return
-    const t = window.setTimeout(() => {
-      document.getElementById('swap-new-name')?.focus()
-    }, 40)
-    return () => window.clearTimeout(t)
-  }, [mode, closing])
 
   function onHeaderPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
     if (closing || saving) return
@@ -335,76 +340,79 @@ export default function ExercisePickerSheet({
 
         {mode === 'search' ? (
           <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1 }}>
-            <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-              <input
-                type="search"
-                value={query}
-                onChange={e => setQuery(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key !== 'Enter') return
-                  e.preventDefault()
-                  if (filtered.length === 1 && filtered[0] && filtered[0].id !== currentExerciseId) {
-                    pick(filtered[0])
-                    return
-                  }
-                  if (canOfferCreate) openCreate()
-                }}
-                placeholder="Search or add an exercise..."
-                aria-label="Search exercises"
-                enterKeyHint="search"
-                autoCorrect="off"
-                autoCapitalize="words"
-                spellCheck={false}
-                style={{
-                  width: '100%',
-                  backgroundColor: 'var(--surface-elevated)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 'var(--radius-sm)',
-                  color: 'var(--text-primary)',
-                  fontFamily: 'var(--font-sans)',
-                  fontSize: '16px',
-                  padding: '10px 12px',
-                  outline: 'none',
-                }}
-              />
+            <div className="grind-sheet__search">
+              <div className="grind-sheet__search-field">
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  inputMode="search"
+                  value={query}
+                  onChange={e => setQuery(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key !== 'Enter') return
+                    e.preventDefault()
+                    submitSearch()
+                  }}
+                  placeholder="Search or add an exercise..."
+                  aria-label="Search exercises"
+                  enterKeyHint="go"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="words"
+                  spellCheck={false}
+                />
+                {query.length > 0 && (
+                  <button
+                    type="button"
+                    className="grind-sheet__search-clear press"
+                    data-haptic="light"
+                    aria-label="Clear search"
+                    onClick={() => {
+                      setQuery('')
+                      searchInputRef.current?.focus()
+                    }}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                      <circle cx="12" cy="12" r="9" />
+                      <line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" />
+                    </svg>
+                  </button>
+                )}
+              </div>
             </div>
 
-            <div className="grind-sheet__list">
-              {canOfferCreate && (
-                <button
-                  type="button"
-                  className="press grind-sheet__row"
-                  data-haptic="light"
-                  onClick={openCreate}
-                  style={{
-                    background: 'var(--accent-wash)',
-                    justifyContent: 'flex-start',
-                  }}
-                >
-                  <span style={{
-                    width: '28px', height: '28px', borderRadius: '9999px', flexShrink: 0,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    backgroundColor: 'var(--accent)', color: 'var(--on-accent)',
+            {canOfferCreate && (
+              <button
+                type="button"
+                className="press grind-sheet__create-offer"
+                data-haptic="light"
+                onClick={openCreate}
+              >
+                <span style={{
+                  width: '28px', height: '28px', borderRadius: '9999px', flexShrink: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: 'var(--accent)', color: 'var(--on-accent)',
+                }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                </span>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{
+                    fontSize: '15px', fontWeight: 600, color: 'var(--accent-text)',
+                    fontFamily: "'DM Sans', sans-serif",
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                   }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-                    </svg>
-                  </span>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{
-                      fontSize: '15px', fontWeight: 600, color: 'var(--accent-text)',
-                      fontFamily: "'DM Sans', sans-serif",
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    }}>
-                      Create “{trimmedQuery}”
-                    </div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
-                      New exercise for this day
-                    </div>
+                    Create “{trimmedQuery}”
                   </div>
-                </button>
-              )}
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
+                    New exercise for this day
+                  </div>
+                </div>
+              </button>
+            )}
 
+            <div className="grind-sheet__list">
               {grouped.dayTypes.length === 0 && !canOfferCreate && alreadyInSession.length === 0 && (
                 <div style={{ padding: '24px 16px', color: 'var(--text-muted)', fontSize: '13px', textAlign: 'center', lineHeight: 1.5 }}>
                   {intent === 'add' && !q && available.length === 0
@@ -425,8 +433,13 @@ export default function ExercisePickerSheet({
                   {alreadyInSession.map(ex => (
                     <div
                       key={ex.id}
-                      className="grind-sheet__row"
-                      style={{ cursor: 'default', opacity: 0.7 }}
+                      style={{
+                        padding: '12px 16px',
+                        borderBottom: '1px solid var(--border)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        gap: '12px',
+                        opacity: 0.7,
+                      }}
                     >
                       <div>
                         <div style={{
@@ -513,8 +526,9 @@ export default function ExercisePickerSheet({
             </div>
           </div>
         ) : (
-          <div key="create" className="swap-in grind-sheet__list">
-            <div style={{ padding: '18px 16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <>
+            <div className="swap-in grind-sheet__list">
+            <div style={{ padding: '16px 16px 8px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <label htmlFor="swap-new-name" style={{
                   fontSize: '10px', letterSpacing: 'var(--tracking-label)',
@@ -527,7 +541,9 @@ export default function ExercisePickerSheet({
                   type="text"
                   value={formName}
                   onChange={e => { setFormName(e.target.value); if (error) setError('') }}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void submitCreate() } }}
                   placeholder="e.g. Incline Dumbbell Press"
+                  autoComplete="off"
                   style={{
                     width: '100%',
                     backgroundColor: 'var(--surface-elevated)',
@@ -557,6 +573,7 @@ export default function ExercisePickerSheet({
                     value={formSets}
                     onChange={e => { setFormSets(e.target.value); if (error) setError('') }}
                     onFocus={e => e.target.select()}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); document.getElementById('swap-new-reps')?.focus() } }}
                     min={1}
                     max={20}
                     style={{
@@ -583,9 +600,11 @@ export default function ExercisePickerSheet({
                   <input
                     id="swap-new-reps"
                     type="text"
+                    inputMode="text"
                     value={formReps}
                     onChange={e => { setFormReps(e.target.value); if (error) setError('') }}
                     onFocus={e => e.target.select()}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void submitCreate() } }}
                     placeholder="e.g. 8-12"
                     style={{
                       width: '100%',
@@ -616,6 +635,7 @@ export default function ExercisePickerSheet({
                   value={formWeight}
                   onChange={e => { setFormWeight(e.target.value); if (error) setError('') }}
                   onFocus={e => e.target.select()}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void submitCreate() } }}
                   placeholder="Prefills a fresh set"
                   style={{
                     width: '100%',
@@ -635,13 +655,14 @@ export default function ExercisePickerSheet({
                 Added to your <span style={{ color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{day.replace(/-/g, ' ')}</span> day
                 {intent === 'add' ? ' and appended to this workout.' : ' and swapped in for this workout.'}
               </div>
-
+            </div>
+            </div>
+            <div className="grind-sheet__footer">
               {error && (
-                <div role="alert" style={{ fontSize: '13px', color: 'var(--danger)' }}>
+                <div role="alert" style={{ fontSize: '13px', color: 'var(--danger)', marginBottom: '10px' }}>
                   {error}
                 </div>
               )}
-
               <button
                 type="button"
                 className="press"
@@ -663,7 +684,7 @@ export default function ExercisePickerSheet({
                 {saving ? 'CREATING…' : intent === 'add' ? 'CREATE & ADD' : 'CREATE & SWAP IN'}
               </button>
             </div>
-          </div>
+          </>
         )}
       </div>
     </Dialog>
