@@ -745,9 +745,8 @@ export default function SettingsView({
             height: '32px',
           }}>
             <input
-              type="number"
+              type="text"
               inputMode="numeric"
-              min={0}
               value={restMin}
               onChange={e => commitRest(Number(e.target.value), restSec)}
               aria-label="Default rest minutes"
@@ -759,10 +758,8 @@ export default function SettingsView({
             />
             <span style={{ color: 'var(--text-muted)', fontFamily: "'JetBrains Mono', monospace", fontSize: '14px' }}>:</span>
             <input
-              type="number"
+              type="text"
               inputMode="numeric"
-              min={0}
-              max={59}
               value={String(restSec).padStart(2, '0')}
               onChange={e => commitRest(restMin, Number(e.target.value))}
               aria-label="Default rest seconds"
@@ -871,10 +868,8 @@ export default function SettingsView({
                     padding: '0 8px',
                   }}>
                     <input
-                      type="number"
+                      type="text"
                       inputMode="numeric"
-                      min={5}
-                      max={95}
                       value={p}
                       aria-label={`Warm-up set ${i + 1} percent`}
                       onChange={e => {

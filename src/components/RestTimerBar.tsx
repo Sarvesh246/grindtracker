@@ -115,6 +115,7 @@ export default function RestTimerBar({
 
       <div style={{ display: 'flex', alignItems: 'center', padding: '16px 16px', gap: '10px' }}>
         <button
+          type="button"
           data-haptic="light"
           onClick={() => setOpen(o => !o)}
           aria-label={open ? 'Collapse rest timer' : 'Expand rest timer'}
@@ -174,6 +175,7 @@ export default function RestTimerBar({
         {/* Pause / Resume — hidden once rest hits 0 (flash before unmount). */}
         {!done && (
         <button
+          type="button"
           data-haptic="light"
           onClick={paused ? onResume : onPause}
           aria-label={paused ? 'Resume rest timer' : 'Pause rest timer'}
@@ -209,6 +211,7 @@ export default function RestTimerBar({
         {!done && (
         <div style={{ position: 'relative', flexShrink: 0 }}>
           <button
+            type="button"
             data-onboard="aw-rest-adjust"
             data-haptic="light"
             onClick={() => setAddOpen(o => !o)}
@@ -255,6 +258,7 @@ export default function RestTimerBar({
             >
               {ADJUST_OPTIONS.map(opt => (
                 <button
+                  type="button"
                   key={opt.sec}
                   data-haptic="light"
                   onClick={() => {
@@ -284,6 +288,7 @@ export default function RestTimerBar({
         )}
 
         <button
+          type="button"
           data-haptic="light"
           onClick={onStop}
           aria-label={done ? 'Dismiss rest' : 'Skip rest'}
@@ -308,6 +313,7 @@ export default function RestTimerBar({
 
       {!done && (
       <button
+        type="button"
         data-haptic="light"
         onClick={() => setOpen(o => !o)}
         aria-label={open ? 'Hide default rest options' : 'Show default rest options'}
@@ -372,9 +378,11 @@ export default function RestTimerBar({
             const selected = rest === sec
             return (
               <button
+                type="button"
                 key={sec}
                 data-haptic="light"
                 onClick={() => {
+                  if (selected) return
                   setExerciseRest(exerciseId, sec)
                   if (sessionId) setSessionRest(sessionId, sec)
                   setRest(sec)

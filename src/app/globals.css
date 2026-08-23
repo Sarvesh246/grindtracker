@@ -1077,6 +1077,10 @@ body.coach-fab-dragging .bottom-nav [data-haptic-overlay] {
   transition: grid-template-rows 260ms ease;
 }
 .drawer[data-open='true'] { grid-template-rows: 1fr; }
+/* Closed drawers stay in the DOM (height animation). `inert` should already
+   drop them from the tab order; pointer-events none is the hit-test belt so
+   a leftover haptic overlay / RPE pill can't steal a tap on the next set. */
+.drawer:not([data-open='true']) { pointer-events: none; }
 /* The direct child must carry NO padding: 0fr zeroes its content height only,
    so padding survives the collapse and ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ because overflow clips at the padding
    box ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ leaves a visible sliver of the panel behind. Pad an inner wrapper. */

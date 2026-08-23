@@ -568,7 +568,7 @@ export default function ExercisePickerSheet({
                   </label>
                   <input
                     id="swap-new-sets"
-                    type="number"
+                    type="text"
                     inputMode="numeric"
                     value={formSets}
                     onChange={e => { setFormSets(e.target.value); if (error) setError('') }}
@@ -630,7 +630,7 @@ export default function ExercisePickerSheet({
                 </label>
                 <input
                   id="swap-new-weight"
-                  type="number"
+                  type="text"
                   inputMode="decimal"
                   value={formWeight}
                   onChange={e => { setFormWeight(e.target.value); if (error) setError('') }}

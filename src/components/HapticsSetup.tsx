@@ -11,9 +11,10 @@ import { setupIosViewportHeal } from '@/lib/utils/iosViewportHeal'
  * that starts on a button still scrolls (WebKit switch would otherwise eat
  * it) — skipped for BottomNav/TopNav so tab taps stay instant. Also installs
  * the tap/drag guard so that swipe never activates the control it started on
- * (app chrome excluded from drag-cancel). Also heals iOS PWA visual-viewport
- * pan / vertical tap-offset (Save hitting Add Set) after keyboard, resume,
- * and leftover status-bar desync.
+ * (app chrome excluded from drag-cancel) and so a scroll that started on a
+ * text field blurs it instead of editing. Also heals iOS PWA visual-viewport
+ * pan / vertical tap-offset (Save hitting Add Set, weight field hitting RPE)
+ * after keyboard, resume, and leftover status-bar desync.
  */
 export default function HapticsSetup() {
   useEffect(() => setupHaptics(), [])

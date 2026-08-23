@@ -27,7 +27,10 @@
  *   haptic('light')
  */
 
+import { interactiveHostAtFinger } from '@/lib/utils/iosViewportHeal'
+import { isTextField } from '@/lib/utils/textField'
 import {
+  decideOverlayClick,
   lastFingerPoint,
   pickSmallestContainingHost,
   pointInRect,
@@ -196,28 +199,56 @@ function hostIsAppChrome(host: HTMLElement): boolean {
  * visualViewport / status-bar desync). Finger coords + layout rects stay
  * honest — pick the [data-haptic] host that actually contains the tap.
  */
-function resolveHapticHost(fallback: HTMLElement): HTMLElement {
+function hapticHostIsHidden(node: HTMLElement): boolean {
+  try {
+    if (node.closest('[inert]')) return true
+    const drawer = node.closest('.drawer')
+    if (drawer && drawer.getAttribute('data-open') !== 'true') return true
+  } catch {
+    return false
+  }
+  return false
+}
+
+/**
+ * Native switch hit-testing can land on the control below the finger (iOS PWA
+ * visualViewport / status-bar desync). Finger coords + layout rects stay
+ * honest. Returns null when the finger isn't on this host *or* any other
+ * haptic control — caller must not fire the fallback (that was RPE opening
+ * when the tap was on a weight field).
+ */
+function resolveHapticHost(fallback: HTMLElement): HTMLElement | null {
   const finger = lastFingerPoint()
   if (!finger || typeof document === 'undefined') return fallback
-  // Overlay that actually contains the finger is already the right host —
-  // don't hunt siblings with ±VV-pan candidates (that retargeted Delete → Sign Out).
   const fallbackRect = rectFromDOMRect(fallback.getBoundingClientRect())
-  if (pointInRect(finger, fallbackRect)) return fallback
+  const fingerOnFallback = pointInRect(finger, fallbackRect)
   const vv = typeof window !== 'undefined' ? window.visualViewport : null
-  const points = touchHitCandidates(
-    finger.x,
-    finger.y,
-    vv?.offsetLeft ?? 0,
-    vv?.offsetTop ?? 0,
-  )
+  const offsetLeft = vv?.offsetLeft ?? 0
+  const offsetTop = vv?.offsetTop ?? 0
+  const points = touchHitCandidates(finger.x, finger.y, offsetLeft, offsetTop)
+
   const hosts: HitHost<HTMLElement>[] = []
   for (const node of document.querySelectorAll<HTMLElement>(`[${DATA_HAPTIC}]`)) {
     if (hostIsDisabled(node)) continue
+    if (hapticHostIsHidden(node)) continue
     const r = node.getBoundingClientRect()
     if (r.width < 1 || r.height < 1) continue
     hosts.push({ el: node, rect: rectFromDOMRect(r) })
   }
-  return pickSmallestContainingHost(hosts, points) ?? fallback
+  const otherHaptic = pickSmallestContainingHost(
+    hosts.filter(h => h.el !== fallback),
+    points,
+  )
+  const visual = interactiveHostAtFinger(finger.x, finger.y, offsetLeft, offsetTop)
+  const action = decideOverlayClick({
+    fingerOnFallback,
+    otherHapticAtFinger: !!otherHaptic,
+    otherInteractiveAtFinger: !!visual && visual !== fallback,
+  })
+  if (action === 'dispatch-fallback') return fallback
+  if (action === 'dispatch-other-haptic') return otherHaptic
+  if (action === 'redirect') return visual
+  return null
 }
 
 /** Nearest ancestor that can scroll on the given axis (overflow + overflow size). */
@@ -424,7 +455,11 @@ export function attachHapticOverlay(el: HTMLElement): () => void {
     // (iOS PWA leftover VV pan / status-bar). Trust the finger point, not
     // which overlay WebKit delivered the click to.
     const host = resolveHapticHost(el)
-    if (hostIsDisabled(host)) return
+    if (!host || hostIsDisabled(host)) return
+    if (isTextField(host)) {
+      focusWithoutRing(host)
+      return
+    }
     if (!(host instanceof HTMLAnchorElement)) {
       focusWithoutRing(host)
     }
@@ -595,7 +630,16 @@ export function setupTapDragGuard(root: ParentNode = document): () => void {
 
   const move = (x: number, y: number) => {
     if (!start) return
-    if (Math.hypot(x - start.x, y - start.y) > TAP_DRAG_CANCEL_PX) dragged = true
+    if (Math.hypot(x - start.x, y - start.y) <= TAP_DRAG_CANCEL_PX) return
+    dragged = true
+    const active = typeof document !== 'undefined' ? document.activeElement : null
+    if (isTextField(active)) {
+      try {
+        (active as HTMLElement).blur()
+      } catch {
+        /* ignore */
+      }
+    }
   }
 
   const end = () => {
@@ -629,6 +673,16 @@ export function setupTapDragGuard(root: ParentNode = document): () => void {
     }
     e.stopImmediatePropagation()
     e.preventDefault()
+    // Scroll that started on a field must not leave it focused (iOS focuses
+    // on touchstart; type=number then increments as you pan).
+    const active = typeof document !== 'undefined' ? document.activeElement : null
+    if (isTextField(active)) {
+      try {
+        (active as HTMLElement).blur()
+      } catch {
+        /* ignore */
+      }
+    }
   }
 
   const target = root instanceof Document ? root.documentElement : (root as HTMLElement)

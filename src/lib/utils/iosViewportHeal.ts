@@ -34,8 +34,19 @@ export const STUCK_PAN_PX = 1
 const INTERACTIVE_SEL =
   'button, a[href], input, textarea, select, [role="button"], [data-haptic]'
 
-const SKIP_RETARGET_SEL =
-  '.recharts-wrapper, [data-haptic-overlay], [data-no-touch-retarget], .toast-slide, [data-swipe-ignore]'
+const ALWAYS_SKIP_RETARGET_SEL =
+  '.recharts-wrapper, [data-no-touch-retarget], .toast-slide, [data-swipe-ignore]'
+
+function hostIsHiddenFromHits(node: HTMLElement): boolean {
+  try {
+    if (node.closest('[inert]')) return true
+    const drawer = node.closest('.drawer')
+    if (drawer && drawer.getAttribute('data-open') !== 'true') return true
+  } catch {
+    return false
+  }
+  return false
+}
 
 export function isIosTouchDevice(): boolean {
   if (typeof window === 'undefined' || typeof navigator === 'undefined') return false
@@ -97,7 +108,9 @@ function scheduleHeals(delaysMs: number[]): number[] {
 function collectInteractiveHosts(): HitHost<HTMLElement>[] {
   const hosts: HitHost<HTMLElement>[] = []
   for (const node of document.querySelectorAll<HTMLElement>(INTERACTIVE_SEL)) {
-    if (node.closest(SKIP_RETARGET_SEL)) continue
+    if (node.closest(ALWAYS_SKIP_RETARGET_SEL)) continue
+    if (node.closest('[data-haptic-overlay]')) continue
+    if (hostIsHiddenFromHits(node)) continue
     if (node.getAttribute('aria-hidden') === 'true') continue
     if (node instanceof HTMLButtonElement || node instanceof HTMLInputElement) {
       if (node.disabled) continue
@@ -125,9 +138,10 @@ export function interactiveHostAtFinger(
 
 /**
  * Capture-phase click retarget: if the native target's box does not contain
- * the finger, fire the control that visually does. Skips haptic overlays
- * (those retarget inside `attachHapticOverlay` so the system tick still
- * counts) and charts.
+ * the finger, fire the control that visually does. Overlay taps whose host
+ * actually contains the finger are left to `attachHapticOverlay` so the
+ * system tick still counts; stolen overlay hits (RPE under a weight field)
+ * fall through. Charts / toasts stay skipped.
  */
 function setupClickRetarget(): () => void {
   let retargeting = false
@@ -139,12 +153,26 @@ function setupClickRetarget(): () => void {
     if (!finger) return
     const raw = e.target
     if (!(raw instanceof Element)) return
-    if (raw.closest(SKIP_RETARGET_SEL)) return
+    if (raw.closest(ALWAYS_SKIP_RETARGET_SEL)) return
 
     const vv = window.visualViewport
     const offsetLeft = vv?.offsetLeft ?? 0
     const offsetTop = vv?.offsetTop ?? 0
     const points = touchHitCandidates(finger.x, finger.y, offsetLeft, offsetTop)
+
+    // Overlay clicks retarget themselves when the finger is on that host.
+    // A stolen hit (finger on a weight field, native target an RPE overlay
+    // ~59px below) must fall through so we can fire the visible control.
+    const overlay = raw.closest('[data-haptic-overlay]')
+    if (overlay instanceof HTMLElement) {
+      const hapticHost = overlay.closest('[data-haptic]')
+      if (
+        hapticHost instanceof HTMLElement &&
+        points.some(p => pointInRect(p, rectFromDOMRect(hapticHost.getBoundingClientRect())))
+      ) {
+        return
+      }
+    }
 
     const closest = raw.closest(INTERACTIVE_SEL)
     if (closest instanceof HTMLElement) {
