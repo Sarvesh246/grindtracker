@@ -30,6 +30,6 @@ export function closestTextField(from: EventTarget | null): HTMLElement | null {
   if (!from || typeof Element === 'undefined') return null
   if (!(from instanceof Element)) return null
   const el = from.closest('input, textarea, [contenteditable="true"]')
-  if (!el || !isTextField(el)) return null
+  if (!(el instanceof HTMLElement) || !isTextField(el)) return null
   return el
 }
