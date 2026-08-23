@@ -98,7 +98,7 @@ export default function BodyWeightStep({
       <div style={{ flex: 1 }}>
         <div style={{ display: 'flex', alignItems: 'stretch', gap: '10px' }}>
           <input
-            type="number"
+            type="text"
             inputMode="decimal"
             value={value}
             onChange={e => {

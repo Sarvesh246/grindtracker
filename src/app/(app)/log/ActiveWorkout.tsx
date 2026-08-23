@@ -47,6 +47,7 @@ import {
   type SetState,
 } from './sessionLogState'
 import { useRestTimer, getPauseRestOnExit } from '@/lib/hooks/useRestTimer'
+import { useTapGesture } from '@/lib/hooks/useTapGesture'
 import { resolveRestSeconds, setSessionRest, clearSessionRest } from '@/lib/utils/restPref'
 import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
 import { useExitingValue } from '@/lib/hooks/useExitingValue'
@@ -3194,7 +3195,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
           }}
           onPause={restTimer.pause}
           onResume={restTimer.resume}
-          onDefaultChange={(sec) => restTimer.start(restTimer.exerciseId!, sec)}
+          onDefaultChange={(sec) => restTimer.applyDefault(sec)}
         />
       )}
 
@@ -4195,6 +4196,7 @@ function SetRow({
   const [rawWeight, setRawWeight] = useState<string | null>(null)
   const weightRef = useRef<HTMLInputElement>(null)
   const repsRef = useRef<HTMLInputElement>(null)
+  const tap = useTapGesture()
 
   // Keep local unlock/save-arm in sync with the parent editing flag.
   // Deferred via rAF so we don't sync-setState in the effect body (cascading render lint).
@@ -4357,11 +4359,14 @@ function SetRow({
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px' }}>
         {/* Set label + note chevron: tapping toggles the per-set note input. */}
         <button
+          type="button"
           data-onboard={onboardFirst ? 'aw-note' : undefined}
+          data-haptic="light"
           onClick={() => setNoteOpen(!noteVisible)}
           aria-expanded={noteVisible}
           aria-label={noteVisible ? `Hide note for set ${setNumber}` : `Show note for set ${setNumber}`}
           style={{
+            position: 'relative',
             background: 'none', border: 'none', padding: 0, cursor: 'pointer',
             display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px',
             minWidth: '38px',
@@ -4468,15 +4473,29 @@ function SetRow({
               if (inputsLocked) return
               handleWeightChange(e.target.value)
             }}
-            onPointerDown={() => {
+            onPointerDown={tap.onPointerDown}
+            onPointerMove={e => {
+              tap.onPointerMove(e)
+              if (tap.didDrag() && document.activeElement === e.currentTarget) {
+                e.currentTarget.blur()
+              }
+            }}
+            onPointerUp={tap.onPointerEnd}
+            onPointerCancel={tap.onPointerEnd}
+            onClick={() => {
+              if (tap.didDrag()) return
               if (logEntry.checked && !logEntry.skipped && !inEdit) {
                 beginEdit('weight')
               }
             }}
             onFocus={e => {
-              if (logEntry.checked && !logEntry.skipped && !inEdit) {
-                beginEdit()
+              // Focus can arrive on touchstart before we know this is a scroll.
+              // Do not unlock / select until the gesture is a tap.
+              if (tap.didDrag()) {
+                e.currentTarget.blur()
+                return
               }
+              if (inputsLocked) return
               // When BW is shown, clear the buffer so the user types a fresh value
               // rather than appending to the 'BW' text.
               if (displayWeight === 'BW') setRawWeight('')
@@ -4509,22 +4528,34 @@ function SetRow({
           <div style={{ position: 'relative', width: '56px', flexShrink: 0, overflow: 'visible' }}>
           <input
             ref={repsRef}
-            type="number"
+            type="text"
             inputMode="numeric"
             value={logEntry.reps}
             onChange={e => {
               if (inputsLocked) return
               handleRepsChange(e.target.value)
             }}
-            onPointerDown={() => {
+            onPointerDown={tap.onPointerDown}
+            onPointerMove={e => {
+              tap.onPointerMove(e)
+              if (tap.didDrag() && document.activeElement === e.currentTarget) {
+                e.currentTarget.blur()
+              }
+            }}
+            onPointerUp={tap.onPointerEnd}
+            onPointerCancel={tap.onPointerEnd}
+            onClick={() => {
+              if (tap.didDrag()) return
               if (logEntry.checked && !logEntry.skipped && !inEdit) {
                 beginEdit('reps')
               }
             }}
             onFocus={e => {
-              if (logEntry.checked && !logEntry.skipped && !inEdit) {
-                beginEdit()
+              if (tap.didDrag()) {
+                e.currentTarget.blur()
+                return
               }
+              if (inputsLocked) return
               e.target.select()
               ensureVisible(e.currentTarget)
             }}
@@ -4772,10 +4803,12 @@ function SetRow({
                     aria-selected={selected}
                     data-haptic="light"
                     disabled={logEntry.skipped}
-                    onPointerDown={() => {
-                      if (logEntry.checked && !logEntry.skipped && !inEdit) beginEdit()
-                    }}
+                    onPointerDown={tap.onPointerDown}
+                    onPointerMove={tap.onPointerMove}
+                    onPointerUp={tap.onPointerEnd}
+                    onPointerCancel={tap.onPointerEnd}
                     onClick={() => {
+                      if (tap.didDrag()) return
                       if (logEntry.skipped) return
                       if (logEntry.checked && !inEdit) beginEdit()
                       onRpeChange(selected ? '' : String(n))

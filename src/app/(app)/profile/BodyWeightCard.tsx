@@ -309,7 +309,7 @@ export default function BodyWeightCard() {
 
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
         <input
-          type="number"
+          type="text"
           inputMode="decimal"
           value={draft}
           onChange={e => setDraft(e.target.value)}
@@ -595,9 +595,9 @@ export default function BodyWeightCard() {
             ) : (
               <>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <input
+                    <input
                     ref={editInputRef}
-                    type="number"
+                    type="text"
                     inputMode="decimal"
                     value={editDraft}
                     onChange={e => setEditDraft(e.target.value)}

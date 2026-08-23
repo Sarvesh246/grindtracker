@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import { haptic, supportsVibrate } from '@/lib/utils/haptics'
+import { applyRestDefaultChange } from '@/lib/utils/restTimerMath'
 import { resolveRestSeconds } from '@/lib/utils/restPref'
 
 export {
@@ -227,6 +228,30 @@ export function useRestTimer() {
     )
   }
 
+  /**
+   * Apply a newly picked session/exercise default to the current countdown.
+   * Does not restart from the full new length — remaining is preserved when
+   * it still fits, clamped when it doesn't. See applyRestDefaultChange.
+   */
+  function applyDefault(seconds: number) {
+    setState(s => {
+      if (!s.exerciseId) return s
+      if (!s.paused && s.remainingMs <= 0) return s
+      const next = applyRestDefaultChange({
+        remainingMs: s.remainingMs,
+        durationMs: s.durationMs,
+        newDefaultSec: seconds,
+        now: Date.now(),
+        startedAt: s.startedAt,
+        paused: s.paused,
+      })
+      if (!next) return s
+      if (next.remainingMs > 10_000) tenSecFired.current = false
+      if (next.remainingMs > 0) zeroFired.current = false
+      return { ...s, ...next }
+    })
+  }
+
   // Stay "active" through the post-zero flash so RestTimerBar can show REST DONE
   // before unmounting. Auto-clear (above) or stop() ends the flash.
   const done = state.exerciseId !== null && !state.paused && state.remainingMs <= 0
@@ -242,6 +267,7 @@ export function useRestTimer() {
     start,
     stop,
     addSeconds,
+    applyDefault,
     pause,
     resume,
   }

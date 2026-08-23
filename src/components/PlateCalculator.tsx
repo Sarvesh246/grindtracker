@@ -132,7 +132,7 @@ export default function PlateCalculator({ initialTarget, onClose, onApply }: Pro
               Target ({unitLabel})
             </span>
             <input
-              type="number"
+              type="text"
               inputMode="decimal"
               value={target}
               onChange={e => setTarget(e.target.value)}

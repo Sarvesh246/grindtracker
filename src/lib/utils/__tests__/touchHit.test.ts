@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  decideOverlayClick,
   pickSmallestContainingHost,
   pointInRect,
   touchHitCandidates,
@@ -104,6 +105,52 @@ describe('pickSmallestContainingHost', () => {
     assert.equal(
       pickSmallestContainingHost([signOut, deleteData], points),
       'delete-data',
+    )
+  })
+})
+
+describe('decideOverlayClick', () => {
+  it('dispatches the overlay host when the finger is actually on it', () => {
+    assert.equal(
+      decideOverlayClick({
+        fingerOnFallback: true,
+        otherHapticAtFinger: false,
+        otherInteractiveAtFinger: false,
+      }),
+      'dispatch-fallback',
+    )
+  })
+
+  it('retargets to the haptic host under the finger', () => {
+    assert.equal(
+      decideOverlayClick({
+        fingerOnFallback: false,
+        otherHapticAtFinger: true,
+        otherInteractiveAtFinger: true,
+      }),
+      'dispatch-other-haptic',
+    )
+  })
+
+  it('redirects a stolen overlay hit onto a weight field / SET label', () => {
+    assert.equal(
+      decideOverlayClick({
+        fingerOnFallback: false,
+        otherHapticAtFinger: false,
+        otherInteractiveAtFinger: true,
+      }),
+      'redirect',
+    )
+  })
+
+  it('ignores a floating overlay hit with nothing under the finger', () => {
+    assert.equal(
+      decideOverlayClick({
+        fingerOnFallback: false,
+        otherHapticAtFinger: false,
+        otherInteractiveAtFinger: false,
+      }),
+      'ignore',
     )
   })
 })

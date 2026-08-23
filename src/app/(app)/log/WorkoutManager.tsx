@@ -1581,7 +1581,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
                       Sets
                     </label>
                     <input
-                      type="number"
+                      type="text"
                       inputMode="numeric"
                       value={formSets}
                       onChange={e => setFormSets(e.target.value)}
@@ -1623,7 +1623,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
                     Default Weight ({unitLabel}) — optional
                   </label>
                   <input
-                    type="number"
+                    type="text"
                     inputMode="decimal"
                     value={formWeight}
                     onChange={e => setFormWeight(e.target.value)}

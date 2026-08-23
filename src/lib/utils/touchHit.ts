@@ -122,3 +122,25 @@ function pickSmallestContainingAny<T>(
   }
   return best?.el ?? null
 }
+
+/**
+ * What a haptic-overlay click should do once finger vs. host geometry
+ * is already known. A stolen overlay hit (finger on a weight field,
+ * native target an RPE pill ~59px below) must not fire the fallback.
+ */
+export type OverlayClickAction =
+  | 'dispatch-fallback'
+  | 'dispatch-other-haptic'
+  | 'redirect'
+  | 'ignore'
+
+export function decideOverlayClick(opts: {
+  fingerOnFallback: boolean
+  otherHapticAtFinger: boolean
+  otherInteractiveAtFinger: boolean
+}): OverlayClickAction {
+  if (opts.fingerOnFallback) return 'dispatch-fallback'
+  if (opts.otherHapticAtFinger) return 'dispatch-other-haptic'
+  if (opts.otherInteractiveAtFinger) return 'redirect'
+  return 'ignore'
+}

@@ -997,12 +997,14 @@ function LogPastContent() {
                             style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px 6px 16px' }}
                           >
                             {/* Set label + note chevron */}
-                            <button
+                              <button
                               type="button"
+                              data-haptic="light"
                               onClick={() => toggleNoteOpen(noteKey)}
                               aria-expanded={noteOpen}
                               aria-label={noteOpen ? `Hide note for set ${idx + 1}` : `Show note for set ${idx + 1}`}
                               style={{
+                                position: 'relative',
                                 background: 'none', border: 'none', padding: 0, cursor: 'pointer',
                                 display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px',
                                 minWidth: '36px', flexShrink: 0,
@@ -1099,7 +1101,7 @@ function LogPastContent() {
                               <>
                                 <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
                                   <input
-                                    type="number"
+                                    type="text"
                                     inputMode="decimal"
                                     placeholder="—"
                                     value={s.weight}
@@ -1132,7 +1134,7 @@ function LogPastContent() {
 
                                 <div style={{ width: '68px', flexShrink: 0, position: 'relative' }}>
                                   <input
-                                    type="number"
+                                    type="text"
                                     inputMode="numeric"
                                     value={s.reps}
                                     onChange={e => updateSet(ex.id, idx, 'reps', e.target.value)}
