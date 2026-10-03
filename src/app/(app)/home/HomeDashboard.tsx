@@ -177,6 +177,26 @@ export default function HomeDashboard({
   restIntervals = [],
 }: Props) {
   const router = useRouter()
+  // Optimistic result of a Skip, so the Start CTA moves to the new day right
+  // away instead of waiting on router.refresh() — which on mobile (PWA,
+  // backgrounded tab, slow network) sometimes lands late or not at all. Keyed
+  // to the props it was computed from: once fresh server props arrive, they
+  // no longer match and the override drops, so the server stays authoritative.
+  const [skipOverride, setSkipOverride] = useState<{
+    fromDay: string
+    fromIndex: number
+    nextDay: string
+    index: number
+    exercises: string[]
+  } | null>(null)
+  const activeOverride = skipOverride
+    && skipOverride.fromDay === nextDayProp
+    && skipOverride.fromIndex === rotationIndexProp
+    ? skipOverride
+    : null
+  const nextDay = activeOverride?.nextDay ?? nextDayProp
+  const nextDayExercises = activeOverride?.exercises ?? nextDayExercisesProp
+  const rotationIndex = activeOverride?.index ?? rotationIndexProp
   const { demoMode } = useDemoMode()
   // Every write this component makes (rotation skip, rest-day confirm,
   // stale-streak refresh_stats) becomes a local no-op in Demo Mode — see
@@ -501,26 +521,6 @@ export default function HomeDashboard({
   const actionToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [skippingDay, setSkippingDay] = useState(false)
   const skippingDayRef = useRef(false)
-  // Optimistic result of a Skip, so the Start CTA moves to the new day right
-  // away instead of waiting on router.refresh() — which on mobile (PWA,
-  // backgrounded tab, slow network) sometimes lands late or not at all. Keyed
-  // to the props it was computed from: once fresh server props arrive, they
-  // no longer match and the override drops, so the server stays authoritative.
-  const [skipOverride, setSkipOverride] = useState<{
-    fromDay: string
-    fromIndex: number
-    nextDay: string
-    index: number
-    exercises: string[]
-  } | null>(null)
-  const activeOverride = skipOverride
-    && skipOverride.fromDay === nextDayProp
-    && skipOverride.fromIndex === rotationIndexProp
-    ? skipOverride
-    : null
-  const nextDay = activeOverride?.nextDay ?? nextDayProp
-  const nextDayExercises = activeOverride?.exercises ?? nextDayExercisesProp
-  const rotationIndex = activeOverride?.index ?? rotationIndexProp
 
   function flashToast(msg: string) {
     setActionToast(msg)
