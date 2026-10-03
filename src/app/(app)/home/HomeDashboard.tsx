@@ -162,11 +162,11 @@ export default function HomeDashboard({
   activeSessions,
   lastSession,
   lastSessionLogs,
-  nextDay,
-  nextDayExercises,
+  nextDay: nextDayProp,
+  nextDayExercises: nextDayExercisesProp,
   hasDays,
   rotationSeq,
-  rotationIndex,
+  rotationIndex: rotationIndexProp,
   lastTrainedByDay,
   firstName,
   completedAt,
@@ -501,6 +501,26 @@ export default function HomeDashboard({
   const actionToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [skippingDay, setSkippingDay] = useState(false)
   const skippingDayRef = useRef(false)
+  // Optimistic result of a Skip, so the Start CTA moves to the new day right
+  // away instead of waiting on router.refresh() — which on mobile (PWA,
+  // backgrounded tab, slow network) sometimes lands late or not at all. Keyed
+  // to the props it was computed from: once fresh server props arrive, they
+  // no longer match and the override drops, so the server stays authoritative.
+  const [skipOverride, setSkipOverride] = useState<{
+    fromDay: string
+    fromIndex: number
+    nextDay: string
+    index: number
+    exercises: string[]
+  } | null>(null)
+  const activeOverride = skipOverride
+    && skipOverride.fromDay === nextDayProp
+    && skipOverride.fromIndex === rotationIndexProp
+    ? skipOverride
+    : null
+  const nextDay = activeOverride?.nextDay ?? nextDayProp
+  const nextDayExercises = activeOverride?.exercises ?? nextDayExercisesProp
+  const rotationIndex = activeOverride?.index ?? rotationIndexProp
 
   function flashToast(msg: string) {
     setActionToast(msg)
@@ -667,6 +687,22 @@ export default function HomeDashboard({
         { onConflict: 'user_id' },
       )
       if (error) throw error
+      const upcoming = nextDayFromRotation(seq, newIndex)
+      if (upcoming) {
+        const { data: upcomingExercises } = await supabase
+          .from('exercises')
+          .select('name')
+          .eq('day_type', upcoming)
+          .eq('active', true)
+          .order('sort_order', { ascending: true })
+        setSkipOverride({
+          fromDay: nextDayProp,
+          fromIndex: rotationIndexProp,
+          nextDay: upcoming,
+          index: newIndex,
+          exercises: (upcomingExercises ?? []).map(e => e.name),
+        })
+      }
       flashToast(`Skipped ${dayLabel(skipped)}`)
       markAppDataStale('/home')
       router.refresh()
