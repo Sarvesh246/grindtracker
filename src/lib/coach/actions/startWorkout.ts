@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { loadRotationState } from '@/lib/utils/rotationStore'
 import type { UserRotation } from '@/lib/types'
 import { effectiveSequence, nextDay } from '@/lib/utils/rotation'
 import { insertCoachProposal } from './proposals'
@@ -85,7 +86,11 @@ export async function previewStartWorkout(
       dayKeys,
       flexSet,
     )
-    const upNext = nextDay(seq, rotation?.current_index ?? -1)
+    // Prefer the shared resolver (what Home's Start button shows); the raw
+    // pointer is only a fallback if that read fails.
+    const upNext = await loadRotationState(supabase, args.userId)
+      .then(s => s.nextDay)
+      .catch(() => nextDay(seq, rotation?.current_index ?? -1))
     if (upNext && dayKeys.includes(upNext)) {
       dayType = upNext
     }

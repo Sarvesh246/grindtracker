@@ -566,8 +566,9 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
 
   // ── Rotation (workout order) ───────────────────────────────────────────────
   // Persist the rotation row and keep local state in sync. Sequence + mode are
-  // the source of truth in manual mode; current_index is left untouched here
-  // (the read path wraps it with modulo, so a stale value is harmless).
+  // the source of truth in manual mode; current_index (and current_day) are
+  // left untouched here — resolveRotationIndex re-anchors the pointer to its
+  // day when the order changes, so "up next" doesn't shift.
   //
   // Optimistic: local state (and therefore the day order everywhere it's
   // derived — this screen's day list, DaySelect's grid) updates immediately so

@@ -148,25 +148,73 @@ export function nextDay(seq: string[], currentIndex: number): string | null {
   return seq[i]
 }
 
-/** Repairs a stored `currentIndex` that no longer points at the day it should
- *  (the day most recently completed) after the sequence has shifted underneath
- *  it — e.g. a day was added, removed, or reordered since the pointer was last
- *  advanced. `advanceIndex` always leaves the pointer ON the completed day's
- *  slot, so `seq[currentIndex] === lastCompletedDay` is an invariant that holds
- *  until the sequence itself changes; when it breaks, re-locate the day by name
- *  instead of trusting the now-stale numeric index (which `nextDay`'s modulo
- *  wrap only protects against being out of *range*, not pointing at the wrong
- *  slot within range). Falls back to `currentIndex` unchanged when the
- *  completed day is unknown or no longer in the sequence at all. */
-export function resolveCurrentIndex(
+/** The slice of a `user_rotation` row the pointer resolver reads. */
+export interface RotationPointerRow {
+  current_index: number
+  /** Day key at `current_index` when the pointer was last written (migration
+   *  `54`). Null/absent on rows written before it, or by a reset to -1. */
+  current_day?: string | null
+  updated_at?: string | null
+}
+
+/** The most recently completed session — just what the resolver needs. */
+export interface LastCompletion {
+  day: string
+  completedAt: string
+}
+
+/**
+ * The ONE place a stored rotation pointer becomes "the slot we're on". Every
+ * reader (Home, Log's UP NEXT, the Coach) and every writer (finish, skip) goes
+ * through this so they can never disagree about what's next.
+ *
+ * 1. Re-anchor. The pointer is a number into a sequence that can change under
+ *    it (a day added, disabled, reordered). `current_day` records which day the
+ *    pointer was ON when written; if the slot at the index no longer holds that
+ *    day, re-locate it (nearest occurrence, so a repeated day keeps its place).
+ *    If the day is gone entirely, step back one slot so the day that used to
+ *    follow it is still next.
+ * 2. Catch up. A completion newer than the last pointer write means the finish
+ *    path's advance never landed (network blip, or a flow that doesn't advance)
+ *    — advance past that day now, exactly as the finish would have. Comparing
+ *    timestamps (rather than just "is the pointer on the last-completed day",
+ *    the old rule) is what lets a Skip stick: a skip is written AFTER the last
+ *    completion, so it's trusted instead of being snapped back.
+ */
+export function resolveRotationIndex(
   seq: string[],
-  currentIndex: number,
-  lastCompletedDay: string | null,
+  row: RotationPointerRow | null,
+  last: LastCompletion | null = null,
 ): number {
-  if (!lastCompletedDay || seq.length === 0) return currentIndex
-  if (seq[currentIndex] === lastCompletedDay) return currentIndex
-  const idx = seq.indexOf(lastCompletedDay)
-  return idx === -1 ? currentIndex : idx
+  const L = seq.length
+  let idx = row?.current_index ?? -1
+  if (L === 0) return idx
+  if (idx >= 0) idx %= L
+
+  const anchor = row?.current_day ?? null
+  if (anchor && seq[idx] !== anchor) {
+    let best = -1
+    let bestDist = Infinity
+    for (let j = 0; j < L; j++) {
+      if (seq[j] !== anchor) continue
+      const d = idx < 0 ? j : Math.min(Math.abs(j - idx), L - Math.abs(j - idx))
+      if (d < bestDist) { best = j; bestDist = d }
+    }
+    idx = best !== -1 ? best : idx < 0 ? -1 : (idx - 1 + L) % L
+  }
+
+  if (last && seq.includes(last.day) && seq[idx] !== last.day) {
+    const written = row?.updated_at ? Date.parse(row.updated_at) : -Infinity
+    const completed = Date.parse(last.completedAt)
+    if (!Number.isNaN(completed) && completed > written) idx = advanceIndex(seq, idx, last.day)
+  }
+  return idx
+}
+
+/** The day a resolved index sits on — what to store as `current_day`. */
+export function dayAtIndex(seq: string[], index: number): string | null {
+  if (seq.length === 0 || index < 0) return null
+  return seq[index % seq.length] ?? null
 }
 
 /** Advance the pointer after completing `completedDayKey`: the first slot at or

@@ -1,4 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { writeRotationRow } from '@/lib/utils/rotationStore'
+import { dayAtIndex } from '@/lib/utils/rotation'
 import { enabledDayKeys } from '@/lib/utils/dayKeys'
 import { dayOfWeekFromDateKey, DOW_LABELS, parseDayOfWeek } from './dates'
 import { validateCreateDayInput } from './createDay'
@@ -372,16 +374,13 @@ export async function executeApplyWeeklyPlan(
     if (error) return { ok: false, message: `Plan saved but hiding old days failed: ${error.message}` }
   }
 
-  const { error: rotError } = await supabase.from('user_rotation').upsert(
-    {
-      user_id: args.userId,
-      mode: 'manual',
-      sequence: args.sequence,
-      current_index: args.currentIndex,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'user_id' },
-  )
+  const { error: rotError } = await writeRotationRow(supabase, {
+    user_id: args.userId,
+    mode: 'manual',
+    sequence: args.sequence,
+    current_index: args.currentIndex,
+    current_day: dayAtIndex(args.sequence, args.currentIndex),
+  })
   if (rotError) warnings.push('workout order not updated')
 
   for (const [list, enabled] of [

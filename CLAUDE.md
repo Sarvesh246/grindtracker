@@ -3,7 +3,7 @@
 ## Status: COMPLETE ✅
 Core phases (1–7) plus later ships (flex days, photos, onboarding, web push,
 weight targets, offline set queue, RPE, data export) — single-user PWA in daily use.
-Schema migrations run through `docs/sql/53-*.sql`.
+Schema migrations run through `docs/sql/54-*.sql`.
 
 ## Git Workflow
 Single-user repo, no review process. Commit and push directly to `main` —
@@ -334,6 +334,18 @@ completion (backdated `log/past` entries deliberately don't). New rotations seed
 `current_index: -1` so the first day is next (`nextDay(seq, 0)` would skip it).
 The suggestion is
 non-binding — DaySelect still lets you pick any day, and marks the suggested one "UP NEXT".
+
+**One resolver, one I/O module.** Every reader of "up next" (Home's Start button,
+Log's UP NEXT badge, the Coach) resolves the stored pointer with
+`resolveRotationIndex` (`rotation.ts`), and every pointer write (finish, quick-save,
+Skip, undo) goes through `src/lib/utils/rotationStore.ts` — never a bare
+`user_rotation` upsert of `current_index`. Rules: `current_day` (migration `54`)
+anchors the pointer to the day it was on, so a sequence change re-locates it; a
+completion newer than the pointer's `updated_at` means the finish advance never
+landed, so it's applied then. The old rule ("snap the pointer to the last-completed
+day") silently undid every Skip. Home's Skip refuses if fresh state disagrees with
+the day the button showed, paints the new day optimistically, and offers UNDO.
+A writer that sets the index directly must set `current_day` too (`writeRotationRow`).
 Helpers are pure (no Supabase import). Apply migration `06-user-rotation.sql` first
 (default `-1` as of `40`).
 

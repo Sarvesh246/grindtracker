@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { loadRotationState } from '@/lib/utils/rotationStore'
 import { enabledDayKeys } from '@/lib/utils/dayKeys'
 import type { UserRotation } from '@/lib/types'
 import { effectiveSequence, nextDay } from '@/lib/utils/rotation'
@@ -54,7 +55,10 @@ export async function loadCoachChipHints(
   )
   const rotation = (rotationRow as UserRotation | null) ?? null
   const seq = effectiveSequence(rotation, dayKeys, flexSet)
-  const upNext = nextDay(seq, rotation?.current_index ?? -1)
+  // Same resolver as Home's Start button; raw pointer only if that read fails.
+  const upNext = await loadRotationState(supabase, userId)
+    .then(s => s.nextDay)
+    .catch(() => nextDay(seq, rotation?.current_index ?? -1))
 
   let lastPrExercise: string | null = null
   if (prRow) {

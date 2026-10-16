@@ -13,7 +13,8 @@ import {
   resolveDayColor,
   resolveDayTextColor,
 } from '@/lib/utils/dayColors'
-import { effectiveSequence, nextDay as nextDayFromRotation, orderedDayKeys, advanceIndex } from '@/lib/utils/rotation'
+import { effectiveSequence, nextDay as nextDayFromRotation, orderedDayKeys, resolveRotationIndex, type LastCompletion } from '@/lib/utils/rotation'
+import { advanceRotationAfterFinish, type PointerSnapshot } from '@/lib/utils/rotationStore'
 import { deleteIncompleteSessions } from '@/lib/utils/sessions'
 import { flushQueuedOps, getQueuedOps, clearQueuedOpsForSession } from '@/lib/utils/offlineQueue'
 import { checkAndAwardBadges } from '@/lib/utils/badges'
@@ -63,6 +64,7 @@ type LogCatalog = {
   dayCategories: Record<string, DayCategory>
   dayColors: Record<string, string>
   openSessions: OpenSession[]
+  lastCompletion: LastCompletion | null
 }
 
 export default function DaySelect() {
@@ -106,7 +108,7 @@ export default function DaySelect() {
     CACHE_KEYS.logCatalog,
     async () => {
       const { data: { user } } = await supabase.auth.getUser()
-      const [exRes, rotRes, flexRes, catRes, colorRes, openRes] = await Promise.all([
+      const [exRes, rotRes, flexRes, catRes, colorRes, openRes, lastRes] = await Promise.all([
         supabase.from('exercises').select('*')
           .order('day_type', { ascending: true })
           .order('sort_order', { ascending: true }),
@@ -130,6 +132,18 @@ export default function DaySelect() {
               .is('completed_at', null)
               .order('started_at', { ascending: false })
           : Promise.resolve({ data: [] as { id: string; day_type: string; started_at: string }[] }),
+        // UP NEXT resolves exactly like Home's Start button (resolveRotationIndex),
+        // which needs the most recent completion.
+        user
+          ? supabase
+              .from('sessions')
+              .select('day_type, completed_at')
+              .eq('user_id', user.id)
+              .not('completed_at', 'is', null)
+              .order('completed_at', { ascending: false })
+              .limit(1)
+              .maybeSingle()
+          : Promise.resolve({ data: null }),
       ])
       if (exRes.error) {
         console.error('[grind] failed to load exercises', exRes.error)
@@ -162,6 +176,9 @@ export default function DaySelect() {
         dayCategories: catMap,
         dayColors: colorRes.error ? {} : mapDayColorRows(colorRes.data),
         openSessions,
+        lastCompletion: lastRes.data
+          ? { day: lastRes.data.day_type as string, completedAt: lastRes.data.completed_at as string }
+          : null,
       }
     },
   )
@@ -232,37 +249,20 @@ export default function DaySelect() {
       const result = data as CompleteSessionResult
 
       // null (not -1) means "never actually advanced" — see FinishUndoToken.
-      let prevRotationIndex: number | null = null
+      let prevPointer: PointerSnapshot | null = null
       try {
-        const [{ data: dayTypeRows }, { data: rotationRow }, { data: flexRows }] = await Promise.all([
-          supabase.from('exercises').select('day_type, active'),
-          supabase.from('user_rotation').select('*').eq('user_id', user.id).maybeSingle(),
-          supabase.from('user_flex_days').select('day_key').eq('user_id', user.id),
-        ])
-        const dayKeys = enabledDayKeys(dayTypeRows ?? [])
-        const rot = rotationRow as UserRotation | null
-        prevRotationIndex = rot?.current_index ?? -1
-        const flex = new Set((flexRows ?? []).map((r: { day_key: string }) => r.day_key))
-        const seq = effectiveSequence(rot, dayKeys, flex)
-        const newIndex = advanceIndex(seq, rot?.current_index ?? -1, session.day_type)
-        await supabase.from('user_rotation').upsert(
-          {
-            user_id: user.id,
-            mode: rot?.mode ?? 'auto',
-            sequence: rot?.sequence ?? [],
-            current_index: newIndex,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'user_id' },
-        )
-      } catch { /* non-critical */ }
+        prevPointer = await advanceRotationAfterFinish(supabase, user.id, session.day_type, session.id)
+      } catch {
+        // Rotation is a non-critical convenience; swallow and move on.
+      }
 
       writeFinishUndoToken({
         sessionId: session.id,
         day: session.day_type,
         userId: user.id,
         xpEarned: result.xp_earned ?? 0,
-        prevRotationIndex,
+        prevRotationIndex: prevPointer?.index ?? null,
+        prevRotationDay: prevPointer?.day ?? null,
         expiresAt: Date.now() + FINISH_UNDO_TTL_MS,
       })
 
@@ -331,7 +331,10 @@ export default function DaySelect() {
   const dayKeys = orderedDayKeys(Object.keys(grouped), effectiveSeq)
 
   // Non-binding hint: the day the rotation suggests next (flex days excluded).
-  const upNext = nextDayFromRotation(effectiveSeq, rotation?.current_index ?? -1)
+  const upNext = nextDayFromRotation(
+    effectiveSeq,
+    resolveRotationIndex(effectiveSeq, rotation, catalog?.lastCompletion ?? null),
+  )
 
   // Color keys for DaySelect cards = leaderboard categories (not raw day_keys),
   // so a custom "chest" day mapped to push gets lime like the calendar's push.

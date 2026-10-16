@@ -156,6 +156,8 @@ export interface UserRotation {
   mode: 'auto' | 'manual'
   sequence: string[]
   current_index: number
+  /** Day at `current_index` when written (migration `54`); see resolveRotationIndex. */
+  current_day?: string | null
   updated_at: string
 }
 

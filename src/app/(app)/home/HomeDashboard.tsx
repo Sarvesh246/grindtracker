@@ -1,15 +1,22 @@
 'use client'
-import { enabledDayKeys } from '@/lib/utils/dayKeys'
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useDemoMode } from '@/lib/contexts/DemoModeContext'
 import { demoSafeClient } from '@/lib/demoMode/demoSafeSupabase'
-import { Session, UserStats, UserRotation, CompleteSessionResult } from '@/lib/types'
+import { Session, UserStats, CompleteSessionResult } from '@/lib/types'
 import { getLevel, getXpInCurrentLevel, getXpRequiredForLevel, getXpToNextLevel } from '@/lib/utils/gamification'
 import { formatShortDate, localDateKey } from '@/lib/utils/formatting'
 import { homeGreeting } from '@/lib/utils/homeGreeting'
-import { advanceIndex, effectiveSequence, nextDay as nextDayFromRotation, overdueDays } from '@/lib/utils/rotation'
+import { overdueDays } from '@/lib/utils/rotation'
+import {
+  advanceRotationAfterFinish,
+  loadRotationState,
+  restoreRotationPointer,
+  skipUpNext,
+  type PointerSnapshot,
+  type RotationState,
+} from '@/lib/utils/rotationStore'
 import { deleteIncompleteSessions } from '@/lib/utils/sessions'
 import { flushQueuedOps, getQueuedOps, clearQueuedOpsForSession } from '@/lib/utils/offlineQueue'
 import { checkAndAwardBadges } from '@/lib/utils/badges'
@@ -190,11 +197,23 @@ export default function HomeDashboard({
     index: number
     exercises: string[]
   } | null>(null)
+  // Fresh server props supersede any override for good — without this, an old
+  // override could spring back to life if the props ever cycled back to the
+  // values it was keyed to.
+  const [overrideBase, setOverrideBase] = useState({ day: nextDayProp, index: rotationIndexProp })
+  if (overrideBase.day !== nextDayProp || overrideBase.index !== rotationIndexProp) {
+    setOverrideBase({ day: nextDayProp, index: rotationIndexProp })
+    setSkipOverride(null)
+  }
   const activeOverride = skipOverride
     && skipOverride.fromDay === nextDayProp
     && skipOverride.fromIndex === rotationIndexProp
     ? skipOverride
     : null
+  // Latest server props for keying a new override — the skip toast's UNDO runs
+  // a closure from an older render, after a refresh may have already landed.
+  const serverPointerRef = useRef({ day: nextDayProp, index: rotationIndexProp })
+  useEffect(() => { serverPointerRef.current = { day: nextDayProp, index: rotationIndexProp } })
   const nextDay = activeOverride?.nextDay ?? nextDayProp
   const nextDayExercises = activeOverride?.exercises ?? nextDayExercisesProp
   const rotationIndex = activeOverride?.index ?? rotationIndexProp
@@ -517,16 +536,17 @@ export default function HomeDashboard({
   const [busySessionId, setBusySessionId] = useState<string | null>(null)
   const busySessionIdRef = useRef<string | null>(null)
   const [discardConfirmId, setDiscardConfirmId] = useState<string | null>(null)
-  const [actionToast, setActionToast] = useState<string | null>(null)
+  const [actionToast, setActionToast] = useState<{ msg: string; undo?: () => void } | null>(null)
   const actionToastExit = useExitingValue(actionToast, TOAST_SLIDE_OUT_MS)
   const actionToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [skippingDay, setSkippingDay] = useState(false)
   const skippingDayRef = useRef(false)
 
-  function flashToast(msg: string) {
-    setActionToast(msg)
+  function flashToast(msg: string, undo?: () => void) {
+    setActionToast({ msg, undo })
     if (actionToastTimer.current) clearTimeout(actionToastTimer.current)
-    actionToastTimer.current = setTimeout(() => setActionToast(null), 4000)
+    // Longer when there's an UNDO to reach for.
+    actionToastTimer.current = setTimeout(() => setActionToast(null), undo ? 6000 : 4000)
   }
 
   useEffect(() => () => {
@@ -565,30 +585,10 @@ export default function HomeDashboard({
       if (error || !data) throw error ?? new Error('Save failed')
       const result = data as CompleteSessionResult
 
-      // null (not -1) means "never actually advanced" — see FinishUndoToken.
-      let prevRotationIndex: number | null = null
+      // null means "never actually advanced" — see FinishUndoToken.
+      let prevPointer: PointerSnapshot | null = null
       try {
-        const [{ data: dayTypeRows }, { data: rotationRow }, { data: flexRows }] = await Promise.all([
-          supabase.from('exercises').select('day_type, active'),
-          supabase.from('user_rotation').select('*').eq('user_id', user.id).maybeSingle(),
-          supabase.from('user_flex_days').select('day_key').eq('user_id', user.id),
-        ])
-        const dayKeys = enabledDayKeys(dayTypeRows ?? [])
-        const rot = rotationRow as UserRotation | null
-        prevRotationIndex = rot?.current_index ?? -1
-        const flex = new Set((flexRows ?? []).map((r: { day_key: string }) => r.day_key))
-        const seq = effectiveSequence(rot, dayKeys, flex)
-        const newIndex = advanceIndex(seq, rot?.current_index ?? -1, dayType)
-        await supabase.from('user_rotation').upsert(
-          {
-            user_id: user.id,
-            mode: rot?.mode ?? 'auto',
-            sequence: rot?.sequence ?? [],
-            current_index: newIndex,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'user_id' },
-        )
+        prevPointer = await advanceRotationAfterFinish(supabase, user.id, dayType, sessionId)
       } catch { /* non-critical */ }
 
       writeFinishUndoToken({
@@ -596,7 +596,8 @@ export default function HomeDashboard({
         day: dayType,
         userId: user.id,
         xpEarned: result.xp_earned ?? 0,
-        prevRotationIndex,
+        prevRotationIndex: prevPointer?.index ?? null,
+        prevRotationDay: prevPointer?.day ?? null,
         expiresAt: Date.now() + FINISH_UNDO_TTL_MS,
       })
 
@@ -651,64 +652,81 @@ export default function HomeDashboard({
     }
   }
 
+  // Paint a freshly resolved "up next" immediately — router.refresh() follows
+  // to make it authoritative, but on a backgrounded PWA or slow network that
+  // can land late, and the Start button must never point at a day already
+  // skipped.
+  async function showUpNext(state: RotationState) {
+    if (!state.nextDay) return
+    const { data: upcomingExercises } = await supabase
+      .from('exercises')
+      .select('name')
+      .eq('day_type', state.nextDay)
+      .eq('active', true)
+      .order('sort_order', { ascending: true })
+    setSkipOverride({
+      fromDay: serverPointerRef.current.day,
+      fromIndex: serverPointerRef.current.index,
+      nextDay: state.nextDay,
+      index: state.index,
+      exercises: (upcomingExercises ?? []).map(e => e.name),
+    })
+  }
+
   // Skip the suggested day without logging anything — advances the rotation
-  // pointer exactly one slot, the same "current_index" move a completed
-  // workout makes (handleSaveActive above), just without a session behind it.
-  // Re-reads days/rotation/flex fresh rather than trusting the `nextDay` prop,
-  // matching the save flow's own defense against a stale server-rendered prop.
+  // pointer exactly one slot, the same move a completed workout makes, just
+  // without a session behind it. Goes through rotationStore so it resolves
+  // "up next" exactly like the server render, and refuses to skip if that
+  // isn't the day the button showed (it repaints the real one instead).
   async function handleSkipDay() {
     if (!hasDays || skippingDayRef.current) return
+    const shownDay = nextDay
     skippingDayRef.current = true
     setSkippingDay(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
-      const [{ data: dayTypeRows }, { data: rotationRow }, { data: flexRows }] = await Promise.all([
-        supabase.from('exercises').select('day_type, active'),
-        supabase.from('user_rotation').select('*').eq('user_id', user.id).maybeSingle(),
-        supabase.from('user_flex_days').select('day_key').eq('user_id', user.id),
-      ])
-      const dayKeys = enabledDayKeys(dayTypeRows ?? [])
-      const rot = rotationRow as UserRotation | null
-      const flex = new Set((flexRows ?? []).map((r: { day_key: string }) => r.day_key))
-      const seq = effectiveSequence(rot, dayKeys, flex)
-      if (seq.length === 0) return
-      const currentIndex = rot?.current_index ?? -1
-      const skipped = nextDayFromRotation(seq, currentIndex)
-      if (!skipped) return
-      const newIndex = advanceIndex(seq, currentIndex, skipped)
-      const { error } = await supabase.from('user_rotation').upsert(
-        {
-          user_id: user.id,
-          mode: rot?.mode ?? 'auto',
-          sequence: rot?.sequence ?? [],
-          current_index: newIndex,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'user_id' },
-      )
-      if (error) throw error
-      const upcoming = nextDayFromRotation(seq, newIndex)
-      if (upcoming) {
-        const { data: upcomingExercises } = await supabase
-          .from('exercises')
-          .select('name')
-          .eq('day_type', upcoming)
-          .eq('active', true)
-          .order('sort_order', { ascending: true })
-        setSkipOverride({
-          fromDay: nextDayProp,
-          fromIndex: rotationIndexProp,
-          nextDay: upcoming,
-          index: newIndex,
-          exercises: (upcomingExercises ?? []).map(e => e.name),
-        })
+      const result = await skipUpNext(supabase, user.id, shownDay)
+      if (!result.ok) {
+        if (result.reason === 'stale' && result.state.nextDay) {
+          await showUpNext(result.state)
+          flashToast(`Up next was already ${dayLabel(result.state.nextDay)}`)
+        }
+        markAppDataStale('/home')
+        router.refresh()
+        return
       }
-      flashToast(`Skipped ${dayLabel(skipped)}`)
+      await showUpNext(result.state)
+      flashToast(
+        `Skipped ${dayLabel(result.skipped)} · ${dayLabel(result.next)} is up next`,
+        () => void handleUndoSkip(result.prev, result.skipped),
+      )
       markAppDataStale('/home')
       router.refresh()
     } catch {
       flashToast('Could not skip. Check your connection and try again.')
+    } finally {
+      skippingDayRef.current = false
+      setSkippingDay(false)
+    }
+  }
+
+  async function handleUndoSkip(prev: PointerSnapshot, skipped: string) {
+    if (skippingDayRef.current) return
+    skippingDayRef.current = true
+    setSkippingDay(true)
+    setActionToast(null)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { router.push('/login'); return }
+      const { error } = await restoreRotationPointer(supabase, user.id, prev)
+      if (error) throw error
+      await showUpNext(await loadRotationState(supabase, user.id))
+      flashToast(`${dayLabel(skipped)} is back up next`)
+      markAppDataStale('/home')
+      router.refresh()
+    } catch {
+      flashToast('Could not undo the skip. Try again.')
     } finally {
       skippingDayRef.current = false
       setSkippingDay(false)
@@ -1821,7 +1839,7 @@ export default function HomeDashboard({
       {/* Passive confirmation for the resume-block actions (save / discard). */}
       {actionToastExit.data && (
         <ToastPill
-          key={actionToastExit.data}
+          key={actionToastExit.data.msg}
           edge="bottom"
           exiting={actionToastExit.closing}
           onDismiss={() => setActionToast(null)}
@@ -1840,9 +1858,33 @@ export default function HomeDashboard({
             fontWeight: 600,
             boxShadow: '0 6px 20px rgba(0,0,0,0.35)',
             textAlign: 'center',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '14px',
           }}
         >
-          {actionToastExit.data}
+          <span>{actionToastExit.data.msg}</span>
+          {actionToastExit.data.undo && (
+            <button
+              className="press"
+              onClick={actionToastExit.data.undo}
+              style={{
+                flexShrink: 0,
+                minHeight: '32px',
+                padding: '0 4px',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                color: 'var(--accent-text)',
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: '13px',
+                fontWeight: 700,
+                letterSpacing: '0.5px',
+              }}
+            >
+              UNDO
+            </button>
+          )}
         </ToastPill>
       )}
 

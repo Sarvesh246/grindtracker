@@ -10,6 +10,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { localDateKey } from '@/lib/utils/formatting'
+import { restoreRotationPointer } from '@/lib/utils/rotationStore'
 
 export const FINISH_UNDO_KEY = 'grind_finish_undo'
 export const FINISH_UNDO_EVENT = 'grind:finish-undo'
@@ -29,6 +30,9 @@ export interface FinishUndoToken {
    * a stale/default value.
    */
   prevRotationIndex: number | null
+  /** Day at `prevRotationIndex`, so undo re-anchors correctly even if the
+   *  sequence shifted in between. Absent on tokens written before it existed. */
+  prevRotationDay?: string | null
   expiresAt: number
 }
 
@@ -104,10 +108,12 @@ export async function performFinishUndo(
   if (undoError) return false
 
   if (token.prevRotationIndex !== null) {
-    await supabase
-      .from('user_rotation')
-      .update({ current_index: token.prevRotationIndex })
-      .eq('user_id', user.id)
+    try {
+      await restoreRotationPointer(supabase, user.id, {
+        index: token.prevRotationIndex,
+        day: token.prevRotationDay ?? null,
+      })
+    } catch { /* session is already reopened; Home's resolver still copes */ }
   }
 
   clearFinishUndoToken()

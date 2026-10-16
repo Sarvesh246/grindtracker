@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { loadRotationState } from '@/lib/utils/rotationStore'
 import { enabledDayKeys } from '@/lib/utils/dayKeys'
 import type { DayCategory, UserRotation } from '@/lib/types'
 import { ALL_BADGES } from '@/lib/utils/badges'
@@ -360,7 +361,10 @@ export async function buildCoachContext(
   const flexSet = new Set(flexDays)
   const rotation = (rotationRow as UserRotation | null) ?? null
   const seq = effectiveSequence(rotation, dayKeys, flexSet)
-  const upNext = nextDay(seq, rotation?.current_index ?? -1)
+  // Same resolver as Home's Start button; raw pointer only if that read fails.
+  const resolved = await loadRotationState(supabase, userId).catch(() => null)
+  const currentIndex = resolved ? resolved.index : (rotation?.current_index ?? -1)
+  const upNext = resolved ? resolved.nextDay : nextDay(seq, currentIndex)
 
   const day_categories: Record<string, DayCategory> = {}
   for (const row of (categoryRows ?? []) as { day_key: string; category: DayCategory }[]) {
@@ -702,7 +706,7 @@ export async function buildCoachContext(
       day_categories,
       rotation_mode: rotation?.mode ?? null,
       sequence: seq,
-      current_index: rotation?.current_index ?? null,
+      current_index: rotation ? currentIndex : null,
       next_day: upNext,
       next_day_exercises,
     },

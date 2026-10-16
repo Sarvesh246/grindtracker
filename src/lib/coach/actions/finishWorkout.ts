@@ -1,7 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { enabledDayKeys } from '@/lib/utils/dayKeys'
-import type { UserRotation } from '@/lib/types'
-import { advanceIndex, effectiveSequence } from '@/lib/utils/rotation'
+import { advanceRotationAfterFinish } from '@/lib/utils/rotationStore'
 import { hourInTimeZone } from './dates'
 import { insertCoachProposal } from './proposals'
 import { mapCoachRpcError } from './rpcErrors'
@@ -96,44 +94,6 @@ export async function previewFinishWorkout(
   return { ok: true, proposal }
 }
 
-async function advanceRotationAfterFinish(
-  supabase: SupabaseClient,
-  userId: string,
-  dayType: string,
-): Promise<void> {
-  try {
-    const [{ data: dayTypeRows }, { data: rotationRow }, { data: flexRows }] =
-      await Promise.all([
-        supabase.from('exercises').select('day_type, active').eq('user_id', userId),
-        supabase
-          .from('user_rotation')
-          .select('*')
-          .eq('user_id', userId)
-          .maybeSingle(),
-        supabase.from('user_flex_days').select('day_key').eq('user_id', userId),
-      ])
-    const dayKeys = enabledDayKeys(dayTypeRows ?? [])
-    const rotation = rotationRow as UserRotation | null
-    const flexDays = new Set(
-      (flexRows ?? []).map((r: { day_key: string }) => r.day_key),
-    )
-    const seq = effectiveSequence(rotation, dayKeys, flexDays)
-    const newIndex = advanceIndex(seq, rotation?.current_index ?? -1, dayType)
-    await supabase.from('user_rotation').upsert(
-      {
-        user_id: userId,
-        mode: rotation?.mode ?? 'auto',
-        sequence: rotation?.sequence ?? [],
-        current_index: newIndex,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'user_id' },
-    )
-  } catch {
-    // Same as ActiveWorkout: rotation is best-effort and must not block finish.
-  }
-}
-
 export async function executeFinishWorkout(
   supabase: SupabaseClient,
   args: {
@@ -163,6 +123,10 @@ export async function executeFinishWorkout(
       }
     }
   }
-  await advanceRotationAfterFinish(supabase, args.userId, args.dayType)
+  try {
+    await advanceRotationAfterFinish(supabase, args.userId, args.dayType, args.sessionId)
+  } catch {
+    // Same as ActiveWorkout: rotation is best-effort and must not block finish.
+  }
   return { ok: true }
 }

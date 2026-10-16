@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { getLevel, getXpInCurrentLevel, getXpRequiredForLevel } from '../gamification'
-import { calendarDaysSince, nextDay, advanceIndex, autoSequence, orderedDayKeys } from '../rotation'
+import { calendarDaysSince, nextDay, advanceIndex, autoSequence, orderedDayKeys, resolveRotationIndex } from '../rotation'
 import { localDateKey, parseClientLocalDate } from '../formatting'
 import {
   datesConnected,
@@ -422,5 +422,62 @@ describe('restBudgetForWeek', () => {
       ],
     })
     assert.equal(budget, 0)
+  })
+})
+
+describe('resolveRotationIndex (Home Start button / UP NEXT)', () => {
+  const seq = ['legs', 'pull', 'push']
+  const finishedPullAt = '2026-10-15T18:00:00.000Z'
+  const lastPull = { day: 'pull', completedAt: finishedPullAt }
+
+  it('a skip written after the last workout sticks (was snapped back)', () => {
+    // Finished pull (pointer 1), then skipped push (pointer 2) later.
+    const row = { current_index: 2, current_day: null, updated_at: '2026-10-16T09:00:00.000Z' }
+    assert.equal(resolveRotationIndex(seq, row, lastPull), 2)
+    assert.equal(nextDay(seq, resolveRotationIndex(seq, row, lastPull)), 'legs')
+  })
+
+  it('a skip sticks with the current_day anchor too', () => {
+    const row = { current_index: 2, current_day: 'push', updated_at: '2026-10-16T09:00:00.000Z' }
+    assert.equal(nextDay(seq, resolveRotationIndex(seq, row, lastPull)), 'legs')
+  })
+
+  it('catches up when the finish advance never landed', () => {
+    // Pointer still on legs from before; pull finished afterwards.
+    const row = { current_index: 0, current_day: 'legs', updated_at: '2026-10-14T18:00:00.000Z' }
+    assert.equal(nextDay(seq, resolveRotationIndex(seq, row, lastPull)), 'push')
+  })
+
+  it('does not double-advance when the pointer is already on the finished day', () => {
+    const row = { current_index: 1, current_day: 'pull', updated_at: '2026-10-15T17:59:59.000Z' }
+    assert.equal(resolveRotationIndex(seq, row, lastPull), 1)
+  })
+
+  it('re-anchors when a day is added ahead of the pointer', () => {
+    // Was on pull (index 1 of legs,pull,push); "arms" added sorts first.
+    const grown = ['arms', 'legs', 'pull', 'push']
+    const row = { current_index: 1, current_day: 'pull', updated_at: '2026-10-16T09:00:00.000Z' }
+    assert.equal(nextDay(grown, resolveRotationIndex(grown, row, lastPull)), 'push')
+  })
+
+  it('keeps the following day next when the pointer day is disabled', () => {
+    // Was on pull; pull disabled → push should still be next.
+    const shrunk = ['legs', 'push']
+    const row = { current_index: 1, current_day: 'pull', updated_at: '2026-10-16T09:00:00.000Z' }
+    assert.equal(nextDay(shrunk, resolveRotationIndex(shrunk, row, null)), 'push')
+  })
+
+  it('picks the nearest copy of a repeated anchor day', () => {
+    const rep = ['push', 'abs', 'pull', 'abs', 'legs', 'abs']
+    const row = { current_index: 3, current_day: 'abs', updated_at: '2026-10-16T09:00:00.000Z' }
+    assert.equal(nextDay(rep, resolveRotationIndex(rep, row, null)), 'legs')
+  })
+
+  it('no rotation row and no history → first day', () => {
+    assert.equal(nextDay(seq, resolveRotationIndex(seq, null, null)), 'legs')
+  })
+
+  it('no rotation row but a past workout → the day after it', () => {
+    assert.equal(nextDay(seq, resolveRotationIndex(seq, null, lastPull)), 'push')
   })
 })

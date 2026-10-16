@@ -5,7 +5,7 @@ import { readWithRetry } from '@/lib/supabase/readWithRetry'
 import { redirect } from 'next/navigation'
 import HomeDashboard from './HomeDashboard'
 import type { UserRotation } from '@/lib/types'
-import { effectiveSequence, nextDay as nextDayFromRotation, resolveCurrentIndex } from '@/lib/utils/rotation'
+import { effectiveSequence, nextDay as nextDayFromRotation, resolveRotationIndex } from '@/lib/utils/rotation'
 import { isAdminEmail } from '@/lib/utils/admin'
 import {
   DEMO_IDENTITY,
@@ -197,14 +197,14 @@ export default async function HomePage() {
   const rotation = (rotationRow as UserRotation | null)
   const flexDays = new Set((flexRows ?? []).map(r => r.day_key))
   const seq = effectiveSequence(rotation, dayKeys, flexDays)
-  // A day added/removed/reordered since the pointer was last advanced can
-  // leave current_index pointing at the wrong slot (in-range but no longer
-  // the completed day) — repair it against the actual last-completed session
-  // before deriving "up next" so the suggestion doesn't lag a full cycle.
-  const resolvedRotationIndex = resolveCurrentIndex(
+  // Same resolver Log's UP NEXT, skip and finish use (rotation.ts), so a skip
+  // sticks and a sequence change can't leave the suggestion a slot off.
+  const resolvedRotationIndex = resolveRotationIndex(
     seq,
-    rotation?.current_index ?? -1,
-    lastSession?.day_type ?? null,
+    rotation,
+    lastSession?.completed_at
+      ? { day: lastSession.day_type, completedAt: lastSession.completed_at }
+      : null,
   )
   const nextDay = nextDayFromRotation(seq, resolvedRotationIndex) ?? dayKeys.sort()[0] ?? 'push'
 

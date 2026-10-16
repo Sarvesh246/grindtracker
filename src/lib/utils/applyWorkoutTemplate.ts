@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { writeRotationRow } from './rotationStore'
 import { getWorkoutTemplate } from '@/lib/utils/workoutTemplates'
 
 export type ApplyWorkoutTemplateResult =
@@ -40,16 +41,13 @@ export async function applyWorkoutTemplate(
   const [{ error: exError }, { error: catError }, { error: rotError }] = await Promise.all([
     supabase.from('exercises').insert(exerciseRows),
     supabase.from('user_day_categories').upsert(categoryRows, { onConflict: 'user_id,day_key' }),
-    supabase.from('user_rotation').upsert(
-      {
-        user_id: userId,
-        mode: 'manual',
-        sequence: template.sequence,
-        current_index: -1, // pointer = last completed slot; -1 ⇒ first day is next
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'user_id' },
-    ),
+    writeRotationRow(supabase, {
+      user_id: userId,
+      mode: 'manual',
+      sequence: template.sequence,
+      current_index: -1, // pointer = last completed slot; -1 ⇒ first day is next
+      current_day: null,
+    }),
   ])
 
   if (exError || catError || rotError) {

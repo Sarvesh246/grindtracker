@@ -1,5 +1,4 @@
 'use client'
-import { enabledDayKeys } from '@/lib/utils/dayKeys'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -12,7 +11,7 @@ import { localDateKey } from '@/lib/utils/formatting'
 import { haptic } from '@/lib/utils/haptics'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { deleteIncompleteSessions } from '@/lib/utils/sessions'
-import { advanceIndex, effectiveSequence } from '@/lib/utils/rotation'
+import { advanceRotationAfterFinish, type PointerSnapshot } from '@/lib/utils/rotationStore'
 import {
   queueOp,
   flushQueuedOps,
@@ -24,7 +23,7 @@ import {
 import { reportError } from '@/lib/utils/reportError'
 import { planWarmupRamp } from '@/lib/utils/warmupSets'
 import { formatWarmupPercentsList, percentsToFractions, readWarmupPercents } from '@/lib/utils/warmupPrefs'
-import type { UserRotation, UserStats, CompleteSessionResult } from '@/lib/types'
+import type { UserStats, CompleteSessionResult } from '@/lib/types'
 import {
   emptySetState,
   findCarryReps,
@@ -2619,41 +2618,20 @@ export default function ActiveWorkout({ day }: { day: string }) {
       // after this one. Best-effort — a failure here must never block
       // completion.
       // null (not -1) means "never actually advanced" — see FinishUndoToken.
-      let prevRotationIndex: number | null = null
+      let prevPointer: PointerSnapshot | null = null
       try {
-        const [{ data: dayTypeRows }, { data: rotationRow }, { data: flexRows }] = await Promise.all([
-          supabase.from('exercises').select('day_type, active'),
-          supabase.from('user_rotation').select('*').eq('user_id', user.id).maybeSingle(),
-          supabase.from('user_flex_days').select('day_key').eq('user_id', user.id),
-        ])
-        const dayKeys = enabledDayKeys(dayTypeRows ?? [])
-        const rotation = rotationRow as UserRotation | null
-        prevRotationIndex = rotation?.current_index ?? -1
-        const flexDays = new Set((flexRows ?? []).map((r: { day_key: string }) => r.day_key))
-        const seq = effectiveSequence(rotation, dayKeys, flexDays)
-        const newIndex = advanceIndex(seq, rotation?.current_index ?? -1, day)
-        await supabase.from('user_rotation').upsert(
-          {
-            user_id: user.id,
-            mode: rotation?.mode ?? 'auto',
-            sequence: rotation?.sequence ?? [],
-            current_index: newIndex,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'user_id' },
-        )
+        prevPointer = await advanceRotationAfterFinish(supabase, user.id, day, sessionId)
       } catch {
         // Rotation is a non-critical convenience; swallow and move on.
       }
 
-      // Store a 10-minute undo token so Home's FinishUndoBanner (and this
-      // modal) can reverse an accidental finish.
       writeFinishUndoToken({
         sessionId,
         day,
         userId: user.id,
         xpEarned,
-        prevRotationIndex,
+        prevRotationIndex: prevPointer?.index ?? null,
+        prevRotationDay: prevPointer?.day ?? null,
         expiresAt: Date.now() + FINISH_UNDO_TTL_MS,
       })
 

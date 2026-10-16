@@ -66,6 +66,7 @@ is fully linked to migration history.
 | [51-first-session-baseline-pr.sql](sql/51-first-session-baseline-pr.sql) | 51 | **Paste this in Supabase, deploy with the matching app change.** First completed session per exercise is the PR baseline (not a PR); later sessions must beat that volume. Sets `grind.allow_session_complete` so the SQL editor can recompute `is_pr` on completed logs (same GUC as `complete_session`) |
 | [52-audit-fixes.sql](sql/52-audit-fixes.sql) | 52 | **Paste this in Supabase.** Full-codebase audit fixes: dedupe the +50 streak-milestone XP bonus per date (was double-paid on a flex-day milestone), `grind_safe_local_date` STABLE not IMMUTABLE, `award_earned_badges`'s weekly window aligned to `grind_week_start` (Sunday) instead of UTC Monday, `sessions.day_type` locked once a session is completed |
 | [53-day-plans-rest-longer-coach-messages.sql](sql/53-day-plans-rest-longer-coach-messages.sql) | 53 | `exercises.rest_seconds` (programmed rest per exercise), Coach messages up to 12000 chars, `apply_weekly_plan` Coach action kind |
+| [54-rotation-current-day.sql](sql/54-rotation-current-day.sql) | 54 | **Paste this in Supabase.** `user_rotation.current_day` anchors the up-next pointer to a day so it survives days being added/disabled/reordered. The app works without it (skips already stick), but sequence edits re-anchor only once it's applied |
 
 See also [PUSH.md](PUSH.md) for VAPID keys, Vercel env, and cron setup.
 See [COACH.md](COACH.md) for Gemini env, rate limits, `/api/coach/chat`, and

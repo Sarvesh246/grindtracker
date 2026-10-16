@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { writeRotationRow } from '@/lib/utils/rotationStore'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import Button from '@/components/ui/Button'
 import { WORKOUT_TEMPLATES } from '@/lib/utils/workoutTemplates'
@@ -100,16 +101,13 @@ export default function WorkoutStep({
         return
       }
       // Seed rotation with the single day so Home has a suggestion.
-      const { error: rotErr } = await supabase.from('user_rotation').upsert(
-        {
-          user_id: userId,
-          mode: 'manual',
-          sequence: [key],
-          current_index: -1,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'user_id' },
-      )
+      const { error: rotErr } = await writeRotationRow(supabase, {
+        user_id: userId,
+        mode: 'manual',
+        sequence: [key],
+        current_index: -1,
+        current_day: null,
+      })
       if (rotErr) {
         setError(rotErr.message)
         return

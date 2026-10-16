@@ -1,7 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { enabledDayKeys } from '@/lib/utils/dayKeys'
-import type { UserRotation } from '@/lib/types'
-import { effectiveSequence } from '@/lib/utils/rotation'
+import { loadRotationState, restoreRotationPointer } from '@/lib/utils/rotationStore'
 import { insertCoachProposal } from './proposals'
 import { mapCoachRpcError } from './rpcErrors'
 import { COACH_PROPOSAL_INSERT_FAILED } from './types'
@@ -52,27 +50,14 @@ export async function previewUndoFinishWorkout(
   const localDate =
     (session.local_date as string | null) ?? args.localDate
 
+  // Same resolver Home uses, so "the slot before this day" is the real one.
   let prevRotationIndex: number | null = null
-  const [{ data: dayTypeRows }, { data: rotationRow }, { data: flexRows }] =
-    await Promise.all([
-      supabase.from('exercises').select('day_type, active').eq('user_id', args.userId),
-      supabase
-        .from('user_rotation')
-        .select('*')
-        .eq('user_id', args.userId)
-        .maybeSingle(),
-      supabase.from('user_flex_days').select('day_key').eq('user_id', args.userId),
-    ])
-  const rotation = rotationRow as UserRotation | null
-  const dayKeys = enabledDayKeys(dayTypeRows ?? [])
-  const flexDays = new Set(
-    (flexRows ?? []).map((r: { day_key: string }) => r.day_key),
-  )
-  const seq = effectiveSequence(rotation, dayKeys, flexDays)
-  const idx = rotation?.current_index ?? -1
-  if (seq.length > 0 && idx >= 0 && seq[idx % seq.length] === dayType) {
-    prevRotationIndex = (idx - 1 + seq.length) % seq.length
-  }
+  try {
+    const { seq, index } = await loadRotationState(supabase, args.userId)
+    if (seq.length > 0 && index >= 0 && seq[index] === dayType) {
+      prevRotationIndex = (index - 1 + seq.length) % seq.length
+    }
+  } catch { /* leave the pointer alone on undo */ }
 
   const remainingMin = Math.max(
     1,
@@ -133,10 +118,9 @@ export async function executeUndoFinishWorkout(
     }
   }
   if (args.prevRotationIndex != null) {
-    await supabase
-      .from('user_rotation')
-      .update({ current_index: args.prevRotationIndex })
-      .eq('user_id', args.userId)
+    try {
+      await restoreRotationPointer(supabase, args.userId, { index: args.prevRotationIndex, day: null })
+    } catch { /* session is reopened; the pointer is best-effort */ }
   }
   return { ok: true }
 }
