@@ -49,3 +49,7 @@ next-env.d.ts
 test-results/
 playwright-report/
 
+# Skipper — machine-local artifacts (hook scratch + derived index), never commit
+.claude/.skipper-*
+.skipper/*
+!.skipper/receipts/

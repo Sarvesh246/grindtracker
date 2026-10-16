@@ -26,7 +26,7 @@ npx web-push generate-vapid-keys
 | `CRON_SECRET` | Server only | Bearer token for `/api/cron/notifications` |
 | `SUPABASE_SERVICE_ROLE_KEY` | Server only | Cron claims due rows via service role |
 
-Locally, put the same keys in `.env.local`.
+Locally, put the same keys in [`.env.local`](../.env.local).
 
 ## Cron
 
