@@ -27,6 +27,11 @@ import {
   type CoachToolContext,
 } from '@/lib/coach/actions'
 import { titleFromMessage } from '@/lib/coach/conversations'
+import {
+  normalizeCoachTurns,
+  unansweredUserTurns,
+  type CoachTurn,
+} from '@/lib/coach/history'
 import { loadCoachChipHints } from '@/lib/coach/chipHints'
 import {
   coachContextCacheKey,
@@ -37,7 +42,24 @@ import {
 export const runtime = 'nodejs'
 export const maxDuration = 60
 
-type HistoryItem = { role: 'user' | 'assistant'; content: string }
+/**
+ * Wall-clock budget for the whole model exchange. A function killed at
+ * maxDuration just ends the stream (no error, no `done`), which the client
+ * used to report as an empty reply — so the empty-reply retry below only
+ * starts while there's realistically time left for it to finish.
+ */
+const RETRY_DEADLINE_MS = 35_000
+/**
+ * Hard stop for model streaming, a few seconds inside maxDuration, so a slow
+ * reply ends with our own fallback/partial notice, `done`, and a quota refund
+ * instead of Vercel killing the function mid-stream.
+ */
+const MODEL_DEADLINE_MS = 52_000
+
+type HistoryItem = CoachTurn
+
+/** Model steps per turn (tool call → result → reply). */
+const MAX_STEPS = 3
 
 function parseUnit(
   bodyUnit: unknown,
@@ -69,7 +91,7 @@ function resolveAsOfLocalDate(body: Record<string, unknown>): {
   return { localDate: utc, timeZone }
 }
 
-function sanitizeHistory(raw: unknown): ModelMessage[] {
+function sanitizeHistory(raw: unknown): HistoryItem[] {
   if (!Array.isArray(raw)) return []
   const items: HistoryItem[] = []
   for (const entry of raw) {
@@ -83,13 +105,11 @@ function sanitizeHistory(raw: unknown): ModelMessage[] {
     items.push({ role, content: trimmed })
   }
   // Keep the tail only — client shouldn't ship whole archives.
-  return items.slice(-COACH_MAX_HISTORY_MESSAGES).map(m => ({
-    role: m.role,
-    content: m.content,
-  }))
+  return items.slice(-COACH_MAX_HISTORY_MESSAGES)
 }
 
 export async function POST(request: Request) {
+  const requestStartedAt = Date.now()
   const apiKey =
     process.env.GEMINI_API_KEY?.trim() ||
     process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim()
@@ -310,13 +330,24 @@ export async function POST(request: Request) {
 
   // Adapt depth budget + reminder from THIS ask so different intents cannot
   // collapse into one template sprawl (token ceiling + intent-calibrated nudge).
-  const priorUser = [...history]
-    .reverse()
-    .find(m => m.role === 'user' && typeof m.content === 'string')
-  const priorUserText =
-    typeof priorUser?.content === 'string' ? priorUser.content : null
-  const intentProfile = inferCoachIntent(message, priorUserText)
+  const priorUser = [...history].reverse().find(m => m.role === 'user')
+  const intentProfile = inferCoachIntent(message, priorUser?.content ?? null)
   const turnReminder = buildCoachTurnReminder(intentProfile)
+
+  // Asks left unanswered by a failed reply get merged into this turn (see
+  // normalizeCoachTurns). The model may well act on them — a pasted week is a
+  // multi-thousand-token tool call — so the budget must cover the largest of
+  // them, not just the new message.
+  const maxOutputTokens = Math.max(
+    intentProfile.maxOutputTokens,
+    ...unansweredUserTurns(history).map(
+      t => inferCoachIntent(t).maxOutputTokens,
+    ),
+  )
+  const messages: ModelMessage[] = normalizeCoachTurns([
+    ...history,
+    { role: 'user', content: message },
+  ])
 
   const google = createGoogleGenerativeAI({ apiKey })
   // Same base system prompt for every turn (starter chips and free-typed
@@ -350,8 +381,10 @@ Remember: intent before formatting — Understand intent → assess complexity �
   const baseCall = {
     model: google(modelId),
     system,
-    messages: [...history, { role: 'user', content: message }] as ModelMessage[],
-    temperature: 0.4,
+    messages,
+    // Google: for Gemini 3 keep temperature at the 1.0 default — lower values
+    // can cause looping / degraded output (and runs that end with no text).
+    ...(/gemini-3|-latest$/.test(modelId) ? {} : { temperature: 0.4 }),
     reasoning: 'none' as const,
     onError: ({ error }: { error: unknown }) => {
       // streamText() returns before the model call actually runs, so this
@@ -370,19 +403,32 @@ Remember: intent before formatting — Understand intent → assess complexity �
     // / SAFETY / OTHER, minimal thinking eating a small budget → 'length',
     // or every step spent on tool calls), and the client used to show
     // "Coach returned an empty reply" with nothing in the logs.
+    const startedAt = Date.now()
+    const abortSignal = AbortSignal.timeout(
+      Math.max(5_000, MODEL_DEADLINE_MS - (startedAt - requestStartedAt)),
+    )
     const startAttempt = (withTools: boolean) =>
       withTools
         ? streamText({
             ...baseCall,
-            maxOutputTokens: intentProfile.maxOutputTokens,
+            abortSignal,
+            maxOutputTokens,
             tools,
-            stopWhen: stepCountIs(3),
+            stopWhen: stepCountIs(MAX_STEPS),
+            // The last allowed step can't call a tool, or a model that keeps
+            // retrying a rejected proposal spends every step on tool calls
+            // and never writes a word.
+            prepareStep: ({ stepNumber }) =>
+              stepNumber >= MAX_STEPS - 1
+                ? { toolChoice: 'none' as const }
+                : undefined,
           })
         : streamText({
             ...baseCall,
+            abortSignal,
             // Headroom for whatever ate the first budget (thinking, a
             // half-built tool call).
-            maxOutputTokens: Math.max(intentProfile.maxOutputTokens * 2, 2048),
+            maxOutputTokens: Math.max(maxOutputTokens * 2, 2048),
           })
 
     // NDJSON stream: text-delta / proposal / error / done — so the client can
@@ -420,6 +466,9 @@ Remember: intent before formatting — Understand intent → assess complexity �
             } else if (part.type === 'finish') {
               finishReason = part.finishReason
               rawFinishReason = part.rawFinishReason
+            } else if (part.type === 'abort') {
+              sawError = true
+              console.error('[grind] coach stream aborted (deadline)')
             } else if (part.type === 'error') {
               sawError = true
               console.error('[grind] coach stream error', part.error)
@@ -429,30 +478,51 @@ Remember: intent before formatting — Understand intent → assess complexity �
           flushProposals()
           return { finishReason, rawFinishReason }
         }
+        let lastFinish: Awaited<ReturnType<typeof consume>> | undefined
         try {
-          const first = await consume(true)
-          const empty = !full.trim() && emittedProposalIds.size === 0
-          if (empty && !sawError) {
-            console.warn('[grind] coach empty reply, retrying without tools', {
-              model: modelId,
-              intent: intentProfile.intent,
-              ...first,
-            })
-            const second = await consume(false)
-            if (!full.trim()) {
-              console.error('[grind] coach empty reply after retry', second)
-              sawError = true
-            }
-          }
+          lastFinish = await consume(true)
         } catch (err) {
           sawError = true
           console.error('[grind] coach stream error', err)
+        }
+        // Nothing usable came back — no text, no proposal. Covers transient
+        // upstream errors (overloaded / 5xx mid-stream) as well as the silent
+        // finishes noted above. One text-only retry, if there's time.
+        const empty = !full.trim() && emittedProposalIds.size === 0
+        if (
+          empty &&
+          !abortSignal.aborted &&
+          Date.now() - startedAt < RETRY_DEADLINE_MS
+        ) {
+          console.warn('[grind] coach empty reply, retrying without tools', {
+            model: modelId,
+            intent: intentProfile.intent,
+            sawError,
+            ...lastFinish,
+          })
+          sawError = false
+          full = ''
+          try {
+            lastFinish = await consume(false)
+          } catch (err) {
+            sawError = true
+            console.error('[grind] coach stream error (retry)', err)
+          }
+        }
+        try {
+          if (!full.trim() && emittedProposalIds.size === 0) {
+            console.error('[grind] coach empty reply', lastFinish)
+            sawError = true
+          }
         } finally {
           const gotReply = full.trim().length > 0 || emittedProposalIds.size > 0
           if (sawError && !gotReply) {
-            full =
-              'Sorry, I hit an error generating a reply. Try again in a moment.'
-            emit({ type: 'text-delta', text: full })
+            // Not persisted (gotReply stays false) and the turn is refunded.
+            const fallback =
+              lastFinish?.finishReason === 'content-filter'
+                ? "I couldn't answer that one — Gemini's safety filter blocked the reply. Try rephrasing it."
+                : 'Sorry, I hit an error generating a reply. Try again in a moment.'
+            emit({ type: 'text-delta', text: fallback })
           }
           if (sawError && gotReply) {
             emit({

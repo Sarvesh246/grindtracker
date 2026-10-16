@@ -541,6 +541,10 @@ export function CoachProvider({
         let textAcc = ''
         let rawAcc = ''
         const proposals: CoachProposalView[] = []
+        // The server always ends an NDJSON reply with `done`. A stream that
+        // closes without it was cut off (function timeout, dropped mobile
+        // connection) — not a model that chose to say nothing.
+        let sawDone = false
         // Don't trust the custom header alone — Vercel/fetch can hide it.
         // Decide from Content-Type, header, or body sniff (may flip after first chunk).
         let mode: 'unknown' | 'ndjson' | 'plain' = shouldParseCoachNdjson({
@@ -609,6 +613,8 @@ export function CoachProvider({
             flushAssistant(textAcc, [...proposals])
           } else if (event.type === 'error') {
             setError(event.error)
+          } else if (event.type === 'done') {
+            sawDone = true
           }
         }
 
@@ -658,6 +664,7 @@ export function CoachProvider({
             }
             if (recovered.error) setError(recovered.error)
           }
+          if (!sawDone && rawAcc.includes('"type":"done"')) sawDone = true
         } else if (looksLikeCoachNdjson(rawAcc)) {
           // Plain mode was wrong — recover from the full raw stream.
           const recovered = rehydrateCoachNdjson(rawAcc)
@@ -677,9 +684,16 @@ export function CoachProvider({
           proposals,
           true,
         )
+        const cutOff = mode === 'ndjson' && !sawDone
         if (!finalText && proposals.length === 0) {
           setMessages(prev => prev.filter(m => m.id !== assistantId))
-          setError('Coach returned an empty reply. Try again.')
+          setError(
+            cutOff
+              ? 'Coach took too long or the connection dropped. Try again.'
+              : 'Coach returned an empty reply. Try again.',
+          )
+        } else if (cutOff) {
+          setError('Connection dropped mid-reply. Partial answer shown.')
         }
       } catch {
         setMessages(prev =>
