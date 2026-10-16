@@ -16,6 +16,7 @@ import { previewEditExercise } from './editExercise'
 import { previewUpdateRotation } from './updateRotation'
 import { displayWeightToLbs, previewEditSessionLog } from './editSessionLog'
 import { previewUpdateNotificationPrefs } from './updateNotificationPrefs'
+import { previewApplyWeeklyPlan } from './applyWeeklyPlan'
 import type { CoachProposalView } from './types'
 
 export type CoachToolContext = {
@@ -176,6 +177,75 @@ export function buildCoachProposalTools(ctx: CoachToolContext) {
           proposalId: result.proposal.id,
           summary: result.proposal.card.summaryLines.join(' · '),
           note: 'Waiting for user Confirm. Do not claim the day exists yet.',
+        }
+      },
+    }),
+
+    propose_apply_weekly_plan: tool({
+      description:
+        'Propose installing a WHOLE training week from a pasted plan ("replace my workout days with…", a Monday–Sunday split). One confirm does everything: creates/updates each training day with its exercises, sets and reps, and per-exercise rest timers; maps each day to its weekday and sets the workout order so "up next" matches today; marks the plan’s rest days as weekly rest; and HIDES the user’s other existing days (hidden, never deleted). Use keepDays for days the user said to leave alone (e.g. "besides home abs and the normal abs") — exact day names from USER_DATA. Include every training day from the paste in ONE call; leave rest/recovery days out of days and list their weekdays in restWeekdays. rest_seconds per exercise: when the plan gives a range ("2–3 min") use the longer end; "90 sec" = 90. dayKey is the plan’s day name ("Lower A"). category: legs for lower-body days, push/pull when clearly one, else other. Preview only — user must Confirm. Do not also call propose_create_day. Never claim it is applied before Confirm.',
+      inputSchema: z.object({
+        days: z
+          .array(
+            z.object({
+              dayKey: z.string().min(1).describe('Day name, e.g. "Lower A"'),
+              weekday: z
+                .union([z.number().int().min(0).max(6), z.string()])
+                .describe('When this workout happens: Monday…Sunday or 0–6 (Sun=0)'),
+              category: z.enum(['push', 'pull', 'legs', 'other']).optional(),
+              exercises: z
+                .array(
+                  z.object({
+                    name: z.string().min(1),
+                    sets_target: z.number().int().min(1).max(12),
+                    reps_target: z.string().min(1).describe('e.g. "6-10" or "8-12/leg"'),
+                    rest_seconds: z.number().int().min(15).max(900).optional(),
+                    weight_target_lbs: z.number().positive().optional(),
+                  }),
+                )
+                .min(1)
+                .max(20),
+            }),
+          )
+          .min(1)
+          .max(7),
+        restWeekdays: z
+          .array(z.union([z.number().int().min(0).max(6), z.string()]))
+          .optional()
+          .describe('Weekdays that are rest/recovery in the plan'),
+        keepDays: z
+          .array(z.string())
+          .optional()
+          .describe('Existing days to leave untouched (not hidden)'),
+      }),
+      execute: async input => {
+        const result = await previewApplyWeeklyPlan(ctx.supabase, {
+          userId: ctx.userId,
+          conversationId: ctx.conversationId,
+          days: input.days.map(d => ({
+            dayKey: d.dayKey,
+            weekday: d.weekday,
+            category: d.category ?? null,
+            exercises: d.exercises.map(e => ({
+              name: e.name,
+              sets_target: e.sets_target,
+              reps_target: e.reps_target,
+              rest_seconds: e.rest_seconds ?? null,
+              weight_target_lbs:
+                e.weight_target_lbs != null ? toLbs(e.weight_target_lbs) : null,
+            })),
+          })),
+          restWeekdays: input.restWeekdays ?? null,
+          keepDays: input.keepDays ?? null,
+          localDate: ctx.localDate,
+        })
+        if (!result.ok) return { ok: false as const, reason: result.reason }
+        ctx.proposals.push(result.proposal)
+        return {
+          ok: true as const,
+          proposalId: result.proposal.id,
+          summary: result.proposal.card.summaryLines.join(' · '),
+          note: CONFIRM_NOTE,
         }
       },
     }),

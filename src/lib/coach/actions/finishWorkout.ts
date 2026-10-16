@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { enabledDayKeys } from '@/lib/utils/dayKeys'
 import type { UserRotation } from '@/lib/types'
 import { advanceIndex, effectiveSequence } from '@/lib/utils/rotation'
 import { hourInTimeZone } from './dates'
@@ -103,7 +104,7 @@ async function advanceRotationAfterFinish(
   try {
     const [{ data: dayTypeRows }, { data: rotationRow }, { data: flexRows }] =
       await Promise.all([
-        supabase.from('exercises').select('day_type').eq('user_id', userId),
+        supabase.from('exercises').select('day_type, active').eq('user_id', userId),
         supabase
           .from('user_rotation')
           .select('*')
@@ -111,9 +112,7 @@ async function advanceRotationAfterFinish(
           .maybeSingle(),
         supabase.from('user_flex_days').select('day_key').eq('user_id', userId),
       ])
-    const dayKeys = Array.from(
-      new Set((dayTypeRows ?? []).map(r => String(r.day_type))),
-    )
+    const dayKeys = enabledDayKeys(dayTypeRows ?? [])
     const rotation = rotationRow as UserRotation | null
     const flexDays = new Set(
       (flexRows ?? []).map((r: { day_key: string }) => r.day_key),

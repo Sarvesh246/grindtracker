@@ -1,4 +1,5 @@
 'use client'
+import { enabledDayKeys } from '@/lib/utils/dayKeys'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -48,7 +49,7 @@ import {
 } from './sessionLogState'
 import { useRestTimer, getPauseRestOnExit } from '@/lib/hooks/useRestTimer'
 import { useTapGesture } from '@/lib/hooks/useTapGesture'
-import { resolveRestSeconds, setSessionRest, clearSessionRest } from '@/lib/utils/restPref'
+import { resolveRestSeconds, setSessionRest, clearSessionRest, registerProgrammedRest } from '@/lib/utils/restPref'
 import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
 import { useExitingValue } from '@/lib/hooks/useExitingValue'
 import RestTimerBar from '@/components/RestTimerBar'
@@ -493,6 +494,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       .order('day_type', { ascending: true })
       .order('sort_order', { ascending: true })
     setAllExercises(allExsData ?? [])
+    registerProgrammedRest(allExsData ?? [])
 
     const todayStart = new Date()
     todayStart.setHours(0, 0, 0, 0)
@@ -2620,11 +2622,11 @@ export default function ActiveWorkout({ day }: { day: string }) {
       let prevRotationIndex: number | null = null
       try {
         const [{ data: dayTypeRows }, { data: rotationRow }, { data: flexRows }] = await Promise.all([
-          supabase.from('exercises').select('day_type'),
+          supabase.from('exercises').select('day_type, active'),
           supabase.from('user_rotation').select('*').eq('user_id', user.id).maybeSingle(),
           supabase.from('user_flex_days').select('day_key').eq('user_id', user.id),
         ])
-        const dayKeys = Array.from(new Set((dayTypeRows ?? []).map(r => r.day_type)))
+        const dayKeys = enabledDayKeys(dayTypeRows ?? [])
         const rotation = rotationRow as UserRotation | null
         prevRotationIndex = rotation?.current_index ?? -1
         const flexDays = new Set((flexRows ?? []).map((r: { day_key: string }) => r.day_key))

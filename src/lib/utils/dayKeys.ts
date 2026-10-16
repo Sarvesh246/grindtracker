@@ -36,3 +36,35 @@ export function slugDayKey(raw: string): string {
 export function logDayHref(dayKey: string): string {
   return `/log?day=${encodeURIComponent(dayKey)}`
 }
+
+/**
+ * Day keys that are switched on: a day is disabled when it has exercises but
+ * none of them is active (Manage → "Disable day" flips every exercise off).
+ * Everything that builds the rotation / "up next" suggestion goes through this
+ * so a disabled day drops out of Log, Home and the Coach without being deleted
+ * — its history, colors and exercises stay put and re-enabling restores it.
+ * Rows without an `active` field count as active.
+ */
+export function enabledDayKeys(
+  rows: ReadonlyArray<{ day_type: string; active?: boolean | null }>,
+): string[] {
+  const enabled = new Set<string>()
+  for (const r of rows) {
+    if (r.active !== false) enabled.add(String(r.day_type))
+  }
+  return [...enabled]
+}
+
+/** A day with exercises where every one is inactive. */
+export function isDayDisabled(
+  rows: ReadonlyArray<{ day_type: string; active?: boolean | null }>,
+  dayKey: string,
+): boolean {
+  let any = false
+  for (const r of rows) {
+    if (r.day_type !== dayKey) continue
+    any = true
+    if (r.active !== false) return false
+  }
+  return any
+}

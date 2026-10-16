@@ -1,4 +1,5 @@
 import { cookies } from 'next/headers'
+import { enabledDayKeys } from '@/lib/utils/dayKeys'
 import { createClient, getAuthUser } from '@/lib/supabase/server'
 import { readWithRetry } from '@/lib/supabase/readWithRetry'
 import { redirect } from 'next/navigation'
@@ -76,7 +77,7 @@ export default async function HomePage() {
     ),
     // Empty here means "no days configured", which drives `hasDays` and the
     // "set up your first day" copy — worth a retry before believing it.
-    readWithRetry('home:exercise_days', () => supabase.from('exercises').select('day_type')),
+    readWithRetry('home:exercise_days', () => supabase.from('exercises').select('day_type, active')),
     supabase.from('user_rotation').select('*').eq('user_id', user.id).maybeSingle(),
     supabase.from('user_flex_days').select('day_key').eq('user_id', user.id),
     readWithRetry('home:history', () => supabase.rpc('grind_home_history', { p_lookback_days: 90 })),
@@ -192,7 +193,7 @@ export default async function HomePage() {
     }
   }
 
-  const dayKeys = Array.from(new Set((dayTypeRows ?? []).map(r => r.day_type)))
+  const dayKeys = enabledDayKeys(dayTypeRows ?? [])
   const rotation = (rotationRow as UserRotation | null)
   const flexDays = new Set((flexRows ?? []).map(r => r.day_key))
   const seq = effectiveSequence(rotation, dayKeys, flexDays)

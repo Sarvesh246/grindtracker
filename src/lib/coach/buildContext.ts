@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { enabledDayKeys } from '@/lib/utils/dayKeys'
 import type { DayCategory, UserRotation } from '@/lib/types'
 import { ALL_BADGES } from '@/lib/utils/badges'
 import { effectiveSequence, nextDay } from '@/lib/utils/rotation'
@@ -354,7 +355,7 @@ export async function buildCoachContext(
   const activeExercises = allExercises.filter(e => e.active)
   const inactive_count = allExercises.length - activeExercises.length
 
-  const dayKeys = Array.from(new Set(allExercises.map(e => e.day_type))).sort()
+  const dayKeys = enabledDayKeys(allExercises).sort()
   const flexDays = (flexRows ?? []).map((r: { day_key: string }) => r.day_key).sort()
   const flexSet = new Set(flexDays)
   const rotation = (rotationRow as UserRotation | null) ?? null

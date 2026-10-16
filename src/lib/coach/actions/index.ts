@@ -23,6 +23,9 @@ export type {
   UpdateRotationExecutePayload,
   EditSessionLogExecutePayload,
   UpdateNotificationPrefsExecutePayload,
+  ApplyWeeklyPlanExecutePayload,
+  WeeklyPlanDay,
+  WeeklyPlanExercise,
   NotificationPrefsPatch,
 } from './types'
 export { COACH_PROPOSAL_TTL_MS, COACH_PROPOSAL_INSERT_FAILED } from './types'
@@ -89,6 +92,11 @@ export {
   executeEditSessionLog,
   type SessionLogEditPatch,
 } from './editSessionLog'
+export {
+  validateWeeklyPlanInput,
+  previewApplyWeeklyPlan,
+  executeApplyWeeklyPlan,
+} from './applyWeeklyPlan'
 export {
   previewUpdateNotificationPrefs,
   executeUpdateNotificationPrefs,

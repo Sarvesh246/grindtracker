@@ -21,6 +21,7 @@ export type CoachActionKind =
   | 'update_rotation'
   | 'edit_session_log'
   | 'update_notification_prefs'
+  | 'apply_weekly_plan'
 
 export type CoachActionStatus =
   | 'pending'
@@ -177,7 +178,41 @@ export type UpdateNotificationPrefsExecutePayload = {
   patch: NotificationPrefsPatch
 }
 
+export type WeeklyPlanExercise = {
+  name: string
+  sets_target: number
+  reps_target: string
+  rest_seconds: number | null
+  weight_target_lbs: number | null
+}
+
+export type WeeklyPlanDay = {
+  dayKey: string
+  /** 0=Sun..6=Sat */
+  weekday: number
+  category: 'push' | 'pull' | 'legs' | 'other' | null
+  exercises: WeeklyPlanExercise[]
+}
+
+export type ApplyWeeklyPlanExecutePayload = {
+  days: WeeklyPlanDay[]
+  /** Existing days to hide (every exercise set inactive) — never deleted. */
+  hideDays: string[]
+  /** Manual rotation loop, Mon→Sun order. */
+  sequence: string[]
+  /** Pointer so the next-up day lines up with the user's real weekday. */
+  currentIndex: number
+  restWeekdaysEnable: number[]
+  restWeekdaysDisable: number[]
+  localDate: string
+}
+
 export type CoachActionPayload =
+  | {
+      kind: 'apply_weekly_plan'
+      card: CoachActionCardModel
+      execute: ApplyWeeklyPlanExecutePayload
+    }
   | {
       kind: 'correct_weights'
       card: CoachActionCardModel

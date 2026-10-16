@@ -12,6 +12,7 @@
 export type CoachIntent =
   | 'safety'
   | 'actionable'
+  | 'plan_install'
   | 'workout'
   | 'program'
   | 'technique'
@@ -66,6 +67,20 @@ const DEFINITION_RE =
 const SHORT_CONTEXT_RE =
   /^(bench|squat|deadlift|ohp|row|pull|push|legs?|today|progress|increase|why|next|worth it|same|more|enough|rest|deload|skip)\??$/i
 
+/** A pasted training week: replace/install phrasing, or a long message naming most weekdays. */
+const PLAN_INSTALL_VERBS_RE =
+  /\b(replace|swap|overwrite|switch|set up|install|apply|use)\b[\s\S]{0,60}\b(workout|training|gym)\b[\s\S]{0,24}\b(days?|plan|week|split|schedule|routine)\b/i
+const WEEKDAY_RE =
+  /\b(mon|tues?|wed(?:nes)?|thu(?:rs)?|fri|sat(?:ur)?|sun)(?:day)?\b/gi
+function looksLikeWeeklyPlan(text: string): boolean {
+  if (PLAN_INSTALL_VERBS_RE.test(text) && text.length > 200) return true
+  if (text.length < 500) return false
+  const days = new Set(
+    (text.match(WEEKDAY_RE) ?? []).map(d => d.slice(0, 3).toLowerCase()),
+  )
+  return days.size >= 4
+}
+
 /** Imperative mutation asks — not “should I / can I” advice. */
 const ACTIONABLE_RE =
   /\b(change|correct|fix|update|edit|set|make)\b.{0,40}\b(weight|lbs?|kg|bench|squat|deadlift|press)\b|\b(was|should (have )?been|meant|actually)\b.{0,30}\b(lb|kg|weight)\b|\bstart (my |today'?s )?workout\b|\b(begin|open)\b.{0,20}\b(today|workout|session)\b|\btrain (now|today)\b|\bstart\s+(?!with\b|from\b|by\b)(my |today'?s )?(workout|session|push|pull|legs|[a-z][\w\- ]{0,24})\b|\bcreate\b.{0,40}\bday\b|\bsave (this|that) (as |to )?(a )?day\b|\badd (this|that) (day|workout) to (my )?(program|catalog|rotation)\b|\b(log|record|save)\b.{0,24}\b(body[- ]?weight|weigh[- ]?in)\b|\b(log|record)\b.{0,16}\b(my )?weight\b|\bi weigh\b|\b(delete|remove|clear)\b.{0,30}\b(body[- ]?weight|weigh[- ]?in)\b|\b(finish|complete|end)\b.{0,20}\b(workout|session)\b|\b(i'?m |im )?done (training|working out|with (this|today'?s) (workout|session))\b|\b(undo|unfinish|reopen)\b.{0,24}\b(finish|workout|session)\b|\bi (wasn'?t|am not) done\b|\b(un)?skip\b.{0,40}\b(sets?|exercises?|bench|squats?|deadlifts?|press(?:es)?|this|the rest)\b|\brest today\b|\btaking today off\b|\bmark(ing)? today as rest\b|\bundo rest today\b|\balways rest\b|\brest every\b|\b(add|remove|enable|disable)\b.{0,24}\brest (day|on)\b|\bset .{0,20}rest day\b|\b(change|update|edit|set|bump)\b.{0,40}\b(sets|reps|target)\b|\bbump\b.{0,24}\b(up|down|bench|squat|deadlift|press)\b|\b(hide|disable|enable|reactivate)\b.{0,24}\b(exercise|from (the )?log)\b|\b(reorder|rearrange)\b.{0,24}\b(days|rotation|order)\b|\b(change|update)\b.{0,24}\b(workout order|rotation|day order)\b|\bactually (did|got|hit)\b.{0,24}\b(reps?|rpe)\b|\bit was actually\b|\bset was wrong\b|\bactually \d+ not \d+\b|\b(wrong (reps?|rpe|note)|fix (the |that |this )?set|edit (that |this |the )?set)\b|\bset \d+\b.{0,24}\b(was|should (have )?been)\b|\b(turn (off|on)|disable|enable|mute)\b.{0,30}\bnotif|\bstreak reminder\b.{0,24}\b(hour|time|off|on|to)\b/i
@@ -84,6 +99,8 @@ const TOKEN_BUDGET: Record<CoachIntent, number> = {
   troubleshooting: 750,
   analysis: 1000,
   actionable: 1100,
+  // The tool call itself carries a whole week of exercises (~3–5k tokens).
+  plan_install: 8000,
   workout: 1100,
   program: 1200,
   general: 700,
@@ -108,6 +125,8 @@ const REMINDER: Record<CoachIntent, string> = {
     'Intent: progress/coaching analysis. Lead with takeaway, then relevant evidence, hedged interpretation, and action. Prioritize — do not dump every metric.',
   actionable:
     'Intent: actionable mutation. Call the matching propose_* tool so the user gets a Confirm/Cancel card. Never claim the change is applied until they confirm.',
+  plan_install:
+    'Intent: install a whole training week. Call propose_apply_weekly_plan ONCE with every training day (weekday, exercises, sets, reps, rest_seconds), the rest weekdays, and keepDays for any day they said to leave alone (exact names from USER_DATA). Do not re-list the plan in prose — the Confirm card shows it. Reply with one or two lines at most. Never claim it is applied before Confirm.',
   workout:
     'Intent: workout request. Lead with an executable workout using bold exercise stacks (sets×reps, Target, Rest). No essay intro. If they ask to save it as a day, resolve flex vs which program day from context or ask; unspecified → flex. Call propose_create_day only — do not also propose_start_workout unless they ask to train now. Never mention auto-start.',
   program:
@@ -126,6 +145,7 @@ function personalizationFor(intent: CoachIntent): CoachIntentProfile['personaliz
     case 'recommendation':
     case 'short_contextual':
     case 'actionable':
+    case 'plan_install':
       return 'required'
     case 'workout':
     case 'program':
@@ -156,6 +176,7 @@ export function inferCoachIntent(
     return profile('short_contextual')
   }
 
+  if (looksLikeWeeklyPlan(text)) return profile('plan_install')
   if (SAFETY_RE.test(text)) return profile('safety')
   if (ACTIONABLE_RE.test(text) && !ADVISORY_PREFIX_RE.test(text)) {
     return profile('actionable')

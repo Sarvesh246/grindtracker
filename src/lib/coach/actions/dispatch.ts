@@ -13,6 +13,7 @@ import { executeEditExercise } from './editExercise'
 import { executeUpdateRotation } from './updateRotation'
 import { executeEditSessionLog } from './editSessionLog'
 import { executeUpdateNotificationPrefs } from './updateNotificationPrefs'
+import { executeApplyWeeklyPlan } from './applyWeeklyPlan'
 import { DOW_LABELS } from './dates'
 import type { CoachActionPayload } from './types'
 
@@ -234,6 +235,22 @@ export async function executeConfirmedPayload(
         ok: true,
         message: 'Notification preferences saved.',
         details: { patch: payload.execute.patch },
+      }
+    }
+    case 'apply_weekly_plan': {
+      const result = await executeApplyWeeklyPlan(supabase, {
+        userId,
+        ...payload.execute,
+      })
+      if (!result.ok) return { ok: false, message: result.message }
+      return {
+        ok: true,
+        message: result.message,
+        href: '/log',
+        details: {
+          days: payload.execute.days.map(d => d.dayKey),
+          hidden: payload.execute.hideDays,
+        },
       }
     }
     default: {

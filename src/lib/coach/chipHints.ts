@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { enabledDayKeys } from '@/lib/utils/dayKeys'
 import type { UserRotation } from '@/lib/types'
 import { effectiveSequence, nextDay } from '@/lib/utils/rotation'
 import type { CoachChipHints } from './starterChips'
@@ -26,7 +27,7 @@ export async function loadCoachChipHints(
       .is('completed_at', null)
       .limit(1)
       .maybeSingle(),
-    supabase.from('exercises').select('day_type').eq('user_id', userId),
+    supabase.from('exercises').select('day_type, active').eq('user_id', userId),
     supabase
       .from('user_rotation')
       .select('mode, sequence, current_index')
@@ -45,10 +46,8 @@ export async function loadCoachChipHints(
       .maybeSingle(),
   ])
 
-  const dayKeys = Array.from(
-    new Set(
-      ((exerciseRows ?? []) as { day_type: string }[]).map(r => r.day_type),
-    ),
+  const dayKeys = enabledDayKeys(
+    (exerciseRows ?? []) as { day_type: string; active?: boolean }[],
   ).sort()
   const flexSet = new Set(
     ((flexRows ?? []) as { day_key: string }[]).map(r => r.day_key),

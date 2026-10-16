@@ -19,9 +19,28 @@ export function setDefaultRest(seconds: number) {
   localStorage.setItem(DEFAULT_REST_KEY, String(seconds))
 }
 
+// Rest the PLAN calls for (exercises.rest_seconds, migration 53). Held in memory
+// — registered whenever a workout loads its exercises — so the timer can read it
+// without every caller threading the exercise row through.
+const programmedRest = new Map<string, number>()
+
+export function registerProgrammedRest(
+  exercises: ReadonlyArray<{ id: string; rest_seconds?: number | null }>,
+) {
+  for (const ex of exercises) {
+    if (ex.rest_seconds != null && ex.rest_seconds > 0) programmedRest.set(ex.id, ex.rest_seconds)
+    else programmedRest.delete(ex.id)
+  }
+}
+
+/** Per-exercise override the user picked on the timer → the plan's rest → Settings default. */
 export function getExerciseRest(exerciseId: string): number {
   if (typeof window === 'undefined') return getDefaultRest()
-  return readPositiveSeconds(localStorage.getItem(STORAGE_PREFIX + exerciseId)) ?? getDefaultRest()
+  return (
+    readPositiveSeconds(localStorage.getItem(STORAGE_PREFIX + exerciseId)) ??
+    programmedRest.get(exerciseId) ??
+    getDefaultRest()
+  )
 }
 
 export function setExerciseRest(exerciseId: string, seconds: number) {

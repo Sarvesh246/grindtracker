@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { enabledDayKeys } from '@/lib/utils/dayKeys'
 import type { UserRotation } from '@/lib/types'
 import { autoSequence, effectiveSequence } from '@/lib/utils/rotation'
 import { insertCoachProposal } from './proposals'
@@ -55,7 +56,7 @@ export async function previewUpdateRotation(
 > {
   const [{ data: exerciseRows }, { data: rotationRow }, { data: flexRows }] =
     await Promise.all([
-      supabase.from('exercises').select('day_type').eq('user_id', args.userId),
+      supabase.from('exercises').select('day_type, active').eq('user_id', args.userId),
       supabase
         .from('user_rotation')
         .select('*')
@@ -64,13 +65,10 @@ export async function previewUpdateRotation(
       supabase.from('user_flex_days').select('day_key').eq('user_id', args.userId),
     ])
 
-  const dayKeys = [
-    ...new Set(
-      (exerciseRows ?? [])
-        .map(r => String(r.day_type ?? '').trim())
-        .filter(Boolean),
-    ),
-  ].sort()
+  const dayKeys = enabledDayKeys(exerciseRows ?? [])
+    .map(k => k.trim())
+    .filter(Boolean)
+    .sort()
   const flexSet = new Set(
     (flexRows ?? []).map((r: { day_key: string }) => r.day_key),
   )

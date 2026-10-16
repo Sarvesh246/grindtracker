@@ -12,7 +12,7 @@ import { useFeatureTooltip } from '@/components/onboarding/useFeatureTooltip'
 import { onboardTarget } from '@/components/onboarding/anchor'
 import { WORKOUT_TEMPLATES } from '@/lib/utils/workoutTemplates'
 import { applyWorkoutTemplate } from '@/lib/utils/applyWorkoutTemplate'
-import { slugDayKey } from '@/lib/utils/dayKeys'
+import { slugDayKey, enabledDayKeys, isDayDisabled } from '@/lib/utils/dayKeys'
 import DayColorPicker from '@/components/DayColorPicker'
 import { useTheme } from '@/lib/contexts/ThemeContext'
 import {
@@ -161,7 +161,8 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
   // Displayed in the user's chosen "workout order" (see the rotation section
   // below), not alphabetically — otherwise a manual order is invisible outside
   // the rotation editor itself, including here and on the log day-select grid.
-  const effectiveSeq = effectiveSequence(rotation, Object.keys(grouped), flexDays)
+  const enabledKeys = enabledDayKeys(exercises)
+  const effectiveSeq = effectiveSequence(rotation, enabledKeys, flexDays)
   const dayKeys = orderedDayKeys(Object.keys(grouped), effectiveSeq)
   const extraColorTypes = [...new Set(
     dayKeys.map(k => categoryColorKey(k, dayCategories)).filter(t => !NAMED_DAY_COLORS[t]),
@@ -478,6 +479,29 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
 
   const [togglingExerciseId, setTogglingExerciseId] = useState<string | null>(null)
 
+  // Disable/re-enable a whole day. A disabled day is just one whose exercises
+  // are all inactive, so it drops out of Log, Home and the rotation while its
+  // exercises, colors and history stay put. Enabling turns every exercise back on.
+  const [togglingDay, setTogglingDay] = useState<string | null>(null)
+  async function toggleDayEnabled(dayKey: string) {
+    if (togglingDay !== null) return
+    const nextActive = isDayDisabled(exercises, dayKey)
+    setTogglingDay(dayKey)
+    setExercises(prev => prev.map(e => e.day_type === dayKey ? { ...e, active: nextActive } : e))
+    const { error } = await supabase
+      .from('exercises')
+      .update({ active: nextActive })
+      .eq('day_type', dayKey)
+    setTogglingDay(null)
+    if (error) {
+      setExercises(prev => prev.map(e => e.day_type === dayKey ? { ...e, active: !nextActive } : e))
+      toast.show("Couldn't update day", 'error')
+      return
+    }
+    toast.show(nextActive ? 'Day enabled' : 'Day disabled')
+    onChanged()
+  }
+
   // Disable/re-enable an exercise for its day (see 17-exercise-active-flag.sql)
   // without deleting it — keeps its logged history and PR bar intact.
   // Optimistic with revert-on-failure, matching the rest-day toggle pattern.
@@ -586,7 +610,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
 
   function customizeOrder() {
     setAddingSlot(false)
-    persistRotation('manual', autoSequence(dayKeys, flexDays))
+    persistRotation('manual', autoSequence(enabledKeys, flexDays))
   }
   function resetToAuto() {
     setAddingSlot(false)
@@ -758,6 +782,17 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
                               }}>
                                 {key.replace(/-/g, ' ').toUpperCase()}
                               </span>
+                              {isDayDisabled(exercises, key) && (
+                                <span style={{
+                                  fontSize: '10px', fontWeight: 700, letterSpacing: '0.5px',
+                                  color: 'var(--danger)',
+                                  border: '1px solid var(--danger)',
+                                  padding: '2px 6px', borderRadius: '9999px',
+                                  fontFamily: "'DM Sans', sans-serif",
+                                }}>
+                                  DISABLED
+                                </span>
+                              )}
                               {flexDays.has(key) && (
                                 <span style={{
                                   fontSize: '10px', fontWeight: 700, letterSpacing: '0.5px',
@@ -1544,6 +1579,45 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
                         left: flexDays.has(dayKey) ? '21px' : '3px',
                         width: '20px', height: '20px', borderRadius: '50%',
                         backgroundColor: flexDays.has(dayKey) ? 'var(--bg)' : 'var(--text-muted)',
+                        transition: 'left 150ms ease',
+                      }} />
+                    </div>
+                  </button>
+
+                  {/* Disable day toggle */}
+                  <button
+                    type="button"
+                    data-haptic="light"
+                    aria-pressed={!isDayDisabled(exercises, dayKey)}
+                    disabled={togglingDay !== null}
+                    onClick={() => toggleDayEnabled(dayKey)}
+                    style={{
+                      width: '100%', textAlign: 'left',
+                      background: 'none', border: 'none',
+                      borderTop: '1px solid var(--border)',
+                      padding: '16px',
+                      cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '2px' }}>
+                        Day enabled
+                      </div>
+                      <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '12px', color: 'var(--text-muted)' }}>
+                        Turn off to hide this day everywhere — history is kept
+                      </div>
+                    </div>
+                    <div style={{
+                      width: '44px', height: '26px', borderRadius: '9999px', flexShrink: 0,
+                      backgroundColor: !isDayDisabled(exercises, dayKey) ? 'var(--accent)' : 'var(--border)',
+                      position: 'relative', transition: 'background-color 150ms ease',
+                    }}>
+                      <div style={{
+                        position: 'absolute', top: '3px',
+                        left: !isDayDisabled(exercises, dayKey) ? '21px' : '3px',
+                        width: '20px', height: '20px', borderRadius: '50%',
+                        backgroundColor: !isDayDisabled(exercises, dayKey) ? 'var(--bg)' : 'var(--text-muted)',
                         transition: 'left 150ms ease',
                       }} />
                     </div>

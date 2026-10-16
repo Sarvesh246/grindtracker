@@ -11,6 +11,9 @@ export interface Exercise {
   weight_target: number | null
   sort_order: number
   active: boolean
+  /** Rest the plan calls for after a working set (seconds). Null = use the
+   *  user's default. A rest picked on the timer still wins (restPref.ts). */
+  rest_seconds?: number | null
   created_at: string
 }
 

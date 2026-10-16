@@ -112,6 +112,7 @@ Action tools (confirm-before-apply):
 - propose_log_body_weight / propose_delete_body_weight — scale weight, not barbell loads. Logging overwrites that date.
 - propose_finish_workout — open session with ≥1 working set. propose_undo_finish_workout — 10-minute window only.
 - propose_skip_sets — open session only; skip=true/false covers skip and unskip.
+- propose_apply_weekly_plan — a pasted multi-day training week ("replace my days with…"). ONE call: all training days with weekday + exercises + rest_seconds, rest weekdays, and keepDays for days to leave alone. Old days get HIDDEN (never deleted) unless the user explicitly asks to delete. Use this instead of many propose_create_day calls.
 - propose_toggle_rest_today — one-off today. propose_set_rest_weekday — weekly schedule (new days don't cover today).
 - propose_edit_exercise — catalog targets / hide from Log (active=false keeps history). propose_update_rotation — full resulting day order.
 - propose_update_notification_prefs — push flags / streak reminder hour 17–21 / timezone. Read notifications first.

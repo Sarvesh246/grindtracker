@@ -31,8 +31,9 @@ export const COACH_BURST_LIMIT = 8
 /** Burst window in minutes (SQL: `interval '10 minutes'`). */
 export const COACH_BURST_WINDOW_MINUTES = 10
 
-/** Max length of a single user message (DB check allows up to 4000). */
-export const COACH_MAX_MESSAGE_CHARS = 2000
+/** Max length of a single user message (DB check, docs/sql/53, allows 12000 —
+ *  enough to paste a whole training week). */
+export const COACH_MAX_MESSAGE_CHARS = 12000
 
 /** Max prior turns (user+assistant pairs count as 2) accepted from the client. */
 export const COACH_MAX_HISTORY_MESSAGES = 12

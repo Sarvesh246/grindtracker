@@ -1,4 +1,5 @@
 'use client'
+import { enabledDayKeys } from '@/lib/utils/dayKeys'
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -568,11 +569,11 @@ export default function HomeDashboard({
       let prevRotationIndex: number | null = null
       try {
         const [{ data: dayTypeRows }, { data: rotationRow }, { data: flexRows }] = await Promise.all([
-          supabase.from('exercises').select('day_type'),
+          supabase.from('exercises').select('day_type, active'),
           supabase.from('user_rotation').select('*').eq('user_id', user.id).maybeSingle(),
           supabase.from('user_flex_days').select('day_key').eq('user_id', user.id),
         ])
-        const dayKeys = Array.from(new Set((dayTypeRows ?? []).map(r => r.day_type)))
+        const dayKeys = enabledDayKeys(dayTypeRows ?? [])
         const rot = rotationRow as UserRotation | null
         prevRotationIndex = rot?.current_index ?? -1
         const flex = new Set((flexRows ?? []).map((r: { day_key: string }) => r.day_key))
@@ -663,11 +664,11 @@ export default function HomeDashboard({
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
       const [{ data: dayTypeRows }, { data: rotationRow }, { data: flexRows }] = await Promise.all([
-        supabase.from('exercises').select('day_type'),
+        supabase.from('exercises').select('day_type, active'),
         supabase.from('user_rotation').select('*').eq('user_id', user.id).maybeSingle(),
         supabase.from('user_flex_days').select('day_key').eq('user_id', user.id),
       ])
-      const dayKeys = Array.from(new Set((dayTypeRows ?? []).map(r => r.day_type)))
+      const dayKeys = enabledDayKeys(dayTypeRows ?? [])
       const rot = rotationRow as UserRotation | null
       const flex = new Set((flexRows ?? []).map((r: { day_key: string }) => r.day_key))
       const seq = effectiveSequence(rot, dayKeys, flex)

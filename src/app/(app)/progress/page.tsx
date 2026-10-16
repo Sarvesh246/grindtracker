@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useDemoMode } from '@/lib/contexts/DemoModeContext'
 import { Exercise } from '@/lib/types'
 import { formatShortDate } from '@/lib/utils/formatting'
+import { enabledDayKeys } from '@/lib/utils/dayKeys'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { useTour, type TourStep } from '@/components/onboarding/Tour'
 import Card from '@/components/ui/Card'
@@ -125,7 +126,7 @@ export default function ProgressPage() {
   })
   const [recentSessions, setRecentSessions] = useState<RecentSession[]>([])
 
-  const { data: exercises = [], loading: loadingExercises } = useCachedQuery<Exercise[]>(
+  const { data: allExercises = [], loading: loadingExercises } = useCachedQuery<Exercise[]>(
     CACHE_KEYS.exercises,
     async () => {
       const { data } = await supabase
@@ -136,6 +137,12 @@ export default function ProgressPage() {
       return sortExercises((data ?? []) as Exercise[])
     },
   )
+
+  // Disabled days (every exercise inactive) stay out of the progress pickers.
+  const exercises = useMemo(() => {
+    const enabled = new Set(enabledDayKeys(allExercises))
+    return allExercises.filter(e => enabled.has(e.day_type))
+  }, [allExercises])
 
   const { data: photoSummary } = useCachedQuery<PhotoSummary>(
     demoMode ? 'progress:photos:demo' : CACHE_KEYS.progressPhotos,

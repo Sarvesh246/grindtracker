@@ -3,7 +3,7 @@
 ## Status: COMPLETE ✅
 Core phases (1–7) plus later ships (flex days, photos, onboarding, web push,
 weight targets, offline set queue, RPE, data export) — single-user PWA in daily use.
-Schema migrations run through `docs/sql/52-*.sql`.
+Schema migrations run through `docs/sql/53-*.sql`.
 
 ## Git Workflow
 Single-user repo, no review process. Commit and push directly to `main` —
@@ -302,6 +302,25 @@ Two rules keep it from coming back:
 - `src/proxy.ts` uses `getClaims()` (local JWKS verification) rather than
   `getUser()` (a network round trip per request), and caches the "profile exists"
   check in the `grind_profile_ok` cookie instead of querying on every navigation.
+
+### Disabled days & weekly plans (migration `53`)
+A day is **disabled** when it has exercises and every one is `active=false` —
+no new table. Manage → day → "Day enabled" flips them all; exercises, colors and
+history stay, and re-enabling turns every exercise back on. Anything that builds
+the rotation / "up next" goes through `enabledDayKeys()` (`dayKeys.ts`), so a
+disabled day drops out of Log's day picker, Home, the rotation and the Coach;
+Progress pickers filter the same way. History views (calendar, past log) keep
+every day. Manage still lists disabled days with a DISABLED badge.
+
+The Coach's `propose_apply_weekly_plan` installs a whole pasted week in one
+confirm: per-day exercises with `exercises.rest_seconds`, a manual rotation in
+Mon→Sun order (pointer set so "up next" is the next planned weekday), plan rest
+weekdays via `set_rest_weekday`, and old days hidden (never deleted) except
+`keepDays`. Rest resolution: session override → rest the user picked on the
+timer → `rest_seconds` (registered in `restPref.registerProgrammedRest`) →
+Settings default. Messages up to `COACH_MAX_MESSAGE_CHARS` (12000; keep the
+`coach_messages` CHECK in `53` in sync); the `plan_install` intent gets an
+8000-token output budget because the tool call carries the whole week.
 
 ### Rotation (src/lib/utils/rotation.ts)
 The suggested "next day" comes from a per-user rotation — an ordered loop of day_keys

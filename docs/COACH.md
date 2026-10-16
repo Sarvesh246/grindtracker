@@ -182,6 +182,7 @@ relying on this.
 | Workout order | `propose_update_rotation` | `user_rotation` upsert (preserves `current_index`) |
 | Edit one logged set | `propose_edit_session_log` | `upsert_past_session` full-replace with reconstructed logs |
 | Notification prefs | `propose_update_notification_prefs` | `notification_prefs` upsert (same validation as `/api/push/prefs`) |
+| Whole training week | `propose_apply_weekly_plan` | Upserts each day's exercises (sets/reps/`rest_seconds`), manual rotation in Mon→Sun order with the pointer on the next planned weekday, weekly rest weekdays, and hides every other enabled day (`active=false`, never deleted). `keepDays` leaves named days alone. |
 
 Not in scope: friend management, account/data deletion, theme/motion/unit toggles, username/display-name.
 
