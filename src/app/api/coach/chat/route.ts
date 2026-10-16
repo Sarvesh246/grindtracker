@@ -340,32 +340,50 @@ Remember: intent before formatting — Understand intent → assess complexity �
   }
   const tools = buildCoachProposalTools(toolCtx)
 
+  // Shared streamText settings. `reasoning: 'none'` keeps thinking minimal /
+  // off: do NOT hardcode thinkingBudget: 0 — Gemini 3.x Flash-Lite (incl.
+  // gemini-3.5-flash-lite and gemini-flash-lite-latest) rejects thinkingBudget
+  // with INVALID_ARGUMENT and wants thinkingLevel instead. `reasoning: 'none'`
+  // lets @ai-sdk/google map per family:
+  //   2.5 → thinkingBudget: 0
+  //   3.x / -latest → thinkingLevel: 'minimal'
+  const baseCall = {
+    model: google(modelId),
+    system,
+    messages: [...history, { role: 'user', content: message }] as ModelMessage[],
+    temperature: 0.4,
+    reasoning: 'none' as const,
+    onError: ({ error }: { error: unknown }) => {
+      // streamText() returns before the model call actually runs, so this
+      // is the ONLY place upstream failures (bad key, quota, model
+      // rename, safety block, network) surface — the outer try/catch below
+      // never sees them, since they happen while the stream is consumed,
+      // not while streamText() itself is called.
+      console.error('[grind] coach stream error', error)
+    },
+  }
+
   try {
-    const result = streamText({
-      model: google(modelId),
-      system,
-      messages: [...history, { role: 'user', content: message }],
-      maxOutputTokens: intentProfile.maxOutputTokens,
-      temperature: 0.4,
-      tools,
-      stopWhen: stepCountIs(3),
-      // Keep thinking minimal / off. Do NOT hardcode thinkingBudget: 0 —
-      // Gemini 3.x Flash-Lite (incl. gemini-3.5-flash-lite and
-      // gemini-flash-lite-latest) rejects thinkingBudget with
-      // INVALID_ARGUMENT and wants thinkingLevel instead.
-      // `reasoning: 'none'` lets @ai-sdk/google map per family:
-      //   2.5 → thinkingBudget: 0
-      //   3.x / -latest → thinkingLevel: 'minimal'
-      reasoning: 'none',
-      onError: ({ error }) => {
-        // streamText() returns before the model call actually runs, so this
-        // is the ONLY place upstream failures (bad key, quota, model
-        // rename, safety block, network) surface — the outer try/catch below
-        // never sees them, since they happen while the stream is consumed,
-        // not while streamText() itself is called.
-        console.error('[grind] coach stream error', error)
-      },
-    })
+    // First attempt: full tool set + intent budget. A second, text-only
+    // attempt runs only if this one ends with no text, no proposal and no
+    // error — Gemini does that silently (finishReason MALFORMED_FUNCTION_CALL
+    // / SAFETY / OTHER, minimal thinking eating a small budget → 'length',
+    // or every step spent on tool calls), and the client used to show
+    // "Coach returned an empty reply" with nothing in the logs.
+    const startAttempt = (withTools: boolean) =>
+      withTools
+        ? streamText({
+            ...baseCall,
+            maxOutputTokens: intentProfile.maxOutputTokens,
+            tools,
+            stopWhen: stepCountIs(3),
+          })
+        : streamText({
+            ...baseCall,
+            // Headroom for whatever ate the first budget (thinking, a
+            // half-built tool call).
+            maxOutputTokens: Math.max(intentProfile.maxOutputTokens * 2, 2048),
+          })
 
     // NDJSON stream: text-delta / proposal / error / done — so the client can
     // attach Confirm/Cancel cards without parsing markdown.
@@ -379,28 +397,52 @@ Remember: intent before formatting — Understand intent → assess complexity �
         const emit = (event: object) => {
           controller.enqueue(encoder.encode(encodeNdjson(event)))
         }
-        try {
+        const flushProposals = () => {
+          for (const p of toolCtx.proposals) {
+            if (emittedProposalIds.has(p.id)) continue
+            emittedProposalIds.add(p.id)
+            emit({ type: 'proposal', proposal: p })
+          }
+        }
+        const consume = async (withTools: boolean) => {
+          const result = startAttempt(withTools)
+          let finishReason: string | undefined
+          let rawFinishReason: string | undefined
           for await (const part of result.fullStream) {
             if (part.type === 'text-delta') {
               full += part.text
               emit({ type: 'text-delta', text: part.text })
             } else if (part.type === 'tool-result') {
               // Flush any proposals created by tool execute handlers.
-              for (const p of toolCtx.proposals) {
-                if (emittedProposalIds.has(p.id)) continue
-                emittedProposalIds.add(p.id)
-                emit({ type: 'proposal', proposal: p })
-              }
+              flushProposals()
+            } else if (part.type === 'tool-error') {
+              console.error('[grind] coach tool error', part.toolName, part.error)
+            } else if (part.type === 'finish') {
+              finishReason = part.finishReason
+              rawFinishReason = part.rawFinishReason
             } else if (part.type === 'error') {
               sawError = true
               console.error('[grind] coach stream error', part.error)
             }
           }
           // Safety net if tool-result parts were skipped by the provider.
-          for (const p of toolCtx.proposals) {
-            if (emittedProposalIds.has(p.id)) continue
-            emittedProposalIds.add(p.id)
-            emit({ type: 'proposal', proposal: p })
+          flushProposals()
+          return { finishReason, rawFinishReason }
+        }
+        try {
+          const first = await consume(true)
+          const empty = !full.trim() && emittedProposalIds.size === 0
+          if (empty && !sawError) {
+            console.warn('[grind] coach empty reply, retrying without tools', {
+              model: modelId,
+              intent: intentProfile.intent,
+              ...first,
+            })
+            const second = await consume(false)
+            if (!full.trim()) {
+              console.error('[grind] coach empty reply after retry', second)
+              sawError = true
+            }
           }
         } catch (err) {
           sawError = true
