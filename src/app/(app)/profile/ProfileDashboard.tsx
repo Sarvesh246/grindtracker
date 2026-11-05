@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useRef, useMemo, type CSSProperties } from 'react'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/client'
+import { createClient, getClientUser } from '@/lib/supabase/client'
 import { getLevel, getXpInCurrentLevel, getXpRequiredForLevel, getXpToNextLevel } from '@/lib/utils/gamification'
 import { localDateKey } from '@/lib/utils/formatting'
 import { ALL_BADGES, formatBadgeDescription } from '@/lib/utils/badges'
@@ -139,7 +139,7 @@ export default function ProfileDashboard({
     setUsernameSaving(true)
     setUsernameError(null)
 
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await getClientUser(supabase)
     if (!user) return
 
     const { error } = await supabase

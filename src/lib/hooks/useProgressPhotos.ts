@@ -1,6 +1,6 @@
 'use client'
 import { useMemo } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { createClient, getClientUser } from '@/lib/supabase/client'
 import { compressForUpload } from '@/lib/utils/imageCompression'
 import type { ProgressPhoto, ProgressPhotoGroup } from '@/lib/types'
 import { markAppDataStale } from '@/lib/cache/appDataCache'
@@ -45,7 +45,7 @@ export function useProgressPhotos() {
   const supabase = useMemo(() => createClient(), [])
 
   async function requireUser() {
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await getClientUser(supabase)
     if (!user) throw new Error('Your session expired — please sign in again.')
     return user
   }

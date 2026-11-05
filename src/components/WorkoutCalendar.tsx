@@ -1,7 +1,7 @@
 'use client'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { createClient, getClientUser } from '@/lib/supabase/client'
 import { useTheme } from '@/lib/contexts/ThemeContext'
 import { useDemoMode } from '@/lib/contexts/DemoModeContext'
 import { demoCalendarWorkoutDays } from '@/lib/demoMode/fakeData'
@@ -86,7 +86,7 @@ export default function WorkoutCalendar() {
       return
     }
 
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await getClientUser(supabase)
     if (!user) { setLoading(false); return }
 
     // Month bounds as YYYY-MM-DD local_date keys (authoritative streak/calendar day).

@@ -2,7 +2,7 @@
 import { enabledDayKeys } from '@/lib/utils/dayKeys'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { createClient, getClientUser } from '@/lib/supabase/client'
 import { useTheme } from '@/lib/contexts/ThemeContext'
 import { Exercise, type DayCategory, UserRotation, CompleteSessionResult, UserStats } from '@/lib/types'
 import {
@@ -107,7 +107,7 @@ export default function DaySelect() {
   const { data: catalog, loading, error, refetch } = useCachedQuery<LogCatalog>(
     CACHE_KEYS.logCatalog,
     async () => {
-      const { data: { user } } = await supabase.auth.getUser()
+      const user = await getClientUser(supabase)
       const [exRes, rotRes, flexRes, catRes, colorRes, openRes, lastRes] = await Promise.all([
         supabase.from('exercises').select('*')
           .order('day_type', { ascending: true })
@@ -230,7 +230,7 @@ export default function DaySelect() {
     if (openBusyId || session.loggedSets === 0) return
     setOpenBusyId(session.id)
     try {
-      const { data: { user } } = await supabase.auth.getUser()
+      const user = await getClientUser(supabase)
       if (!user) { router.push('/login'); return }
 
       await flushQueuedOps(session.id, supabase)
@@ -298,7 +298,7 @@ export default function DaySelect() {
     if (openBusyId) return
     setOpenBusyId(session.id)
     try {
-      const { data: { user } } = await supabase.auth.getUser()
+      const user = await getClientUser(supabase)
       if (!user) { router.push('/login'); return }
       const result = await deleteIncompleteSessions(supabase, user.id, session.day_type)
       if (!result.ok) throw new Error(result.error)

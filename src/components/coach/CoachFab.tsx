@@ -126,13 +126,25 @@ export default function CoachFab() {
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') abortGesture()
     }
+    // Last line of defence: a new touch that starts anywhere but the FAB means
+    // the previous FAB gesture is over, whether or not its pointerup ever
+    // arrived. Without this a lost release kept every nav tab dead until a
+    // full reload. Capture phase so it runs before the nav's own handlers.
+    const onAnyPointerDown = (e: globalThis.PointerEvent) => {
+      if (!document.body.classList.contains('coach-fab-dragging')) return
+      const t = e.target
+      if (t instanceof Element && t.closest('.coach-fab')) return
+      abortGesture()
+    }
     window.addEventListener('blur', abortGesture)
     document.addEventListener('visibilitychange', onVisibility)
     window.addEventListener('pagehide', abortGesture)
+    document.addEventListener('pointerdown', onAnyPointerDown, true)
     return () => {
       window.removeEventListener('blur', abortGesture)
       document.removeEventListener('visibilitychange', onVisibility)
       window.removeEventListener('pagehide', abortGesture)
+      document.removeEventListener('pointerdown', onAnyPointerDown, true)
     }
   }, [])
 

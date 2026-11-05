@@ -1,6 +1,6 @@
 'use client'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { createClient, getClientUser } from '@/lib/supabase/client'
 import { useDemoMode } from '@/lib/contexts/DemoModeContext'
 import { demoSafeClient } from '@/lib/demoMode/demoSafeSupabase'
 import { Exercise, DayCategory, UserRotation } from '@/lib/types'
@@ -93,7 +93,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const { data: { user } } = await supabase.auth.getUser()
+      const user = await getClientUser(supabase)
       setUserId(user?.id ?? null)
       const [exRes, catRes, flexRes, rotRes, colorRes] = await Promise.all([
         supabase.from('exercises').select('*')
@@ -219,7 +219,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
     try {
       // Exercises are per-user (RLS-owned); stamp the owner on insert. Updates are
       // already constrained to the user's own rows by the RLS policy.
-      const { data: { user } } = await supabase.auth.getUser()
+      const user = await getClientUser(supabase)
       if (!user) { setFormError('You are signed out. Sign in and try again.'); setSaving(false); return }
 
       const { error } = exercise
@@ -259,7 +259,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
     setSaving(true)
     setDeleteError('')
     try {
-      const { data: { user } } = await supabase.auth.getUser()
+      const user = await getClientUser(supabase)
       if (!user) {
         setDeleteError('Session expired. Sign in again and retry.')
         return
@@ -349,7 +349,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
     setApplyingTemplate(true)
     setTemplateError('')
     try {
-      const { data: { user } } = await supabase.auth.getUser()
+      const user = await getClientUser(supabase)
       if (!user) { setTemplateError('You are signed out. Sign in and try again.'); return }
 
       const result = await applyWorkoutTemplate(supabase, user.id, templateId)
@@ -374,7 +374,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
     setSavingCategory(true)
     setCategoryError('')
     try {
-      const { data: { user } } = await supabase.auth.getUser()
+      const user = await getClientUser(supabase)
       if (!user) {
         setCategoryError('You must be signed in to save a category.')
         return
@@ -402,7 +402,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
   }
 
   async function toggleFlex(dayKey: string) {
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await getClientUser(supabase)
     if (!user) return
     const isFlex = flexDays.has(dayKey)
     if (isFlex) {
@@ -427,7 +427,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
       return next
     })
     try {
-      const { data: { user } } = await supabase.auth.getUser()
+      const user = await getClientUser(supabase)
       if (!user) {
         if (seq !== colorSaveSeq.current) return
         setColorError('You must be signed in to save a color.')

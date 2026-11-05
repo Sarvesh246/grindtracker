@@ -1,7 +1,7 @@
 'use client'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { createClient, getClientUser } from '@/lib/supabase/client'
 import { useDemoMode } from '@/lib/contexts/DemoModeContext'
 import { demoSafeClient } from '@/lib/demoMode/demoSafeSupabase'
 import { Exercise } from '@/lib/types'
@@ -476,7 +476,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
     originalDayIdsRef.current = new Set()
     setOriginalDayIds(new Set())
     createdThisSessionIdsRef.current = new Set()
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await getClientUser(supabase)
     if (!user) { router.push('/login'); return }
 
     const { data: allDayExs } = await supabase
@@ -1911,7 +1911,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       : null
 
     if (previousBests[newExercise.id] === undefined) {
-      const { data: { user } } = await supabase.auth.getUser()
+      const user = await getClientUser(supabase)
       if (user) {
         // Same split as initSession: "prev" is the last session's weight, the
         // PR bar-to-beat stays all-time-best volume. Falls back to all-time-best
@@ -2012,7 +2012,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       : null
 
     if (previousBests[exercise.id] === undefined) {
-      const { data: { user } } = await supabase.auth.getUser()
+      const user = await getClientUser(supabase)
       if (user) {
         const [{ data: lastWeightRows, error: lastWeightError }, { data: bestRows }] = await Promise.all([
           supabase.rpc('get_exercise_last_weights', { p_exercise_ids: [exercise.id] }),
@@ -2171,7 +2171,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       return
     }
 
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await getClientUser(supabase)
     if (!user) return
     const sortOrder = allExercises
       .filter(e => e.day_type === day)
@@ -2301,7 +2301,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
     reps: string,
     weightTarget: number | null,
   ): Promise<Exercise | null> {
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await getClientUser(supabase)
     if (!user) return null
 
     const sortOrder = allExercises
@@ -2380,16 +2380,15 @@ export default function ActiveWorkout({ day }: { day: string }) {
   async function handleDiscard() {
     if (discardingRef.current) return
     discardingRef.current = true
+    // The confirm dialog stays up showing "Discarding…" until we navigate.
+    // It used to close first, which left the live workout on screen with no
+    // feedback for the whole round trip — it read as a discard that hung.
     setDiscarding(true)
-    setShowExitConfirm(false)
-    restTimer.stop()
-    if (sessionId) {
-      void cancelRestNotifications(sessionId)
-    }
-    clearWorkoutNotifications()
-    void wakeLockRef.current?.release()
 
-    const { data: { user } } = await supabase.auth.getUser()
+    // Stop queued set writes from flushing into the session mid-delete.
+    if (sessionId) clearQueuedOpsForSession(sessionId)
+
+    const user = await getClientUser(supabase)
     if (!user) {
       discardingRef.current = false
       setDiscarding(false)
@@ -2401,25 +2400,29 @@ export default function ActiveWorkout({ day }: { day: string }) {
     if (!result.ok) {
       discardingRef.current = false
       setDiscarding(false)
+      setShowExitConfirm(false)
       setResumeToast('Could not discard workout. Try again.')
       setTimeout(() => setResumeToast(null), 4000)
       return
     }
 
-    const extrasToDrop = exercises.filter(e => isSessionExtra(e.id, originalDayIdsRef.current))
-    for (const ex of extrasToDrop) {
-      await retireThisDayExtra(ex)
-    }
-
+    restTimer.stop()
     if (sessionId) {
-      clearQueuedOpsForSession(sessionId)
+      void cancelRestNotifications(sessionId)
       clearSessionExtraIds(sessionId)
       clearSessionRest(sessionId)
     }
-    setSessionId(null)
-    discardingRef.current = false
-    setDiscarding(false)
+    clearWorkoutNotifications()
+    void wakeLockRef.current?.release()
     markAppDataStale()
+
+    // Catalog cleanup for this-day extras doesn't decide anything the user is
+    // waiting on — run it in parallel, after the route change, instead of
+    // one awaited round trip per extra before it.
+    const extrasToDrop = exercises.filter(e => isSessionExtra(e.id, originalDayIdsRef.current))
+    void Promise.allSettled(extrasToDrop.map(ex => retireThisDayExtra(ex)))
+
+    setSessionId(null)
     router.replace('/log')
   }
 
@@ -2480,8 +2483,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         return changed ? next : prev
       })
 
-      const { data: userData } = await runWithRetry(() => supabase.auth.getUser())
-      const user = userData?.user
+      const user = await getClientUser(supabase)
       if (!user) { router.push('/login'); return }
 
       // Completion is a single server-side transaction.
@@ -2860,7 +2862,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
 
       {showExitConfirm && (
         <div
-          onClick={() => setShowExitConfirm(false)}
+          onClick={() => { if (!discarding) setShowExitConfirm(false) }}
           style={{
             position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.8)',
             zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -2886,6 +2888,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
               <button
                 data-haptic="light"
                 onClick={() => setShowExitConfirm(false)}
+                disabled={discarding}
                 style={{
                   position: 'relative',
                   flex: 1, height: '44px', backgroundColor: 'var(--surface-elevated)',
@@ -2898,6 +2901,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
               </button>
               <button
                 data-haptic="medium"
+                disabled={discarding}
                 onClick={() => {
                   setShowExitConfirm(false)
                   // Default: freeze the rest timer right where it is so it doesn't

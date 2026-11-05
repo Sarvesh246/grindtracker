@@ -9,6 +9,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { getClientUser } from '@/lib/supabase/client'
 import { localDateKey } from '@/lib/utils/formatting'
 import { restoreRotationPointer } from '@/lib/utils/rotationStore'
 
@@ -98,7 +99,7 @@ export async function performFinishUndo(
     return false
   }
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getClientUser(supabase)
   if (!user || user.id !== token.userId) return false
 
   const { error: undoError } = await supabase.rpc('uncomplete_session', {

@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
-import { createClient } from '@/lib/supabase/client'
+import { createClient, getClientUser } from '@/lib/supabase/client'
 import { useUnit, LBS_PER_KG } from '@/lib/contexts/UnitContext'
 import { useToast } from '@/lib/contexts/ToastContext'
 import { useDemoMode } from '@/lib/contexts/DemoModeContext'
@@ -103,7 +103,7 @@ export default function BodyWeightCard() {
     }
 
     try {
-      const { data: { user } } = await supabase.auth.getUser()
+      const user = await getClientUser(supabase)
       if (!user) return
 
       const since = new Date()
@@ -136,7 +136,7 @@ export default function BodyWeightCard() {
     const w = parseFloat(draft)
     if (!Number.isFinite(w) || w <= 0 || saving) return
     setSaving(true)
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await getClientUser(supabase)
     if (!user) { setSaving(false); return }
 
     const { error } = await supabase.from('body_weights').upsert(
@@ -186,7 +186,7 @@ export default function BodyWeightCard() {
     const w = parseFloat(editDraft)
     if (!Number.isFinite(w) || w <= 0) return
     setBusy('saving')
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await getClientUser(supabase)
     if (!user) { setBusy(null); return }
 
     const { error } = await supabase.from('body_weights').upsert(
@@ -210,7 +210,7 @@ export default function BodyWeightCard() {
   async function handleDelete() {
     if (!selected) return
     setBusy('deleting')
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await getClientUser(supabase)
     if (!user) { setBusy(null); return }
 
     const { error } = await supabase

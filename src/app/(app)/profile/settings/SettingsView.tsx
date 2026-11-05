@@ -2,7 +2,7 @@
 import { useState, useEffect, useId, useMemo, useRef, type CSSProperties, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/client'
+import { createClient, getClientUser } from '@/lib/supabase/client'
 import { demoSafeClient } from '@/lib/demoMode/demoSafeSupabase'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { useToast } from '@/lib/contexts/ToastContext'
@@ -354,7 +354,7 @@ export default function SettingsView({
       return next
     })
 
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await getClientUser(supabase)
     if (!user) { setSavingRestDay(null); return }
 
     const { error } = await supabase.rpc('set_rest_weekday', {
@@ -383,7 +383,7 @@ export default function SettingsView({
     setSavingDevUnlimited(true)
     setDevUnlimited(next)
 
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await getClientUser(supabase)
     if (!user) { setSavingDevUnlimited(false); return }
 
     const { error } = await supabase
@@ -413,7 +413,7 @@ export default function SettingsView({
     if (exporting) return
     setExporting(true)
     try {
-      const { data: { user } } = await supabase.auth.getUser()
+      const user = await getClientUser(supabase)
       if (!user) { router.push('/login'); return }
 
       const [

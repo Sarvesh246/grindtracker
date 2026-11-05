@@ -1,7 +1,7 @@
 'use client'
 import { Suspense, useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { createClient, getClientUser } from '@/lib/supabase/client'
 import { useDemoMode } from '@/lib/contexts/DemoModeContext'
 import { demoSafeClient } from '@/lib/demoMode/demoSafeSupabase'
 import { Exercise, UserStats } from '@/lib/types'
@@ -139,7 +139,7 @@ function LogPastContent() {
     sessionsOnDateRef.current = []
     setSessionsOnDate([])
 
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await getClientUser(supabase)
     if (!user || gen !== checkGenRef.current) { setCheckingDate(false); return }
 
     // Match on sessions.local_date (streak key), never UTC completed_at windows.
@@ -367,7 +367,7 @@ function LogPastContent() {
     setError(null)
     setSubmitting(true)
 
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await getClientUser(supabase)
     if (!user) { setError('Not logged in.'); submittingRef.current = false; setSubmitting(false); return }
 
     const isEditing = existingSessionRef.current?.day_type === selectedDayType
@@ -540,7 +540,7 @@ function LogPastContent() {
     setDeleting(true)
     setError(null)
 
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await getClientUser(supabase)
     if (!user) { setError('Not logged in.'); setDeleting(false); return }
 
     // One server-side call: deletes the session (logs cascade) and re-derives

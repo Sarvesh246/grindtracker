@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
 import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { createClient, getClientUser } from '@/lib/supabase/client'
 import { useDemoMode } from '@/lib/contexts/DemoModeContext'
 import { Exercise } from '@/lib/types'
 import { formatShortDate } from '@/lib/utils/formatting'
@@ -150,7 +150,7 @@ export default function ProgressPage() {
       // Demo Mode shows nothing here at all — real progress photos never
       // touch the screen, and there's no plausible fake photo to show instead.
       if (demoMode) return { count: 0, latestDate: null, thumb: null }
-      const { data: { user } } = await supabase.auth.getUser()
+      const user = await getClientUser(supabase)
       if (!user) return { count: 0, latestDate: null, thumb: null }
       const { count } = await supabase
         .from('progress_photo_groups')
@@ -193,7 +193,7 @@ export default function ProgressPage() {
   const { data: rawLogs = [], loading: loadingChart } = useCachedQuery<RawLog[]>(
     selectedId ? CACHE_KEYS.progressLogs(selectedId) : null,
     async () => {
-      const { data: { user } } = await supabase.auth.getUser()
+      const user = await getClientUser(supabase)
       if (!user) return []
       const { data: logs } = await supabase
         .from('session_logs')

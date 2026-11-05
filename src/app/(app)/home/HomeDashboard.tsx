@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { createClient, getClientUser } from '@/lib/supabase/client'
 import { useDemoMode } from '@/lib/contexts/DemoModeContext'
 import { demoSafeClient } from '@/lib/demoMode/demoSafeSupabase'
 import { Session, UserStats, CompleteSessionResult } from '@/lib/types'
@@ -167,7 +167,7 @@ export default function HomeDashboard({
   userId,
   statsUnavailable = false,
   restDataUnavailable = false,
-  activeSessions,
+  activeSessions: activeSessionsProp,
   lastSession,
   lastSessionLogs,
   nextDay: nextDayProp,
@@ -185,6 +185,18 @@ export default function HomeDashboard({
   restIntervals = [],
 }: Props) {
   const router = useRouter()
+  // Sessions this screen just saved or discarded. The resume card used to
+  // linger until router.refresh() re-rendered all of Home on the server — on
+  // a slow connection that's seconds of a "discarded" workout still sitting
+  // there, which read as the discard not working. Ids are unique, so once the
+  // refreshed props drop the session this set is simply a no-op.
+  const [closedSessionIds, setClosedSessionIds] = useState<ReadonlySet<string>>(() => new Set())
+  const activeSessions = useMemo(
+    () => activeSessionsProp.filter(s => !closedSessionIds.has(s.id)),
+    [activeSessionsProp, closedSessionIds],
+  )
+  const markSessionClosed = (id: string) =>
+    setClosedSessionIds(prev => new Set(prev).add(id))
   // Optimistic result of a Skip, so the Start CTA moves to the new day right
   // away instead of waiting on router.refresh() — which on mobile (PWA,
   // backgrounded tab, slow network) sometimes lands late or not at all. Keyed
@@ -436,7 +448,7 @@ export default function HomeDashboard({
     if (restBannerBusy) return
     setRestBannerBusy(true)
     try {
-      const { data: { user } } = await supabase.auth.getUser()
+      const user = await getClientUser(supabase)
       if (!user) { router.push('/login'); return }
       const rows = gapUncoveredDates.map(rest_date => ({ user_id: user.id, rest_date }))
       const { error } = await supabase.from('user_rest_dates').insert(rows)
@@ -567,7 +579,7 @@ export default function HomeDashboard({
     const dayType = session.day_type
     const sessionId = session.id
     try {
-      const { data: { user } } = await supabase.auth.getUser()
+      const user = await getClientUser(supabase)
       if (!user) { router.push('/login'); return }
 
       await flushQueuedOps(sessionId, supabase)
@@ -619,6 +631,7 @@ export default function HomeDashboard({
       } catch { /* non-critical */ }
 
       setDiscardConfirmId(null)
+      markSessionClosed(sessionId)
       flashToast('Workout saved')
       markAppDataStale('/home')
       router.refresh()
@@ -635,12 +648,13 @@ export default function HomeDashboard({
     busySessionIdRef.current = session.id
     setBusySessionId(session.id)
     try {
-      const { data: { user } } = await supabase.auth.getUser()
+      const user = await getClientUser(supabase)
       if (!user) { router.push('/login'); return }
       const result = await deleteIncompleteSessions(supabase, user.id, session.day_type)
       if (!result.ok) throw new Error(result.error)
       clearQueuedOpsForSession(session.id)
       setDiscardConfirmId(null)
+      markSessionClosed(session.id)
       flashToast('Workout discarded')
       markAppDataStale('/home')
       router.refresh()
@@ -684,7 +698,7 @@ export default function HomeDashboard({
     skippingDayRef.current = true
     setSkippingDay(true)
     try {
-      const { data: { user } } = await supabase.auth.getUser()
+      const user = await getClientUser(supabase)
       if (!user) { router.push('/login'); return }
       const result = await skipUpNext(supabase, user.id, shownDay)
       if (!result.ok) {
@@ -717,7 +731,7 @@ export default function HomeDashboard({
     setSkippingDay(true)
     setActionToast(null)
     try {
-      const { data: { user } } = await supabase.auth.getUser()
+      const user = await getClientUser(supabase)
       if (!user) { router.push('/login'); return }
       const { error } = await restoreRotationPointer(supabase, user.id, prev)
       if (error) throw error

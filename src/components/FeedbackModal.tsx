@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { createClient } from '@/lib/supabase/client'
+import { createClient, getClientUser } from '@/lib/supabase/client'
 import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
 import type { FeedbackCategory } from '@/lib/types'
 
@@ -147,7 +147,7 @@ export default function FeedbackModal({ onClose }: { onClose: () => void }) {
     setSubmitting(true)
     setError(null)
 
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await getClientUser(supabase)
     if (!user) {
       setError('Your session expired — please sign in again.')
       setSubmitting(false)
