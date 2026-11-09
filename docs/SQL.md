@@ -7,10 +7,9 @@ Schema changes ship as standalone SQL snippets in [docs/sql/](sql/). Apply each 
 > Migration **20** hardens stats/badges/session writes and **revokes** direct
 > client mutations the old code relied on — the app and SQL must ship together.
 
-Tracked copies also live under `supabase/migrations/` for CLI-based environments
-(`supabase db push` / linked projects). The numbered files in `docs/sql/` remain
-the authoritative, dashboard-pasteable source of truth until the remote project
-is fully linked to migration history.
+`docs/sql/` is the only source of truth. There is deliberately no
+`supabase/migrations/` mirror (it was incomplete and had drifted, so
+`supabase db push` would have built a partial schema).
 
 | File | Phase | What it adds |
 | --- | --- | --- |
