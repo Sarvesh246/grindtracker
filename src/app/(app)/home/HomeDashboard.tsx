@@ -34,7 +34,6 @@ import { markAppDataStale } from '@/lib/cache/appDataCache'
 import { readLastKnownStats, writeLastKnownStats } from '@/lib/cache/lastKnownStats'
 import { reportError } from '@/lib/utils/reportError'
 import {
-  FINISH_UNDO_TTL_MS,
   writeFinishUndoToken,
 } from '@/lib/utils/finishUndo'
 import { logDayHref } from '@/lib/utils/dayKeys'
@@ -610,7 +609,6 @@ export default function HomeDashboard({
         xpEarned: result.xp_earned ?? 0,
         prevRotationIndex: prevPointer?.index ?? null,
         prevRotationDay: prevPointer?.day ?? null,
-        expiresAt: Date.now() + FINISH_UNDO_TTL_MS,
       })
 
       try {

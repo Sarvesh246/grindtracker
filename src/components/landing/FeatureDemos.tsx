@@ -112,12 +112,12 @@ export function RestTimerDemo() {
       startRef.current = null
       lastSecRef.current = -1
       if (ring) ring.style.strokeDashoffset = String(TIMER_CIRC)
-      setDisplaySec(0)
       return
     }
 
-    lastSecRef.current = TIMER_SECONDS
-    setDisplaySec(TIMER_SECONDS)
+    // -1 makes the first frame push the starting value into state from the
+    // rAF callback (not synchronously from the effect).
+    lastSecRef.current = -1
     startRef.current = null
     let raf = 0
     const tick = (now: number) => {
@@ -142,7 +142,8 @@ export function RestTimerDemo() {
   }, [active, reduceMotion])
 
   // Reduce-motion: static completed end-state (empty ring + 0:00).
-  const shown = reduceMotion ? 0 : displaySec
+  // Out of view the demo also rests on that end-state (derived, not stored).
+  const shown = reduceMotion || !active ? 0 : displaySec
   const low = !reduceMotion && shown <= 5 && shown > 0
   const phase = shown <= 0 ? 'DONE' : low ? 'UP SOON' : 'REST'
 

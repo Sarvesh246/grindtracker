@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { useMemo, useState, type CSSProperties } from 'react'
 import DayCardPreview from '@/components/DayCardPreview'
 import SectionLabel from '@/components/ui/SectionLabel'
 import { useTheme } from '@/lib/contexts/ThemeContext'
@@ -47,7 +47,14 @@ export default function DayColorPicker({
   const [draft, setDraft] = useState<string | null>(overrideHex)
   const [upNext, setUpNext] = useState(true)
   const [flashKey, setFlashKey] = useState(0)
-  useEffect(() => { setDraft(overrideHex) }, [overrideHex, dayKey])
+  // Reset the draft when the saved override or the day changes (adjust state
+  // during render rather than in an effect, so it doesn't rely on caller keys).
+  const resetKey = `${dayKey}|${overrideHex ?? ''}`
+  const [prevKey, setPrevKey] = useState(resetKey)
+  if (prevKey !== resetKey) {
+    setPrevKey(resetKey)
+    setDraft(overrideHex)
+  }
 
   const pending = draft
   const fillColor = resolveDayColor(colorKey, extraTypes, isLight, pending)

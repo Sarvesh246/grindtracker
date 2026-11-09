@@ -20,7 +20,6 @@ import { flushQueuedOps, getQueuedOps, clearQueuedOpsForSession } from '@/lib/ut
 import { checkAndAwardBadges } from '@/lib/utils/badges'
 import { formatShortDate, localDateKey } from '@/lib/utils/formatting'
 import {
-  FINISH_UNDO_TTL_MS,
   writeFinishUndoToken,
 } from '@/lib/utils/finishUndo'
 import WorkoutManager from './WorkoutManager'
@@ -263,7 +262,6 @@ export default function DaySelect() {
         xpEarned: result.xp_earned ?? 0,
         prevRotationIndex: prevPointer?.index ?? null,
         prevRotationDay: prevPointer?.day ?? null,
-        expiresAt: Date.now() + FINISH_UNDO_TTL_MS,
       })
 
       try {

@@ -231,10 +231,7 @@ export default function HowItWorksDemo() {
   }, [])
 
   useEffect(() => {
-    if (reduceMotion || !active) {
-      setRestMs(REST_DURATION_MS)
-      return
-    }
+    if (reduceMotion || !active) return
 
     const start = performance.now()
     let raf = 0
@@ -254,6 +251,8 @@ export default function HowItWorksDemo() {
     return () => cancelAnimationFrame(raf)
   }, [active, reduceMotion])
 
+  // Out of view / reduced motion rests on the full duration (derived, not stored).
+  const restMsShown = reduceMotion || !active ? REST_DURATION_MS : restMs
   const restDone = active && !reduceMotion && restMs <= 0
   const restLow = active && !reduceMotion && !restDone && restMs <= REST_LOW_MS
 
@@ -404,7 +403,7 @@ export default function HowItWorksDemo() {
                   </div>
                   <div className="landing-how-wo__rest-row">
                     <span className="landing-how-wo__rest-time">
-                      {restDone ? '0:00' : fmtRest(restMs)}
+                      {restDone ? '0:00' : fmtRest(restMsShown)}
                     </span>
                     <span className="landing-how-wo__rest-label">
                       {restDone ? 'REST DONE' : 'REST · Bench Press'}

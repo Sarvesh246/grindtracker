@@ -1,5 +1,5 @@
 'use client'
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { swipeFlyOff, swipeShouldDismiss } from '@/lib/utils/swipeDismiss'
 
 /** Keep in sync with `.toast-slide` / tooltip fly-off. */
@@ -37,7 +37,9 @@ export function useSwipeDismiss(onDismiss?: () => void, disabled = false) {
   const [gone, setGone] = useState(false)
   const dismissed = useRef(false)
   const onDismissRef = useRef(onDismiss)
-  onDismissRef.current = onDismiss
+  useLayoutEffect(() => {
+    onDismissRef.current = onDismiss
+  }, [onDismiss])
 
   const detachWindowListeners = useCallback(() => {
     detachWindow.current?.()

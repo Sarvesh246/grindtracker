@@ -57,10 +57,12 @@ export function readFinishUndoToken(): FinishUndoToken | null {
   }
 }
 
-export function writeFinishUndoToken(token: FinishUndoToken): void {
+/** Callers pass the token without `expiresAt`; the TTL is applied here. */
+export function writeFinishUndoToken(token: Omit<FinishUndoToken, 'expiresAt'>): void {
   if (typeof window === 'undefined') return
   try {
-    localStorage.setItem(FINISH_UNDO_KEY, JSON.stringify(token))
+    const full: FinishUndoToken = { ...token, expiresAt: Date.now() + FINISH_UNDO_TTL_MS }
+    localStorage.setItem(FINISH_UNDO_KEY, JSON.stringify(full))
     window.dispatchEvent(new Event(FINISH_UNDO_EVENT))
   } catch { /* private mode / quota — undo just won't be available */ }
 }

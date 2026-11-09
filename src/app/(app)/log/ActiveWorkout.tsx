@@ -61,7 +61,6 @@ import RenameExerciseDialog from './RenameExerciseDialog'
 import {
   writeFinishUndoToken,
   performFinishUndo,
-  FINISH_UNDO_TTL_MS,
 } from '@/lib/utils/finishUndo'
 import { markAppDataStale } from '@/lib/cache/appDataCache'
 import { useFeatureTooltip } from '@/components/onboarding/useFeatureTooltip'
@@ -2692,7 +2691,6 @@ export default function ActiveWorkout({ day }: { day: string }) {
         xpEarned,
         prevRotationIndex: prevPointer?.index ?? null,
         prevRotationDay: prevPointer?.day ?? null,
-        expiresAt: Date.now() + FINISH_UNDO_TTL_MS,
       })
 
       // Badge awards are a bonus — never fail an already-saved finish over them.
