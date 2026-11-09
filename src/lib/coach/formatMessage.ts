@@ -170,10 +170,23 @@ function asTitleOnly(children: CoachInline[]): CoachInline[] | null {
   return only.children
 }
 
+function inlineText(children: CoachInline[]): string {
+  return children
+    .map(c => (c.type === 'text' ? c.value : inlineText(c.children)))
+    .join('')
+}
+
 /**
- * **Exercise** + soft-break detail lines → stack with larger title + muted body.
+ * Detail lines that read like exercise metadata — sets × reps, Target / Rest,
+ * durations, loads. The stack look (larger title, FADED body) is only right for
+ * those; "**How to deload:**" followed by the actual advice is not a workout
+ * block, and fading it hides the most important sentence in the reply.
  */
-function asTitleStack(
+const STACK_DETAIL_RE =
+  /(\d\s*[x×]\s*\d|\b(target|rest|tempo|rpe)\s*:|\b\d+\s*(sec|secs|seconds|min|mins|minutes)\b|\b\d+(\.\d+)?\s*(lb|lbs|kg)\b|\b\d+\s*(sets?|reps?)\b)/i
+
+/** **Bold** first line + soft-break text, whatever the text turns out to be. */
+function boldLeadWithBody(
   children: CoachInline[],
 ): { title: CoachInline[]; body: CoachInline[] } | null {
   if (children[0]?.type !== 'bold') return null
@@ -192,6 +205,21 @@ function asTitleStack(
   body.push(...children.slice(2))
   if (!body.length) return null
   return { title: titleNode.children, body }
+}
+
+/**
+ * **Exercise** + soft-break detail lines → stack with larger title + muted body.
+ * Only when the title is not a heading ("…:") and the detail lines look like
+ * workout metadata; anything else falls through to title + normal paragraph.
+ */
+function asTitleStack(
+  children: CoachInline[],
+): { title: CoachInline[]; body: CoachInline[] } | null {
+  const hit = boldLeadWithBody(children)
+  if (!hit) return null
+  if (/[:：]\s*$/.test(inlineText(hit.title).trim())) return null
+  if (!STACK_DETAIL_RE.test(inlineText(hit.body))) return null
+  return hit
 }
 
 /**
@@ -291,6 +319,14 @@ export function formatCoachMessage(raw: string): CoachFormattedMessage {
       const stack = asTitleStack(children)
       if (stack) {
         blocks.push({ type: 'stack', title: stack.title, body: stack.body })
+        continue
+      }
+      // A bold lead-in that is NOT a workout block: render it as a skim title
+      // over a normal-weight paragraph, never faded.
+      const lead = boldLeadWithBody(children)
+      if (lead) {
+        blocks.push({ type: 'title', children: lead.title })
+        blocks.push({ type: 'paragraph', children: lead.body })
         continue
       }
       blocks.push({ type: 'paragraph', children })

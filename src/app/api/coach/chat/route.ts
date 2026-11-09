@@ -1,5 +1,5 @@
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
-import { stepCountIs, streamText, type ModelMessage } from 'ai'
+import { stepCountIs, streamText } from 'ai'
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
@@ -12,12 +12,14 @@ import {
   COACH_DEFAULT_MODEL,
   COACH_MAX_HISTORY_MESSAGES,
   COACH_MAX_MESSAGE_CHARS,
-  COACH_SYSTEM_PROMPT,
   buildCoachContext,
-  buildCoachTurnReminder,
+  formatRecentActions,
   getCoachQuota,
-  inferCoachIntent,
+  loadRecentCoachActions,
+  localizeCoachContext,
   mapCoachRateLimitError,
+  planCoachTurn,
+  trimToLastSentence,
   type CoachUnitPreference,
 } from '@/lib/coach'
 import {
@@ -27,11 +29,7 @@ import {
   type CoachToolContext,
 } from '@/lib/coach/actions'
 import { titleFromMessage } from '@/lib/coach/conversations'
-import {
-  normalizeCoachTurns,
-  unansweredUserTurns,
-  type CoachTurn,
-} from '@/lib/coach/history'
+import { type CoachTurn } from '@/lib/coach/history'
 import { loadCoachChipHints } from '@/lib/coach/chipHints'
 import {
   coachContextCacheKey,
@@ -314,7 +312,9 @@ export async function POST(request: Request) {
         asOfLocalDate: localDate,
         timeZone,
       })
-      contextJson = JSON.stringify(context)
+      // Weights go to the model in the user's own unit (exact conversion
+      // here instead of arithmetic in the prompt).
+      contextJson = JSON.stringify(localizeCoachContext(context, unit))
       setCachedCoachContext(contextKey, contextJson)
     } catch (err) {
       console.error('[grind] coach context', err)
@@ -333,37 +333,30 @@ export async function POST(request: Request) {
   const modelId =
     process.env.GEMINI_MODEL?.trim() || COACH_DEFAULT_MODEL
 
-  // Adapt depth budget + reminder from THIS ask so different intents cannot
-  // collapse into one template sprawl (token ceiling + intent-calibrated nudge).
-  const priorUser = [...history].reverse().find(m => m.role === 'user')
-  const intentProfile = inferCoachIntent(message, priorUser?.content ?? null)
-  const turnReminder = buildCoachTurnReminder(intentProfile)
+  // What happened to the cards proposed earlier in this chat — read fresh each
+  // turn (the cached USER_DATA can be a minute stale) so follow-ups like
+  // "make that 4 sets" or "never mind" have something concrete to refer to.
+  let recentActions: string | null = null
+  try {
+    recentActions = formatRecentActions(
+      await loadRecentCoachActions(supabase, user.id, conversationId),
+    )
+  } catch (err) {
+    console.error('[grind] coach recent actions', err)
+  }
 
-  // Asks left unanswered by a failed reply get merged into this turn (see
-  // normalizeCoachTurns). The model may well act on them — a pasted week is a
-  // multi-thousand-token tool call — so the budget must cover the largest of
-  // them, not just the new message.
-  const maxOutputTokens = Math.max(
-    intentProfile.maxOutputTokens,
-    ...unansweredUserTurns(history).map(
-      t => inferCoachIntent(t).maxOutputTokens,
-    ),
-  )
-  const messages: ModelMessage[] = normalizeCoachTurns([
-    ...history,
-    { role: 'user', content: message },
-  ])
+  // One planner decides intent, depth budget, thinking, tools and prompt
+  // sections — shared with the eval harness so they cannot drift.
+  const plan = planCoachTurn({
+    message,
+    history,
+    userDataJson: contextJson,
+    recentActions,
+  })
+  const intentProfile = plan.profile
+  const { system, messages, maxOutputTokens } = plan
 
   const google = createGoogleGenerativeAI({ apiKey })
-  // Same base system prompt for every turn (starter chips and free-typed
-  // questions share this route). Intent-specific reminder sits after
-  // USER_DATA so depth/personalization stay salient for THIS ask.
-  const system = `${COACH_SYSTEM_PROMPT}
-
-USER_DATA (JSON; personal facts only — trust this over memory):
-${contextJson}
-
-Remember: intent before formatting — Understand intent → assess complexity → determine relevance → choose depth → choose format → answer → verify. ${turnReminder}`
 
   const toolCtx: CoachToolContext = {
     supabase,
@@ -373,6 +366,8 @@ Remember: intent before formatting — Understand intent → assess complexity �
     localDate,
     timeZone,
     proposals: [] as CoachProposalView[],
+    userText: plan.userText,
+    pendingDayKeys: [],
   }
   const tools = buildCoachProposalTools(toolCtx)
 
@@ -390,7 +385,10 @@ Remember: intent before formatting — Understand intent → assess complexity �
     // Google: for Gemini 3 keep temperature at the 1.0 default — lower values
     // can cause looping / degraded output (and runs that end with no text).
     ...(/gemini-3|-latest$/.test(modelId) ? {} : { temperature: 0.4 }),
-    reasoning: 'none' as const,
+    // Minimal thinking for chat and plain tool calls; advice that has to stay
+    // self-consistent (recommendation / comparison / analysis / troubleshooting
+    // / program) gets 'low' — see THINKING in intent.ts.
+    reasoning: plan.reasoning,
     onError: ({ error }: { error: unknown }) => {
       // streamText() returns before the model call actually runs, so this
       // is the ONLY place upstream failures (bad key, quota, model
@@ -413,7 +411,7 @@ Remember: intent before formatting — Understand intent → assess complexity �
       Math.max(5_000, MODEL_DEADLINE_MS - (startedAt - requestStartedAt)),
     )
     const startAttempt = (withTools: boolean) =>
-      withTools
+      withTools && plan.toolsEnabled
         ? streamText({
             ...baseCall,
             abortSignal,
@@ -432,7 +430,8 @@ Remember: intent before formatting — Understand intent → assess complexity �
             ...baseCall,
             abortSignal,
             // Headroom for whatever ate the first budget (thinking, a
-            // half-built tool call).
+            // half-built tool call). The retry never thinks.
+            reasoning: 'none' as const,
             maxOutputTokens: Math.max(maxOutputTokens * 2, 2048),
           })
 
@@ -441,7 +440,20 @@ Remember: intent before formatting — Understand intent → assess complexity �
     const encoder = new TextEncoder()
     let full = ''
     let sawError = false
+    let retried = false
+    let truncated = false
     const emittedProposalIds = new Set<string>()
+    // Per-turn telemetry, logged as one JSON line so a bad reply can be traced
+    // (which intent, which tools with what arguments, why it stopped).
+    const turnLog = {
+      toolCalls: [] as { name: string; input: unknown; ok?: boolean }[],
+      steps: 0,
+      usage: undefined as unknown,
+    }
+    const clip = (v: unknown) => {
+      const s = JSON.stringify(v) ?? ''
+      return s.length > 1200 ? `${s.slice(0, 1200)}…` : s
+    }
 
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
@@ -463,14 +475,25 @@ Remember: intent before formatting — Understand intent → assess complexity �
             if (part.type === 'text-delta') {
               full += part.text
               emit({ type: 'text-delta', text: part.text })
+            } else if (part.type === 'tool-call') {
+              turnLog.toolCalls.push({ name: part.toolName, input: part.input })
             } else if (part.type === 'tool-result') {
+              const call = [...turnLog.toolCalls]
+                .reverse()
+                .find(c => c.name === part.toolName && c.ok === undefined)
+              if (call) {
+                call.ok = (part.output as { ok?: boolean } | undefined)?.ok
+              }
               // Flush any proposals created by tool execute handlers.
               flushProposals()
             } else if (part.type === 'tool-error') {
               console.error('[grind] coach tool error', part.toolName, part.error)
+            } else if (part.type === 'finish-step') {
+              turnLog.steps += 1
             } else if (part.type === 'finish') {
               finishReason = part.finishReason
               rawFinishReason = part.rawFinishReason
+              turnLog.usage = (part as { totalUsage?: unknown }).totalUsage
             } else if (part.type === 'abort') {
               sawError = true
               console.error('[grind] coach stream aborted (deadline)')
@@ -506,6 +529,7 @@ Remember: intent before formatting — Understand intent → assess complexity �
             ...lastFinish,
           })
           sawError = false
+          retried = true
           full = ''
           try {
             lastFinish = await consume(false)
@@ -519,7 +543,56 @@ Remember: intent before formatting — Understand intent → assess complexity �
             console.error('[grind] coach empty reply', lastFinish)
             sawError = true
           }
+          // The retry has no tools, so for a change request whatever text it
+          // produced is prose standing in for an action. Say so plainly
+          // instead of leaving the user to wonder why no card appeared.
+          if (
+            retried &&
+            full.trim() &&
+            emittedProposalIds.size === 0 &&
+            (intentProfile.intent === 'actionable' ||
+              intentProfile.intent === 'plan_install')
+          ) {
+            const notice =
+              "\n\nI couldn't prepare that as an action card this time, so nothing was changed. Send it again and I'll retry."
+            full += notice
+            emit({ type: 'text-delta', text: notice })
+          }
+          // Ran into the token ceiling mid-sentence: keep what's saved tidy and
+          // tell the user it was cut short (the streamed text can't be unsent).
+          if (lastFinish?.finishReason === 'length' && full.trim()) {
+            truncated = true
+            full = trimToLastSentence(full)
+            console.warn('[grind] coach reply hit the token ceiling', {
+              intent: intentProfile.intent,
+              maxOutputTokens,
+            })
+          }
         } finally {
+          console.info(
+            '[grind] coach turn',
+            JSON.stringify({
+              model: modelId,
+              intent: intentProfile.intent,
+              thinking: plan.reasoning,
+              tools: plan.toolsEnabled,
+              chars: message.length,
+              maxOutputTokens,
+              steps: turnLog.steps,
+              retried,
+              truncated,
+              finish: lastFinish?.finishReason,
+              rawFinish: lastFinish?.rawFinishReason,
+              usage: turnLog.usage,
+              proposals: emittedProposalIds.size,
+              toolCalls: turnLog.toolCalls.map(c => ({
+                name: c.name,
+                ok: c.ok,
+                input: clip(c.input),
+              })),
+              ms: Date.now() - requestStartedAt,
+            }),
+          )
           const gotReply = full.trim().length > 0 || emittedProposalIds.size > 0
           if (sawError && !gotReply) {
             // Not persisted (gotReply stays false) and the turn is refunded.
@@ -533,6 +606,11 @@ Remember: intent before formatting — Understand intent → assess complexity �
             emit({
               type: 'error',
               error: 'Something went wrong mid-reply. Partial answer shown.',
+            })
+          } else if (truncated) {
+            emit({
+              type: 'error',
+              error: 'That reply was cut short. Ask me to continue for the rest.',
             })
           }
           emit({ type: 'done' })

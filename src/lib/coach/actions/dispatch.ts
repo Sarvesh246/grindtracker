@@ -14,6 +14,7 @@ import { executeUpdateRotation } from './updateRotation'
 import { executeEditSessionLog } from './editSessionLog'
 import { executeUpdateNotificationPrefs } from './updateNotificationPrefs'
 import { executeApplyWeeklyPlan } from './applyWeeklyPlan'
+import { executeSetDayEnabled } from './setDayEnabled'
 import { DOW_LABELS } from './dates'
 import type { CoachActionPayload } from './types'
 
@@ -235,6 +236,21 @@ export async function executeConfirmedPayload(
         ok: true,
         message: 'Notification preferences saved.',
         details: { patch: payload.execute.patch },
+      }
+    }
+    case 'set_day_enabled': {
+      const result = await executeSetDayEnabled(supabase, {
+        userId,
+        dayType: payload.execute.dayType,
+        enabled: payload.execute.enabled,
+      })
+      if (!result.ok) return { ok: false, message: result.message }
+      return {
+        ok: true,
+        message: payload.execute.enabled
+          ? `Showing ${payload.execute.dayType} again.`
+          : `Hid ${payload.execute.dayType} — turn it back on in Log → Manage.`,
+        details: { dayType: payload.execute.dayType, count: result.count },
       }
     }
     case 'apply_weekly_plan': {

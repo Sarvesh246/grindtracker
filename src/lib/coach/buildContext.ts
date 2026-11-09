@@ -70,6 +70,8 @@ export interface CoachRecentSession {
 
 export interface CoachContext {
   as_of_local_date: string
+  /** Full weekday name of as_of_local_date — the model should not work it out. */
+  as_of_weekday: string
   /** IANA tz from the client when provided (informational for the model). */
   time_zone: string | null
   unit_preference: CoachUnitPreference
@@ -182,6 +184,22 @@ export interface CoachContext {
 }
 
 const DOW_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const
+
+const DOW_FULL = [
+  'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+] as const
+
+/** Weekday of a YYYY-MM-DD key (parsed at local noon, per the dates rule). */
+export function weekdayName(dateKey: string): string {
+  const d = new Date(`${dateKey}T12:00:00`)
+  return Number.isNaN(d.getTime()) ? '' : DOW_FULL[d.getDay()]!
+}
 
 type SessionRow = {
   id: string
@@ -682,6 +700,7 @@ export async function buildCoachContext(
 
   return {
     as_of_local_date: today,
+    as_of_weekday: weekdayName(today),
     time_zone: timeZone,
     unit_preference: unitPreference,
     weight_storage: 'lbs',

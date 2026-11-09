@@ -17,6 +17,8 @@ import { previewUpdateRotation } from './updateRotation'
 import { displayWeightToLbs, previewEditSessionLog } from './editSessionLog'
 import { previewUpdateNotificationPrefs } from './updateNotificationPrefs'
 import { previewApplyWeeklyPlan } from './applyWeeklyPlan'
+import { previewSetDayEnabled } from './setDayEnabled'
+import { groundingReasonFor } from './grounding'
 import type { CoachProposalView } from './types'
 
 export type CoachToolContext = {
@@ -30,6 +32,17 @@ export type CoachToolContext = {
   timeZone: string | null
   /** Collect proposals created during this turn for the NDJSON stream. */
   proposals: CoachProposalView[]
+  /**
+   * What the user actually typed (this message + their last few). Tools that
+   * write numbers into history refuse values that aren't in here — see
+   * grounding.ts. Undefined disables the check (tests).
+   */
+  userText?: string
+  /**
+   * Day keys proposed earlier in THIS reply (create_day) so a later
+   * propose_update_rotation can place them before they exist.
+   */
+  pendingDayKeys?: string[]
 }
 
 const CONFIRM_NOTE =
@@ -45,26 +58,28 @@ export function buildCoachProposalTools(ctx: CoachToolContext) {
   return {
     propose_correct_weights: tool({
       description:
-        'Propose correcting the SAME wrong weight on one exercise across MULTIPLE past completed sessions (e.g. bar was 25 not 20 so every logged 90 should be 95). Not for a single set’s reps/RPE/note — use propose_edit_session_log for that. Preview only — user must Confirm in the UI before anything is written.',
+        'Propose correcting the SAME wrong weight on one exercise across MULTIPLE past completed sessions (a plate or bar weight that was entered wrong every time). Only call it when the user stated BOTH the wrong weight and the right one — never infer either from their data or guess; if either is missing, ask one short question instead. Not for a single set’s reps/RPE/note — use propose_edit_session_log for that. Preview only — user must Confirm in the UI before anything is written.',
       inputSchema: z.object({
         exerciseName: z
           .string()
           .min(1)
-          .describe('Exercise name as the user knows it, e.g. "Bench Press"'),
+          .describe('Exercise name as the user knows it'),
         fromWeight: z
           .number()
           .positive()
-          .describe('Incorrect weight currently logged (in the user unit)'),
+          .describe('Incorrect weight currently logged — exactly the number the user said (in their unit)'),
         toWeight: z
           .number()
           .positive()
-          .describe('Correct weight to apply (same unit)'),
+          .describe('Correct weight — exactly the number the user said (same unit)'),
         unit: z
           .enum(['lb', 'kg'])
           .optional()
           .describe('Unit for fromWeight/toWeight; defaults to user preference'),
       }),
       execute: async input => {
+        const ungrounded = groundingReasonFor('propose_correct_weights', input, ctx.userText)
+        if (ungrounded) return { ok: false as const, reason: ungrounded }
         const unit = input.unit ?? ctx.unit
         const result = await previewCorrectWeights(ctx.supabase, {
           userId: ctx.userId,
@@ -141,12 +156,12 @@ export function buildCoachProposalTools(ctx: CoachToolContext) {
               name: z.string().min(1),
               sets_target: z.number().int().min(1).max(12),
               reps_target: z.string().min(1),
-              weight_target_lbs: z
+              weight_target: z
                 .number()
                 .positive()
                 .optional()
                 .describe(
-                  'Optional target weight in the user display unit (lb or kg from preference)',
+                  'Optional target weight in the USER’S display unit (kg if their preference is kg, else lb), as they would read it — conversion is handled for you',
                 ),
             }),
           )
@@ -165,12 +180,15 @@ export function buildCoachProposalTools(ctx: CoachToolContext) {
             sets_target: e.sets_target,
             reps_target: e.reps_target,
             weight_target_lbs:
-              e.weight_target_lbs != null ? toLbs(e.weight_target_lbs) : null,
+              e.weight_target != null ? toLbs(e.weight_target) : null,
           })),
         })
         if (!result.ok) {
           return { ok: false as const, reason: result.reason }
         }
+        ;(ctx.pendingDayKeys ??= []).push(
+          input.dayKey.trim().toLowerCase().replace(/\s+/g, ' '),
+        )
         ctx.proposals.push(result.proposal)
         return {
           ok: true as const,
@@ -200,7 +218,11 @@ export function buildCoachProposalTools(ctx: CoachToolContext) {
                     sets_target: z.number().int().min(1).max(12),
                     reps_target: z.string().min(1).describe('e.g. "6-10" or "8-12/leg"'),
                     rest_seconds: z.number().int().min(15).max(900).optional(),
-                    weight_target_lbs: z.number().positive().optional(),
+                    weight_target: z
+                      .number()
+                      .positive()
+                      .optional()
+                      .describe('Target weight in the USER’S display unit (kg or lb), as written in the plan'),
                   }),
                 )
                 .min(1)
@@ -216,7 +238,9 @@ export function buildCoachProposalTools(ctx: CoachToolContext) {
         keepDays: z
           .array(z.string())
           .optional()
-          .describe('Existing days to leave untouched (not hidden)'),
+          .describe(
+            'ONLY existing days the user explicitly named to leave alone (not hidden). Leave empty otherwise — flex and abs days are not exempt unless they said so.',
+          ),
       }),
       execute: async input => {
         const result = await previewApplyWeeklyPlan(ctx.supabase, {
@@ -232,7 +256,7 @@ export function buildCoachProposalTools(ctx: CoachToolContext) {
               reps_target: e.reps_target,
               rest_seconds: e.rest_seconds ?? null,
               weight_target_lbs:
-                e.weight_target_lbs != null ? toLbs(e.weight_target_lbs) : null,
+                e.weight_target != null ? toLbs(e.weight_target) : null,
             })),
           })),
           restWeekdays: input.restWeekdays ?? null,
@@ -252,7 +276,7 @@ export function buildCoachProposalTools(ctx: CoachToolContext) {
 
     propose_log_body_weight: tool({
       description:
-        'Propose logging (or overwriting) a body-weight entry for a calendar date. Use when they say they weighed in, “log 180”, “I weigh 82 kg”, or want to correct today’s scale reading. Not for barbell/exercise weights (those are propose_correct_weights / propose_edit_session_log). Overwrites any existing entry that date.',
+        'Propose logging (or overwriting) a body-weight entry for a calendar date. Use when they say what they weighed or ask to log a scale reading, and only with the number they gave. Not for barbell/exercise weights (those are propose_correct_weights / propose_edit_session_log). Overwrites any existing entry that date.',
       inputSchema: z.object({
         weight: z.number().positive().describe('Body weight in the given unit'),
         unit: z.enum(['lb', 'kg']).optional(),
@@ -262,6 +286,8 @@ export function buildCoachProposalTools(ctx: CoachToolContext) {
           .describe('YYYY-MM-DD; defaults to the user’s local today'),
       }),
       execute: async input => {
+        const ungrounded = groundingReasonFor('propose_log_body_weight', input, ctx.userText)
+        if (ungrounded) return { ok: false as const, reason: ungrounded }
         const result = await previewLogBodyWeight(ctx.supabase, {
           userId: ctx.userId,
           conversationId: ctx.conversationId,
@@ -475,7 +501,7 @@ export function buildCoachProposalTools(ctx: CoachToolContext) {
 
     propose_update_rotation: tool({
       description:
-        'Propose changing workout order / rotation. mode=auto rebuilds A–Z (flex days out). mode=manual requires the full sequence of day names in order (repeats allowed). Use when they want to reorder days, switch to manual order, add a day (like abs) into the loop, pair days, or reset to auto. Names are matched loosely (case, spaces, "Push Day" = push), so use the day names from USER_DATA. To do a day "alongside"/"on the same day as" another, put them back to back, e.g. ["push","abs","pull","legs","abs"] (or one entry "push + abs"). Include EVERY day that should stay in the loop — the sequence replaces the old one. A flex day (like abs) is only in the loop if it is listed here. If a day does not exist yet, create it first with propose_create_day and tell the user to confirm that, then propose the order. The confirm card lists the FULL resulting order.',
+        'Propose changing workout order / rotation. mode=auto rebuilds A–Z (flex days out). mode=manual requires the full sequence of day names in order (repeats allowed). Use when they want to reorder days, switch to manual order, add a day (like abs) into the loop, pair days, or reset to auto. Names are matched loosely (case, spaces, "Push Day" = push), so use the day names from USER_DATA. To do a day "alongside"/"on the same day as" another, put them back to back, e.g. ["push","abs","pull","legs","abs"] (or one entry "push + abs"). Include EVERY day that should stay in the loop — the sequence replaces the old one. A flex day (like abs) is only in the loop if it is listed here. A day you proposed with propose_create_day earlier in this SAME reply may be included by name — propose the day first, then the order, and the user can Confirm all. If a day does not exist at all and you are not creating it now, create it first. The confirm card lists the FULL resulting order.',
       inputSchema: z.object({
         mode: z.enum(['auto', 'manual']),
         sequence: z
@@ -489,6 +515,32 @@ export function buildCoachProposalTools(ctx: CoachToolContext) {
           conversationId: ctx.conversationId,
           mode: input.mode,
           sequence: input.sequence ?? null,
+          extraDayKeys: ctx.pendingDayKeys ?? [],
+        })
+        if (!result.ok) return { ok: false as const, reason: result.reason }
+        ctx.proposals.push(result.proposal)
+        return {
+          ok: true as const,
+          proposalId: result.proposal.id,
+          summary: result.proposal.card.summaryLines.join(' · '),
+          note: CONFIRM_NOTE,
+        }
+      },
+    }),
+
+    propose_set_day_enabled: tool({
+      description:
+        'Propose hiding or showing a WHOLE workout day (every exercise in it at once). Use for “delete / remove / hide / turn off my push 2 day” (enabled=false — days are hidden, never deleted, and history stays) and “bring back / show / turn on that day” (enabled=true). To hide a single exercise use propose_edit_exercise instead. Name the day as the user said it. Preview only — user must Confirm.',
+      inputSchema: z.object({
+        dayType: z.string().min(1).describe('Day name as the user said it'),
+        enabled: z.boolean().describe('false = hide the day, true = show it'),
+      }),
+      execute: async input => {
+        const result = await previewSetDayEnabled(ctx.supabase, {
+          userId: ctx.userId,
+          conversationId: ctx.conversationId,
+          dayType: input.dayType,
+          enabled: input.enabled,
         })
         if (!result.ok) return { ok: false as const, reason: result.reason }
         ctx.proposals.push(result.proposal)
@@ -517,6 +569,8 @@ export function buildCoachProposalTools(ctx: CoachToolContext) {
         isWarmup: z.boolean().optional(),
       }),
       execute: async input => {
+        const ungrounded = groundingReasonFor('propose_edit_session_log', input, ctx.userText)
+        if (ungrounded) return { ok: false as const, reason: ungrounded }
         const unit = input.unit ?? ctx.unit
         const patch: {
           reps?: number

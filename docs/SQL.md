@@ -68,6 +68,7 @@ is fully linked to migration history.
 | [53-day-plans-rest-longer-coach-messages.sql](sql/53-day-plans-rest-longer-coach-messages.sql) | 53 | `exercises.rest_seconds` (programmed rest per exercise), Coach messages up to 12000 chars, `apply_weekly_plan` Coach action kind |
 | [54-rotation-current-day.sql](sql/54-rotation-current-day.sql) | 54 | **Paste this in Supabase.** `user_rotation.current_day` anchors the up-next pointer to a day so it survives days being added/disabled/reordered. The app works without it (skips already stick), but sequence edits re-anchor only once it's applied |
 | [55-coach-dev-unlimited-restore.sql](sql/55-coach-dev-unlimited-restore.sql) | 55 | **Paste this in Supabase.** Restores the admin `coach_dev_unlimited` bypass in `enforce_coach_rate_limit()` that 44 dropped when it added the advisory lock — without it the toggle only fooled the app layer and the trigger still capped the admin at 8/10 min and 15/day. Start from this file for any future redefinition of that function |
+| [56-coach-set-day-enabled.sql](sql/56-coach-set-day-enabled.sql) | 56 | **Paste this in Supabase, deploy with the matching app change.** Allows the new `set_day_enabled` Coach action ("hide / show my push 2 day") by widening the `coach_action_proposals.kind` CHECK. Without it the proposal insert fails and the Coach says it couldn't save the action |
 
 See also [PUSH.md](PUSH.md) for VAPID keys, Vercel env, and cron setup.
 See [COACH.md](COACH.md) for Gemini env, rate limits, `/api/coach/chat`, and

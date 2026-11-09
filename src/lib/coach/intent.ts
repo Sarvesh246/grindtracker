@@ -35,10 +35,47 @@ export interface CoachIntentProfile {
   reminder: string
   /** Whether personal USER_DATA is expected to matter for this ask. */
   personalization: 'required' | 'useful' | 'unnecessary' | 'context'
+  /**
+   * Model thinking. Minimal ('none') is fast and fine for chat and for
+   * straightforward tool calls; advice that must stay self-consistent
+   * (recommendations, comparisons, analysis) gets a little reasoning so it
+   * doesn't open with one answer and end with the opposite.
+   */
+  thinking: 'none' | 'low'
+  /**
+   * 'none' = pure Q&A intents that can never be a change request, so the
+   * action tools aren't offered at all. Everything else keeps every tool —
+   * the router is regex, so a wrongly removed tool would silently drop an action.
+   */
+  toolPolicy: 'all' | 'none'
+  /** Whether the GRIND rules (streak/rest/PR/XP maths) belong in the prompt. */
+  mechanics: boolean
+  /** Several separate questions in one message — each gets its own bullet. */
+  multiAsk: boolean
 }
 
+/** "three quick things", or two+ question marks. */
+const MULTI_ASK_RE = /\b(two|three|four|2|3|4)\b[^.?!]{0,15}\b(things|questions)\b/i
+function isMultiAsk(text: string): boolean {
+  return (text.match(/\?/g) ?? []).length >= 2 || MULTI_ASK_RE.test(text)
+}
+
+// Symptom words. Deliberately NOT "doctor"/"ER" (a long message that merely
+// mentions "my doctor said lift more" is not a symptom report) and not "sore"
+// (ordinary DOMS), which would route every "should I train today?" to safety.
 const SAFETY_RE =
-  /\b(pain|hurt|hurts|injured|injury|dizzy|dizziness|nause|swelling|numb|tingl|sharp pain|push through|train through|doctor|ER|emergency|bleeding|chest pain|passed out|faint)\b/i
+  /\b(pain|painful|hurt|hurts|injured|injury|dizzy|dizziness|nausea|nauseous|swelling|swollen|numb|numbness|tingling|push through|train through|emergency|bleeding|chest pain|passed out|faint|fainted|fainting|sprain|sprained|torn|tore)\b/i
+
+/**
+ * "my knees feel weird", "shoulder clicking" — mild, but still a body signal.
+ * Exact word forms only: "back off", "numbers" and "popular" must not match.
+ */
+const BODY_SYMPTOM_RE =
+  /\b(knee|knees|shoulder|shoulders|back|elbow|elbows|wrist|wrists|hip|hips|neck|ankle|ankles|joint|joints)\b[^.?!]{0,40}\b(weird|funny|strange|clicks?|clicking|pops?|popping|popped|tweaked|tweaking|twinges?|aches?|aching|feels? off)\b/i
+
+/** First-person symptom report — the only way a LONG message counts as safety. */
+const FIRST_PERSON_SYMPTOM_RE =
+  /\b(my|i)\b[^.?!]{0,40}\b(hurts?|pain|painful|dizzy|numb|tingling|swollen|injured|sharp|sprained)\b/i
 
 const WORKOUT_RE =
   /\b((give|build|make) me\b[\s\S]{0,48}\b(workout|session|routine)\b|workout for\b|leg day\b|push day\b|pull day\b|chest day\b|what should i do for (chest|legs|back|shoulders|arms|pull|push)\b|45[- ]?minute|dumbbells? only|gym is crowded)\b/i
@@ -47,10 +84,13 @@ const PROGRAM_RE =
   /\b(program|ppl|push\/pull\/legs|4[- ]day|5[- ]day|split|organize my week|how (should|do) i progress (this|the) program|weekly plan|periodiz)\b/i
 
 const TECHNIQUE_RE =
-  /\b(how (do|should) i (do|perform|set up|execute)|form|technique|cue|cues|common mistakes?|rdl|how to (squat|bench|deadlift|row|press))\b/i
+  /\b(how (do|should) i (do|perform|set up|execute)|form|technique|cue|cues|common mistakes?|how to (squat|bench|deadlift|row|press))\b/i
 
 const TROUBLE_RE =
-  /\b(why (am|is|are|does|do|can'|don'|didn'|can’t|don’t|didn’t)|not feeling|feel(s|ing)? (weaker|awkward|off)|stuck|plateau|can'?t (feel|hit|complete))\b/i
+  /\b(why (am|is|are|does|do|can'|don'|didn'|won'?t|can’t|don’t|didn’t|won’t)|not feeling|feel(s|ing)? (weaker|awkward|off)|stuck|plateau|can'?t (feel|hit|complete))\b/i
+
+/** A question about THEIR data ("what's my streak?") is never a pure definition. */
+const OWN_DATA_RE = /\b(my|mine)\b|\b(am|did|do|have|was) i\b/i
 
 const ANALYSIS_RE =
   /\b(analy[sz]e|progress|getting stronger|what stands out|what changed|biggest weakness|holding me back|three biggest|last (month|3 months|week)|improving|explain everything|how has my training)\b/i
@@ -88,51 +128,92 @@ const ACTIONABLE_RE =
 const ADVISORY_PREFIX_RE =
   /^(should i|can i|could i|would you|do you think|is it (ok|okay|fine)|what if)\b/i
 
-/** Soft token ceilings by intent — simple asks cannot sprawl. */
+/**
+ * Token ceilings by intent. These are a SAFETY NET, not the brevity control:
+ * length is shaped by the intent reminder ("2–3 sentences", "under ~90 words")
+ * and a reply that hits the ceiling is trimmed to a whole sentence, so the cap
+ * sits well above what a good answer needs. Intents that think get headroom on
+ * top (THINKING_HEADROOM) because reasoning tokens count against the same limit.
+ */
 const TOKEN_BUDGET: Record<CoachIntent, number> = {
-  safety: 450,
-  definition: 280,
-  short_contextual: 320,
-  recommendation: 420,
-  comparison: 520,
-  technique: 700,
-  troubleshooting: 750,
-  analysis: 1000,
-  actionable: 1100,
+  safety: 600,
+  definition: 450,
+  short_contextual: 500,
+  recommendation: 650,
+  comparison: 800,
+  technique: 900,
+  troubleshooting: 1000,
+  analysis: 1300,
+  actionable: 1400,
   // The tool call itself carries a whole week of exercises (~3–5k tokens).
   plan_install: 8000,
-  workout: 1100,
-  program: 1200,
-  general: 700,
+  workout: 1400,
+  program: 1500,
+  general: 1000,
 }
+
+const THINKING: Record<CoachIntent, 'none' | 'low'> = {
+  safety: 'none',
+  definition: 'none',
+  short_contextual: 'none',
+  recommendation: 'low',
+  comparison: 'low',
+  technique: 'none',
+  troubleshooting: 'low',
+  analysis: 'low',
+  actionable: 'none',
+  plan_install: 'none',
+  workout: 'none',
+  program: 'low',
+  general: 'none',
+}
+
+const THINKING_HEADROOM = 1500
+
+/** Pure Q&A intents: no change request can hide in them, so no tools. */
+const NO_TOOL_INTENTS: ReadonlySet<CoachIntent> = new Set([
+  'definition',
+  'technique',
+  'comparison',
+])
+
+/** Intents whose answers lean on the streak/rest/PR/XP rules. */
+const MECHANICS_INTENTS: ReadonlySet<CoachIntent> = new Set([
+  'recommendation',
+  'short_contextual',
+  'troubleshooting',
+  'analysis',
+  'general',
+])
+
+const CHANGE_RULES =
+  'Call the matching propose_* tool for EACH change they asked for, all in this one reply (independent calls together). Use only values the user stated or that USER_DATA states unambiguously — never reuse numbers from tool descriptions or examples. If a needed value is missing or the request is vague ("fix my numbers"), ask ONE short question instead of calling a tool. If no tool covers the request, say so plainly and point to where in the app to do it — never substitute a different tool. Describe exactly what the card shows. Never claim it is applied before Confirm.'
 
 const REMINDER: Record<CoachIntent, string> = {
   safety:
-    'Intent: safety. Lead with safety action. Do not diagnose or push through significant symptoms. Keep it direct.',
+    'Intent: safety. First sentence = the safety action (stop or modify; do not push through). Then one practical next step and when to get it checked. No diagnosis. Under ~90 words.',
   definition:
-    'Intent: definition/education. Answer in a few sentences. No personal history, no coaching prescription, no section template.',
+    'Intent: definition. Answer in 2–3 sentences of plain prose — no headings, bullets, bold labels, extra examples or personal data unless they ask. Under ~60 words.',
   short_contextual:
-    'Intent: short contextual follow-up. Use prior turns + relevant USER_DATA. Stay brief — do not restart with a primer.',
+    'Intent: short follow-up. Give a decision or one-line answer plus at most one reason, using prior turns and USER_DATA. Do NOT output a workout, plan or list unless they asked for one. Under ~70 words.',
   recommendation:
-    'Intent: recommendation. Lead with ONE clear decision, then a brief why and fallback if useful. No option menus when evidence supports a pick.',
+    'Intent: recommendation. First sentence = the decision ("Use 95 lb today", "Train legs"). Then one reason from their data and, only if useful, one fallback. Commit — no closing hedge that reverses it. No workout unless asked. Under ~90 words.',
   comparison:
-    'Intent: comparison. Lead with the takeaway; use a compact side-by-side or table only if it helps scanability.',
+    'Intent: comparison. Lead with the takeaway and make your final recommendation agree with it. Compare like for like (a barbell total is not a per-hand dumbbell number). A compact table only if it helps scanning.',
   technique:
-    'Intent: technique. Use sequential steps (setup → execution → cues → common mistake). Skip personal history unless asked.',
+    'Intent: technique. Use numbered steps (setup → execution → cues → common mistake). Skip personal history unless asked.',
   troubleshooting:
-    'Intent: troubleshooting. Hedge causes (likely/suggests). Prioritize likely explanations, how to test, what to try — do not assert unproven causation.',
+    'Intent: troubleshooting. Hedge causes (likely/suggests). Prioritize likely explanations, how to test, what to try — do not assert unproven causation. Conversational; headings only for 3+ causes.',
   analysis:
-    'Intent: progress/coaching analysis. Lead with takeaway, then relevant evidence, hedged interpretation, and action. Prioritize — do not dump every metric.',
-  actionable:
-    'Intent: actionable mutation. Call the matching propose_* tool so the user gets a Confirm/Cancel card. Never claim the change is applied until they confirm.',
+    'Intent: progress/coaching analysis. Lead with the takeaway, then 2–3 relevant facts, a hedged interpretation and one action. PR counts are volume records, not proof of strength. Prioritize — do not dump every metric.',
+  actionable: `Intent: change request. ${CHANGE_RULES}`,
   plan_install:
-    'Intent: install a whole training week. Call propose_apply_weekly_plan ONCE with every training day (weekday, exercises, sets, reps, rest_seconds), the rest weekdays, and keepDays for any day they said to leave alone (exact names from USER_DATA). Do not re-list the plan in prose — the Confirm card shows it. Reply with one or two lines at most. Never claim it is applied before Confirm.',
+    'Intent: install a whole training week. Call propose_apply_weekly_plan ONCE with every training day (weekday, exercises, sets, reps, rest_seconds), the rest weekdays, and keepDays ONLY for days the user explicitly said to leave alone (exact names from USER_DATA) — flex or abs days are not exempt unless they named them, so otherwise leave keepDays empty. Do not re-list the plan in prose — the Confirm card shows it. Reply with one or two lines at most. Never claim it is applied before Confirm.',
   workout:
     'Intent: workout request. Lead with an executable workout using bold exercise stacks (sets×reps, Target, Rest). No essay intro. If they ask to save it as a day, resolve flex vs which program day from context or ask; unspecified → flex. Call propose_create_day only — do not also propose_start_workout unless they ask to train now. Never mention auto-start.',
   program:
     'Intent: program design. Give a structured plan with explicit assumptions. More detail than a simple Q is OK here.',
-  general:
-    'Intent: general. Choose depth and format from THIS ask only — minimum structure, personalize only if Required or Useful.',
+  general: `Intent: general. Choose depth and format from THIS ask only — minimum structure, personalize only if Required or Useful. If part of it is a change request: ${CHANGE_RULES}`,
 }
 
 function personalizationFor(intent: CoachIntent): CoachIntentProfile['personalization'] {
@@ -169,56 +250,74 @@ export function inferCoachIntent(
 
   // Ultra-short follow-ups inherit conversational mode even before regex.
   if (text.length <= 24 && SHORT_CONTEXT_RE.test(text)) {
-    return profile('short_contextual')
+    return profile('short_contextual', text)
   }
   // Bare "why?" after a prior turn is almost always a follow-up.
   if (/^why\??$/i.test(text) && prior) {
-    return profile('short_contextual')
+    return profile('short_contextual', text)
   }
 
-  if (looksLikeWeeklyPlan(text)) return profile('plan_install')
-  if (SAFETY_RE.test(text)) return profile('safety')
+  if (looksLikeWeeklyPlan(text)) return profile('plan_install', text)
+  // A long message that only brushes a safety word is not a symptom report.
+  const symptom = SAFETY_RE.test(text) || BODY_SYMPTOM_RE.test(text)
+  if (symptom && (text.length <= 400 || FIRST_PERSON_SYMPTOM_RE.test(text))) {
+    return profile('safety', text)
+  }
   if (ACTIONABLE_RE.test(text) && !ADVISORY_PREFIX_RE.test(text)) {
-    return profile('actionable')
+    return profile('actionable', text)
   }
-  if (WORKOUT_RE.test(text)) return profile('workout')
-  if (PROGRAM_RE.test(text)) return profile('program')
-  if (TECHNIQUE_RE.test(text)) return profile('technique')
-  if (COMPARISON_RE.test(text)) return profile('comparison')
+  if (WORKOUT_RE.test(text)) return profile('workout', text)
+  if (PROGRAM_RE.test(text)) return profile('program', text)
+  // "…the form feels fine. Why won't it move?" is troubleshooting, not technique,
+  // even though it mentions form.
+  if (/\bwhy\b/i.test(text) && TROUBLE_RE.test(text) && !DEFINITION_RE.test(text)) {
+    return profile('troubleshooting', text)
+  }
+  if (TECHNIQUE_RE.test(text)) return profile('technique', text)
+  if (COMPARISON_RE.test(text)) return profile('comparison', text)
   // Ranked coaching asks before generic "why" troubleshooting.
-  if (ANALYSIS_RE.test(text)) return profile('analysis')
+  if (ANALYSIS_RE.test(text)) return profile('analysis', text)
   // Definition before trouble so "What is a plateau?" stays educational.
-  if (DEFINITION_RE.test(text) && !TROUBLE_RE.test(text)) {
-    return profile('definition')
+  if (DEFINITION_RE.test(text) && !TROUBLE_RE.test(text) && !OWN_DATA_RE.test(text)) {
+    return profile('definition', text)
   }
-  if (TROUBLE_RE.test(text)) return profile('troubleshooting')
-  if (RECOMMENDATION_RE.test(text)) return profile('recommendation')
-  if (DEFINITION_RE.test(text)) return profile('definition')
+  if (TROUBLE_RE.test(text)) return profile('troubleshooting', text)
+  if (RECOMMENDATION_RE.test(text)) return profile('recommendation', text)
+  if (DEFINITION_RE.test(text) && !OWN_DATA_RE.test(text)) return profile('definition', text)
 
   // Very short residual prompts → contextual
   if (text.split(/\s+/).length <= 3 && text.length <= 40) {
-    return profile('short_contextual')
+    return profile('short_contextual', text)
   }
 
-  return profile('general')
+  return profile('general', text)
 }
 
-function profile(intent: CoachIntent): CoachIntentProfile {
+function profile(intent: CoachIntent, text = ''): CoachIntentProfile {
+  const thinking = THINKING[intent]
   return {
+    multiAsk: isMultiAsk(text),
     intent,
-    maxOutputTokens: TOKEN_BUDGET[intent],
+    maxOutputTokens:
+      TOKEN_BUDGET[intent] + (thinking === 'low' ? THINKING_HEADROOM : 0),
     reminder: REMINDER[intent],
     personalization: personalizationFor(intent),
+    thinking,
+    toolPolicy: NO_TOOL_INTENTS.has(intent) ? 'none' : 'all',
+    mechanics: MECHANICS_INTENTS.has(intent),
   }
 }
 
 /** Shared closing line appended after the intent reminder. */
 export const COACH_TURN_CLOSING =
-  'Answer fully in this one turn — do not ask them to message again. Verify units/numbers; no internal jargon.'
+  'Answer in this one turn — ask a question only when a required value is missing. Weights in the unit USER_DATA uses; verify numbers; no internal jargon.'
 
 /**
  * Build the post-USER_DATA reminder for this turn.
  */
 export function buildCoachTurnReminder(profile: CoachIntentProfile): string {
-  return `${profile.reminder} Personalization for this ask: ${profile.personalization}. ${COACH_TURN_CLOSING}`
+  const multi = profile.multiAsk
+    ? ' They asked several things: answer each in its own bullet, in the order asked.'
+    : ''
+  return `${profile.reminder}${multi} Personalization for this ask: ${profile.personalization}. ${COACH_TURN_CLOSING}`
 }

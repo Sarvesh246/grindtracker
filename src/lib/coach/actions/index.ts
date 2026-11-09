@@ -24,6 +24,7 @@ export type {
   EditSessionLogExecutePayload,
   UpdateNotificationPrefsExecutePayload,
   ApplyWeeklyPlanExecutePayload,
+  SetDayEnabledExecutePayload,
   WeeklyPlanDay,
   WeeklyPlanExercise,
   NotificationPrefsPatch,
@@ -97,6 +98,15 @@ export {
   previewApplyWeeklyPlan,
   executeApplyWeeklyPlan,
 } from './applyWeeklyPlan'
+export {
+  planSetDayEnabled,
+  previewSetDayEnabled,
+  executeSetDayEnabled,
+} from './setDayEnabled'
+export {
+  groundingReasonFor,
+  numbersInText,
+} from './grounding'
 export {
   previewUpdateNotificationPrefs,
   executeUpdateNotificationPrefs,

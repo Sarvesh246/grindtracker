@@ -14,7 +14,14 @@ export {
   COACH_MAX_MESSAGE_CHARS,
 } from './constants'
 export { buildCoachContext, type CoachContext, type CoachUnitPreference } from './buildContext'
-export { COACH_SYSTEM_PROMPT } from './prompt'
+export { COACH_SYSTEM_PROMPT, buildCoachSystemPrompt } from './prompt'
+export { planCoachTurn, trimToLastSentence, type CoachTurnPlan } from './turn'
+export {
+  formatRecentActions,
+  loadRecentCoachActions,
+  type RecentActionRow,
+} from './recentActions'
+export { localizeCoachContext } from './localizeUnits'
 export {
   inferCoachIntent,
   buildCoachTurnReminder,

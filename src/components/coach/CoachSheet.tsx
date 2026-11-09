@@ -26,6 +26,7 @@ import { useFocusTrap } from '@/lib/hooks/useFocusTrap'
 import { useKeyboardMetrics } from '@/lib/hooks/useKeyboardInset'
 import { healIosViewport } from '@/lib/utils/iosViewportHeal'
 import IconButton from '@/components/ui/IconButton'
+import Button from '@/components/ui/Button'
 import CoachFabIcon from './CoachFabIcon'
 import CoachHistory from './CoachHistory'
 import CoachMessageContent from './CoachMessageContent'
@@ -264,6 +265,7 @@ export default function CoachSheet() {
     setSize,
     sendMessage,
     decideProposal,
+    decideAll,
     clearError,
     newChat,
     openHistory,
@@ -1802,6 +1804,42 @@ export default function CoachSheet() {
                               }
                             />
                           ))}
+                          {(() => {
+                            // Several cards in one reply: one tap for all of
+                            // them, in the order the Coach proposed them.
+                            const pending =
+                              m.proposals?.filter(
+                                p =>
+                                  p.status === 'pending' &&
+                                  !m.actionRuns?.[p.id],
+                              ) ?? []
+                            if (pending.length < 2 || streaming) return null
+                            const ids = pending.map(p => p.id)
+                            return (
+                              <div className="coach-action-batch">
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  size="sm"
+                                  haptic="light"
+                                  style={{ flex: 1 }}
+                                  onClick={() => void decideAll(ids, 'cancel')}
+                                >
+                                  Cancel all
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="primary"
+                                  size="sm"
+                                  haptic="medium"
+                                  style={{ flex: 1 }}
+                                  onClick={() => void decideAll(ids, 'confirm')}
+                                >
+                                  Confirm all ({ids.length})
+                                </Button>
+                              </div>
+                            )
+                          })()}
                         </>
                       ) : (
                         <div className="coach-bubble__text">{m.content}</div>

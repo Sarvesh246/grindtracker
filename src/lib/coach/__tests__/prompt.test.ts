@@ -1,285 +1,253 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { COACH_SYSTEM_PROMPT } from '../prompt'
+import {
+  COACH_ACTIONS_PROMPT,
+  COACH_BASE_PROMPT,
+  COACH_MECHANICS_PROMPT,
+  COACH_SYSTEM_PROMPT,
+  buildCoachSystemPrompt,
+} from '../prompt'
+import { inferCoachIntent } from '../intent'
 
 /**
- * Behavioral contracts from Adaptive Response Behavior system rules.
- * Prefer root-cause rules in the system prompt over per-question patches.
+ * Contracts the Coach prompt must keep. These lock the BEHAVIOURS found
+ * lacking in the baseline audit (guessed arguments, workouts for one-word asks,
+ * recommendations that contradict themselves, overclaimed actions), not exact
+ * wording — change the prose freely as long as each rule is still said.
  */
-const STRESS_CONTRACTS = [
+const CONTRACTS: { id: string; part: string; mustMatch: RegExp[] }[] = [
   {
-    id: 'intent-before-formatting',
+    id: 'answer-first-and-commit',
+    part: COACH_BASE_PROMPT,
     mustMatch: [
-      /Intent before formatting/i,
-      /Never pick a template before identifying intent/i,
-      /Understand intent → assess complexity → determine relevance → choose depth → choose format → answer → verify/i,
+      /Lead with the answer/i,
+      /Commit when the evidence supports a decision/i,
+      /Do not close with a line that undoes it/i,
     ],
   },
   {
-    id: 'forced-formatting',
+    id: 'simple-stays-simple',
+    part: COACH_BASE_PROMPT,
     mustMatch: [
-      /Minimum necessary structure/i,
-      /Do NOT automatically add/i,
-      /Application \/ Logging \/ Why \/ Key Takeaway \/ Progression/i,
-      /Personal History/i,
+      /Simple question = simple answer/i,
+      /Educational questions stay educational/i,
     ],
   },
   {
-    id: 'personalization-threshold',
+    id: 'exact-output-shape',
+    part: COACH_BASE_PROMPT,
     mustMatch: [
-      /Personalization gate/i,
-      /Required: cannot answer correctly/i,
-      /Useful:/i,
-      /Unnecessary:/i,
-      /What is RIR\?/i,
-      /"Explain X" ≠ "tell me what I should personally do about X\."/i,
+      /Deliver the shape they ask for/i,
+      /"3 things" is exactly 3 bullets/i,
+      /numbered when ranked/i,
     ],
   },
   {
-    id: 'relevance-not-completeness',
+    id: 'short-messages-are-not-workouts',
+    part: COACH_BASE_PROMPT,
     mustMatch: [
-      /Relevance over completeness/i,
-      /Prefer relevant evidence over all available evidence/i,
-      /Do not dump every metric/i,
+      /Short messages \("Bench\?", "Today\?", "Why\?"\)/,
+      /never a workout or a primer/i,
+      /only when they ask for one/i,
     ],
   },
   {
-    id: 'decision-commitment',
+    id: 'personalization-gate',
+    part: COACH_BASE_PROMPT,
     mustMatch: [
-      /Recommendation commitment/i,
-      /Use 95 lb today/i,
-      /You could do A, B, or C/i,
-      /Decision → brief reason → fallback/i,
+      /Required .*Useful/i,
+      /never mention PRs, volume, streaks or body weight just because they are available/i,
+      /only source of personal facts/i,
     ],
   },
   {
-    id: 'causal-calibration',
+    id: 'units-and-dates-are-given-not-derived',
+    part: COACH_BASE_PROMPT,
     mustMatch: [
-      /Evidence vs interpretation/i,
-      /likely.*suggests.*may be contributing/i,
-      /Confidence language must match evidence/i,
-      /one possible explanation/i,
+      /already in the user's unit/i,
+      /do not convert/i,
+      /as_of_weekday/,
     ],
   },
   {
-    id: 'output-shape',
+    id: 'like-for-like-and-pr-honesty',
+    part: COACH_BASE_PROMPT,
     mustMatch: [
-      /Exact output-shape compliance/i,
-      /exactly 3 prioritized items/i,
-      /yes\/no/i,
-    ],
-  },
-  {
-    id: 'context-continuity',
-    mustMatch: [
-      /Context hierarchy/i,
-      /Explicit current request/i,
-      /Short-message behavior/i,
-      /must not be overridden by older context/i,
-    ],
-  },
-  {
-    id: 'no-internal-jargon',
-    mustMatch: [
-      /No internal\/database language/i,
-      /manual rotation/i,
-      /catalog/i,
-    ],
-  },
-  {
-    id: 'data-integrity',
-    mustMatch: [
-      /Data integrity/i,
-      /25 b/i,
-      /90 min/i,
-      /Never fabricate missing numbers/i,
+      /Compare like for like/i,
+      /per-hand dumbbell/i,
+      /PR count is not proof of strength/i,
     ],
   },
   {
     id: 'consistency',
+    part: COACH_BASE_PROMPT,
     mustMatch: [
-      /Internal consistency/i,
-      /balanced and a major category neglected/i,
+      /closing recommendation must agree with your opening takeaway/i,
+      /Say "you mentioned"|"you mentioned"/i,
     ],
   },
   {
-    id: 'safety',
+    id: 'evidence-and-confidence',
+    part: COACH_BASE_PROMPT,
     mustMatch: [
-      /Safety \(overrides performance\)/i,
+      /Keep what the data shows, what it may mean, and what to do separate/i,
+      /Match confidence to evidence/i,
+    ],
+  },
+  {
+    id: 'safety-first',
+    part: COACH_BASE_PROMPT,
+    mustMatch: [
+      /first sentence is the safety action/i,
+      /do not push through/i,
       /Do not diagnose/i,
-      /Do not encourage pushing through/i,
-      /Safety concern → immediate action/i,
     ],
   },
   {
-    id: 'troubleshooting',
+    id: 'format-rules',
+    part: COACH_BASE_PROMPT,
     mustMatch: [
-      /Troubleshooting \("Why\?"\)/i,
-      /Do not assert a single cause unless evidence is strong/i,
+      /Simple answers are plain prose/i,
+      /Never write a bold line followed by a sentence on the next line unless it is an exercise block/i,
+      /\*\*Barbell Squat\*\*/,
+      /Target: \*\*70 lb\*\*/,
     ],
   },
   {
-    id: 'quality-check',
+    id: 'worked-examples',
+    part: COACH_BASE_PROMPT,
     mustMatch: [
-      /Final quality check/i,
-      /Answered the actual question/i,
-      /Evidence vs interpretation separated/i,
+      /<examples>/,
+      /never treat them as the user's data or reuse them in tool calls/i,
+      /Which weight is wrong, and what should it be\?/,
     ],
   },
   {
-    id: 'shape-heuristics',
+    id: 'act-ask-decline',
+    part: COACH_ACTIONS_PROMPT,
     mustMatch: [
-      /Definition \/ simple fact/i,
-      /Direct recommendation/i,
-      /Workout/i,
-      /Technique/i,
-      /Troubleshooting/i,
-      /Comparison/i,
-      /Progress analysis/i,
-      /Program design/i,
-      /Complex coaching/i,
+      /Decide act \/ ask \/ decline/i,
+      /never guess, and never reuse numbers from examples or tool descriptions/i,
+      /DECLINE plainly when no tool covers it/i,
+      /Never substitute a different tool/i,
+      /never describe an effect the card does not show/i,
     ],
   },
   {
-    id: 'progressive-disclosure',
+    id: 'never-claim-applied',
+    part: COACH_ACTIONS_PROMPT,
+    mustMatch: [/Never say a change is applied/i, /Never mention auto-start/i],
+  },
+  {
+    id: 'grind-rules',
+    part: COACH_MECHANICS_PROMPT,
     mustMatch: [
-      /Layer 1 = immediate answer/i,
-      /must not need Layer 3 to understand Layer 1/i,
+      /Streak:/,
+      /Sunday–Saturday week/i,
+      /weight×reps/,
+      /Skip markers/i,
+      /triangular/i,
     ],
   },
-] as const
+]
 
-describe('COACH_SYSTEM_PROMPT', () => {
-  it('requires adaptive coach sequence over templates', () => {
-    assert.match(COACH_SYSTEM_PROMPT, /Behavioral requirements \(not suggestions\)/i)
-    assert.match(COACH_SYSTEM_PROMPT, /adaptive coach/i)
-    assert.match(COACH_SYSTEM_PROMPT, /typed questions and starter chips/i)
-    assert.match(COACH_SYSTEM_PROMPT, /Simple question = simple answer/i)
-    assert.match(
-      COACH_SYSTEM_PROMPT,
-      /Never make a short question artificially long/i,
-    )
-    assert.match(
-      COACH_SYSTEM_PROMPT,
-      /NOT more detail \+ more personalization \+ more formatting/i,
-    )
-    assert.match(COACH_SYSTEM_PROMPT, /format must emerge from THIS ask/i)
-    assert.match(COACH_SYSTEM_PROMPT, /NOT templates to fill/i)
-  })
+const ALL_TOOLS = [
+  'propose_correct_weights',
+  'propose_edit_session_log',
+  'propose_start_workout',
+  'propose_create_day',
+  'propose_apply_weekly_plan',
+  'propose_log_body_weight',
+  'propose_delete_body_weight',
+  'propose_finish_workout',
+  'propose_undo_finish_workout',
+  'propose_skip_sets',
+  'propose_toggle_rest_today',
+  'propose_set_rest_weekday',
+  'propose_edit_exercise',
+  'propose_set_day_enabled',
+  'propose_update_rotation',
+  'propose_update_notification_prefs',
+]
 
-  it('defines proportional response-size heuristics, not forced sections', () => {
-    for (const shape of [
-      'Definition / simple fact',
-      'Direct recommendation',
-      'Workout',
-      'Technique',
-      'Comparison',
-      'Progress analysis',
-      'Complex coaching',
-      'Troubleshooting',
-      'numbered',
-    ]) {
-      assert.match(
-        COACH_SYSTEM_PROMPT,
-        new RegExp(shape.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'),
-        `missing heuristic for ${shape}`,
-      )
-    }
-  })
-
-  it('forbids forced structure and forced personalization', () => {
-    assert.match(COACH_SYSTEM_PROMPT, /Do NOT automatically add/i)
-    assert.match(COACH_SYSTEM_PROMPT, /Personalization gate/i)
-    assert.match(COACH_SYSTEM_PROMPT, /What is RIR/i)
-    assert.match(
-      COACH_SYSTEM_PROMPT,
-      /Forcing personal history onto definition\/concept questions/i,
-    )
-    assert.match(
-      COACH_SYSTEM_PROMPT,
-      /Auto-adding Application \/ Logging \/ Why/i,
-    )
-  })
-
-  it('locks terminology, verified math, and coach tone', () => {
-    assert.match(COACH_SYSTEM_PROMPT, /Strict fitness terminology/i)
-    assert.match(COACH_SYSTEM_PROMPT, /deadlifts, not "deadlocks"/i)
-    assert.match(COACH_SYSTEM_PROMPT, /verify math/i)
-    assert.match(COACH_SYSTEM_PROMPT, /Never generic motivational clich/i)
-  })
-
-  it('personalizes only when Required or Useful', () => {
-    assert.match(COACH_SYSTEM_PROMPT, /Only use personal history when Required or Useful/i)
-    assert.match(COACH_SYSTEM_PROMPT, /training_history/i)
-    assert.match(COACH_SYSTEM_PROMPT, /significant_breaks/i)
-    assert.match(COACH_SYSTEM_PROMPT, /Personalization gate/i)
-  })
-
-  it('points the model at rich USER_DATA sections when relevant', () => {
-    assert.match(COACH_SYSTEM_PROMPT, /exercise_performance/i)
-    assert.match(COACH_SYSTEM_PROMPT, /schedule\.last_trained_by_day/i)
-    assert.match(COACH_SYSTEM_PROMPT, /body_weight\.summary/i)
-    assert.match(COACH_SYSTEM_PROMPT, /active_session/i)
-    assert.match(COACH_SYSTEM_PROMPT, /notifications/i)
-    assert.match(COACH_SYSTEM_PROMPT, /when personalization IS Required or Useful/i)
-  })
-
-  it('enforces single-turn replies and confirm-before-apply tools', () => {
-    assert.match(COACH_SYSTEM_PROMPT, /Quota \/ single-turn/i)
-    assert.match(COACH_SYSTEM_PROMPT, /ONE reply/i)
-    assert.match(COACH_SYSTEM_PROMPT, /propose_correct_weights/i)
-    assert.match(COACH_SYSTEM_PROMPT, /propose_start_workout/i)
-    assert.match(COACH_SYSTEM_PROMPT, /propose_create_day/i)
-    assert.match(COACH_SYSTEM_PROMPT, /propose_log_body_weight/i)
-    assert.match(COACH_SYSTEM_PROMPT, /propose_delete_body_weight/i)
-    assert.match(COACH_SYSTEM_PROMPT, /propose_finish_workout/i)
-    assert.match(COACH_SYSTEM_PROMPT, /propose_undo_finish_workout/i)
-    assert.match(COACH_SYSTEM_PROMPT, /propose_skip_sets/i)
-    assert.match(COACH_SYSTEM_PROMPT, /propose_toggle_rest_today/i)
-    assert.match(COACH_SYSTEM_PROMPT, /Sunday–Saturday week/i)
-    assert.match(COACH_SYSTEM_PROMPT, /propose_set_rest_weekday/i)
-    assert.match(COACH_SYSTEM_PROMPT, /propose_edit_exercise/i)
-    assert.match(COACH_SYSTEM_PROMPT, /propose_update_rotation/i)
-    assert.match(COACH_SYSTEM_PROMPT, /propose_edit_session_log/i)
-    assert.match(COACH_SYSTEM_PROMPT, /propose_update_notification_prefs/i)
-    assert.match(COACH_SYSTEM_PROMPT, /Never claim a change is applied/i)
-    assert.match(COACH_SYSTEM_PROMPT, /Never mention auto-start/i)
-    assert.match(COACH_SYSTEM_PROMPT, /unspecified slot → flex=true/i)
-    assert.match(COACH_SYSTEM_PROMPT, /GRIND mechanics/i)
-    assert.match(COACH_SYSTEM_PROMPT, /weight×reps/i)
-    assert.match(COACH_SYSTEM_PROMPT, /Skip markers/i)
-    assert.match(COACH_SYSTEM_PROMPT, /splitting across quota-burning turns/i)
-  })
-
-  it('prefers one clear recommendation and proportional workout formatting', () => {
-    assert.match(COACH_SYSTEM_PROMPT, /make ONE/i)
-    assert.match(COACH_SYSTEM_PROMPT, /Use 95 lb today/i)
-    assert.match(COACH_SYSTEM_PROMPT, /Visual hierarchy/i)
-    assert.match(COACH_SYSTEM_PROMPT, /\*\*Barbell Squat\*\*/)
-    assert.match(COACH_SYSTEM_PROMPT, /Target: \*\*70 lb\*\*/)
-    assert.match(COACH_SYSTEM_PROMPT, /pipe table/i)
-  })
-
-  for (const contract of STRESS_CONTRACTS) {
-    it(`stress contract: ${contract.id}`, () => {
-      for (const pattern of contract.mustMatch) {
-        assert.match(
-          COACH_SYSTEM_PROMPT,
-          pattern,
-          `contract ${contract.id} missing ${pattern}`,
-        )
+describe('Coach prompt contracts', () => {
+  for (const c of CONTRACTS) {
+    it(`contract: ${c.id}`, () => {
+      for (const pattern of c.mustMatch) {
+        assert.match(c.part, pattern, `contract ${c.id} missing ${pattern}`)
       }
     })
   }
 
+  it('names every action tool the model can call', () => {
+    for (const tool of ALL_TOOLS) {
+      assert.match(COACH_ACTIONS_PROMPT, new RegExp(tool), `missing ${tool}`)
+    }
+  })
+
+  it('uses one tag style and states the stable parts before volatile ones', () => {
+    for (const tag of ['role', 'how_to_respond', 'personal_data', 'safety', 'format', 'examples', 'voice']) {
+      assert.match(COACH_BASE_PROMPT, new RegExp(`<${tag}>`))
+      assert.match(COACH_BASE_PROMPT, new RegExp(`</${tag}>`))
+    }
+  })
+
+  it('avoids the shouting that pushes weaker models to over-trigger', () => {
+    assert.doesNotMatch(COACH_SYSTEM_PROMPT, /not suggestions/i)
+    assert.doesNotMatch(COACH_SYSTEM_PROMPT, /CRITICAL|MUST NOT|ALWAYS/)
+  })
+
   it('stays within a free-tier-friendly size budget', () => {
-    assert.ok(
-      COACH_SYSTEM_PROMPT.length < 16000,
-      `prompt too long: ${COACH_SYSTEM_PROMPT.length}`,
-    )
-    assert.ok(
-      COACH_SYSTEM_PROMPT.length > 5000,
-      `prompt unexpectedly short: ${COACH_SYSTEM_PROMPT.length}`,
-    )
+    assert.ok(COACH_SYSTEM_PROMPT.length < 16000, `too long: ${COACH_SYSTEM_PROMPT.length}`)
+    assert.ok(COACH_SYSTEM_PROMPT.length > 5000, `too short: ${COACH_SYSTEM_PROMPT.length}`)
+  })
+})
+
+describe('buildCoachSystemPrompt', () => {
+  const base = { userDataJson: '{"as_of_weekday":"Monday"}', recentActions: null, turnReminder: 'REMINDER' }
+
+  it('puts stable instructions first, then USER_DATA, then this turn', () => {
+    const p = buildCoachSystemPrompt({
+      ...base,
+      profile: { mechanics: true, toolPolicy: 'all' },
+    })
+    const order = ['<role>', '<grind_mechanics>', '<actions>', '<user_data>', '<this_turn>']
+    let last = -1
+    for (const marker of order) {
+      const at = p.indexOf(marker)
+      assert.ok(at > last, `${marker} out of order`)
+      last = at
+    }
+    assert.match(p, /"as_of_weekday":"Monday"/)
+    assert.match(p, /REMINDER\n<\/this_turn>$/)
+  })
+
+  it('leaves out the GRIND rules and the action rules when the turn cannot use them', () => {
+    const p = buildCoachSystemPrompt({
+      ...base,
+      profile: { mechanics: false, toolPolicy: 'none' },
+    })
+    assert.doesNotMatch(p, /<grind_mechanics>/)
+    assert.doesNotMatch(p, /<actions>/)
+    assert.match(p, /<role>/)
+  })
+
+  it('includes recent actions only when there are some, and says pending is not applied', () => {
+    const without = buildCoachSystemPrompt({ ...base, profile: { mechanics: true, toolPolicy: 'all' } })
+    assert.doesNotMatch(without, /<recent_actions>/)
+    const withActions = buildCoachSystemPrompt({
+      ...base,
+      recentActions: '- 2 min ago · Edit exercise · PENDING — not applied yet',
+      profile: { mechanics: true, toolPolicy: 'all' },
+    })
+    assert.match(withActions, /<recent_actions>/)
+    assert.match(withActions, /pending card has NOT been applied/i)
+  })
+
+  it('pure Q&A intents drop the tools; "why" style intents keep the rules', () => {
+    assert.equal(inferCoachIntent('What does RIR mean?').toolPolicy, 'none')
+    assert.equal(inferCoachIntent('What does RIR mean?').mechanics, false)
+    assert.equal(inferCoachIntent('Why did my streak reset?').mechanics, true)
+    assert.equal(inferCoachIntent('Bench?').toolPolicy, 'all')
   })
 })

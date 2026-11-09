@@ -81,8 +81,19 @@ type CoachContextValue = {
   expandToPage: () => void
   setSize: (size: CoachSheetSize) => void
   sendMessage: (text: string) => Promise<void>
+  /** Resolves true when the decision took effect (confirmed ran / cancelled). */
   decideProposal: (
     proposalId: string,
+    decision: 'confirm' | 'cancel',
+    opts?: { navigate?: boolean },
+  ) => Promise<boolean>
+  /**
+   * Confirm or cancel several cards from one reply, in order. A confirm run
+   * stops at the first failure (later cards may depend on earlier ones, e.g. a
+   * new day then its place in the order) and only the last card navigates.
+   */
+  decideAll: (
+    proposalIds: string[],
     decision: 'confirm' | 'cancel',
   ) => Promise<void>
   clearError: () => void
@@ -726,8 +737,12 @@ export function CoachProvider({
   }, [sendMessage])
 
   const decideProposal = useCallback(
-    async (proposalId: string, decision: 'confirm' | 'cancel') => {
-      if (!proposalId || streaming) return
+    async (
+      proposalId: string,
+      decision: 'confirm' | 'cancel',
+      opts?: { navigate?: boolean },
+    ): Promise<boolean> => {
+      if (!proposalId || streaming) return false
 
       const patchProposal = (
         id: string,
@@ -867,10 +882,10 @@ export function CoachProvider({
               },
             ])
           }
-          if (ok && href) {
+          if (ok && href && opts?.navigate !== false) {
             window.setTimeout(() => router.push(href!), 450)
           }
-          return
+          return ok
         }
 
         const body = (await res.json().catch(() => ({}))) as {
@@ -890,21 +905,20 @@ export function CoachProvider({
             message: msg,
           })
           setError(msg)
-          return
+          return false
         }
 
         if (decision === 'cancel') {
+          // The card already says Cancelled (pill + message); a second
+          // "Cancelled." chat bubble just repeated it. The server records the
+          // status, and the next turn's recent_actions tells the model.
           patchProposal(proposalId, { status: 'cancelled' }, {
             proposalId,
             phase: 'done',
             steps: [],
             message: 'Cancelled.',
           })
-          setMessages(prev => [
-            ...prev,
-            { id: uid(), role: 'assistant', content: 'Cancelled.' },
-          ])
-          return
+          return true
         }
 
         const message = body.message ?? 'Done.'
@@ -921,9 +935,10 @@ export function CoachProvider({
           ...prev,
           { id: uid(), role: 'assistant', content: message },
         ])
-        if (body.href) {
+        if (body.href && opts?.navigate !== false) {
           window.setTimeout(() => router.push(body.href!), 450)
         }
+        return true
       } catch {
         if (decision === 'cancel') {
           // Optimistic cancel failed — restore pending so the user can retry.
@@ -937,9 +952,22 @@ export function CoachProvider({
           })
         }
         setError('Could not complete that action. Check your connection.')
+        return false
       }
     },
     [streaming, router],
+  )
+
+  const decideAll = useCallback(
+    async (proposalIds: string[], decision: 'confirm' | 'cancel') => {
+      for (let i = 0; i < proposalIds.length; i++) {
+        const ok = await decideProposal(proposalIds[i]!, decision, {
+          navigate: i === proposalIds.length - 1,
+        })
+        if (!ok && decision === 'confirm') break
+      }
+    },
+    [decideProposal],
   )
 
   const value = useMemo<CoachContextValue>(
@@ -966,6 +994,7 @@ export function CoachProvider({
       setSize,
       sendMessage,
       decideProposal,
+      decideAll,
       clearError,
       newChat,
       openHistory,
@@ -995,6 +1024,7 @@ export function CoachProvider({
       expandToPage,
       sendMessage,
       decideProposal,
+      decideAll,
       clearError,
       newChat,
       openHistory,

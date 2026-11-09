@@ -142,6 +142,26 @@ export async function previewCreateDay(
     }
   }
 
+  // A card for this very day is already waiting for a tap. A second one would
+  // just be a duplicate that fails when both are confirmed — which is what
+  // happened when a follow-up ("make bench 5 sets") arrived before the first
+  // card was confirmed and the model re-proposed the whole day.
+  const { data: waiting } = await supabase
+    .from('coach_action_proposals')
+    .select('id')
+    .eq('user_id', args.userId)
+    .eq('kind', 'create_day')
+    .eq('status', 'pending')
+    .gt('expires_at', new Date().toISOString())
+    .eq('payload->execute->>dayKey', validated.dayKey)
+    .limit(1)
+  if (waiting && waiting.length > 0) {
+    return {
+      ok: false,
+      reason: `A card to create "${validated.dayKey}" is already waiting. Tell the user to Confirm or Cancel it first; changes to the day can follow once it exists.`,
+    }
+  }
+
   const payload: CoachActionPayload = {
     kind: 'create_day',
     card: {

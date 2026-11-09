@@ -3,7 +3,7 @@
 ## Status: COMPLETE ✅
 Core phases (1–7) plus later ships (flex days, photos, onboarding, web push,
 weight targets, offline set queue, RPE, data export) — single-user PWA in daily use.
-Schema migrations run through `docs/sql/55-*.sql`.
+Schema migrations run through `docs/sql/56-*.sql`.
 
 ## Git Workflow
 Single-user repo, no review process. Commit and push directly to `main` —
@@ -419,6 +419,35 @@ Each exercise card has two different tools, and the difference is the history:
 - **Swap** (arrows) points the slot at a DIFFERENT `exercises` row (existing or
   newly created) and deletes this session's logs for the old one; the old row's
   history stays on the old exercise and the new one starts blank.
+
+### Coach reliability (src/lib/coach, `scripts/coach-eval/`)
+The Coach (Gemini via the AI SDK) is tuned against a measured golden set, not by
+feel. **Before changing the prompt, router, tools or model settings, run
+`npm run coach:eval`** (needs `GEMINI_API_KEY` in `.env.local`; 45 cases × 3
+runs, synthetic account, stubbed tools, deterministic scoring) and compare per
+group (A short chat · B long · C compound actions · D messy agentic).
+- **One planner.** `planCoachTurn` (`turn.ts`) decides intent, token ceiling,
+  thinking level, whether tools are offered and which prompt sections apply; the
+  chat route and the eval both call it, so they cannot drift.
+- **Router is regex** (`intent.ts`) and first-match-wins — keep safety words
+  exact-form (`numb` once matched "numbers") and never route on "doctor".
+  Pure Q&A intents drop the tools; everything else keeps all of them.
+- **Tools never guess numbers.** `actions/grounding.ts` refuses a history-writing
+  call (correct weights, body weight, set edits) whose numbers the user didn't
+  type, and tool descriptions must contain no concrete example numbers — the
+  model once copied "90 → 95" from one into a real proposal.
+- **Prompt** is tagged sections (`prompt.ts`): base always, GRIND rules only for
+  "why"-style intents, action rules only when tools are on. `USER_DATA` weights
+  are converted to the user's unit server-side (`localizeUnits.ts`); don't ask
+  the model to convert.
+- **Cards the Coach proposed** are fed back each turn (`recentActions.ts`) so
+  follow-ups work; several cards from one reply get a "Confirm all" bar that
+  confirms in order and stops on the first failure.
+- **`enforce_coach_rate_limit()`** has an admin `coach_dev_unlimited` bypass
+  (55). Any redefinition must start from `55-*.sql`.
+- Every Coach turn logs one `[grind] coach turn {…}` JSON line (intent, tools
+  with arguments, finish reason, tokens, retry) — read it before guessing why a
+  reply was bad.
 
 ### Friend profiles ((app)/leaderboard/[username]/, migration `19-friend-profile.sql`)
 Tapping a leaderboard row opens a read-only profile at `/leaderboard/[username]`

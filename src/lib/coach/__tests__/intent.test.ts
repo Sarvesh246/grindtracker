@@ -52,14 +52,11 @@ describe('inferCoachIntent', () => {
     const analysis = inferCoachIntent('Analyze my progress.')
     const program = inferCoachIntent('Build me a 4-day program.')
 
-    // Simple educational asks must be capped well below workout/program.
+    // Ceilings are a safety net now (brevity comes from the reminders), but a
+    // plain definition must still be capped far below a workout or program.
     assert.ok(
       definition.maxOutputTokens < recommendation.maxOutputTokens,
       'definition should be shorter than recommendation',
-    )
-    assert.ok(
-      recommendation.maxOutputTokens < workout.maxOutputTokens,
-      'recommendation should be shorter than workout',
     )
     assert.ok(
       definition.maxOutputTokens * 2 < workout.maxOutputTokens,
@@ -67,7 +64,99 @@ describe('inferCoachIntent', () => {
     )
     assert.ok(analysis.maxOutputTokens >= 900)
     assert.ok(program.maxOutputTokens >= workout.maxOutputTokens)
-    assert.ok(definition.maxOutputTokens <= 320)
+    assert.ok(definition.maxOutputTokens <= 500)
+  })
+
+  it('gives self-consistency-sensitive advice thinking headroom, and nothing else', () => {
+    for (const prompt of [
+      'What weight should I use today?',
+      'Dumbbell bench vs barbell bench',
+      'Am I getting stronger?',
+    ]) {
+      const p = inferCoachIntent(prompt)
+      assert.equal(p.thinking, 'low', prompt)
+      // Thinking tokens count against the same limit, so they need room.
+      assert.ok(p.maxOutputTokens >= 1500, `${prompt} → ${p.maxOutputTokens}`)
+    }
+    for (const prompt of ['What does RIR mean?', 'Bench?', 'Rest today']) {
+      assert.equal(inferCoachIntent(prompt).thinking, 'none', prompt)
+    }
+  })
+
+  it('does not let an incidental safety word hijack a long message', () => {
+    const doctorStory =
+      "My doctor told me last month that I should lift more for bone density, so I've been doing three days a week and feeling good about it. I'm wondering if adding a fourth day would be worth it or if I'm just going to burn out."
+    assert.notEqual(inferCoachIntent(doctorStory).intent, 'safety')
+    assert.notEqual(inferCoachIntent("My legs are sore, should I train today?").intent, 'safety')
+  })
+
+  it('treats questions about their OWN data as personal, not as definitions', () => {
+    assert.notEqual(inferCoachIntent("What's my streak?").intent, 'definition')
+    assert.notEqual(inferCoachIntent('What is my best squat?').intent, 'definition')
+    assert.equal(inferCoachIntent("What's my streak?").personalization, 'required')
+    assert.equal(inferCoachIntent('What is RIR?').intent, 'definition')
+    assert.equal(inferCoachIntent('What muscles does the RDL work?').intent, 'definition')
+  })
+
+  it('routes "why won\'t it move" stories to troubleshooting even when they mention form', () => {
+    assert.equal(
+      inferCoachIntent(
+        "My squat has been stuck for six weeks and the form feels fine. Why won't it move?",
+      ).intent,
+      'troubleshooting',
+    )
+    assert.equal(inferCoachIntent('How do I do an RDL?').intent, 'technique')
+  })
+
+  it('tells the model to bullet a message that asks several things', () => {
+    const multi = buildCoachTurnReminder(
+      inferCoachIntent('Three quick things: how many sets of bench am I doing, what was my best squat, and am I due for a rest day?'),
+    )
+    assert.match(multi, /each in its own bullet/i)
+    assert.match(buildCoachTurnReminder(inferCoachIntent('What is RIR? And what is RPE?')), /each in its own bullet/i)
+    assert.doesNotMatch(buildCoachTurnReminder(inferCoachIntent('What is RIR?')), /own bullet/i)
+  })
+
+  it('still routes real symptom reports to safety, mild ones included', () => {
+    assert.equal(inferCoachIntent('My shoulder has a sharp pain when I press').intent, 'safety')
+    assert.equal(inferCoachIntent('I feel dizzy halfway through sets').intent, 'safety')
+    assert.equal(
+      inferCoachIntent(
+        'yo so like i been hitting legs hard n my knees kinda feel weird lol not pain pain just weird, should i keep going or nah',
+      ).intent,
+      'safety',
+    )
+    // A long message still counts when the symptom is first-person.
+    const long = `${'Work has been busy and I have been training anyway. '.repeat(10)}My knee hurts on the way down.`
+    assert.equal(inferCoachIntent(long).intent, 'safety')
+  })
+
+  it('tells change requests to ask rather than guess, and to cover every change', () => {
+    const r = buildCoachTurnReminder(inferCoachIntent('Fix my bench numbers.'))
+    assert.match(r, /ask ONE short question/i)
+    assert.match(r, /never reuse numbers from tool descriptions or examples/i)
+    assert.match(r, /EACH change/i)
+    assert.match(r, /say so plainly/i)
+    assert.match(r, /Never claim it is applied before Confirm/i)
+  })
+
+  it('keeps short asks from turning into workouts and definitions into essays', () => {
+    assert.match(
+      buildCoachTurnReminder(inferCoachIntent('Bench?')),
+      /Do NOT output a workout/i,
+    )
+    assert.match(
+      buildCoachTurnReminder(inferCoachIntent('Should I train today?')),
+      /First sentence = the decision/i,
+    )
+    assert.match(
+      buildCoachTurnReminder(inferCoachIntent('What does RIR mean?')),
+      /2–3 sentences of plain prose/i,
+    )
+    assert.match(
+      buildCoachTurnReminder(inferCoachIntent('Dumbbell bench vs barbell bench')),
+      /Compare like for like/i,
+    )
   })
 
   it('uses different reminders so the model is steered by intent, not one template', () => {
@@ -78,13 +167,13 @@ describe('inferCoachIntent', () => {
     )
     const short = buildCoachTurnReminder(inferCoachIntent('Why?', 'Use 95 lb today.'))
 
-    assert.match(definition, /definition\/education/i)
-    assert.match(definition, /No personal history/i)
+    assert.match(definition, /Intent: definition/i)
+    assert.match(definition, /plain prose/i)
     assert.match(workout, /executable workout/i)
     assert.match(workout, /unspecified → flex/i)
     assert.match(workout, /Never mention auto-start/i)
     assert.match(safety, /safety/i)
-    assert.match(short, /short contextual/i)
+    assert.match(short, /short follow-up/i)
 
     // Reminders must actually differ — same text would collapse behavior.
     assert.notEqual(definition, workout)
@@ -209,18 +298,9 @@ it('classifies mutation asks as actionable', () => {
 })
 
 describe('COACH_SYSTEM_PROMPT intent emergence', () => {
-  it('forbids reusable templates and treats format lists as calibration only', () => {
-    assert.match(
-      COACH_SYSTEM_PROMPT,
-      /format must emerge from THIS ask/i,
-    )
-    assert.match(
-      COACH_SYSTEM_PROMPT,
-      /NOT templates to fill/i,
-    )
-    assert.match(
-      COACH_SYSTEM_PROMPT,
-      /do not start from a format menu/i,
-    )
+  it('shapes the reply from the ask instead of one template', () => {
+    assert.match(COACH_SYSTEM_PROMPT, /Simple question = simple answer/i)
+    assert.match(COACH_SYSTEM_PROMPT, /Deliver the shape they ask for/i)
+    assert.match(COACH_SYSTEM_PROMPT, /Simple answers are plain prose/i)
   })
 })

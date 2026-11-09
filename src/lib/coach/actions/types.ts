@@ -22,6 +22,7 @@ export type CoachActionKind =
   | 'edit_session_log'
   | 'update_notification_prefs'
   | 'apply_weekly_plan'
+  | 'set_day_enabled'
 
 export type CoachActionStatus =
   | 'pending'
@@ -207,7 +208,20 @@ export type ApplyWeeklyPlanExecutePayload = {
   localDate: string
 }
 
+export type SetDayEnabledExecutePayload = {
+  /** Real stored day key (resolved at preview time). */
+  dayType: string
+  /** false = hide the whole day (every exercise inactive); true = show it. */
+  enabled: boolean
+  exerciseCount: number
+}
+
 export type CoachActionPayload =
+  | {
+      kind: 'set_day_enabled'
+      card: CoachActionCardModel
+      execute: SetDayEnabledExecutePayload
+    }
   | {
       kind: 'apply_weekly_plan'
       card: CoachActionCardModel
@@ -318,4 +332,4 @@ export type CoachActionExecuteResult = {
 export const COACH_PROPOSAL_TTL_MS = 30 * 60 * 1000
 
 export const COACH_PROPOSAL_INSERT_FAILED =
-  'Could not save the proposal. Apply docs/sql/36-coach-actions.sql (and 47-coach-action-kinds.sql) if you have not yet.'
+  'Could not save the proposal. Apply docs/sql/36-coach-actions.sql, 47-coach-action-kinds.sql and 56-coach-set-day-enabled.sql if you have not yet.'

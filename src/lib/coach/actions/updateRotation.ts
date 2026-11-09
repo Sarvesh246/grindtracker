@@ -64,6 +64,8 @@ export async function previewUpdateRotation(
     conversationId: string | null
     mode: 'auto' | 'manual'
     sequence?: string[] | null
+    /** Days proposed earlier in the same reply (not created yet). */
+    extraDayKeys?: string[]
   },
 ): Promise<
   | { ok: true; proposal: CoachProposalView }
@@ -80,10 +82,12 @@ export async function previewUpdateRotation(
       supabase.from('user_flex_days').select('day_key').eq('user_id', args.userId),
     ])
 
-  const dayKeys = enabledDayKeys(exerciseRows ?? [])
-    .map(k => k.trim())
-    .filter(Boolean)
-    .sort()
+  const dayKeys = [
+    ...new Set([
+      ...enabledDayKeys(exerciseRows ?? []).map(k => k.trim()).filter(Boolean),
+      ...(args.extraDayKeys ?? []).map(k => k.trim()).filter(Boolean),
+    ]),
+  ].sort()
   const flexSet = new Set(
     (flexRows ?? []).map((r: { day_key: string }) => r.day_key),
   )

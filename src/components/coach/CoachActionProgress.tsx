@@ -12,7 +12,12 @@ export default function CoachActionProgress({ steps, phase, message }: Props) {
   if (!steps.length && !message) return null
 
   return (
-    <div className="coach-action__progress" aria-live="polite">
+    <div
+      className={`coach-action__progress${
+        steps.length === 0 ? ' coach-action__progress--solo' : ''
+      }`}
+      aria-live="polite"
+    >
       {steps.length > 0 ? (
         <ol className="coach-action__steps">
           {steps.map(step => (

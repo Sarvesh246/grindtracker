@@ -59,14 +59,14 @@ describe('COACH_STRESS_CATALOG', () => {
   it('aligns catalog intents with system-prompt root rules', () => {
     // Catalog is useless if the prompt no longer encodes the same principles.
     const anchors = [
-      /Personalization gate/i,
-      /Exact output-shape compliance/i,
-      /Evidence vs interpretation/i,
-      /Safety \(overrides performance\)/i,
-      /Decision → brief reason → fallback/i,
-      /Relevance over completeness/i,
-      /No internal\/database language/i,
-      /Final quality check/i,
+      /Required .*Useful/i,
+      /Deliver the shape they ask for/i,
+      /what the data shows, what it may mean, and what to do separate/i,
+      /first sentence is the safety action/i,
+      /Commit when the evidence supports a decision/i,
+      /never mention PRs, volume, streaks or body weight just because they are available/i,
+      /Never mention internal or database language/i,
+      /closing recommendation must agree with your opening takeaway/i,
     ]
     for (const pattern of anchors) {
       assert.match(COACH_SYSTEM_PROMPT, pattern)

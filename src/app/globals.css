@@ -3063,6 +3063,12 @@ html.reduce-motion .coach-history {
   gap: 8px;
   margin-top: 4px;
 }
+/* "Confirm all" bar under a reply that carries 2+ cards. */
+.coach-action-batch {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
 .coach-action__progress {
   margin-top: 2px;
   padding: 8px 10px;
@@ -3130,6 +3136,25 @@ html.reduce-motion .coach-action__step--active .coach-action__step-mark {
 }
 .coach-action__progress-msg--error {
   color: var(--danger);
+}
+/* A message with no step list ("Cancelled.", "Done.") is the whole box: no
+   leftover top margin and centred, so it doesn't sit low and to the left. */
+.coach-action__progress--solo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+}
+.coach-action__progress--solo .coach-action__progress-msg {
+  margin: 0;
+  text-align: center;
+}
+/* Pill text centred on both axes (uppercase caps otherwise sit high). */
+.coach-action-card__pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
 }
 
 html.reduce-motion .coach-bubble--enter,
