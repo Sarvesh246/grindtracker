@@ -1,9 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { loadRotationState } from '@/lib/utils/rotationStore'
 import { enabledDayKeys } from '@/lib/utils/dayKeys'
 import type { DayCategory, UserRotation } from '@/lib/types'
 import { ALL_BADGES } from '@/lib/utils/badges'
-import { effectiveSequence, nextDay } from '@/lib/utils/rotation'
+import { effectiveSequence, nextDay, resolveRotationIndex, type LastCompletion } from '@/lib/utils/rotation'
 import { DEFAULT_NOTIFICATION_PREFS } from '@/lib/push/types'
 import {
   summarizeBodyWeight,
@@ -269,16 +268,16 @@ export async function buildCoachContext(
 
   const [
     { data: profile },
-    { data: stats },
-    { data: exerciseRows },
-    { data: rotationRow },
+    { data: stats, error: statsError },
+    { data: exerciseRows, error: exercisesError },
+    { data: rotationRow, error: rotationError },
     { data: flexRows },
-    { data: restDayRows },
-    { data: restDateRows },
+    { data: restDayRows, error: restDaysError },
+    { data: restDateRows, error: restDatesError },
     { data: categoryRows },
     { data: bodyWeights },
-    { data: sessions },
-    { data: historyDateRows },
+    { data: sessions, error: sessionsError },
+    { data: historyDateRows, error: historyDatesError },
     { data: badgeMetrics },
     { data: homeHistory },
     { data: friendProfile },
@@ -370,6 +369,24 @@ export async function buildCoachContext(
       .maybeSingle(),
   ])
 
+  // The Coach reasons from these reads. A dropped one would otherwise read as
+  // "no days / no history" and that wrong answer gets cached by the chat
+  // route, so fail the whole build (the route refunds the message and 500s).
+  // Photos, friend profile, notification prefs etc. stay best-effort.
+  const firstFailure = [
+    ['user_stats', statsError],
+    ['exercises', exercisesError],
+    ['sessions', sessionsError],
+    ['sessions (history dates)', historyDatesError],
+    ['user_rotation', rotationError],
+    ['user_rest_days', restDaysError],
+    ['user_rest_dates', restDatesError],
+  ].find(([, error]) => error != null)
+  if (firstFailure) {
+    const [name, error] = firstFailure as [string, { message?: string }]
+    throw new Error(`Coach context read failed (${name}): ${error.message ?? 'unknown error'}`)
+  }
+
   const allExercises = (exerciseRows ?? []) as ExerciseRow[]
   const activeExercises = allExercises.filter(e => e.active)
   const inactive_count = allExercises.length - activeExercises.length
@@ -379,10 +396,14 @@ export async function buildCoachContext(
   const flexSet = new Set(flexDays)
   const rotation = (rotationRow as UserRotation | null) ?? null
   const seq = effectiveSequence(rotation, dayKeys, flexSet)
-  // Same resolver as Home's Start button; raw pointer only if that read fails.
-  const resolved = await loadRotationState(supabase, userId).catch(() => null)
-  const currentIndex = resolved ? resolved.index : (rotation?.current_index ?? -1)
-  const upNext = resolved ? resolved.nextDay : nextDay(seq, currentIndex)
+  // Same resolver as Home's Start button, fed from the rows already read above
+  // (the most recent completed session is the first row of `sessions`).
+  const lastSession = (sessions?.[0] ?? null) as { day_type: string; completed_at: string } | null
+  const lastCompletion: LastCompletion | null = lastSession
+    ? { day: lastSession.day_type, completedAt: lastSession.completed_at }
+    : null
+  const currentIndex = resolveRotationIndex(seq, rotation, lastCompletion)
+  const upNext = nextDay(seq, currentIndex)
 
   const day_categories: Record<string, DayCategory> = {}
   for (const row of (categoryRows ?? []) as { day_key: string; category: DayCategory }[]) {
