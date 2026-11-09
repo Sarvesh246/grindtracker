@@ -57,6 +57,7 @@ import { requestOpenCoach } from '@/lib/coach/openCoachBus'
 import ExercisePickerSheet, { EXERCISE_PICKER_EXIT_MS } from './ExercisePickerSheet'
 import PlateCalculator from '@/components/PlateCalculator'
 import CompletionModal from './CompletionModal'
+import RenameExerciseDialog from './RenameExerciseDialog'
 import {
   writeFinishUndoToken,
   performFinishUndo,
@@ -192,6 +193,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const [showExitConfirm, setShowExitConfirm] = useState(false)
   const [allExercises, setAllExercises] = useState<Exercise[]>([])
   const [swapTarget, setSwapTarget] = useState<string | null>(null)
+  const [renameTarget, setRenameTarget] = useState<Exercise | null>(null)
   const [addExerciseOpen, setAddExerciseOpen] = useState(false)
   const [extraSets, setExtraSets] = useState<Record<string, number>>({})
   const [workoutNote, setWorkoutNote] = useState('')
@@ -226,6 +228,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const pickerKey = addExerciseOpen ? 'add' : swapTarget ? `swap:${swapTarget}` : null
   const pickerExit = useExitingValue(pickerKey, EXERCISE_PICKER_EXIT_MS)
   const plateExit = useExitingValue(plateCalcTarget, 240)
+  const renameExit = useExitingValue(renameTarget, 240)
   const [enteredExerciseId, setEnteredExerciseId] = useState<string | null>(null)
   const { hasSeenTooltip, markTooltipSeen } = useOnboarding()
 
@@ -1905,6 +1908,37 @@ export default function ActiveWorkout({ day }: { day: string }) {
     }
   }
 
+  /**
+   * Rename in place. Only `exercises.name` changes — the row id stays, so every
+   * session_log, PR bar and Progress-page history follows the new name. (Swap
+   * is the opposite: a different exercise row with its own history.) Returns an
+   * inline error message, or null once saved and the dialog is closing.
+   */
+  async function handleRenameExercise(exercise: Exercise, rawName: string): Promise<string | null> {
+    const name = rawName.trim().replace(/\s+/g, ' ')
+    if (!name) return 'Exercise name is required.'
+    if (name === exercise.name) {
+      setRenameTarget(null)
+      return null
+    }
+    const key = name.toLowerCase()
+    const clash = allExercises.some(
+      e => e.id !== exercise.id && e.day_type === exercise.day_type && e.name.trim().toLowerCase() === key,
+    ) || exercises.some(e => e.id !== exercise.id && e.name.trim().toLowerCase() === key)
+    if (clash) return 'An exercise with this name already exists for this day.'
+
+    const { error } = await supabase.from('exercises').update({ name }).eq('id', exercise.id)
+    if (error) return 'Could not rename. Check your connection and try again.'
+
+    const apply = (list: Exercise[]) => list.map(e => (e.id === exercise.id ? { ...e, name } : e))
+    commitExercises(apply)
+    setAllExercises(apply)
+    markAppDataStale()
+    setRenameTarget(null)
+    showSaveToast(`Renamed to ${name}`)
+    return null
+  }
+
   async function handleSwapExercise(newExercise: Exercise) {
     if (!swapTarget || !sessionId) return
     const oldExercise = exercises.find(e => e.id === swapTarget)
@@ -2884,6 +2918,16 @@ export default function ActiveWorkout({ day }: { day: string }) {
         />
       )}
 
+      {renameExit.data && (
+        <RenameExerciseDialog
+          key={renameExit.data.id}
+          exercise={renameExit.data}
+          closing={renameExit.closing}
+          onSave={name => handleRenameExercise(renameExit.data!, name)}
+          onClose={() => setRenameTarget(null)}
+        />
+      )}
+
       {showExitConfirm && (
         <div
           onClick={() => { if (!discarding) setShowExitConfirm(false) }}
@@ -3493,6 +3537,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
                 setAddExerciseOpen(false)
                 setSwapTarget(ex.id)
               }}
+              onRename={() => setRenameTarget(ex)}
               canRemove={isSessionExtra(ex.id, originalDayIds) && exercises.length > 1}
               onRemove={() => { void handleRemoveExercise(ex.id) }}
               onSkipSet={handleSkipSet}
@@ -3705,6 +3750,7 @@ interface ExerciseCardProps {
   onCheck: (exerciseId: string, setNumber: number) => void
   onUpdate: (key: string, field: 'weight' | 'reps' | 'note' | 'rpe', value: string) => void
   onSwap: () => void
+  onRename: () => void
   canRemove: boolean
   onRemove: () => void
   onSkipSet: (exerciseId: string, setNumber: number) => void
@@ -3730,7 +3776,7 @@ interface ExerciseCardProps {
 
 function ExerciseCard({
   exercise, firstExercise, extraSets, logs, previousBest, priorVolume, editingKey,
-  onCheck, onUpdate, onSwap, canRemove, onRemove,
+  onCheck, onUpdate, onSwap, onRename, canRemove, onRemove,
   onSkipSet, onUnskipSet, onDeleteSet,
   onSkipExercise, onUnskipExercise,
   onToggleWarmup, onWarmupRamp, onUndoWarmupRamp, canUndoWarmup, onAddSet, onStartEdit, onSaveEdit, onPersistMeta,
@@ -3831,6 +3877,22 @@ function ExerciseCard({
               }}>
                 {allSkipped ? 'UNDO' : 'SKIP'}
               </span>
+            </button>
+
+            {/* Rename button — same exercise, new label; history follows */}
+            <button
+              type="button"
+              className="wo-ghost-btn"
+              data-haptic="light"
+              onClick={onRename}
+              title="Rename exercise"
+              aria-label={`Rename ${exercise.name}`}
+              style={{ padding: '2px', flexShrink: 0 }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-secondary)' }}>
+                <path d="M12 20h9"/>
+                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+              </svg>
             </button>
 
             {/* Swap button */}

@@ -408,6 +408,18 @@ for XP/streak/PR purposes — a CHECK constraint (`weight is null and reps is
 null` whenever `is_skipped`) enforces that instead of relying on the client
 to always uphold it.
 
+### Renaming vs. swapping an exercise (ActiveWorkout)
+Each exercise card has two different tools, and the difference is the history:
+- **Rename** (pencil, `RenameExerciseDialog.tsx`) updates `exercises.name` on the
+  SAME row. The id never changes, so every `session_logs` row, PR bar, "prev"
+  weight and Progress-page series follows the new name — nothing is copied or
+  lost. Use it when it's the same lift under a better name ("DB Curl" → "DB Curl
+  (per arm)"). It renames the exercise everywhere, past sessions included, and
+  rejects a name already used by another exercise on that day.
+- **Swap** (arrows) points the slot at a DIFFERENT `exercises` row (existing or
+  newly created) and deletes this session's logs for the old one; the old row's
+  history stays on the old exercise and the new one starts blank.
+
 ### Friend profiles ((app)/leaderboard/[username]/, migration `19-friend-profile.sql`)
 Tapping a leaderboard row opens a read-only profile at `/leaderboard/[username]`
 — banner (avatar, display name, level, XP bar), streak cards, lifetime stat
