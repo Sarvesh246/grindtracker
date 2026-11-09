@@ -1,7 +1,12 @@
 // Minimal offline-shell + Web Push service worker. Not a full precache/workbox
 // setup — just enough that a dead spot in the gym shows a branded retry screen,
 // already-fetched JS/CSS keep working, and lock-screen rest/streak pushes land.
-const CACHE_NAME = 'grind-shell-v6'
+const CACHE_NAME = 'grind-shell-v7'
+// Content-hashed /_next/static/ bundles live in their own cache so they can be
+// trimmed without touching the shell, and survive CACHE_NAME bumps cleanly.
+const STATIC_CACHE = 'grind-static-v1'
+/** Keep roughly the last few deploys' worth of bundles; older ones are evicted. */
+const STATIC_CACHE_MAX_ENTRIES = 150
 const PRECACHE_URLS = ['/offline.html', '/manifest.json', '/icon-192.png', '/icon-512.png']
 
 // Only these navigations are safe to cache-and-replay: nothing behind auth.
@@ -26,10 +31,27 @@ self.addEventListener('activate', event => {
   event.waitUntil(
     caches
       .keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))))
+      .then(keys =>
+        Promise.all(
+          keys.filter(k => k !== CACHE_NAME && k !== STATIC_CACHE).map(k => caches.delete(k)),
+        ),
+      )
+      .then(trimStaticCache)
       .then(() => self.clients.claim()),
   )
 })
+
+/** Evict the oldest static bundles beyond the cap (Cache keys are insertion-ordered). */
+async function trimStaticCache() {
+  try {
+    const cache = await caches.open(STATIC_CACHE)
+    const keys = await cache.keys()
+    const excess = keys.length - STATIC_CACHE_MAX_ENTRIES
+    for (let i = 0; i < excess; i++) await cache.delete(keys[i])
+  } catch {
+    /* best-effort housekeeping */
+  }
+}
 
 self.addEventListener('fetch', event => {
   const { request } = event
@@ -52,7 +74,7 @@ self.addEventListener('fetch', event => {
           fetch(request).then(res => {
             if (res.ok) {
               const copy = res.clone()
-              caches.open(CACHE_NAME).then(cache => cache.put(request, copy))
+              caches.open(STATIC_CACHE).then(cache => cache.put(request, copy))
             }
             return res
           }),
