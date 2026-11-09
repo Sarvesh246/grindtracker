@@ -8,6 +8,7 @@ import { useDemoMode } from '@/lib/contexts/DemoModeContext'
 import { demoSafeClient } from '@/lib/demoMode/demoSafeSupabase'
 import { demoBodyWeightRows } from '@/lib/demoMode/fakeData'
 import Dialog from '@/components/ui/Dialog'
+import { useExitingValue } from '@/lib/hooks/useExitingValue'
 import { CACHE_KEYS, getCached, isFresh, markAppDataStale, setCached } from '@/lib/cache/appDataCache'
 import { reportError } from '@/lib/utils/reportError'
 import type { BodyWeightPoint } from './BodyWeightChart'
@@ -47,6 +48,8 @@ export default function BodyWeightCard() {
   // The entry currently open in the edit sheet — picked by tapping its dot on
   // the chart or its row in the history list.
   const [selected, setSelected] = useState<Point | null>(null)
+  // Keeps the last entry mounted while the sheet slides away.
+  const { data: shown, closing: selectedClosing } = useExitingValue(selected, 240)
   // First tap on a dot just reveals its value inline (nothing about a plotted
   // point reads as tappable on its own, so this doubles as a confirmation);
   // tapping the SAME, already-peeked dot again is what opens the edit sheet.
@@ -493,11 +496,12 @@ export default function BodyWeightCard() {
         </>
       )}
 
-      {selected && (
+      {shown && (
         <Dialog
           open
+          closing={selectedClosing}
           onClose={closeEntry}
-          title={`Edit body weight for ${selected.longDate}`}
+          title={`Edit body weight for ${shown.longDate}`}
           initialFocusRef={editInputRef}
           panelStyle={{ maxWidth: '480px' }}
           // Lifts the sheet above the iOS keyboard — the input autofocuses on
@@ -531,10 +535,10 @@ export default function BodyWeightCard() {
                   fontFamily: 'var(--font-display)', fontSize: '18px',
                   color: 'var(--text-primary)', letterSpacing: '1px',
                 }}>
-                  {selected.longDate.toUpperCase()}
+                  {shown.longDate.toUpperCase()}
                 </div>
                 <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                  Logged at {fmt(selected.canonical)} {unitLabel}
+                  Logged at {fmt(shown.canonical)} {unitLabel}
                 </div>
               </div>
               <button
@@ -556,7 +560,7 @@ export default function BodyWeightCard() {
             {confirmDelete ? (
               <>
                 <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.5, margin: 0 }}>
-                  Delete this entry? Your weight for {selected.displayDate} will be removed from the chart.
+                  Delete this entry? Your weight for {shown.displayDate} will be removed from the chart.
                 </p>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <button
@@ -602,7 +606,7 @@ export default function BodyWeightCard() {
                     value={editDraft}
                     onChange={e => setEditDraft(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') handleUpdate() }}
-                    aria-label={`Body weight for ${selected.longDate} in ${unitLabel}`}
+                    aria-label={`Body weight for ${shown.longDate} in ${unitLabel}`}
                     style={{
                       flex: 1,
                       minWidth: 0,

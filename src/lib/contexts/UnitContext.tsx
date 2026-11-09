@@ -1,5 +1,5 @@
 'use client'
-import { createContext, useCallback, useContext, useEffect, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { LBS_PER_KG } from '@/lib/utils/units'
 
 type Unit = 'metric' | 'imperial'
@@ -99,21 +99,21 @@ export function UnitProvider({
     }
   }, [])
 
-  function toggleUnit() {
+  const toggleUnit = useCallback(() => {
     setUnit(prev => {
       const next = prev === 'metric' ? 'imperial' : 'metric'
       persistUnit(next)
       return next
     })
-  }
+  }, [])
 
-  function setUnitPref(next: Unit) {
+  const setUnitPref = useCallback((next: Unit) => {
     setUnit(prev => {
       if (prev === next) return prev
       persistUnit(next)
       return next
     })
-  }
+  }, [])
 
   const metric = unit === 'metric'
   // Display is intentionally lossy (rounded), but the canonical lbs store is never
@@ -137,21 +137,20 @@ export function UnitProvider({
     [toDisplay],
   )
 
-  return (
-    <UnitContext.Provider
-      value={{
-        unit,
-        unitLabel: metric ? 'kg' : 'lbs',
-        toggleUnit,
-        setUnit: setUnitPref,
-        toDisplay,
-        fromDisplay,
-        fmt,
-      }}
-    >
-      {children}
-    </UnitContext.Provider>
+  const contextValue = useMemo(
+    () => ({
+      unit,
+      unitLabel: (metric ? 'kg' : 'lbs') as 'kg' | 'lbs',
+      toggleUnit,
+      setUnit: setUnitPref,
+      toDisplay,
+      fromDisplay,
+      fmt,
+    }),
+    [unit, metric, toggleUnit, setUnitPref, toDisplay, fromDisplay, fmt],
   )
+
+  return <UnitContext.Provider value={contextValue}>{children}</UnitContext.Provider>
 }
 
 export function useUnit() {

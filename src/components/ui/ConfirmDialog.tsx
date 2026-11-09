@@ -30,6 +30,7 @@ export default function ConfirmDialog({
       labelledBy="confirm-dialog-title"
       describedBy="confirm-dialog-message"
       zIndex={340}
+      panelClassName="dlg-panel dlg-panel--pop"
       style={{ alignItems: 'center' }}
       panelStyle={{
         backgroundColor: 'var(--surface)',

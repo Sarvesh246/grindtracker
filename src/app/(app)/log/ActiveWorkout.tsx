@@ -225,6 +225,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const saveToastExit = useExitingValue(saveToast, TOAST_SLIDE_OUT_MS)
   const pickerKey = addExerciseOpen ? 'add' : swapTarget ? `swap:${swapTarget}` : null
   const pickerExit = useExitingValue(pickerKey, EXERCISE_PICKER_EXIT_MS)
+  const plateExit = useExitingValue(plateCalcTarget, 240)
   const [enteredExerciseId, setEnteredExerciseId] = useState<string | null>(null)
   const { hasSeenTooltip, markTooltipSeen } = useOnboarding()
 
@@ -3085,12 +3086,14 @@ export default function ActiveWorkout({ day }: { day: string }) {
       )}
 
       {/* Plate calculator */}
-      {plateCalcTarget && (
+      {plateExit.data && (
         <PlateCalculator
-          initialTarget={plateCalcTarget.current}
+          closing={plateExit.closing}
+          initialTarget={plateExit.data.current}
           onClose={() => setPlateCalcTarget(null)}
           onApply={w => {
-            updateLog(plateCalcTarget.key, 'weight', String(w))
+            if (!plateExit.data) return
+            updateLog(plateExit.data.key, 'weight', String(w))
             setPlateCalcTarget(null)
           }}
         />

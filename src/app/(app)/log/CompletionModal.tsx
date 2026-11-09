@@ -116,6 +116,7 @@ export default function CompletionModal({
       open
       title="Workout complete"
       closeOnBackdrop={false}
+      animate={false}
       zIndex={300}
       style={{
         opacity: shown ? 1 : 0,

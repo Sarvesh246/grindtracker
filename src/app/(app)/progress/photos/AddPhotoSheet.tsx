@@ -27,6 +27,7 @@ export default function AddPhotoSheet({
   initialDayType,
   onClose,
   onSaved,
+  closing,
 }: {
   /** The user's configured workout days, prefetched by the feed page so
    * these buttons render instantly instead of popping in a beat after the
@@ -38,6 +39,8 @@ export default function AddPhotoSheet({
   initialDayType: string | null
   onClose: () => void
   onSaved: () => void
+  /** Plays the exit animation while the parent keeps this mounted. */
+  closing?: boolean
 }) {
   const { getGroupForDate, getSuggestedDayTypes, upsertGroup, addPhotos } = useProgressPhotos()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -144,6 +147,7 @@ export default function AddPhotoSheet({
   return (
     <Dialog
       open
+      closing={closing}
       onClose={submitting ? undefined : onClose}
       labelledBy="add-photo-sheet-title"
       zIndex={330}

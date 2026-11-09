@@ -15,6 +15,17 @@ import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
 const FOCUSABLE =
   'a[href],button:not([disabled]),textarea:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])'
 
+const DIALOG_EXIT_MS = 220
+
+const prefersReducedMotion = (): boolean => {
+  try {
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      || document.documentElement.classList.contains('reduce-motion')
+  } catch {
+    return false
+  }
+}
+
 /**
  * Accessible modal/sheet primitive shared by completion, plate calc, feedback,
  * badge unlock, and confirm dialogs. Traps focus, restores it on close, locks
@@ -38,6 +49,7 @@ export default function Dialog({
   avoidKeyboard = false,
   closing = false,
   focusPanel = false,
+  animate = true,
 }: {
   open: boolean
   onClose?: () => void
@@ -73,20 +85,42 @@ export default function Dialog({
   /** Focus the panel itself instead of the first input — avoids popping the
    *  keyboard before the user has seen the sheet (iOS PWA). */
   focusPanel?: boolean
+  /** Built-in fade + slide/pop enter and exit. Turn off when the caller animates itself. */
+  animate?: boolean
 }) {
   const panelRef = useRef<HTMLDivElement>(null)
   const liveInset = useKeyboardInset()
+
+  // Default enter/exit motion. Callers that bring their own animation (a
+  // `className` on the backdrop, or `animate={false}`) are left alone.
+  const useDefaultMotion = animate && className === undefined
+  // When `open` flips false, stay mounted for the exit animation instead of
+  // vanishing mid-frame. (Callers that conditionally mount the Dialog skip this
+  // and should drive `closing` themselves via useExitingValue.)
+  const [wasOpen, setWasOpen] = useState(open)
+  const [exiting, setExiting] = useState(false)
+  if (open !== wasOpen) {
+    setWasOpen(open)
+    setExiting(!open && useDefaultMotion)
+  }
+  useEffect(() => {
+    if (!exiting) return
+    const t = window.setTimeout(() => setExiting(false), prefersReducedMotion() ? 0 : DIALOG_EXIT_MS)
+    return () => window.clearTimeout(t)
+  }, [exiting])
+  const isClosing = closing || exiting
+
   const [freeze, setFreeze] = useState<{ on: boolean; inset: number }>({ on: false, inset: 0 })
-  if (closing && !freeze.on) {
+  if (isClosing && !freeze.on) {
     setFreeze({ on: true, inset: liveInset })
-  } else if (!closing && freeze.on) {
+  } else if (!isClosing && freeze.on) {
     setFreeze({ on: false, inset: 0 })
   }
   const keyboardInset = freeze.on ? freeze.inset : liveInset
   const previouslyFocused = useRef<HTMLElement | null>(null)
   const autoTitleId = useId()
   const titleId = labelledBy ?? (title ? autoTitleId : undefined)
-  const canDismiss = !!onClose && !closing
+  const canDismiss = !!onClose && !isClosing
 
   // Scroll lock on the app main scroller + body.
   useEffect(() => {
@@ -106,7 +140,7 @@ export default function Dialog({
 
   // Initial focus.
   useEffect(() => {
-    if (!open || closing) return
+    if (!open || isClosing) return
     const t = window.setTimeout(() => {
       if (initialFocusRef?.current) {
         initialFocusRef.current.focus()
@@ -122,7 +156,7 @@ export default function Dialog({
       ;(first ?? panel).focus()
     }, 10)
     return () => window.clearTimeout(t)
-  }, [open, closing, initialFocusRef, focusPanel])
+  }, [open, isClosing, initialFocusRef, focusPanel])
 
   const onKeyDown = useCallback(
     (e: ReactKeyboardEvent) => {
@@ -153,14 +187,14 @@ export default function Dialog({
     [canDismiss, onClose],
   )
 
-  if (!open) return null
+  if (!open && !exiting) return null
   if (typeof document === 'undefined') return null
 
   return createPortal(
     <div
       role="presentation"
-      className={className}
-      data-closing={closing ? 'true' : undefined}
+      className={useDefaultMotion ? 'dlg-backdrop' : className}
+      data-closing={isClosing ? 'true' : undefined}
       data-keyboard={avoidKeyboard && keyboardInset > 8 ? 'true' : undefined}
       onClick={e => {
         if (!closeOnBackdrop || !canDismiss) return
@@ -174,7 +208,7 @@ export default function Dialog({
         display: 'flex',
         alignItems: 'flex-end',
         justifyContent: 'center',
-        pointerEvents: closing ? 'none' : undefined,
+        pointerEvents: isClosing ? 'none' : undefined,
         ...(avoidKeyboard ? { paddingBottom: keyboardInset } : null),
         ...style,
       }}
@@ -186,7 +220,7 @@ export default function Dialog({
         aria-labelledby={titleId}
         aria-describedby={describedBy}
         tabIndex={-1}
-        className={panelClassName}
+        className={panelClassName ?? (useDefaultMotion ? 'dlg-panel' : undefined)}
         onKeyDown={onKeyDown}
         onClick={e => e.stopPropagation()}
         style={{

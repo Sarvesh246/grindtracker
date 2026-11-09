@@ -377,7 +377,7 @@ export default function LeaderboardClient({ userId }: Props) {
                 }}>
                   {entry.avatar_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={entry.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <img src={entry.avatar_url} alt="" loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                   ) : (
                     <span style={{ fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: '13px', color: 'var(--text-secondary)' }}>
                       {initials(entry.display_name)}

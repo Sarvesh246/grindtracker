@@ -12,6 +12,7 @@ import PhotoLightbox, { type LightboxItem } from './PhotoLightbox'
 import AddPhotoSheet from './AddPhotoSheet'
 import ComparePhotosView from './ComparePhotosView'
 import { localDateKey } from '@/lib/utils/formatting'
+import { useExitingValue } from '@/lib/hooks/useExitingValue'
 import { useToast } from '@/lib/contexts/ToastContext'
 
 const PAGE_SIZE = 20
@@ -49,6 +50,7 @@ export default function ProgressPhotosPage() {
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({})
 
   const [addOpen, setAddOpen] = useState(false)
+  const { data: addShown, closing: addClosing } = useExitingValue(addOpen ? true : null, 240)
   const [lightbox, setLightbox] = useState<LightboxState>(null)
   const [timelineLoading, setTimelineLoading] = useState(false)
 
@@ -273,8 +275,9 @@ export default function ProgressPhotosPage() {
         </div>
       )}
 
-      {addOpen && (
+      {addShown && (
         <AddPhotoSheet
+          closing={addClosing}
           dayTypeOptions={dayTypeOptions}
           initialDayType={todaySuggestedDayType}
           onClose={() => setAddOpen(false)}

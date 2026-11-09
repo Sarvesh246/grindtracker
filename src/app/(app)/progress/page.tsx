@@ -847,7 +847,7 @@ function PhotoEntryCard({
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={thumb}
-          alt=""
+          alt="" loading="lazy" decoding="async"
           style={{ width: '38px', height: '38px', borderRadius: 'var(--radius-sm)', objectFit: 'cover', flexShrink: 0 }}
         />
       )}

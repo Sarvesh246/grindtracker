@@ -38,9 +38,11 @@ interface Props {
   onClose: () => void
   /** Receives the chosen weight converted back to canonical lbs. */
   onApply: (weight: number) => void
+  /** Plays the exit animation while the parent keeps this mounted. */
+  closing?: boolean
 }
 
-export default function PlateCalculator({ initialTarget, onClose, onApply }: Props) {
+export default function PlateCalculator({ initialTarget, onClose, onApply, closing }: Props) {
   const { unitLabel, fromDisplay } = useUnit()
   const metric = unitLabel === 'kg'
   const plateSet = metric ? PLATES_KG : PLATES_LB
@@ -64,6 +66,7 @@ export default function PlateCalculator({ initialTarget, onClose, onApply }: Pro
   return (
     <Dialog
       open
+      closing={closing}
       onClose={onClose}
       title="Plate calculator"
       zIndex={600}
@@ -86,7 +89,6 @@ export default function PlateCalculator({ initialTarget, onClose, onApply }: Pro
           display: 'flex',
           flexDirection: 'column',
           gap: '16px',
-          animation: 'sheet-up 220ms ease',
           outline: 'none',
         }}
       >

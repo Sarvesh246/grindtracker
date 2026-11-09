@@ -828,6 +828,55 @@ body.coach-fab-dragging .bottom-nav [data-haptic-overlay] {
   to { opacity: 0; }
 }
 
+/* Default motion for the shared ui/Dialog (backdrop fade + sheet slide, or a
+   small pop for centered confirms). Fill mode is `backwards` on enter — a
+   finished transform would make the panel a containing block — and `forwards`
+   only on exit, while Dialog keeps itself mounted for the animation. */
+@keyframes dlg-pop-in {
+  from { opacity: 0; transform: scale(0.96) translateY(6px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes dlg-pop-out {
+  from { opacity: 1; transform: scale(1) translateY(0); }
+  to { opacity: 0; transform: scale(0.97) translateY(4px); }
+}
+.dlg-backdrop {
+  animation: sheet-backdrop-in 220ms ease backwards;
+}
+.dlg-backdrop[data-closing='true'] {
+  animation: sheet-backdrop-out 200ms ease forwards;
+}
+.dlg-panel {
+  animation: sheet-up 300ms cubic-bezier(0.32, 0.72, 0, 1) backwards;
+}
+.dlg-backdrop[data-closing='true'] .dlg-panel {
+  animation: sheet-down 220ms cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+.dlg-panel--pop {
+  animation: dlg-pop-in 220ms cubic-bezier(0.32, 0.72, 0, 1) backwards;
+}
+.dlg-backdrop[data-closing='true'] .dlg-panel--pop {
+  animation: dlg-pop-out 180ms ease forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dlg-backdrop,
+  .dlg-backdrop[data-closing='true'],
+  .dlg-panel,
+  .dlg-panel--pop,
+  .dlg-backdrop[data-closing='true'] .dlg-panel,
+  .dlg-backdrop[data-closing='true'] .dlg-panel--pop {
+    animation: none !important;
+  }
+}
+html.reduce-motion .dlg-backdrop,
+html.reduce-motion .dlg-backdrop[data-closing='true'],
+html.reduce-motion .dlg-panel,
+html.reduce-motion .dlg-panel--pop,
+html.reduce-motion .dlg-backdrop[data-closing='true'] .dlg-panel,
+html.reduce-motion .dlg-backdrop[data-closing='true'] .dlg-panel--pop {
+  animation: none !important;
+}
+
 /* Live-workout add/swap picker — portaled bottom sheet. Enter/exit are CSS so
    reduce-motion zeroes them; fill-mode on close is `forwards` only while the
    sheet stays mounted for the exit (parent unmounts after). */

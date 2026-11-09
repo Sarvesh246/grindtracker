@@ -672,7 +672,7 @@ export default function FeedbackInbox({
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
                             src={url}
-                            alt="Feedback attachment"
+                            alt="Feedback attachment" loading="lazy" decoding="async"
                             style={{ width: '100%', height: '120px', objectFit: 'cover', display: 'block' }}
                           />
                         </a>
