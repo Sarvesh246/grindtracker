@@ -33,7 +33,7 @@ export async function previewStartWorkout(
         .eq('user_id', args.userId),
       supabase
         .from('user_rotation')
-        .select('mode, sequence, current_index')
+        .select('mode, sequence, current_index, current_day, updated_at')
         .eq('user_id', args.userId)
         .maybeSingle(),
     ])

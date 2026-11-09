@@ -120,6 +120,34 @@ export async function writeRotationRow(
   return { error }
 }
 
+/** Change only the order (`mode` + `sequence`) of an existing rotation.
+ *  Unlike an upsert of a copy read earlier, it never writes `current_index`,
+ *  `current_day` or `updated_at`: a stale index can't overwrite a newer one,
+ *  and `updated_at` keeps meaning "when the pointer was last written" so
+ *  resolveRotationIndex's catch-up rule still sees a finish whose advance never
+ *  landed. Inserts a fresh row (pointer at -1) only when none exists yet. */
+export async function writeRotationSequence(
+  supabase: SupabaseClient,
+  userId: string,
+  mode: 'auto' | 'manual',
+  sequence: string[],
+): Promise<{ error: { message: string } | null }> {
+  const { data, error } = await supabase
+    .from('user_rotation')
+    .update({ mode, sequence })
+    .eq('user_id', userId)
+    .select('user_id')
+  if (error) return { error }
+  if (data && data.length > 0) return { error: null }
+  return writeRotationRow(supabase, {
+    user_id: userId,
+    mode,
+    sequence,
+    current_index: -1,
+    current_day: null,
+  })
+}
+
 export interface PointerSnapshot {
   index: number
   day: string | null

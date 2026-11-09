@@ -31,7 +31,7 @@ export async function loadCoachChipHints(
     supabase.from('exercises').select('day_type, active').eq('user_id', userId),
     supabase
       .from('user_rotation')
-      .select('mode, sequence, current_index')
+      .select('mode, sequence, current_index, current_day, updated_at')
       .eq('user_id', userId)
       .maybeSingle(),
     supabase.from('user_flex_days').select('day_key').eq('user_id', userId),

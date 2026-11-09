@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { UserRotation } from '@/lib/types'
 import { insertCoachProposal } from './proposals'
+import { writeRotationSequence } from '@/lib/utils/rotationStore'
 import type {
   CoachActionPayload,
   CoachProposalView,
@@ -296,15 +297,11 @@ export async function executeCreateDay(
           ? rotation.sequence.map(k => String(k))
           : []
         if (!seq.includes(validated.dayKey)) {
-          const { error: rotError } = await supabase.from('user_rotation').upsert(
-            {
-              user_id: args.userId,
-              mode: 'manual',
-              sequence: [...seq, validated.dayKey],
-              current_index: rotation.current_index ?? -1,
-              updated_at: new Date().toISOString(),
-            },
-            { onConflict: 'user_id' },
+          const { error: rotError } = await writeRotationSequence(
+            supabase,
+            args.userId,
+            'manual',
+            [...seq, validated.dayKey],
           )
           if (rotError) {
             console.error('[grind] coach create_day rotation', rotError)

@@ -5,6 +5,7 @@ import { useDemoMode } from '@/lib/contexts/DemoModeContext'
 import { demoSafeClient } from '@/lib/demoMode/demoSafeSupabase'
 import { Exercise, DayCategory, UserRotation } from '@/lib/types'
 import { autoSequence, effectiveSequence, orderedDayKeys } from '@/lib/utils/rotation'
+import { writeRotationSequence } from '@/lib/utils/rotationStore'
 import { useKeyboardInset } from '@/lib/hooks/useKeyboardInset'
 import { useToast } from '@/lib/contexts/ToastContext'
 import { useUnit } from '@/lib/contexts/UnitContext'
@@ -581,14 +582,19 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
     if (!userId) { setRotationError('You must be signed in.'); return }
     setRotationError('')
     const previous = rotation
-    const updatedAt = new Date().toISOString()
-    setRotation({ user_id: userId, mode, sequence, current_index: previous?.current_index ?? -1, updated_at: updatedAt })
+    // Only mode + sequence change; the pointer fields (and updated_at) are
+    // untouched in the database, so keep them untouched locally too.
+    setRotation({
+      user_id: userId,
+      mode,
+      sequence,
+      current_index: previous?.current_index ?? -1,
+      current_day: previous?.current_day ?? null,
+      updated_at: previous?.updated_at ?? new Date(0).toISOString(),
+    })
     setSavingRotation(true)
     try {
-      const { error } = await supabase.from('user_rotation').upsert(
-        { user_id: userId, mode, sequence, current_index: previous?.current_index ?? -1, updated_at: updatedAt },
-        { onConflict: 'user_id' },
-      )
+      const { error } = await writeRotationSequence(supabase, userId, mode, sequence)
       if (error) {
         setRotation(previous)
         setRotationError('Could not save. Check your connection and try again.')
