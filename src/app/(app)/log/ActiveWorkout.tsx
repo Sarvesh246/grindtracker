@@ -185,6 +185,8 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const [startedAt, setStartedAt] = useState<Date>(new Date())
   const [elapsed, setElapsed] = useState(0)
   const [loading, setLoading] = useState(true)
+  /** The exercise catalog read failed — show a retry, not the empty-day screen. */
+  const [loadError, setLoadError] = useState(false)
   const [finishing, setFinishing] = useState(false)
   const [completionData, setCompletionData] = useState<CompletionData | null>(null)
   // Non-null right after a finish that earned badges — shown before
@@ -474,19 +476,25 @@ export default function ActiveWorkout({ day }: { day: string }) {
 
   const initSession = useCallback(async () => {
     setLoading(true)
+    setLoadError(false)
+    // Stay on the loader while redirecting to /login (don't flash the empty state).
+    let redirecting = false
+    try {
     originalDayIdsRef.current = new Set()
     setOriginalDayIds(new Set())
     createdThisSessionIdsRef.current = new Set()
     const user = await getClientUser(supabase)
-    if (!user) { router.push('/login'); return }
+    if (!user) { redirecting = true; router.push('/login'); return }
 
     // One catalog read (was two sequential ones): the day's exercises are just
     // a slice of the full list, already in sort_order within each day_type.
-    const { data: allExsData } = await supabase
+    const { data: allExsData, error: allExsError } = await supabase
       .from('exercises')
       .select('*')
       .order('day_type', { ascending: true })
       .order('sort_order', { ascending: true })
+    // A dropped read is not an empty day: say so and offer a retry.
+    if (allExsError) throw allExsError
     const allDayExs = (allExsData ?? []).filter(ex => ex.day_type === day)
 
     if (allDayExs.length === 0) { setLoading(false); return }
@@ -741,6 +749,12 @@ export default function ActiveWorkout({ day }: { day: string }) {
     setElapsed(Math.floor((Date.now() - sessionStart.getTime()) / 1000))
     setLoading(false)
     markAppDataStale()
+    } catch (err) {
+      reportError(err, { operation: 'initSession', route: '/log' })
+      setLoadError(true)
+    } finally {
+      if (!redirecting) setLoading(false)
+    }
   }, [day, supabase, router])
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -2809,6 +2823,45 @@ export default function ActiveWorkout({ day }: { day: string }) {
     return (
       <div style={{ padding: '24px 16px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif", fontSize: '14px' }}>
         Loading workout...
+      </div>
+    )
+  }
+
+  if (loadError) {
+    return (
+      <div style={{ padding: '24px 16px', fontFamily: "'DM Sans', sans-serif" }}>
+        <div style={{
+          backgroundColor: 'var(--surface)',
+          border: '1px solid var(--border)',
+          borderRadius: '20px',
+          padding: '24px',
+        }}>
+          <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '4px' }}>
+            Couldn&rsquo;t load this workout
+          </div>
+          <div style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+            Your exercises are safe &mdash; this is a connection hiccup, not an empty day.
+          </div>
+          <button
+            onClick={() => { void initSession() }}
+            className="press"
+            style={{
+              marginTop: '16px',
+              width: '100%',
+              height: '40px',
+              backgroundColor: 'var(--surface-elevated)',
+              color: 'var(--text-primary)',
+              border: '1px solid var(--border)',
+              borderRadius: '10px',
+              fontFamily: 'var(--font-display)',
+              fontSize: '15px',
+              letterSpacing: '1px',
+              cursor: 'pointer',
+            }}
+          >
+            RETRY
+          </button>
+        </div>
       </div>
     )
   }
