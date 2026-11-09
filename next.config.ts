@@ -19,9 +19,13 @@ const supabaseOrigin = (() => {
 // plumbing through a middleware rewrite, which is a bigger change than this
 // hardening pass. Even so, locking connect-src/frame-ancestors/object-src is
 // the part that actually stops clickjacking and data exfiltration.
+// React needs eval() for dev-only debugging features (callstack reconstruction);
+// production never does, so 'unsafe-eval' is dev-only.
+const isProd = process.env.NODE_ENV === 'production'
+
 const csp = [
   `default-src 'self'`,
-  `script-src 'self' 'unsafe-inline' 'unsafe-eval'`,
+  `script-src 'self' 'unsafe-inline'${isProd ? '' : " 'unsafe-eval'"}`,
   `style-src 'self' 'unsafe-inline'`,
   `img-src 'self' data: blob: https://lh3.googleusercontent.com ${supabaseOrigin}`,
   `font-src 'self' data:`,
