@@ -37,6 +37,8 @@ jobs:
       - name: Audit (critical)
         run: npm audit --audit-level=critical
 
+      # e2e/smoke.spec.ts (Playwright) is not run here: it needs real Supabase
+      # credentials, which CI doesn't have. Run `npm run test:e2e` locally.
       - name: Build
         env:
           NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
