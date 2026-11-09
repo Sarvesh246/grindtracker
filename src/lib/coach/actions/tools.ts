@@ -475,13 +475,13 @@ export function buildCoachProposalTools(ctx: CoachToolContext) {
 
     propose_update_rotation: tool({
       description:
-        'Propose changing workout order / rotation. mode=auto rebuilds A–Z (flex days out). mode=manual requires the full sequence of day names in order (repeats allowed). Use when they want to reorder days, switch to manual order, or reset to auto. The confirm card lists the FULL resulting order.',
+        'Propose changing workout order / rotation. mode=auto rebuilds A–Z (flex days out). mode=manual requires the full sequence of day names in order (repeats allowed). Use when they want to reorder days, switch to manual order, add a day (like abs) into the loop, pair days, or reset to auto. Names are matched loosely (case, spaces, "Push Day" = push), so use the day names from USER_DATA. To do a day "alongside"/"on the same day as" another, put them back to back, e.g. ["push","abs","pull","legs","abs"] (or one entry "push + abs"). Include EVERY day that should stay in the loop — the sequence replaces the old one. A flex day (like abs) is only in the loop if it is listed here. If a day does not exist yet, create it first with propose_create_day and tell the user to confirm that, then propose the order. The confirm card lists the FULL resulting order.',
       inputSchema: z.object({
         mode: z.enum(['auto', 'manual']),
         sequence: z
           .array(z.string().min(1))
           .optional()
-          .describe('Required for manual; ignored-as-order for auto'),
+          .describe('Required for manual: day names in loop order, repeats allowed; ignored-as-order for auto'),
       }),
       execute: async input => {
         const result = await previewUpdateRotation(ctx.supabase, {

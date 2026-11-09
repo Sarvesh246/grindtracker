@@ -695,7 +695,7 @@ export default function HomeDashboard({
   async function handleSkipDay() {
     if (!hasDays || skippingDayRef.current) return
     if (rotationSeq.length < 2) {
-      flashToast('Add another day to your rotation to skip ahead')
+      flashToast('Skip needs 2+ days in your workout order. Add one in Log → Manage → Edit workout order.')
       return
     }
     const shownDay = nextDay

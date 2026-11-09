@@ -247,6 +247,24 @@ describe('coach actions helpers', () => {
     assert.equal(unknown.ok, false)
   })
 
+  it('resolves loosely-worded days and expands paired days into back-to-back slots', () => {
+    const r = validateUpdateRotationInput({
+      mode: 'manual',
+      sequence: ['Push Day', 'Pull', 'Legs', 'Push day + Abs', 'legs and abs'],
+      dayKeys: ['abs', 'legs', 'pull', 'push'],
+    })
+    assert.equal(r.ok, true)
+    if (r.ok) {
+      assert.deepEqual(r.sequence, ['push', 'pull', 'legs', 'push', 'abs', 'legs', 'abs'])
+    }
+    const spaced = validateUpdateRotationInput({
+      mode: 'manual',
+      sequence: ['Lower A', 'Upper B'],
+      dayKeys: ['lower-a', 'upper-b'],
+    })
+    assert.equal(spaced.ok, true)
+  })
+
   it('applies a session-log edit without dropping untouched sets', () => {
     const logs: CoachSessionLogRow[] = [
       {

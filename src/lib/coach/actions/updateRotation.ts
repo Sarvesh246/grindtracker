@@ -1,7 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { enabledDayKeys } from '@/lib/utils/dayKeys'
+import { enabledDayKeys, resolveDayKey } from '@/lib/utils/dayKeys'
+import { writeRotationRow } from '@/lib/utils/rotationStore'
 import type { UserRotation } from '@/lib/types'
-import { autoSequence, effectiveSequence } from '@/lib/utils/rotation'
+import { autoSequence, dayAtIndex, effectiveSequence, resolveRotationIndex } from '@/lib/utils/rotation'
 import { insertCoachProposal } from './proposals'
 import { COACH_PROPOSAL_INSERT_FAILED } from './types'
 import type { CoachActionPayload, CoachProposalView } from './types'
@@ -29,14 +30,28 @@ export function validateUpdateRotationInput(input: {
       reason: 'Manual order needs a sequence of day names (they may repeat).',
     }
   }
-  const sequence = input.sequence.map(s =>
-    String(s).trim().toLowerCase().replace(/\s+/g, ' '),
-  )
-  const unknown = [...new Set(sequence.filter(k => !known.has(k)))]
+  // Each entry may name one day ("Push Day", "push") or several that happen
+  // together ("push + abs", "legs and abs"). A rotation slot holds one day, so
+  // a pair becomes two back-to-back slots, in the order given.
+  const sequence: string[] = []
+  const unknown: string[] = []
+  for (const entry of input.sequence) {
+    const raw = String(entry).trim()
+    const whole = resolveDayKey(raw, input.dayKeys)
+    const parts = whole
+      ? [whole]
+      : raw.split(/\s*(?:\+|&|\/|,|\band\b|\bwith\b|\balongside\b)\s*/i).filter(Boolean)
+    for (const part of parts) {
+      const key = resolveDayKey(part, input.dayKeys)
+      if (key && known.has(key)) sequence.push(key)
+      else unknown.push(part)
+    }
+  }
   if (unknown.length > 0) {
+    const missing = [...new Set(unknown)]
     return {
       ok: false,
-      reason: `Unknown day${unknown.length === 1 ? '' : 's'}: ${unknown.join(', ')}. Your days: ${input.dayKeys.join(', ') || '(none)'}.`,
+      reason: `No day matches ${missing.map(m => `"${m}"`).join(', ')}. Your days: ${input.dayKeys.join(', ') || '(none)'}. If it is a new day (e.g. abs), it has to be created first with propose_create_day, then the order can include it.`,
     }
   }
   return { ok: true, mode, sequence }
@@ -98,6 +113,18 @@ export async function previewUpdateRotation(
       ? autoSequence(dayKeys, flexSet)
       : effectiveSequence(nextRow, dayKeys, flexSet)
 
+  // Keep the user's place: find the day they last completed in the OLD order
+  // and re-anchor the pointer to it in the new one, instead of reusing a raw
+  // index that now points at a different day.
+  const oldOrder = effectiveSequence(current, dayKeys, flexSet)
+  const oldIndex = resolveRotationIndex(oldOrder, current)
+  nextRow.current_index = resultingOrder.length
+    ? resolveRotationIndex(resultingOrder, {
+        current_index: oldIndex,
+        current_day: dayAtIndex(oldOrder, oldIndex),
+      })
+    : -1
+
   if (resultingOrder.length === 0) {
     return {
       ok: false,
@@ -147,16 +174,15 @@ export async function executeUpdateRotation(
     currentIndex: number
   },
 ): Promise<{ ok: true } | { ok: false; message: string }> {
-  const { error } = await supabase.from('user_rotation').upsert(
-    {
-      user_id: args.userId,
-      mode: args.mode,
-      sequence: args.sequence,
-      current_index: args.currentIndex,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'user_id' },
-  )
+  // Goes through the shared writer so `current_day` is re-stamped with the
+  // pointer; leaving the old anchor behind made "up next" jump after a reorder.
+  const { error } = await writeRotationRow(supabase, {
+    user_id: args.userId,
+    mode: args.mode,
+    sequence: args.sequence,
+    current_index: args.currentIndex,
+    current_day: dayAtIndex(args.sequence, args.currentIndex),
+  })
   if (error) return { ok: false, message: error.message }
   return { ok: true }
 }

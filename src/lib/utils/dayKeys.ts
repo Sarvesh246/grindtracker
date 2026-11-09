@@ -32,6 +32,39 @@ export function slugDayKey(raw: string): string {
     .replace(/^-+|-+$/g, '')
 }
 
+/** Loose form used only to compare a spoken/typed name to a stored key:
+ *  slugged, with filler words ("day", "workout") and a plural "s" removed so
+ *  "Push Day", "push", "Pushes" and "push-day" all compare equal. */
+function looseDayName(raw: string): string {
+  const slug = slugDayKey(raw)
+    .split('-')
+    .filter(w => w && w !== 'day' && w !== 'workout' && w !== 'session')
+    .join('-')
+  // Drop a plural "s" ("legs" → "leg"); both sides get the same treatment.
+  return slug.length > 3 && slug.endsWith('s') && !slug.endsWith('ss') ? slug.slice(0, -1) : slug
+}
+
+/**
+ * Map whatever name the user (or the Coach) used to the day's real key, or null
+ * when it matches nothing / more than one day. Wording must not matter: exact
+ * key, label casing, spaces vs hyphens, "Push Day" vs "push", plurals.
+ */
+export function resolveDayKey(raw: string, dayKeys: string[]): string | null {
+  const trimmed = raw.trim()
+  if (!trimmed) return null
+  if (dayKeys.includes(trimmed)) return trimmed
+  const lower = trimmed.toLowerCase()
+  const ci = dayKeys.filter(k => k.toLowerCase() === lower)
+  if (ci.length === 1) return ci[0]
+  const slug = slugDayKey(trimmed)
+  const bySlug = dayKeys.filter(k => slugDayKey(k) === slug)
+  if (bySlug.length === 1) return bySlug[0]
+  const loose = looseDayName(trimmed)
+  if (!loose) return null
+  const byLoose = dayKeys.filter(k => looseDayName(k) === loose)
+  return byLoose.length === 1 ? byLoose[0] : null
+}
+
 /** `/log?day=…` with the key percent-encoded (see the note above). */
 export function logDayHref(dayKey: string): string {
   return `/log?day=${encodeURIComponent(dayKey)}`
