@@ -24,14 +24,15 @@ jobs:
       - name: Install
         run: npm ci
 
-      - name: Lint
-        run: npm run lint
-
+      # Typecheck and tests run before lint so a lint failure can't hide them.
       - name: Typecheck
         run: npx tsc --noEmit
 
       - name: Unit tests
         run: npm test
+
+      - name: Lint
+        run: npm run lint
 
       - name: Audit (critical)
         run: npm audit --audit-level=critical
