@@ -93,11 +93,16 @@ export async function proxy(request: NextRequest) {
       return supabaseResponse
     }
 
-    const { data: profile } = await supabase
+    const { data: profile, error: profileError } = await supabase
       .from('user_profiles')
       .select('id, setup_completed_at')
       .eq('id', userId)
       .maybeSingle()
+
+    // A failed read says nothing about the profile. Let the request through
+    // (RLS still bounds every read) without caching, so the next navigation
+    // re-checks, rather than sending an established user back to /setup.
+    if (profileError) return supabaseResponse
 
     if (!profile || !profile.setup_completed_at) {
       return NextResponse.redirect(new URL('/setup', request.url))
