@@ -147,22 +147,28 @@ export default function DaySelect() {
       const catMap: Record<string, DayCategory> = {}
       for (const r of catRes.data ?? []) catMap[r.day_key] = r.category as DayCategory
 
-      const openSessions: OpenSession[] = []
-      for (const row of openRes.data ?? []) {
-        const { count } = await supabase
+      // One in() query for every open session's working-set count (was one
+      // count query per session, run in sequence) - same shape as home/page.tsx.
+      const openRows = openRes.data ?? []
+      const loggedBySession: Record<string, number> = {}
+      if (openRows.length > 0) {
+        const { data: countRows } = await supabase
           .from('session_logs')
-          .select('id', { count: 'exact', head: true })
-          .eq('session_id', row.id)
+          .select('session_id')
+          .in('session_id', openRows.map(r => r.id))
           .eq('is_skipped', false)
           .eq('is_warmup', false)
           .not('weight', 'is', null)
-        openSessions.push({
-          id: row.id,
-          day_type: row.day_type,
-          started_at: row.started_at,
-          loggedSets: count ?? 0,
-        })
+        for (const r of countRows ?? []) {
+          loggedBySession[r.session_id] = (loggedBySession[r.session_id] ?? 0) + 1
+        }
       }
+      const openSessions: OpenSession[] = openRows.map(row => ({
+        id: row.id,
+        day_type: row.day_type,
+        started_at: row.started_at,
+        loggedSets: loggedBySession[row.id] ?? 0,
+      }))
 
       return {
         exercises: exRes.data ?? [],

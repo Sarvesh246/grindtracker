@@ -448,7 +448,9 @@ export default function HomeDashboard({
       const rows = gapUncoveredDates.map(rest_date => ({ user_id: user.id, rest_date }))
       const { error } = await supabase.from('user_rest_dates').insert(rows)
       if (error) throw error
-      await supabase.rpc('refresh_stats', { p_local_date: todayKey })
+      // Don't claim "Streak saved" if the stats refresh didn't land.
+      const { error: refreshError } = await supabase.rpc('refresh_stats', { p_local_date: todayKey })
+      if (refreshError) throw refreshError
       restDismissStore.dismiss(restBannerSig)
       toast.show('Streak saved')
       markAppDataStale('/home')

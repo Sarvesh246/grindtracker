@@ -271,22 +271,34 @@ export default function FriendsAccordion({ userId, onFriendsChange }: Props) {
 
   async function declineRequest(friendshipId: string) {
     if (demoMode) return
-    await supabase.from('friendships').delete().eq('id', friendshipId)
+    const { error } = await supabase.from('friendships').delete().eq('id', friendshipId)
+    if (error) {
+      toast.show("Couldn't decline that request. Try again.", 'error')
+      return
+    }
     markAppDataStale()
     loadFriendsData()
   }
 
   async function cancelRequest(friendshipId: string) {
     if (demoMode) return
-    await supabase.from('friendships').delete().eq('id', friendshipId)
+    const { error } = await supabase.from('friendships').delete().eq('id', friendshipId)
+    if (error) {
+      toast.show("Couldn't cancel that request. Try again.", 'error')
+      return
+    }
     markAppDataStale()
     loadFriendsData()
   }
 
   async function removeFriend(friendshipId: string) {
     if (demoMode) return
-    await supabase.from('friendships').delete().eq('id', friendshipId)
+    const { error } = await supabase.from('friendships').delete().eq('id', friendshipId)
     setHoldingId(null)
+    if (error) {
+      toast.show("Couldn't remove that friend. Try again.", 'error')
+      return
+    }
     markAppDataStale()
     loadFriendsData()
   }
