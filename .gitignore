@@ -53,3 +53,7 @@ playwright-report/
 .claude/.skipper-*
 .skipper/*
 !.skipper/receipts/
+
+# local agent tooling state
+ruvector.db
+.claude-flow/
