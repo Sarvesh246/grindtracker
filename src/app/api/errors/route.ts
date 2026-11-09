@@ -28,10 +28,31 @@ export async function POST(request: Request) {
     // reporting must never fail the request
   }
 
-  const safe =
+  // Log a fixed set of fields with length caps, never the raw body: this is
+  // an authenticated endpoint but the payload is still caller-controlled.
+  const raw =
     body && typeof body === 'object'
       ? (body as Record<string, unknown>)
-      : { message: 'invalid payload' }
+      : ({} as Record<string, unknown>)
+  const cap = (v: unknown, max: number) =>
+    typeof v === 'string' ? v.slice(0, max) : undefined
+  let extra: string | undefined
+  if (raw.extra !== undefined) {
+    try {
+      extra = JSON.stringify(raw.extra)?.slice(0, 2000)
+    } catch {
+      extra = undefined
+    }
+  }
+  const safe = {
+    message: cap(raw.message, 500) ?? 'invalid payload',
+    name: cap(raw.name, 100),
+    route: cap(raw.route, 200),
+    operation: cap(raw.operation, 100),
+    digest: cap(raw.digest, 100),
+    ts: cap(raw.ts, 40),
+    extra,
+  }
 
   console.error(
     '[grind:client-error]',
