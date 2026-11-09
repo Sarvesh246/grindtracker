@@ -124,35 +124,31 @@ export default async function HomePage() {
   // Working-set count only (skip markers never count toward save eligibility).
   // Fetch every open session (cap 10) so overnight orphans aren't hidden when
   // another day-type session is also incomplete.
-  const activeSessions: {
-    id: string
-    day_type: string
-    started_at: string
-    loggedSets: number
-  }[] = []
-  for (const row of activeRows ?? []) {
-    const { count } = await supabase
-      .from('session_logs')
-      .select('id', { count: 'exact', head: true })
-      .eq('session_id', row.id)
-      .eq('is_skipped', false)
-      .eq('is_warmup', false)
-      .not('weight', 'is', null)
-    activeSessions.push({
-      id: row.id,
-      day_type: row.day_type,
-      started_at: row.started_at,
-      loggedSets: count ?? 0,
-    })
-  }
+  //
+  // One `in()` query instead of one count per open session (was a sequential
+  // N+1 of up to 10 round trips on the home render's critical path), started
+  // now so it overlaps the last-session and next-day reads below.
+  const openIds = (activeRows ?? []).map(r => r.id)
+  const activeCountsPromise = openIds.length
+    ? supabase
+        .from('session_logs')
+        .select('session_id')
+        .in('session_id', openIds)
+        .eq('is_skipped', false)
+        .eq('is_warmup', false)
+        .not('weight', 'is', null)
+    : Promise.resolve({ data: [] as { session_id: string }[] })
+  const lastLogsPromise = lastSession
+    ? supabase
+        .from('session_logs')
+        .select('weight, reps, is_warmup, is_skipped, exercise_id, set_number, created_at, exercises(name)')
+        .eq('session_id', lastSession.id)
+        .order('created_at', { ascending: true })
+    : Promise.resolve({ data: null })
 
   let lastSessionLogs: { exercise_name: string; weight: number | null; sets: number; reps: number | null }[] = []
   if (lastSession) {
-    const { data: logs } = await supabase
-      .from('session_logs')
-      .select('weight, reps, is_warmup, is_skipped, exercise_id, set_number, created_at, exercises(name)')
-      .eq('session_id', lastSession.id)
-      .order('created_at', { ascending: true })
+    const { data: logs } = await lastLogsPromise
 
     if (logs) {
       type LogRow = {
@@ -224,12 +220,26 @@ export default async function HomePage() {
     if (k in lastTrainedByDay || dayKeys.includes(k)) lastTrainedByDay[k] = v
   }
 
-  const { data: nextDayExercises } = await supabase
-    .from('exercises')
-    .select('name')
-    .eq('day_type', nextDay)
-    .eq('active', true)
-    .order('sort_order', { ascending: true })
+  const [{ data: nextDayExercises }, { data: activeCountRows }] = await Promise.all([
+    supabase
+      .from('exercises')
+      .select('name')
+      .eq('day_type', nextDay)
+      .eq('active', true)
+      .order('sort_order', { ascending: true }),
+    activeCountsPromise,
+  ])
+
+  const loggedBySession = new Map<string, number>()
+  for (const r of activeCountRows ?? []) {
+    loggedBySession.set(r.session_id, (loggedBySession.get(r.session_id) ?? 0) + 1)
+  }
+  const activeSessions = (activeRows ?? []).map(row => ({
+    id: row.id as string,
+    day_type: row.day_type as string,
+    started_at: row.started_at as string,
+    loggedSets: loggedBySession.get(row.id) ?? 0,
+  }))
 
   // completedAt stays as local_date strings so week/month bucketing is timezone-safe.
   const completedLocalDates = historyPayload.recent_local_dates ?? []

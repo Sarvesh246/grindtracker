@@ -1139,7 +1139,7 @@ export default function HomeDashboard({
           one-off rest date and resettles stats; declining treats the gap as
           genuinely broken, matching what would've happened anyway. */}
       {showRestBanner && (
-        <div style={{
+        <div className="swap-in" style={{
           ...card,
           padding: '16px',
           display: 'flex',
@@ -1484,7 +1484,7 @@ export default function HomeDashboard({
       {currentStreak > 0 && (skipState.budget > 0 || skipState.todayIsOneOff) && (!trainedToday || skipState.todayIsOneOff) && (
         <button
           type="button"
-          className="press"
+          className="press swap-in"
           data-haptic={restStreakWarn || (!skipState.canSkip && !skipState.todayIsRest) ? 'heavy' : 'medium'}
           onClick={() => handleToggleRestToday()}
           disabled={skipState.todayIsScheduled}
@@ -1564,7 +1564,7 @@ export default function HomeDashboard({
           skipped past (trained out of order and left behind), so you don't have to
           scan the calendar. Tap to start it; × hides it until a new day is skipped. */}
       {showOverdue && (
-        <div style={{
+        <div className="swap-in" style={{
           display: 'flex',
           alignItems: 'center',
           gap: '10px',

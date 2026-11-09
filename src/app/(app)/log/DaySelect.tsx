@@ -399,7 +399,11 @@ export default function DaySelect() {
         )}
 
         {loading ? (
-          <div style={{ color: 'var(--text-muted)', fontSize: '14px' }}>Loading...</div>
+          <div aria-busy="true" aria-label="Loading workout days" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {[0, 1, 2, 3].map(i => (
+              <div key={i} className="shimmer" style={{ height: '84px', borderRadius: '12px', animationDelay: `${i * 80}ms` }} />
+            ))}
+          </div>
         ) : loadError ? (
           <div style={{
             display: 'flex', flexDirection: 'column', alignItems: 'center',
@@ -470,7 +474,7 @@ export default function DaySelect() {
         ) : (
           <>
           {openSessions.length > 0 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
+            <div className="swap-in" style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
               {openSessions.map(session => {
                 const today = isStartedToday(session.started_at)
                 const busy = openBusyId === session.id
