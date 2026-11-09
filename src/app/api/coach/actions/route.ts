@@ -91,6 +91,21 @@ export async function POST(request: Request) {
   }
 
   const payload = row.payload as CoachActionPayload
+
+  // Build the service client BEFORE claiming the proposal. If the service-role
+  // key is missing this throws; doing it after the claim left the proposal
+  // stuck in `confirmed` (answered 409 forever) with the mutation never run.
+  let serviceSupabase: ReturnType<typeof createServiceClient>
+  try {
+    serviceSupabase = createServiceClient()
+  } catch (err) {
+    console.error('[grind] coach actions service client unavailable', err)
+    return NextResponse.json(
+      { error: 'Coach actions are not configured' },
+      { status: 503 },
+    )
+  }
+
   const claimed = await updateCoachProposalStatus(supabase, {
     userId: user.id,
     proposalId,
@@ -114,7 +129,6 @@ export async function POST(request: Request) {
   // themselves (executeCorrectWeights etc.) still use the per-user
   // `supabase` client below — they rely on auth.uid() to scope the write,
   // which the service-role connection has no JWT to supply.
-  const serviceSupabase = createServiceClient()
 
   // Multi-session weight fixes stream progress; everything else is JSON.
   const longRunning =
@@ -228,9 +242,10 @@ export async function POST(request: Request) {
         status: 'failed',
         result: { message: executed.message },
       })
+      // A refused action (bad input, nothing to change), not a server fault.
       return NextResponse.json(
         { ok: false, status: 'failed', message: executed.message },
-        { status: 500 },
+        { status: 422 },
       )
     }
     const message = executed.message
