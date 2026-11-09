@@ -93,10 +93,25 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Invalid dedupeKey' }, { status: 400 })
       }
 
-      const rawPayload = action.payload ?? {}
+      // Keep only the keys public/sw.js reads, with length caps — the payload
+      // is only ever pushed to the sender's own devices, but it shouldn't be
+      // arbitrary-shaped or arbitrarily large.
+      const rawPayload = (action.payload ?? {}) as Record<string, unknown>
+      const str = (v: unknown, max: number) =>
+        typeof v === 'string' ? v.slice(0, max) : undefined
+      const badgeRaw = rawPayload.badge
       const payload = {
-        ...rawPayload,
+        title: str(rawPayload.title, 120),
+        body: str(rawPayload.body, 300),
+        tag: str(rawPayload.tag, 100),
         url: safeAppPath(rawPayload.url, '/log'),
+        renotify: rawPayload.renotify === true ? true : undefined,
+        badge:
+          typeof badgeRaw === 'number' && Number.isFinite(badgeRaw)
+            ? Math.max(0, Math.min(99, Math.trunc(badgeRaw)))
+            : badgeRaw === true
+              ? true
+              : undefined,
       }
 
       const { error } = await supabase.from('scheduled_notifications').upsert(
