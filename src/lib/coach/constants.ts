@@ -23,8 +23,8 @@ export const COACH_CONTEXT_BODY_WEIGHTS_FETCH = 90
 export const COACH_CONTEXT_EXERCISE_BESTS = 80
 
 /**
- * Mirrors `enforce_coach_rate_limit` in docs/sql/33-coach.sql.
- * Change both places together.
+ * Mirrors `enforce_coach_rate_limit` (latest body: docs/sql/55, which keeps
+ * the admin `coach_dev_unlimited` bypass). Change both places together.
  */
 export const COACH_DAILY_LIMIT = 15
 export const COACH_BURST_LIMIT = 8

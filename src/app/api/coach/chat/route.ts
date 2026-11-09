@@ -242,8 +242,13 @@ export async function POST(request: Request) {
   if (insertUserErr) {
     const mapped = mapCoachRateLimitError(insertUserErr.message)
     if (mapped) {
+      // Dev-unlimited passed the app-side pre-check but the DB trigger still
+      // capped us: the bypass is missing from enforce_coach_rate_limit().
+      const triggerDrift = quota.unlimited
+        ? ' Dev unlimited is on, but the database trigger still enforces the cap — apply docs/sql/55-coach-dev-unlimited-restore.sql.'
+        : ''
       return NextResponse.json(
-        { error: mapped.error, code: mapped.code, quota },
+        { error: `${mapped.error}${triggerDrift}`, code: mapped.code, quota },
         { status: mapped.status },
       )
     }
