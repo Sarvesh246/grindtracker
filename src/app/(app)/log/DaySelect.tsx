@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient, getClientUser } from '@/lib/supabase/client'
 import { useTheme } from '@/lib/contexts/ThemeContext'
-import { Exercise, type DayCategory, UserRotation, CompleteSessionResult, UserStats } from '@/lib/types'
+import { Exercise, type DayCategory, UserRotation } from '@/lib/types'
 import {
   NAMED_DAY_COLORS,
   categoryColorKey,
@@ -14,14 +14,10 @@ import {
   resolveDayTextColor,
 } from '@/lib/utils/dayColors'
 import { effectiveSequence, nextDay as nextDayFromRotation, orderedDayKeys, resolveRotationIndex, type LastCompletion } from '@/lib/utils/rotation'
-import { advanceRotationAfterFinish, type PointerSnapshot } from '@/lib/utils/rotationStore'
+import { completeSession } from '@/lib/utils/completeSession'
 import { deleteIncompleteSessions } from '@/lib/utils/sessions'
 import { flushQueuedOps, getQueuedOps, clearQueuedOpsForSession } from '@/lib/utils/offlineQueue'
-import { checkAndAwardBadges } from '@/lib/utils/badges'
-import { formatShortDate, localDateKey } from '@/lib/utils/formatting'
-import {
-  writeFinishUndoToken,
-} from '@/lib/utils/finishUndo'
+import { formatShortDate } from '@/lib/utils/formatting'
 import WorkoutManager from './WorkoutManager'
 import FinishUndoBanner from '@/components/FinishUndoBanner'
 import DayIcon from '@/components/DayIcon'
@@ -238,48 +234,14 @@ export default function DaySelect() {
         return
       }
 
-      const { data, error } = await supabase.rpc('complete_session', {
-        p_session_id: session.id,
-        p_local_date: localDateKey(new Date()),
-        p_note: null,
-        p_start_hour: new Date(session.started_at).getHours(),
-      })
-      if (error || !data) throw error ?? new Error('Save failed')
-      const result = data as CompleteSessionResult
-
-      // null (not -1) means "never actually advanced" — see FinishUndoToken.
-      let prevPointer: PointerSnapshot | null = null
-      try {
-        prevPointer = await advanceRotationAfterFinish(supabase, user.id, session.day_type, session.id)
-      } catch {
-        // Rotation is a non-critical convenience; swallow and move on.
-      }
-
-      writeFinishUndoToken({
-        sessionId: session.id,
-        day: session.day_type,
+      const outcome = await completeSession(supabase, {
         userId: user.id,
-        xpEarned: result.xp_earned ?? 0,
-        prevRotationIndex: prevPointer?.index ?? null,
-        prevRotationDay: prevPointer?.day ?? null,
+        sessionId: session.id,
+        dayType: session.day_type,
+        note: null,
+        startHour: new Date(session.started_at).getHours(),
       })
-
-      try {
-        await checkAndAwardBadges(
-          supabase,
-          user.id,
-          {
-            user_id: user.id,
-            xp_total: result.xp_total,
-            level: result.level,
-            current_streak: result.current_streak,
-            longest_streak: result.longest_streak,
-            last_workout_date: result.last_workout_date,
-            total_workouts: result.total_workouts,
-            updated_at: new Date().toISOString(),
-          } as UserStats,
-        )
-      } catch { /* non-critical */ }
+      if (!outcome.ok) throw outcome.error
 
       setDiscardConfirmId(null)
       setOpenSessionsOverride(prev => (prev ?? openSessions).filter(s => s.id !== session.id))
@@ -287,6 +249,10 @@ export default function DaySelect() {
       void load()
     } catch {
       flashToast('Could not save workout. Check your connection and try again.')
+      // The write may have committed with the response lost; reload so the
+      // open-session list reflects the server.
+      markAppDataStale()
+      void load()
     } finally {
       setOpenBusyId(null)
     }

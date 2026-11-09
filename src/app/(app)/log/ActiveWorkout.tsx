@@ -5,13 +5,12 @@ import { createClient, getClientUser } from '@/lib/supabase/client'
 import { useDemoMode } from '@/lib/contexts/DemoModeContext'
 import { demoSafeClient } from '@/lib/demoMode/demoSafeSupabase'
 import { Exercise } from '@/lib/types'
-import { checkAndAwardBadges, ALL_BADGES, type BadgeDefinition } from '@/lib/utils/badges'
+import { ALL_BADGES, type BadgeDefinition } from '@/lib/utils/badges'
 import BadgeUnlockOverlay from '@/components/BadgeUnlockOverlay'
-import { localDateKey } from '@/lib/utils/formatting'
 import { haptic } from '@/lib/utils/haptics'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { deleteIncompleteSessions } from '@/lib/utils/sessions'
-import { advanceRotationAfterFinish, type PointerSnapshot } from '@/lib/utils/rotationStore'
+import { completeSession } from '@/lib/utils/completeSession'
 import {
   queueOp,
   isTransientError,
@@ -26,7 +25,6 @@ import {
 import { reportError } from '@/lib/utils/reportError'
 import { planWarmupRamp } from '@/lib/utils/warmupSets'
 import { formatWarmupPercentsList, percentsToFractions, readWarmupPercents } from '@/lib/utils/warmupPrefs'
-import type { UserStats, CompleteSessionResult } from '@/lib/types'
 import {
   emptySetState,
   findCarryReps,
@@ -62,10 +60,7 @@ import ExercisePickerSheet, { EXERCISE_PICKER_EXIT_MS } from './ExercisePickerSh
 import PlateCalculator from '@/components/PlateCalculator'
 import CompletionModal from './CompletionModal'
 import RenameExerciseDialog from './RenameExerciseDialog'
-import {
-  writeFinishUndoToken,
-  performFinishUndo,
-} from '@/lib/utils/finishUndo'
+import { performFinishUndo } from '@/lib/utils/finishUndo'
 import { markAppDataStale } from '@/lib/cache/appDataCache'
 import { useFeatureTooltip } from '@/components/onboarding/useFeatureTooltip'
 import Tooltip from '@/components/onboarding/Tooltip'
@@ -2646,107 +2641,30 @@ export default function ActiveWorkout({ day }: { day: string }) {
       const user = await getClientUser(supabase)
       if (!user) { router.push('/login'); return }
 
-      // Completion is a single server-side transaction.
-      //
-      // XP, level, streak and PR flags used to be computed here and written
-      // straight to `user_stats` — which meant anyone could set their own XP
-      // from devtools. The server now derives all of it from the session logs
-      // themselves (docs/sql/11-server-side-xp.sql) and the client has no
-      // UPDATE privilege on `user_stats` at all. We send only the local
-      // calendar date, because Postgres can't know the user's timezone and
-      // streaks depend on it.
-      const { data: finishData, error: finishError } = await runWithRetry(() =>
-        supabase.rpc('complete_session', {
-          p_session_id: sessionId,
-          p_local_date: localDateKey(new Date()),
-          p_note: workoutNote || null,
-          p_start_hour: startedAt.getHours(),
-        }),
-      )
-
-      let result: CompleteSessionResult
-      if (finishError || !finishData) {
-        // The RPC is not naturally idempotent across a lost response: if the
-        // first attempt committed server-side but the reply never arrived,
-        // runWithRetry's second call correctly gets refused with
-        // SESSION_NOT_OPEN (the session is already completed). That specific
-        // error means success, not failure — re-read what the server already
-        // settled on instead of telling the user it failed.
-        const alreadyDone = String(
-          (finishError as { message?: string } | null)?.message ?? ''
-        ).includes('SESSION_NOT_OPEN')
-
-        if (!alreadyDone) {
-          console.error('[grind] complete_session failed', finishError, finishData)
-          const msg = String((finishError as { message?: string } | null)?.message ?? '')
-          if (msg.includes('NO_WORKING_SETS')) {
-            setResumeToast('Log at least one set with weight and reps before finishing.')
-            setTimeout(() => setResumeToast(null), 5000)
-            return
-          }
-          throw finishError ?? new Error('Finish failed')
+      // Completion (server-side transaction, lost-response recovery, rotation,
+      // undo token, badges) lives in completeSession so every finish path shares it.
+      const outcome = await completeSession(supabase, {
+        userId: user.id,
+        sessionId,
+        dayType: day,
+        note: workoutNote || null,
+        startHour: startedAt.getHours(),
+      })
+      if (!outcome.ok) {
+        if (outcome.reason === 'no_working_sets') {
+          setResumeToast('Log at least one set with weight and reps before finishing.')
+          setTimeout(() => setResumeToast(null), 5000)
+          return
         }
-
-        const [{ data: sessionRow }, { data: statsRow }, { data: prRows }] = await Promise.all([
-          supabase.from('sessions').select('xp_earned').eq('id', sessionId).maybeSingle(),
-          supabase.from('user_stats').select('*').eq('user_id', user.id).maybeSingle(),
-          // The RPC already flagged is_pr on session_logs server-side before its
-          // response was lost — re-read it directly instead of reporting 0 PRs
-          // for a completion that genuinely earned some.
-          supabase
-            .from('session_logs')
-            .select('exercise_id, weight, reps, exercises(name)')
-            .eq('session_id', sessionId)
-            .eq('is_pr', true),
-        ])
-        if (!sessionRow || !statsRow) throw finishError ?? new Error('Finish failed')
-
-        type PrLogRow = {
-          exercise_id: string
-          weight: number | null
-          reps: number | null
-          exercises: { name: string } | { name: string }[] | null
-        }
-        // List EVERY PR set (not one-per-exercise) so the modal matches pr_count.
-        const recoveredPrs: { name: string; weight: number; reps: number }[] = []
-        for (const row of (prRows ?? []) as PrLogRow[]) {
-          if (row.weight === null || row.reps === null) continue
-          const name = Array.isArray(row.exercises)
-            ? row.exercises[0]?.name
-            : row.exercises?.name
-          recoveredPrs.push({
-            name: name || exercises.find(e => e.id === row.exercise_id)?.name || 'Exercise',
-            weight: row.weight,
-            reps: row.reps,
-          })
-        }
-        recoveredPrs.sort((a, b) => b.weight * b.reps - a.weight * a.reps)
-
-        result = {
-          xp_earned: sessionRow.xp_earned,
-          xp_total: statsRow.xp_total,
-          prev_level: statsRow.level,
-          level: statsRow.level,
-          // Can't recover whether THIS completion leveled the user up once the
-          // original response is lost; under-reporting a level-up banner is a
-          // harmless cosmetic miss, unlike mis-reporting XP.
-          leveled_up: false,
-          current_streak: statsRow.current_streak,
-          longest_streak: statsRow.longest_streak,
-          last_workout_date: statsRow.last_workout_date,
-          total_workouts: statsRow.total_workouts,
-          pr_count: recoveredPrs.length,
-          pr_exercises: recoveredPrs,
-        }
-      } else {
-        result = finishData as CompleteSessionResult
+        throw outcome.error
       }
+      const { result, newBadges } = outcome
 
       const xpEarned = result.xp_earned
       const prCount = result.pr_count
       // Prefer the RPC list, but if it under-reports vs live isPR badges (older
       // SQL deduped to one row per exercise), fall back to what the user saw.
-      const serverPrExercises = result.pr_exercises ?? []
+      const serverPrExercises = outcome.prExercises
       const clientPrExercises = Object.entries(logs)
         .filter(([, l]) => l.isPR && l.checked && !l.skipped)
         .map(([key, l]) => {
@@ -2764,49 +2682,6 @@ export default function ActiveWorkout({ day }: { day: string }) {
           : clientPrExercises
       const newLevel = result.level
       const leveledUp = result.leveled_up
-
-      // Authoritative post-completion stats, for the badge check below.
-      const updatedStats = {
-        xp_total: result.xp_total,
-        level: result.level,
-        current_streak: result.current_streak,
-        longest_streak: result.longest_streak,
-        last_workout_date: result.last_workout_date,
-        total_workouts: result.total_workouts,
-        updated_at: new Date().toISOString(),
-      }
-
-      // Advance the rotation pointer so the home page suggests the next day
-      // after this one. Best-effort — a failure here must never block
-      // completion.
-      // null (not -1) means "never actually advanced" — see FinishUndoToken.
-      let prevPointer: PointerSnapshot | null = null
-      try {
-        prevPointer = await advanceRotationAfterFinish(supabase, user.id, day, sessionId)
-      } catch {
-        // Rotation is a non-critical convenience; swallow and move on.
-      }
-
-      writeFinishUndoToken({
-        sessionId,
-        day,
-        userId: user.id,
-        xpEarned,
-        prevRotationIndex: prevPointer?.index ?? null,
-        prevRotationDay: prevPointer?.day ?? null,
-      })
-
-      // Badge awards are a bonus — never fail an already-saved finish over them.
-      let newBadges: string[] = []
-      try {
-        newBadges = await checkAndAwardBadges(
-          supabase,
-          user.id,
-          { user_id: user.id, ...updatedStats } as UserStats,
-        )
-      } catch {
-        newBadges = []
-      }
 
       if (newBadges.length > 0) {
         const resolved = newBadges

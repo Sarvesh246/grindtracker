@@ -4,13 +4,12 @@ import { useRouter } from 'next/navigation'
 import { createClient, getClientUser } from '@/lib/supabase/client'
 import { useDemoMode } from '@/lib/contexts/DemoModeContext'
 import { demoSafeClient } from '@/lib/demoMode/demoSafeSupabase'
-import { Session, UserStats, CompleteSessionResult } from '@/lib/types'
+import { Session, UserStats } from '@/lib/types'
 import { getLevel, getXpInCurrentLevel, getXpRequiredForLevel, getXpToNextLevel } from '@/lib/utils/gamification'
 import { formatShortDate, localDateKey } from '@/lib/utils/formatting'
 import { homeGreeting } from '@/lib/utils/homeGreeting'
 import { overdueDays } from '@/lib/utils/rotation'
 import {
-  advanceRotationAfterFinish,
   loadRotationState,
   restoreRotationPointer,
   skipUpNext,
@@ -19,7 +18,7 @@ import {
 } from '@/lib/utils/rotationStore'
 import { deleteIncompleteSessions } from '@/lib/utils/sessions'
 import { flushQueuedOps, getQueuedOps, clearQueuedOpsForSession } from '@/lib/utils/offlineQueue'
-import { checkAndAwardBadges } from '@/lib/utils/badges'
+import { completeSession } from '@/lib/utils/completeSession'
 import { uncoveredDatesBetween, skipTodayState, restLeftThisWeekLabel, weekStart, sameDateKeyList, type RestDayOpts } from '@/lib/utils/restDays'
 import WorkoutCalendar from '@/components/WorkoutCalendar'
 import FinishUndoBanner from '@/components/FinishUndoBanner'
@@ -33,9 +32,6 @@ import DayIcon from '@/components/DayIcon'
 import { markAppDataStale } from '@/lib/cache/appDataCache'
 import { readLastKnownStats, writeLastKnownStats } from '@/lib/cache/lastKnownStats'
 import { reportError } from '@/lib/utils/reportError'
-import {
-  writeFinishUndoToken,
-} from '@/lib/utils/finishUndo'
 import { logDayHref } from '@/lib/utils/dayKeys'
 import TodayLabel from '@/components/TodayLabel'
 
@@ -587,46 +583,14 @@ export default function HomeDashboard({
         return
       }
 
-      const { data, error } = await supabase.rpc('complete_session', {
-        p_session_id: sessionId,
-        p_local_date: localDateKey(new Date()),
-        p_note: null,
-        p_start_hour: new Date(session.started_at).getHours(),
-      })
-      if (error || !data) throw error ?? new Error('Save failed')
-      const result = data as CompleteSessionResult
-
-      // null means "never actually advanced" — see FinishUndoToken.
-      let prevPointer: PointerSnapshot | null = null
-      try {
-        prevPointer = await advanceRotationAfterFinish(supabase, user.id, dayType, sessionId)
-      } catch { /* non-critical */ }
-
-      writeFinishUndoToken({
-        sessionId,
-        day: dayType,
+      const outcome = await completeSession(supabase, {
         userId: user.id,
-        xpEarned: result.xp_earned ?? 0,
-        prevRotationIndex: prevPointer?.index ?? null,
-        prevRotationDay: prevPointer?.day ?? null,
+        sessionId,
+        dayType,
+        note: null,
+        startHour: new Date(session.started_at).getHours(),
       })
-
-      try {
-        await checkAndAwardBadges(
-          supabase,
-          user.id,
-          {
-            user_id: user.id,
-            xp_total: result.xp_total,
-            level: result.level,
-            current_streak: result.current_streak,
-            longest_streak: result.longest_streak,
-            last_workout_date: result.last_workout_date,
-            total_workouts: result.total_workouts,
-            updated_at: new Date().toISOString(),
-          } as UserStats,
-        )
-      } catch { /* non-critical */ }
+      if (!outcome.ok) throw outcome.error
 
       setDiscardConfirmId(null)
       markSessionClosed(sessionId)
@@ -635,6 +599,10 @@ export default function HomeDashboard({
       router.refresh()
     } catch {
       flashToast('Could not save workout. Check your connection and try again.')
+      // The write may have committed with the response lost; refresh so the
+      // resume banner reflects the server instead of staying stale.
+      markAppDataStale('/home')
+      router.refresh()
     } finally {
       busySessionIdRef.current = null
       setBusySessionId(null)
