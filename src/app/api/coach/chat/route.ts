@@ -11,6 +11,7 @@ import {
 import {
   COACH_DEFAULT_MODEL,
   COACH_MAX_HISTORY_MESSAGES,
+  COACH_MAX_HISTORY_CHARS,
   COACH_MAX_MESSAGE_CHARS,
   buildCoachContext,
   formatRecentActions,
@@ -103,7 +104,13 @@ function sanitizeHistory(raw: unknown): HistoryItem[] {
     items.push({ role, content: trimmed })
   }
   // Keep the tail only — client shouldn't ship whole archives.
-  return items.slice(-COACH_MAX_HISTORY_MESSAGES)
+  const tail = items.slice(-COACH_MAX_HISTORY_MESSAGES)
+  // ...and cap the combined size: drop the oldest turns until it fits.
+  let total = tail.reduce((sum, m) => sum + m.content.length, 0)
+  while (tail.length > 0 && total > COACH_MAX_HISTORY_CHARS) {
+    total -= tail.shift()!.content.length
+  }
+  return tail
 }
 
 export async function POST(request: Request) {

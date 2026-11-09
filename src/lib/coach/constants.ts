@@ -38,6 +38,15 @@ export const COACH_MAX_MESSAGE_CHARS = 12000
 /** Max prior turns (user+assistant pairs count as 2) accepted from the client. */
 export const COACH_MAX_HISTORY_MESSAGES = 12
 
+/**
+ * Combined character budget for the prior turns accepted from the client.
+ * History comes from the request body, so without a total cap a caller could
+ * ship 12 messages of up to COACH_MAX_MESSAGE_CHARS each (~144k chars of model
+ * input per request). Oldest turns are dropped first until this fits. Two full
+ * messages' worth is enough for normal chat plus a pasted training week.
+ */
+export const COACH_MAX_HISTORY_CHARS = 24000
+
 // Prefer a current stable Flash-Lite pin. gemini-2.5-flash-lite started
 // 404ing "no longer available to new users"; gemini-flash-lite-latest also
 // works but can hot-swap behavior. Override anytime with GEMINI_MODEL.

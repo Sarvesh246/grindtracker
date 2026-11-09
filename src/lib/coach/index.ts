@@ -11,6 +11,7 @@ export {
   COACH_DAILY_LIMIT,
   COACH_DEFAULT_MODEL,
   COACH_MAX_HISTORY_MESSAGES,
+  COACH_MAX_HISTORY_CHARS,
   COACH_MAX_MESSAGE_CHARS,
 } from './constants'
 export { buildCoachContext, type CoachContext, type CoachUnitPreference } from './buildContext'
