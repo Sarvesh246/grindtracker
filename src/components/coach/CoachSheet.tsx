@@ -333,6 +333,12 @@ export default function CoachSheet() {
   const velY = useRef(0)
   const pullYRef = useRef(0)
   const sheetH = useRef(0)
+  /** Mirror of `sheetH` for render; written together with the ref. */
+  const [sheetHState, setSheetHState] = useState(0)
+  const writeSheetH = (h: number) => {
+    sheetH.current = h
+    setSheetHState(h)
+  }
   const settleRaf = useRef<number | null>(null)
   /** Keep drag offset through exit so the sheet doesn't jump before fade-out. */
   const [gestureDismissY, setGestureDismissY] = useState(0)
@@ -427,23 +433,32 @@ export default function CoachSheet() {
   // Clear dismiss leftovers on the rising edge of `open` only — never while a
   // fling is in progress (open is still true then, and wiping the latch
   // re-enabled coach-sheet-out → middle flash).
-  const wasOpenRef = useRef(open)
-  if (open && !wasOpenRef.current) {
-    gestureDismissActiveRef.current = false
-    if (gestureDismissActive) setGestureDismissActive(false)
-    if (gestureDismissY !== 0) setGestureDismissY(0)
-    if (dismissBackdropOpacity != null) setDismissBackdropOpacity(null)
-    if (backdropOut) setBackdropOut(false)
-    if (pullDismissing) setPullDismissing(false)
-    if (dragFadeOut) setDragFadeOut(false)
-    if (morphLock) setMorphLock(null)
-    if (sizeMorphing) setSizeMorphing(false)
-    if (pullPhase === 'idle' && pullY !== 0) setPullY(0)
-    // Fresh open — allow enter keyframes once (sheet state survives unmount
-    // of the portal contents via `mounted`, so this must be re-armed).
-    setPlayEnter(true)
+  const [prevOpen, setPrevOpen] = useState(open)
+  if (prevOpen !== open) {
+    setPrevOpen(open)
+    if (open) {
+      // The sync ref latch is cleared by the layout effect below, which
+      // mirrors `gestureDismissActive` into the ref.
+      if (gestureDismissActive) setGestureDismissActive(false)
+      if (gestureDismissY !== 0) setGestureDismissY(0)
+      if (dismissBackdropOpacity != null) setDismissBackdropOpacity(null)
+      if (backdropOut) setBackdropOut(false)
+      if (pullDismissing) setPullDismissing(false)
+      if (dragFadeOut) setDragFadeOut(false)
+      if (morphLock) setMorphLock(null)
+      if (sizeMorphing) setSizeMorphing(false)
+      if (pullPhase === 'idle' && pullY !== 0) setPullY(0)
+      // Fresh open — allow enter keyframes once (sheet state survives unmount
+      // of the portal contents via `mounted`, so this must be re-armed).
+      setPlayEnter(true)
+    }
   }
-  wasOpenRef.current = open
+  // The ref is the synchronous latch for event handlers; state is what render
+  // reads. Every set of the ref is paired with the state in the same tick, and
+  // this keeps the ref following state for the reset on reopen.
+  useLayoutEffect(() => {
+    gestureDismissActiveRef.current = gestureDismissActive
+  }, [gestureDismissActive])
   // Idle reopen leftovers (e.g. interrupted non-gesture close).
   if (
     activelyOpen &&
@@ -493,11 +508,12 @@ export default function CoachSheet() {
   // Drop enter classes after the open spring so later size swaps stay quiet.
   useEffect(() => {
     if (!open || closing || !playEnter) return
-    if (reduceMotion) {
-      setPlayEnter(false)
-      return
-    }
-    const t = window.setTimeout(() => setPlayEnter(false), ENTER_MS)
+    // Reduced motion drops the enter classes on the next task instead of
+    // after the spring (setState stays out of the effect body).
+    const t = window.setTimeout(
+      () => setPlayEnter(false),
+      reduceMotion ? 0 : ENTER_MS,
+    )
     return () => window.clearTimeout(t)
   }, [open, closing, playEnter, reduceMotion])
 
@@ -907,7 +923,7 @@ export default function CoachSheet() {
         setMorphLock(null)
       }
 
-      sheetH.current = boxH
+      writeSheetH(boxH)
       const dismissAt = sheetDismissThreshold(
         sheetH.current || sheetRef.current?.offsetHeight || 400,
       )
@@ -1094,7 +1110,7 @@ export default function CoachSheet() {
       pullYRef.current = liveY
       setPullY(liveY)
       if (liveY !== 0) setPullPhase('dragging')
-      sheetH.current = sheetRef.current?.offsetHeight ?? 400
+      writeSheetH(sheetRef.current?.offsetHeight ?? 400)
       try {
         ;(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId)
       } catch {
@@ -1266,8 +1282,7 @@ export default function CoachSheet() {
   const dragging = pullPhase === 'dragging'
   const settling = pullPhase === 'settling'
   // Latched for the entire dismiss→unmount window — never drop mid-exit.
-  const fromDragDismiss =
-    gestureDismissActive || gestureDismissActiveRef.current
+  const fromDragDismiss = gestureDismissActive
 
   /**
    * Compact drag-up / page drag-down: absolute morphing box (height + top),
@@ -1376,7 +1391,7 @@ export default function CoachSheet() {
 
   // Dim the scrim only on a real dismiss path — never while settling a minimize
   // (that caused blur on→off→on when compact remounted the backdrop).
-  const dismissAtLive = sheetDismissThreshold(sheetH.current || 400)
+  const dismissAtLive = sheetDismissThreshold(sheetHState || 400)
   const liveDismissScrim =
     pullDismissing ||
     fromDragDismiss ||
