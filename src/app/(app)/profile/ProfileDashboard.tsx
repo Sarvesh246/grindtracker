@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useRef, useMemo, type CSSProperties } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { createClient, getClientUser } from '@/lib/supabase/client'
 import { getLevel, getXpInCurrentLevel, getXpRequiredForLevel, getXpToNextLevel } from '@/lib/utils/gamification'
 import { localDateKey } from '@/lib/utils/formatting'
@@ -12,6 +13,7 @@ import { useUnit } from '@/lib/contexts/UnitContext'
 import { useToast } from '@/lib/contexts/ToastContext'
 import { useTour, type TourStep } from '@/components/onboarding/Tour'
 import FlameIcon from '@/components/FlameIcon'
+import { readLastKnownStats } from '@/lib/cache/lastKnownStats'
 
 function BoltIcon({ size = 24, color = 'var(--accent-text)' }: { size?: number; color?: string }) {
   return (
@@ -57,6 +59,11 @@ interface Props {
    *  src/lib/demoMode/fakeData.ts) — disables username editing so a save
    *  can never overwrite the real account with the fake handle. */
   demoMode?: boolean
+  /** The server could not read `user_stats` (failed after retry, or the whole
+   *  page load rejected). `stats` is then a placeholder, not the user's data. */
+  statsUnavailable?: boolean
+  /** Owner id, to key the last-known-stats cache. */
+  userId?: string
 }
 
 export default function ProfileDashboard({
@@ -64,15 +71,45 @@ export default function ProfileDashboard({
   avatarUrl,
   username: initialUsername,
   joinedAt,
-  stats,
+  stats: serverStats,
   earnedBadgeIds,
   totalPRs,
   totalSets,
   activeDayTimestamps = [],
   daysActive,
   demoMode = false,
+  statsUnavailable = false,
+  userId,
 }: Props) {
+  const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
+  // Failed stats read: paint the user's last-known numbers from the cache when
+  // there are any (same recovery as Home); otherwise show a retry card instead
+  // of level 1 and zeros.
+  const [cachedStats, setCachedStats] = useState<StatsShape | null>(null)
+  useEffect(() => {
+    if (!statsUnavailable || demoMode || !userId) return
+    void (async () => {
+      const cached = readLastKnownStats(userId)
+      if (cached) {
+        setCachedStats({
+          xp_total: cached.xp_total,
+          level: cached.level,
+          current_streak: cached.current_streak,
+          longest_streak: cached.longest_streak,
+          total_workouts: cached.total_workouts,
+        })
+      }
+    })()
+  }, [statsUnavailable, demoMode, userId])
+  const stats = statsUnavailable ? (cachedStats ?? serverStats) : serverStats
+  const statsMissing = statsUnavailable && !cachedStats
+  const [retryingStats, setRetryingStats] = useState(false)
+  function retryStats() {
+    setRetryingStats(true)
+    router.refresh()
+    setTimeout(() => setRetryingStats(false), 1500)
+  }
   const { fmt, unitLabel } = useUnit()
   const toast = useToast()
   const [tooltipBadgeId, setTooltipBadgeId] = useState<string | null>(null)
@@ -486,11 +523,12 @@ export default function ProfileDashboard({
             fontSize: '40px', color: 'var(--accent-text)',
             lineHeight: 1, flexShrink: 0,
           }}>
-            {level}
+            {statsMissing ? '\u2013' : level}
           </div>
         </div>
 
         {/* XP bar */}
+        {!statsMissing && (<>
         <div style={{
           width: '100%', height: '8px',
           backgroundColor: 'var(--border)',
@@ -513,9 +551,49 @@ export default function ProfileDashboard({
           <span>{xpInLevel} / {levelSize} XP</span>
           <span>{xpToNext} XP to Level {level + 1}</span>
         </div>
+        </>)}
       </div>
 
+      {statsMissing && (
+        <div style={{
+          backgroundColor: 'var(--surface)',
+          border: '1px solid var(--border)',
+          borderRadius: '12px',
+          padding: '16px',
+          marginBottom: '16px',
+        }}>
+          <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '4px' }}>
+            Couldn&rsquo;t load your stats
+          </div>
+          <div style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+            Your level and streak are safe &mdash; this is a connection hiccup, not a reset.
+          </div>
+          <button
+            onClick={retryStats}
+            disabled={retryingStats}
+            className="press"
+            style={{
+              marginTop: '14px',
+              width: '100%',
+              height: '40px',
+              backgroundColor: 'var(--surface-elevated)',
+              color: 'var(--text-primary)',
+              border: '1px solid var(--border)',
+              borderRadius: '10px',
+              fontFamily: 'var(--font-display)',
+              fontSize: '15px',
+              letterSpacing: '1px',
+              cursor: retryingStats ? 'default' : 'pointer',
+              opacity: retryingStats ? 0.6 : 1,
+            }}
+          >
+            {retryingStats ? 'RETRYING\u2026' : 'RETRY'}
+          </button>
+        </div>
+      )}
+
       {/* Streak section */}
+      {!statsMissing && (<>
       <div style={{ marginBottom: '16px' }}>
         <div style={{
           fontSize: '12px', color: 'var(--text-muted)',
@@ -605,6 +683,8 @@ export default function ProfileDashboard({
           ))}
         </div>
       </div>
+
+      </>)}
 
       <BodyWeightCard />
 

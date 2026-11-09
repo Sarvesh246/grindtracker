@@ -63,19 +63,25 @@ export default async function ProfilePage() {
           .maybeSingle(),
       { failed: r => r.error != null || r.data == null },
     ),
-    supabase.from('user_badges').select('badge_id, earned_at').eq('user_id', user.id),
-    supabase
-      .from('session_logs')
-      .select('sessions!inner(user_id)', { count: 'exact', head: true })
-      .eq('is_pr', true)
-      .eq('sessions.user_id', user.id),
-    supabase
-      .from('session_logs')
-      .select('sessions!inner(user_id, completed_at)', { count: 'exact', head: true })
-      .eq('sessions.user_id', user.id)
-      .not('sessions.completed_at', 'is', null)
-      .eq('is_skipped', false)
-      .not('weight', 'is', null),
+    readWithRetry('profile:user_badges', () =>
+      supabase.from('user_badges').select('badge_id, earned_at').eq('user_id', user.id),
+    ),
+    readWithRetry('profile:totalPRs', () =>
+      supabase
+        .from('session_logs')
+        .select('sessions!inner(user_id)', { count: 'exact', head: true })
+        .eq('is_pr', true)
+        .eq('sessions.user_id', user.id),
+    ),
+    readWithRetry('profile:totalSets', () =>
+      supabase
+        .from('session_logs')
+        .select('sessions!inner(user_id, completed_at)', { count: 'exact', head: true })
+        .eq('sessions.user_id', user.id)
+        .not('sessions.completed_at', 'is', null)
+        .eq('is_skipped', false)
+        .not('weight', 'is', null),
+    ),
     supabase.rpc('grind_home_history', { p_lookback_days: 7 }),
     supabase.from('user_profiles').select('username, created_at').eq('id', user.id).maybeSingle(),
   ]).catch(err => {
@@ -99,6 +105,11 @@ export default async function ProfilePage() {
   const avatarUrl = user.user_metadata?.avatar_url ?? null
   const displayName = user.user_metadata?.full_name ?? user.email ?? 'Athlete'
   const rawStats = statsRes?.data
+  // A missing row is a failed read (every account is seeded one): either the
+  // read failed after its retry, or the whole Promise.all rejected. The
+  // dashboard recovers from the last-known cache or shows a retry card rather
+  // than painting level 1 and zeros.
+  const statsUnavailable = rawStats == null
   const stats = {
     xp_total: Number(rawStats?.xp_total ?? 0) || 0,
     level: Number(rawStats?.level ?? 1) || 1,
@@ -114,6 +125,8 @@ export default async function ProfilePage() {
       username={profileRes?.data?.username ?? null}
       joinedAt={profileRes?.data?.created_at ?? null}
       stats={stats}
+      statsUnavailable={statsUnavailable}
+      userId={user.id}
       earnedBadgeIds={Array.from(earnedSet)}
       totalPRs={prsRes?.count ?? 0}
       totalSets={setsRes?.count ?? 0}
