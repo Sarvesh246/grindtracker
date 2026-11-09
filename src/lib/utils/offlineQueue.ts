@@ -1,4 +1,5 @@
 import { SupabaseClient } from '@supabase/supabase-js'
+import { reportError } from '@/lib/utils/reportError'
 
 const STORAGE_KEY = 'grind_offline_set_queue_v2'
 
@@ -75,16 +76,58 @@ export function getQueuedOps(sessionId: string): QueuedOp[] {
 }
 
 /**
+ * Server-side sanity bounds on a logged set. These mirror the
+ * `session_logs_weight_sane` / `session_logs_reps_sane` CHECK constraints in
+ * `docs/sql/10-leaderboard-authz.sql` (weight 0–2000 lb canonical, reps 0–1000).
+ * Anything outside them can never be saved, so reject it before it is queued.
+ */
+export const MAX_SET_WEIGHT_LBS = 2000
+export const MAX_SET_REPS = 1000
+
+/**
+ * Is this a failure that may succeed if tried again later (network blip,
+ * server hiccup, expired token)? Anything else — a CHECK violation, an RLS
+ * denial, a guard trigger — is permanent: the server has understood the write
+ * and refused it, so queueing it would block Finish forever.
+ *
+ * postgrest-js reports failures as `{ message, details, hint, code }`; a
+ * failed fetch comes back with an empty `code`. The HTTP status lives on the
+ * response, but is honoured here if a caller attaches it.
+ */
+export function isTransientError(error: unknown): boolean {
+  if (error == null || typeof error !== 'object') return true
+  const e = error as { name?: unknown; code?: unknown; status?: unknown; message?: unknown }
+  if (error instanceof TypeError || e.name === 'TypeError' || e.name === 'AbortError') return true
+  if (typeof e.status === 'number') {
+    if (e.status === 408 || e.status === 429 || e.status >= 500) return true
+  }
+  const code = typeof e.code === 'string' ? e.code : ''
+  if (code === '') return true
+  // JWT expired: the client refreshes the token, so a retry can succeed.
+  if (code === 'PGRST301' || code === 'PGRST303') return true
+  if (typeof e.message === 'string' && /jwt expired/i.test(e.message)) return true
+  // PostgREST could not reach / get a connection from the database.
+  if (/^PGRST00[0-3]$/.test(code)) return true
+  return false
+}
+
+/**
  * Replay every queued op for a session, oldest first. Returns the slots that
  * synced successfully so the caller can clear their local "pending sync"
- * indicator. Always writes is_pr: false — server recomputes on finish.
+ * indicator, and the slots the server permanently refused (dropped from the
+ * queue and reported) so the caller can un-check them.
+ * Always writes is_pr: false — server recomputes on finish.
  */
 export async function flushQueuedOps(
   sessionId: string,
   supabase: SupabaseClient,
-): Promise<{ exerciseId: string; setNumber: number }[]> {
+): Promise<{
+  synced: { exerciseId: string; setNumber: number }[]
+  rejected: { exerciseId: string; setNumber: number }[]
+}> {
   const pending = getQueuedOps(sessionId).sort((a, b) => a.queuedAt - b.queuedAt)
   const synced: { exerciseId: string; setNumber: number }[] = []
+  const rejected: { exerciseId: string; setNumber: number }[] = []
   for (const op of pending) {
     const { error } =
       op.kind === 'upsert'
@@ -117,7 +160,18 @@ export async function flushQueuedOps(
         removeQueuedOp(op.sessionId, op.exerciseId, op.setNumber)
         synced.push({ exerciseId: op.exerciseId, setNumber: op.setNumber })
       }
+    } else if (!isTransientError(error)) {
+      const latest = readQueue().find(q => sameSlot(q, op))
+      if (!latest || latest.queuedAt === op.queuedAt) {
+        removeQueuedOp(op.sessionId, op.exerciseId, op.setNumber)
+        reportError(new Error(`Queued set rejected: ${error.message ?? 'unknown'}`), {
+          operation: 'flushQueuedOps',
+          route: '/log',
+          extra: { code: error.code, kind: op.kind },
+        })
+        rejected.push({ exerciseId: op.exerciseId, setNumber: op.setNumber })
+      }
     }
   }
-  return synced
+  return { synced, rejected }
 }

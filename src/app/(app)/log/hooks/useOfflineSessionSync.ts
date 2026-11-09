@@ -3,7 +3,7 @@
 import { useCallback, useEffect, type Dispatch, type SetStateAction } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { flushQueuedOps, getQueuedOps } from '@/lib/utils/offlineQueue'
-import type { LogMap } from '../sessionLogState'
+import { applyFlushResult, type LogMap } from '../sessionLogState'
 
 /**
  * Replay queued set writes on mount and whenever the browser comes back online.
@@ -15,16 +15,9 @@ export function useOfflineSessionSync(
   setLogs: Dispatch<SetStateAction<LogMap>>,
 ) {
   const applySynced = useCallback(
-    (synced: { exerciseId: string; setNumber: number }[]) => {
-      if (synced.length === 0) return
-      setLogs(prev => {
-        const next = { ...prev }
-        for (const { exerciseId, setNumber } of synced) {
-          const key = `${exerciseId}-${setNumber}`
-          if (next[key]) next[key] = { ...next[key], pendingSync: false }
-        }
-        return next
-      })
+    (result: Awaited<ReturnType<typeof flushQueuedOps>>) => {
+      if (result.synced.length === 0 && result.rejected.length === 0) return
+      setLogs(prev => applyFlushResult(prev, result))
     },
     [setLogs],
   )

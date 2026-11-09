@@ -14,6 +14,9 @@ import { deleteIncompleteSessions } from '@/lib/utils/sessions'
 import { advanceRotationAfterFinish, type PointerSnapshot } from '@/lib/utils/rotationStore'
 import {
   queueOp,
+  isTransientError,
+  MAX_SET_WEIGHT_LBS,
+  MAX_SET_REPS,
   flushQueuedOps,
   getQueuedOps,
   removeQueuedOp,
@@ -43,6 +46,7 @@ import {
   originalDayIdsFromCatalog,
   extraHasWorkingSet,
   shouldPersistSessionExtra,
+  applyFlushResult,
   type LogMap,
   type SetState,
 } from './sessionLogState'
@@ -131,6 +135,8 @@ async function runWithRetry<R extends { error: unknown }>(
     } catch (err) {
       result = { error: err } as R
     }
+    // The server understood and refused this write; retrying can't change that.
+    if (!isTransientError(result.error)) return result
     if (attempt < attempts - 1) {
       await new Promise(resolve => setTimeout(resolve, 400 * 2 ** attempt))
     }
@@ -423,16 +429,13 @@ export default function ActiveWorkout({ day }: { day: string }) {
   useEffect(() => {
     if (!sessionId) return
     async function flush() {
-      const synced = await flushQueuedOps(sessionId!, supabase)
-      if (synced.length === 0) return
-      setLogs(prev => {
-        const next = { ...prev }
-        for (const { exerciseId, setNumber } of synced) {
-          const key = `${exerciseId}-${setNumber}`
-          if (next[key]) next[key] = { ...next[key], pendingSync: false }
-        }
-        return next
-      })
+      const result = await flushQueuedOps(sessionId!, supabase)
+      if (result.synced.length === 0 && result.rejected.length === 0) return
+      setLogs(prev => applyFlushResult(prev, result))
+      if (result.rejected.length > 0) {
+        setResumeToast("Couldn't save that set — check the weight and reps.")
+        setTimeout(() => setResumeToast(null), 4000)
+      }
     }
     flush()
     window.addEventListener('online', flush)
@@ -860,20 +863,19 @@ export default function ActiveWorkout({ day }: { day: string }) {
 
   async function retryPendingSync() {
     if (!sessionId) return
-    const synced = await flushQueuedOps(sessionId, supabase)
-    if (synced.length === 0) {
+    const result = await flushQueuedOps(sessionId, supabase)
+    if (result.rejected.length > 0) {
+      setLogs(prev => applyFlushResult(prev, result))
+      setResumeToast("Couldn't save that set — check the weight and reps.")
+      setTimeout(() => setResumeToast(null), 4000)
+      return
+    }
+    if (result.synced.length === 0) {
       setResumeToast('Still waiting for a connection…')
       setTimeout(() => setResumeToast(null), 3000)
       return
     }
-    setLogs(prev => {
-      const next = { ...prev }
-      for (const { exerciseId, setNumber } of synced) {
-        const key = `${exerciseId}-${setNumber}`
-        if (next[key]) next[key] = { ...next[key], pendingSync: false }
-      }
-      return next
-    })
+    setLogs(prev => applyFlushResult(prev, result))
   }
 
   function totalSets(): number {
@@ -988,6 +990,12 @@ export default function ActiveWorkout({ day }: { day: string }) {
       if (repsStr === '') return
       const reps = parseInt(repsStr, 10)
       if (!Number.isFinite(reps)) return
+      // Values the database CHECKs would refuse can never sync - reject them
+      // before the optimistic commit rather than queueing them as "offline".
+      if (weight > MAX_SET_WEIGHT_LBS || reps < 0 || reps > MAX_SET_REPS) {
+        showSetRejectedToast()
+        return
+      }
 
       const prevBestVolume = normalizePriorVolume(baselineBestVolumesRef.current[exerciseId])
       const volume = weight * reps
@@ -1048,6 +1056,15 @@ export default function ActiveWorkout({ day }: { day: string }) {
           if (!saveError && saved?.id) {
             void supabase.from('session_logs').delete().eq('id', saved.id)
           }
+          return
+        }
+        if (saveError && !isTransientError(saveError)) {
+          // The server refused this set outright; it will never sync. Put the
+          // row back to how it was before the tap instead of queueing it.
+          notifySetRejected(saveError, 'handleCheck')
+          if (restTimer.exerciseId === exerciseId) restTimer.stop()
+          setUndoState(prev => (prev?.key === key ? null : prev))
+          restoreLogEntries(exerciseId, { [key]: logEntry }, [key])
           return
         }
         if (saveError) {
@@ -1185,8 +1202,17 @@ export default function ActiveWorkout({ day }: { day: string }) {
       .eq('exercise_id', exerciseId)
       .eq('set_number', setNumber)
 
+    if (error && !isTransientError(error)) {
+      // The server refused the delete: the set is still saved there, so keep
+      // it checked rather than showing a state that will never sync.
+      notifySetRejected(error, 'handleUndo')
+      if (previous) restoreLogEntries(exerciseId, { [key]: previous }, [key])
+      return
+    }
     if (error) {
       // Re-queue a delete so the row still gets cleared when back online.
+      // Timestamp inside a click-triggered async handler, not render.
+      // eslint-disable-next-line react-hooks/purity
       queueOp({ kind: 'delete', sessionId, exerciseId, setNumber, queuedAt: Date.now() })
       setResumeToast('Undo saved on this device — will sync once back online.')
       setTimeout(() => setResumeToast(null), 4000)
@@ -1227,6 +1253,13 @@ export default function ActiveWorkout({ day }: { day: string }) {
       setTimeout(() => setResumeToast(null), 3000)
       return
     }
+    if (
+      (weight !== null && Number.isFinite(weight) && (weight < 0 || weight > MAX_SET_WEIGHT_LBS)) ||
+      (reps !== null && Number.isFinite(reps) && (reps < 0 || reps > MAX_SET_REPS))
+    ) {
+      showSetRejectedToast()
+      return
+    }
 
     // Badge eligibility pins to prior-session baseline (server volume-PR rules).
     // Session bests are recomputed below via bestVolumeFromLogs for display/undo.
@@ -1254,6 +1287,13 @@ export default function ActiveWorkout({ day }: { day: string }) {
       ),
     )
 
+    // A refusal from the server can never sync: leave the row in edit mode so
+    // the values can be corrected, and don't queue it.
+    if (error && !isTransientError(error)) {
+      notifySetRejected(error, 'handleSaveEdit')
+      return
+    }
+
     // Even after retries, a real network drop shouldn't discard what the user
     // just typed — queue it (same fallback as handleCheck) and keep the edit
     // applied locally instead of leaving the row stuck in edit mode.
@@ -1270,6 +1310,8 @@ export default function ActiveWorkout({ day }: { day: string }) {
         note: logEntry.note || null,
         isSkipped: false,
         rpe,
+        // Same: only ever called from the save button's handler.
+        // eslint-disable-next-line react-hooks/purity
         queuedAt: Date.now(),
       })
       setResumeToast('Saved on this device — will sync once back online.')
@@ -1332,6 +1374,10 @@ export default function ActiveWorkout({ day }: { day: string }) {
         .eq('exercise_id', exerciseId)
         .eq('set_number', setNumber),
     )
+    if (error && !isTransientError(error)) {
+      notifySetRejected(error, 'persistSetMeta')
+      return
+    }
     if (error) {
       const weight = logEntry.weight !== '' ? parseFloat(logEntry.weight) : null
       const reps = logEntry.reps !== '' ? parseInt(logEntry.reps, 10) : null
@@ -1474,7 +1520,9 @@ export default function ActiveWorkout({ day }: { day: string }) {
             .eq('exercise_id', exerciseId)
             .eq('set_number', s),
         )
-        if (error) {
+        if (error && !isTransientError(error)) {
+          notifySetRejected(error, 'undoWarmupRamp')
+        } else if (error) {
           anyFailed = true
           // Same click-triggered async handler as handleDeleteSet, not render.
           // eslint-disable-next-line react-hooks/purity
@@ -1541,7 +1589,9 @@ export default function ActiveWorkout({ day }: { day: string }) {
             { onConflict: 'session_id,exercise_id,set_number' },
           ),
         )
-        if (error) {
+        if (error && !isTransientError(error)) {
+          notifySetRejected(error, 'handleDeleteSet')
+        } else if (error) {
           anyFailed = true
           queueOp({
             kind: 'upsert',
@@ -1578,7 +1628,9 @@ export default function ActiveWorkout({ day }: { day: string }) {
           .eq('exercise_id', exerciseId)
           .eq('set_number', total),
       )
-      if (deleteError) {
+      if (deleteError && !isTransientError(deleteError)) {
+        notifySetRejected(deleteError, 'handleDeleteSet')
+      } else if (deleteError) {
         anyFailed = true
         // Same click-triggered async handler as above, not render.
         // eslint-disable-next-line react-hooks/purity
@@ -1661,6 +1713,33 @@ export default function ActiveWorkout({ day }: { day: string }) {
     setTimeout(() => setResumeToast(null), 4000)
   }
 
+  function showSetRejectedToast() {
+    setResumeToast("Couldn't save that set — check the weight and reps.")
+    setTimeout(() => setResumeToast(null), 4000)
+  }
+
+  /** A permanent (non-network) failure: report it and tell the user. Never queued. */
+  function notifySetRejected(error: unknown, operation: string) {
+    const message = (error as { message?: unknown } | null)?.message
+    reportError(new Error(typeof message === 'string' ? message : 'Set write rejected'), {
+      operation,
+      route: '/log',
+      extra: { code: (error as { code?: unknown } | null)?.code },
+    })
+    showSetRejectedToast()
+  }
+
+  /** Put rows back to a pre-action snapshot and recompute the live PR bars. */
+  function restoreLogEntries(exerciseId: string, snapshot: LogMap, keys: string[]) {
+    commitLogs(prev => {
+      const next = { ...prev }
+      for (const k of keys) if (snapshot[k]) next[k] = snapshot[k]
+      setPreviousBests(pb => ({ ...pb, [exerciseId]: bestFromLogs(exerciseId, next) }))
+      setPreviousBestVolumes(pb => ({ ...pb, [exerciseId]: bestVolumeFromLogs(exerciseId, next) }))
+      return next
+    })
+  }
+
   /** Queues a skip marker for each set (same fallback as handleCheck/handleSaveEdit)
    * after persistSkip fails even after its own retries. */
   function queueSkip(exerciseId: string, setNumbers: number[]) {
@@ -1694,6 +1773,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
     const key = `${exerciseId}-${setNumber}`
     if (skippingKeysRef.current.has(key)) return
     skippingKeysRef.current.add(key)
+    const skipSnapshot = logs
     const wasChecked = logs[key]?.checked
     // persistSkip upserts the skip marker over whatever was there — including
     // an already-saved checked row, which it overwrites (weight/reps/is_pr
@@ -1732,7 +1812,10 @@ export default function ActiveWorkout({ day }: { day: string }) {
     if (editingKey === key) setEditingKey(null)
     try {
       const { error } = await persistSkip(exerciseId, [setNumber])
-      if (error) {
+      if (error && !isTransientError(error)) {
+        notifySetRejected(error, 'handleSkipSet')
+        restoreLogEntries(exerciseId, skipSnapshot, [key])
+      } else if (error) {
         queueSkip(exerciseId, [setNumber])
         setLogs(prev => ({ ...prev, [key]: { ...prev[key], pendingSync: true } }))
         showQueuedSyncToast()
@@ -1746,6 +1829,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
     const key = `${exerciseId}-${setNumber}`
     if (skippingKeysRef.current.has(key)) return
     skippingKeysRef.current.add(key)
+    const skipSnapshot = logs
     setLogs(prev => {
       const entry = prev[key]
       return {
@@ -1769,7 +1853,10 @@ export default function ActiveWorkout({ day }: { day: string }) {
     })
     try {
       const { error } = await persistUnskip(exerciseId, [setNumber])
-      if (error) {
+      if (error && !isTransientError(error)) {
+        notifySetRejected(error, 'handleUnskipSet')
+        restoreLogEntries(exerciseId, skipSnapshot, [key])
+      } else if (error) {
         queueUnskip(exerciseId, [setNumber])
         setLogs(prev => ({ ...prev, [key]: { ...prev[key], pendingSync: true } }))
         showQueuedSyncToast()
@@ -1797,6 +1884,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
     const skipKeys = setsToSkip.map(s => `${exerciseId}-${s}`)
     if (skipKeys.some(k => skippingKeysRef.current.has(k))) return
     for (const k of skipKeys) skippingKeysRef.current.add(k)
+    const skipSnapshot = logs
     setLogs(prev => {
       const next = { ...prev }
       for (const s of setsToSkip) {
@@ -1834,7 +1922,10 @@ export default function ActiveWorkout({ day }: { day: string }) {
     }
     try {
       const { error } = await persistSkip(exerciseId, setsToSkip)
-      if (error) {
+      if (error && !isTransientError(error)) {
+        notifySetRejected(error, 'handleSkipExercise')
+        restoreLogEntries(exerciseId, skipSnapshot, skipKeys)
+      } else if (error) {
         queueSkip(exerciseId, setsToSkip)
         setLogs(prev => {
           const next = { ...prev }
@@ -1863,6 +1954,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
     const unskipKeys = setsToUnskip.map(s => `${exerciseId}-${s}`)
     if (unskipKeys.some(k => skippingKeysRef.current.has(k))) return
     for (const k of unskipKeys) skippingKeysRef.current.add(k)
+    const skipSnapshot = logs
     setLogs(prev => {
       const next = { ...prev }
       for (const s of setsToUnskip) {
@@ -1890,7 +1982,10 @@ export default function ActiveWorkout({ day }: { day: string }) {
     })
     try {
       const { error } = await persistUnskip(exerciseId, setsToUnskip)
-      if (error) {
+      if (error && !isTransientError(error)) {
+        notifySetRejected(error, 'handleUnskipExercise')
+        restoreLogEntries(exerciseId, skipSnapshot, unskipKeys)
+      } else if (error) {
         queueUnskip(exerciseId, setsToUnskip)
         setLogs(prev => {
           const next = { ...prev }
@@ -2522,7 +2617,15 @@ export default function ActiveWorkout({ day }: { day: string }) {
       // Flush offline-queued set writes BEFORE complete_session — otherwise the
       // server may see NO_WORKING_SETS or finish with missing sets/wrong XP.
       await Promise.allSettled([...inflightSavesRef.current])
-      await flushQueuedOps(sessionId, supabase)
+      const flushed = await flushQueuedOps(sessionId, supabase)
+      if (flushed.rejected.length > 0) {
+        // Refused sets were dropped from the queue; un-check them so the
+        // finish check below sees the real state.
+        setLogs(prev => applyFlushResult(prev, flushed))
+        setResumeToast("Couldn't save that set — check the weight and reps.")
+        setTimeout(() => setResumeToast(null), 5000)
+        return
+      }
       if (getQueuedOps(sessionId).length > 0) {
         setResumeToast('Still syncing sets — check your connection and try again.')
         setTimeout(() => setResumeToast(null), 5000)

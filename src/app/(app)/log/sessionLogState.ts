@@ -297,3 +297,30 @@ export function shouldPersistSessionExtra(
 ): boolean {
   return stillInSession && hasWorkingSet
 }
+
+/**
+ * Fold a `flushQueuedOps` result into the log map: synced slots stop being
+ * "pending", and slots the server permanently refused are un-checked (they
+ * were dropped from the queue and will never save).
+ */
+export function applyFlushResult(
+  prev: LogMap,
+  result: {
+    synced: { exerciseId: string; setNumber: number }[]
+    rejected: { exerciseId: string; setNumber: number }[]
+  },
+): LogMap {
+  if (result.synced.length === 0 && result.rejected.length === 0) return prev
+  const next = { ...prev }
+  for (const { exerciseId, setNumber } of result.synced) {
+    const key = `${exerciseId}-${setNumber}`
+    if (next[key]) next[key] = { ...next[key], pendingSync: false }
+  }
+  for (const { exerciseId, setNumber } of result.rejected) {
+    const key = `${exerciseId}-${setNumber}`
+    if (next[key]) {
+      next[key] = { ...next[key], checked: false, isPR: false, logId: undefined, pendingSync: false }
+    }
+  }
+  return next
+}
