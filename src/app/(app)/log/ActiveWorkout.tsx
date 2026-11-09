@@ -479,19 +479,17 @@ export default function ActiveWorkout({ day }: { day: string }) {
     const user = await getClientUser(supabase)
     if (!user) { router.push('/login'); return }
 
-    const { data: allDayExs } = await supabase
-      .from('exercises')
-      .select('*')
-      .eq('day_type', day)
-      .order('sort_order', { ascending: true })
-
-    if (!allDayExs || allDayExs.length === 0) { setLoading(false); return }
-
+    // One catalog read (was two sequential ones): the day's exercises are just
+    // a slice of the full list, already in sort_order within each day_type.
     const { data: allExsData } = await supabase
       .from('exercises')
       .select('*')
       .order('day_type', { ascending: true })
       .order('sort_order', { ascending: true })
+    const allDayExs = (allExsData ?? []).filter(ex => ex.day_type === day)
+
+    if (allDayExs.length === 0) { setLoading(false); return }
+
     setAllExercises(allExsData ?? [])
     registerProgrammedRest(allExsData ?? [])
 
@@ -512,6 +510,14 @@ export default function ActiveWorkout({ day }: { day: string }) {
     }
     if (exs.length === 0) { setLoading(false); return }
     setExercises(exs)
+
+    // Atomic create-or-resume — prevents two tabs from forking open sessions.
+    // Kicked off now so it overlaps the "best" lookups below instead of
+    // waiting behind them (we only get here once the day has exercises, so an
+    // empty day never creates a session).
+    const resumePromise = Promise.resolve(
+      supabase.rpc('start_or_resume_session', { p_day_type: day }),
+    )
 
     // Two batch RPCs — was N sequential queries (one per exercise). `bests` (the
     // "prev: X lbs" hint, display-only) comes from the most recent completed
@@ -580,11 +586,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       rpe?: number | null
     }
 
-    // Atomic create-or-resume — prevents two tabs from forking open sessions.
-    const { data: resumeData, error: resumeError } = await supabase.rpc(
-      'start_or_resume_session',
-      { p_day_type: day },
-    )
+    const { data: resumeData, error: resumeError } = await resumePromise
 
     if (resumeError || !resumeData) {
       setLoading(false)
@@ -959,6 +961,8 @@ export default function ActiveWorkout({ day }: { day: string }) {
   }
 
   const checkingKeysRef = useRef<Set<string>>(new Set())
+  // Optimistic set writes still on the wire — Finish waits for these.
+  const inflightSavesRef = useRef<Set<Promise<unknown>>>(new Set())
 
   async function handleCheck(exerciseId: string, setNumber: number) {
     const key = `${exerciseId}-${setNumber}`
@@ -992,53 +996,33 @@ export default function ActiveWorkout({ day }: { day: string }) {
       const isPR = computeLocalIsPR(logEntry.isWarmup, weight, reps, prevBestVolume)
       const rpe = parseRpe(logEntry.rpe)
 
-      const { data: saved, error: saveError } = await runWithRetry(() =>
-        supabase
-          .from('session_logs')
-          .upsert(
-            {
-              session_id: sessionId,
-              exercise_id: exerciseId,
-              set_number: setNumber,
-              weight,
-              reps,
-              is_pr: false,
-              is_warmup: logEntry.isWarmup,
-              note: logEntry.note || null,
-              is_skipped: false,
-              rpe,
-            },
-            { onConflict: 'session_id,exercise_id,set_number' },
-          )
-          .select('id')
-          .maybeSingle(),
+      // Optimistic: the set reads as logged the instant it's tapped; the write
+      // happens in the background (see persistSet below) instead of making the
+      // user wait a network round trip for the checkmark.
+      const savePromise = Promise.resolve(
+        runWithRetry(() =>
+          supabase
+            .from('session_logs')
+            .upsert(
+              {
+                session_id: sessionId,
+                exercise_id: exerciseId,
+                set_number: setNumber,
+                weight,
+                reps,
+                is_pr: false,
+                is_warmup: logEntry.isWarmup,
+                note: logEntry.note || null,
+                is_skipped: false,
+                rpe,
+              },
+              { onConflict: 'session_id,exercise_id,set_number' },
+            )
+            .select('id')
+            .maybeSingle(),
+        ),
       )
-
-      // If the set couldn't be persisted (even after runWithRetry's own retries —
-      // a real network drop, not just a blip), don't just fail silently: queue it
-      // for a background replay and still mark it checked, so a set logged with
-      // no signal in the gym isn't lost or stuck requiring the user to notice and
-      // retap once they're back near wifi.
-      if (saveError) {
-        queueOp({
-          kind: 'upsert',
-          sessionId,
-          exerciseId,
-          setNumber,
-          weight,
-          reps,
-          isPR,
-          isWarmup: logEntry.isWarmup,
-          note: logEntry.note || null,
-          isSkipped: false,
-          rpe,
-          queuedAt: Date.now(),
-        })
-        setResumeToast('Saved on this device — will sync once back online.')
-        setTimeout(() => setResumeToast(null), 4000)
-      } else {
-        removeQueuedOp(sessionId, exerciseId, setNumber)
-      }
+      inflightSavesRef.current.add(savePromise)
 
       commitLogs(prev => ({
         ...prev,
@@ -1049,10 +1033,46 @@ export default function ActiveWorkout({ day }: { day: string }) {
           checked: true,
           skipped: false,
           isPR,
-          logId: saved?.id,
-          pendingSync: !!saveError,
         },
       }))
+
+      const persistSet = async () => {
+        const { data: saved, error: saveError } = await savePromise
+        inflightSavesRef.current.delete(savePromise)
+        // The user may have undone the set while the write was in flight; the
+        // undo already deleted/queued, so don't resurrect it.
+        if (!logsRef.current[key]?.checked) {
+          if (!saveError && saved?.id) {
+            void supabase.from('session_logs').delete().eq('id', saved.id)
+          }
+          return
+        }
+        if (saveError) {
+          queueOp({
+            kind: 'upsert',
+            sessionId,
+            exerciseId,
+            setNumber,
+            weight,
+            reps,
+            isPR,
+            isWarmup: logEntry.isWarmup,
+            note: logEntry.note || null,
+            isSkipped: false,
+            rpe,
+            queuedAt: Date.now(),
+          })
+          setResumeToast('Saved on this device — will sync once back online.')
+          setTimeout(() => setResumeToast(null), 4000)
+        } else {
+          removeQueuedOp(sessionId, exerciseId, setNumber)
+        }
+        commitLogs(prev =>
+          prev[key]
+            ? { ...prev, [key]: { ...prev[key], logId: saved?.id, pendingSync: !!saveError } }
+            : prev,
+        )
+      }
 
       if (isPR) {
         // Track session-best volume for undo/edit recomputes; badge decisions
@@ -1133,6 +1153,8 @@ export default function ActiveWorkout({ day }: { day: string }) {
       } else if (!logEntry.isWarmup) {
         restTimer.start(exerciseId, resolveRestSeconds(exerciseId, sessionId))
       }
+
+      await persistSet()
     } finally {
       checkingKeysRef.current.delete(key)
     }
@@ -2465,6 +2487,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
     try {
       // Flush offline-queued set writes BEFORE complete_session — otherwise the
       // server may see NO_WORKING_SETS or finish with missing sets/wrong XP.
+      await Promise.allSettled([...inflightSavesRef.current])
       await flushQueuedOps(sessionId, supabase)
       if (getQueuedOps(sessionId).length > 0) {
         setResumeToast('Still syncing sets — check your connection and try again.')

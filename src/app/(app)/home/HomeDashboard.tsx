@@ -694,6 +694,10 @@ export default function HomeDashboard({
   // isn't the day the button showed (it repaints the real one instead).
   async function handleSkipDay() {
     if (!hasDays || skippingDayRef.current) return
+    if (rotationSeq.length < 2) {
+      flashToast('Add another day to your rotation to skip ahead')
+      return
+    }
     const shownDay = nextDay
     skippingDayRef.current = true
     setSkippingDay(true)
@@ -1438,7 +1442,7 @@ export default function HomeDashboard({
           without logging anything (e.g. already did legs off-app, or just
           taking a planned day off). Only meaningful with more than one day
           in the loop; a single-day rotation would just suggest itself again. */}
-      {hasDays && rotationSeq.length > 1 && (
+      {hasDays && (
         <button
           className="press"
           data-haptic="light"

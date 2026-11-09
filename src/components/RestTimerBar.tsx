@@ -108,7 +108,7 @@ export default function RestTimerBar({
             backgroundColor: done ? 'var(--accent)' : lowTime ? 'var(--danger)' : 'var(--accent)',
             opacity: paused ? 0.4 : 1,
             // Shorter than the 250ms tick so the bar doesn't lag a full frame behind.
-            transition: 'width 100ms linear, background-color 200ms ease, opacity 200ms ease',
+            transition: 'width 1000ms linear, background-color 200ms ease, opacity 200ms ease',
           }}
         />
       </div>

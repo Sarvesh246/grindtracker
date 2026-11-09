@@ -147,7 +147,11 @@ export function useRestTimer() {
       setState(s => (s.exerciseId === state.exerciseId ? { ...s, remainingMs: remaining } : s))
 
       if (remaining > 0) {
-        rafRef.current = window.setTimeout(tick, 250) as unknown as number
+        // Wake once per displayed second (just past the boundary, since the
+        // label rounds up) instead of 4x/sec — each tick re-renders the whole
+        // workout screen, which is what made set taps feel heavy during rest.
+        const untilNextSecond = (remaining % 1000) || 1000
+        rafRef.current = window.setTimeout(tick, untilNextSecond + 30) as unknown as number
       }
     }
 
