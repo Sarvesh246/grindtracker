@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/admin'
 import { sendPushToSubscription } from '@/lib/push/webPush'
@@ -10,7 +11,12 @@ function authorize(request: Request): boolean {
   const secret = process.env.CRON_SECRET
   if (!secret) return false
   const header = request.headers.get('authorization') || ''
-  return header === `Bearer ${secret}`
+  // Constant-time compare so the secret can't be probed byte by byte. The
+  // buffers must be the same length for timingSafeEqual, so a length mismatch
+  // is rejected up front (length of the expected value isn't secret).
+  const given = Buffer.from(header)
+  const expected = Buffer.from(`Bearer ${secret}`)
+  return given.length === expected.length && timingSafeEqual(given, expected)
 }
 
 type ClaimedRow = {
