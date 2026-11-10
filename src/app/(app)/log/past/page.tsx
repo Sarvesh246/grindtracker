@@ -779,10 +779,9 @@ function LogPastContent() {
                 ? ' — tap another day type to edit it'
                 : ' — changes will replace the saved data'}
             </div>
-            <button className="hover-text-danger"
+            <button className="hover-text-danger hit-44"
               onClick={() => setConfirmDelete(true)}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px', color: 'var(--text-muted)', lineHeight: 1, flexShrink: 0 }}
-
+              style={{ background: 'none', border: 'none', cursor: 'pointer', width: '36px', height: '36px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', lineHeight: 1, flexShrink: 0 }}
               title="Delete this workout" aria-label="Delete this workout"
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -952,14 +951,14 @@ function LogPastContent() {
                           {ex.sets_target} × {ex.reps_target}
                         </span>
                       )}
-                      <button className="hover-reveal"
+                      <button className="hover-reveal hit-44"
                         type="button"
                         data-haptic="light"
                         onClick={() => toggleExerciseSkip(ex.id)}
                         style={{
                           background: 'none', border: 'none', cursor: 'pointer',
                           display: 'flex', alignItems: 'center', gap: '3px',
-                          padding: '2px 4px',
+                          minHeight: '36px', padding: '0 8px',
                           borderRadius: '4px',
                         }}
 

@@ -3878,16 +3878,16 @@ function ExerciseCard({
             )}
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '2px', flexShrink: 0 }}>
             {/* Skip/Undo exercise button */}
             <button
               type="button"
-              className="wo-ghost-btn"
+              className="wo-ghost-btn hit-44"
               onClick={() => allSkipped ? onUnskipExercise(exercise.id) : onSkipExercise(exercise.id)}
               title={allSkipped ? 'Undo skip' : 'Skip exercise'}
               aria-label={allSkipped ? `Undo skip on ${exercise.name}` : `Skip ${exercise.name}`}
               data-haptic="light"
-              style={{ padding: '2px 6px', gap: '3px' }}
+              style={{ minHeight: '36px', padding: '0 8px', gap: '3px' }}
             >
               {allSkipped ? (
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent-text)' }}>
@@ -3911,12 +3911,12 @@ function ExerciseCard({
             {/* Rename button — same exercise, new label; history follows */}
             <button
               type="button"
-              className="wo-ghost-btn"
+              className="wo-ghost-btn hit-44"
               data-haptic="light"
               onClick={onRename}
               title="Rename exercise"
               aria-label={`Rename ${exercise.name}`}
-              style={{ padding: '2px', flexShrink: 0 }}
+              style={{ width: '36px', height: '36px', padding: 0, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-secondary)' }}>
                 <path d="M12 20h9"/>
@@ -3927,13 +3927,13 @@ function ExerciseCard({
             {/* Swap button */}
             <button
               type="button"
-              className="wo-ghost-btn"
+              className="wo-ghost-btn hit-44"
               data-onboard={firstExercise ? 'aw-swap' : undefined}
               data-haptic="light"
               onClick={onSwap}
               title="Swap exercise"
               aria-label={`Swap ${exercise.name} for another exercise`}
-              style={{ padding: '2px', flexShrink: 0 }}
+              style={{ width: '36px', height: '36px', padding: 0, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-secondary)' }}>
                 <polyline points="17 1 21 5 17 9"/>
