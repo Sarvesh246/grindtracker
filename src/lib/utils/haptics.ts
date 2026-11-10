@@ -307,6 +307,42 @@ function hostIsSwipeSurface(host: HTMLElement): boolean {
  * `.top-nav`) skip forwarding so taps navigate instantly and wobble can't
  * eat the click.
  */
+
+// ─── Inertia for JS-forwarded scrolling ───────────────────────────────────────
+// Only one glide runs at a time; any new touch cancels it.
+let momentumRaf = 0
+function stopMomentum() {
+  if (momentumRaf) cancelAnimationFrame(momentumRaf)
+  momentumRaf = 0
+}
+function startMomentum(el: HTMLElement, samples: { t: number; y: number }[]) {
+  stopMomentum()
+  if (samples.length < 2) return
+  const last = samples[samples.length - 1]
+  const first = samples[0]
+  const dt = last.t - first.t
+  // A long pause before release means the finger stopped: no flick.
+  if (dt <= 0 || performance.now() - last.t > 100) return
+  let v = -(last.y - first.y) / dt // px per ms, positive = scroll down
+  if (!Number.isFinite(v) || Math.abs(v) < 0.15) return
+  v = Math.max(-4, Math.min(4, v))
+  let prev = performance.now()
+  const step = (now: number) => {
+    const frame = Math.min(now - prev, 48)
+    prev = now
+    const before = el.scrollTop
+    el.scrollTop = before + v * frame
+    // Time-based exponential decay (~0.0025/ms ≈ native feel).
+    v *= Math.exp(-0.0028 * frame)
+    if (Math.abs(v) < 0.02 || el.scrollTop === before) {
+      momentumRaf = 0
+      return
+    }
+    momentumRaf = requestAnimationFrame(step)
+  }
+  momentumRaf = requestAnimationFrame(step)
+}
+
 export function attachHapticOverlay(el: HTMLElement): () => void {
   if (typeof document === 'undefined') return () => {}
   if (!isIosHaptics()) return () => {}
@@ -359,6 +395,7 @@ export function attachHapticOverlay(el: HTMLElement): () => void {
       }
     | null = null
   let gestureDragged = false
+  let samples: { t: number; y: number }[] = []
 
   const onTouchStart = (e: TouchEvent) => {
     if (e.touches.length !== 1) {
@@ -368,6 +405,9 @@ export function attachHapticOverlay(el: HTMLElement): () => void {
     }
     const t = e.touches[0]
     gestureDragged = false
+    // A finger landing stops any inertia glide still running from a prior flick.
+    stopMomentum()
+    samples = [{ t: e.timeStamp, y: t.clientY }]
     gesture = {
       x: t.clientX,
       y: t.clientY,
@@ -417,6 +457,8 @@ export function attachHapticOverlay(el: HTMLElement): () => void {
     e.preventDefault()
     if (gesture.axis === 'y') {
       gesture.scrollEl.scrollTop -= t.clientY - gesture.lastY
+      samples.push({ t: e.timeStamp, y: t.clientY })
+      if (samples.length > 6) samples.shift()
     } else {
       gesture.scrollEl.scrollLeft -= t.clientX - gesture.lastX
     }
@@ -425,7 +467,13 @@ export function attachHapticOverlay(el: HTMLElement): () => void {
     gesture.lastY = t.clientY
   }
 
-  const onTouchEnd = () => {
+  const onTouchEnd = (e: TouchEvent) => {
+    // JS-forwarded scrolling has no native inertia, which is what made lists
+    // feel stuck to the finger. Re-create the flick: glide from release velocity.
+    if (e.type === 'touchend' && gesture?.axis === 'y' && gesture.scrollEl) {
+      startMomentum(gesture.scrollEl, samples)
+    }
+    samples = []
     gesture = null
     // gestureDragged stays until click so onClick can suppress re-dispatch.
   }

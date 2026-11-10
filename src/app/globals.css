@@ -1376,6 +1376,9 @@ html.reduce-motion .grind-sheet-backdrop[data-closing='true'] {
   -webkit-overflow-scrolling: touch;
   /* Keep the rubber-band inside this container so it can't bubble to the shell. */
   overscroll-behavior-y: contain;
+  /* Own compositor layer for scrolling only (not transform/filter, so fixed
+     descendants are unaffected - see the note above). */
+  will-change: scroll-position;
   padding-top: env(safe-area-inset-top);
 }
 
