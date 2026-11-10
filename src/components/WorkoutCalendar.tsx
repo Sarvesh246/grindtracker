@@ -5,7 +5,7 @@ import { createClient, getClientUser } from '@/lib/supabase/client'
 import { useTheme } from '@/lib/contexts/ThemeContext'
 import { useDemoMode } from '@/lib/contexts/DemoModeContext'
 import { demoCalendarWorkoutDays } from '@/lib/demoMode/fakeData'
-import { localDateKey } from '@/lib/utils/formatting'
+import { dayName, localDateKey } from '@/lib/utils/formatting'
 import {
   NAMED_DAY_COLORS,
   calendarCellBackground,
@@ -147,18 +147,12 @@ export default function WorkoutCalendar() {
   // custom day gets is the same on every month) and only then append day types
   // that appear in this month's history but no longer exist in the catalog —
   // a deleted day still needs *a* color, it just can't displace a live one.
-  const allTypes = Object.values(workoutDays).flat()
+  const allTypes = Object.entries(workoutDays).sort(([a], [b]) => a.localeCompare(b)).flatMap(([, types]) => types)
   const extraTypes = [
     ...new Set([...catalogDayTypes, ...allTypes].filter(t => !NAMED_DAY_COLORS[t])),
   ]
-  // Always show all named day types; append any unrecognised ones from this month's data
-  const legendTypes = [
-    ...Object.keys(NAMED_DAY_COLORS),
-    // Legend lists only what's actually on screen this month; extraTypes is the
-    // wider palette basis and would otherwise print every custom day the user
-    // has ever had under a month where none of them were trained.
-    ...extraTypes.filter(t => allTypes.includes(t)),
-  ]
+  const legendTypes = [...new Set(allTypes)]
+  const visibleLegendTypes = legendTypes.slice(0, 4)
 
   function handlePrev() {
     setCurrentMonth(m => new Date(m.getFullYear(), m.getMonth() - 1, 1))
@@ -384,9 +378,8 @@ export default function WorkoutCalendar() {
         })}
       </div>
 
-      {/* Legend — always shows all named types; extra types from data appended */}
-      <div style={{ display: 'flex', gap: '14px', marginTop: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
-        {legendTypes.map(type => {
+      {legendTypes.length > 0 && <div style={{ display: 'flex', gap: '14px', marginTop: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
+        {visibleLegendTypes.map(type => {
           const fillColor = resolveDayColor(type, extraTypes, isLight, dayColors[type])
           const labelColor = resolveDayTextColor(type, extraTypes, isLight, dayColors[type])
           return (
@@ -400,12 +393,13 @@ export default function WorkoutCalendar() {
                 boxShadow: isLight ? 'none' : `0 0 4px ${fillColor}80`,
               }} />
               <span style={{ fontSize: '10px', color: labelColor, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                {type}
+                {dayName(type)}
               </span>
             </div>
           )
         })}
-      </div>
+        {legendTypes.length > 4 && <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>+{legendTypes.length - 4}</span>}
+      </div>}
     </div>
   )
 }
