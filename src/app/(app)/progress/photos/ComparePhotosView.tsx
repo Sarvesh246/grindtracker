@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState, type CSSProperties } from 'react'
-import { createPortal } from 'react-dom'
+import Dialog from '@/components/ui/Dialog'
 import { useProgressPhotos, type ProgressPhotoGroupWithPhotos } from '@/lib/hooks/useProgressPhotos'
 import { formatDayType, formatShortDate } from '@/lib/utils/formatting'
 
@@ -52,11 +52,9 @@ export default function ComparePhotosView({
 
   if (typeof document === 'undefined') return null
 
-  return createPortal(
+  return (
+    <Dialog open animate={false} onClose={requestClose} title="Compare progress photos" zIndex={400} panelStyle={{ maxWidth: 'none', height: '100%' }}>
     <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Compare progress photos"
       style={{
         position: 'fixed', inset: 0, zIndex: 400, backgroundColor: '#000',
         display: 'flex', flexDirection: 'column',
@@ -117,8 +115,8 @@ export default function ComparePhotosView({
           )
         })}
       </div>
-    </div>,
-    document.body
+    </div>
+    </Dialog>
   )
 }
 

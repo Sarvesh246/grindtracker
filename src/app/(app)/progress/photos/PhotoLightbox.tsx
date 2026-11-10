@@ -7,7 +7,7 @@ import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from 'react'
-import { createPortal } from 'react-dom'
+import Dialog from '@/components/ui/Dialog'
 import { useMotionPref } from '@/lib/contexts/MotionContext'
 import { useProgressPhotos } from '@/lib/hooks/useProgressPhotos'
 import { formatDayType, formatShortDate } from '@/lib/utils/formatting'
@@ -73,9 +73,6 @@ export default function PhotoLightbox({
   // changes (mobile Safari's collapsing address bar, etc.) can't leave it stale.
   useEffect(() => {
     requestAnimationFrame(() => setVisible(true))
-    const prevBody = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => { document.body.style.overflow = prevBody }
   }, [])
 
   const current = items[index] as LightboxItem | undefined
@@ -154,8 +151,7 @@ export default function PhotoLightbox({
   useEffect(() => { latest.current = { commitSwipe, requestClose } })
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') latest.current.requestClose()
-      else if (e.key === 'ArrowLeft') latest.current.commitSwipe(-1)
+      if (e.key === 'ArrowLeft') latest.current.commitSwipe(-1)
       else if (e.key === 'ArrowRight') latest.current.commitSwipe(1)
     }
     window.addEventListener('keydown', onKey)
@@ -244,11 +240,9 @@ export default function PhotoLightbox({
   const baseOffsetPercent = prev ? -100 : 0
   const shown = visible && !closing
 
-  return createPortal(
+  return (
+    <Dialog open animate={false} onClose={requestClose} title="Progress photo viewer" zIndex={300} panelStyle={{ maxWidth: 'none', height: '100%' }}>
     <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Progress photo viewer"
       style={{
         position: 'fixed',
         inset: 0,
@@ -352,8 +346,8 @@ export default function PhotoLightbox({
         onConfirm={handleDelete}
         onCancel={() => setConfirmDelete(false)}
       />
-    </div>,
-    document.body
+    </div>
+    </Dialog>
   )
 }
 
