@@ -1,4 +1,5 @@
 'use client'
+import Avatar from '@/components/Avatar'
 import { useState, useEffect, useMemo, useCallback, useRef, type CSSProperties } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -27,10 +28,6 @@ const RANK_COLORS: Record<number, string> = {
   1: 'var(--medal-1)',
   2: 'var(--medal-2)',
   3: 'var(--medal-3)',
-}
-
-function initials(name: string) {
-  return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
 }
 
 interface Props {
@@ -362,28 +359,7 @@ export default function LeaderboardClient({ userId }: Props) {
                   )}
                 </div>
 
-                {/* Avatar */}
-                <div style={{
-                  width: '36px',
-                  height: '36px',
-                  borderRadius: '50%',
-                  overflow: 'hidden',
-                  backgroundColor: 'var(--surface-elevated)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                  border: '1px solid var(--border)',
-                }}>
-                  {entry.avatar_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={entry.avatar_url} alt="" loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  ) : (
-                    <span style={{ fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: '13px', color: 'var(--text-secondary)' }}>
-                      {initials(entry.display_name)}
-                    </span>
-                  )}
-                </div>
+                <Avatar src={entry.avatar_url} name={entry.display_name} size={36} fontSize={13} />
 
                 {/* Name */}
                 <div style={{ flex: 1, minWidth: 0 }}>

@@ -1,4 +1,5 @@
 'use client'
+import Avatar from '@/components/Avatar'
 import { useState, useEffect, useRef, useMemo, type CSSProperties } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -357,42 +358,7 @@ export default function ProfileDashboard({
       }}>
         {/* Avatar + name row */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '16px' }}>
-          {avatarUrl ? (
-            // External avatar URL (Google / Supabase storage) at a fixed 56px —
-            // next/image would require remote-domain config and add no real
-            // benefit at this size, so a plain <img> is intentional here.
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={avatarUrl}
-              alt={displayName}
-              style={{
-                width: '56px', height: '56px',
-                borderRadius: '9999px',
-                objectFit: 'cover',
-                border: '2px solid var(--border)',
-                flexShrink: 0,
-              }}
-            />
-          ) : (
-            <div style={{
-              width: '56px', height: '56px',
-              borderRadius: '9999px',
-              backgroundColor: 'var(--surface-elevated)',
-              border: '2px solid var(--border)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              flexShrink: 0,
-            }}>
-              <span style={{
-                fontFamily: "'Bebas Neue', sans-serif",
-                fontSize: '22px',
-                color: 'var(--accent-text)',
-                letterSpacing: '1px',
-                lineHeight: 1,
-              }}>
-                {displayName.trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase()}
-              </span>
-            </div>
-          )}
+          <div style={{ border: '2px solid var(--border)', borderRadius: '50%', flexShrink: 0 }}><Avatar src={avatarUrl} name={displayName} size={52} fontSize={22} /></div>
 
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{

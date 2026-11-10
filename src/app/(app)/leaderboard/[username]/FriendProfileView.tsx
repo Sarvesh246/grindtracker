@@ -1,4 +1,5 @@
 'use client'
+import Avatar from '@/components/Avatar'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { getLevel, getXpInCurrentLevel, getXpRequiredForLevel, getXpToNextLevel } from '@/lib/utils/gamification'
@@ -23,10 +24,6 @@ function LockIcon({ size = 12 }: { size?: number }) {
       <path d="M7 11V7a5 5 0 0 1 10 0v4" />
     </svg>
   )
-}
-
-function initials(name: string) {
-  return name.trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase()
 }
 
 interface Props {
@@ -98,39 +95,7 @@ export default function FriendProfileView({ profile }: Props) {
         marginBottom: '16px',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '16px' }}>
-          {profile.avatar_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={profile.avatar_url}
-              alt={profile.display_name}
-              style={{
-                width: '56px', height: '56px',
-                borderRadius: '9999px',
-                objectFit: 'cover',
-                border: '2px solid var(--border)',
-                flexShrink: 0,
-              }}
-            />
-          ) : (
-            <div style={{
-              width: '56px', height: '56px',
-              borderRadius: '9999px',
-              backgroundColor: 'var(--surface-elevated)',
-              border: '2px solid var(--border)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              flexShrink: 0,
-            }}>
-              <span style={{
-                fontFamily: "'Bebas Neue', sans-serif",
-                fontSize: '22px',
-                color: 'var(--accent-text)',
-                letterSpacing: '1px',
-                lineHeight: 1,
-              }}>
-                {initials(profile.display_name)}
-              </span>
-            </div>
-          )}
+          <div style={{ border: '2px solid var(--border)', borderRadius: '50%', flexShrink: 0 }}><Avatar src={profile.avatar_url} name={profile.display_name} size={52} fontSize={22} /></div>
 
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{

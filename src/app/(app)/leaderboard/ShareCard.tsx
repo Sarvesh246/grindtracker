@@ -1,4 +1,5 @@
 'use client'
+import Avatar from '@/components/Avatar'
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { LeaderboardEntry } from '@/lib/types'
@@ -38,10 +39,6 @@ interface ShareCardProps {
   category: string
   onClose: () => void
   variant?: 'rank' | 'profile'
-}
-
-function initials(name: string) {
-  return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
 }
 
 export default function ShareCard({
@@ -286,14 +283,7 @@ export default function ShareCard({
           justifyContent: 'center',
           border: '2px solid var(--border)',
         }}>
-          {entry.avatar_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={entry.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-          ) : (
-            <span style={{ fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: '20px', color: 'var(--text-primary)' }}>
-              {initials(entry.display_name)}
-            </span>
-          )}
+          <Avatar src={entry.avatar_url} name={entry.display_name} size={60} fontSize={20} />
         </div>
 
         <div style={{ textAlign: 'center' }}>
