@@ -200,6 +200,11 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const [addExerciseOpen, setAddExerciseOpen] = useState(false)
   const [extraSets, setExtraSets] = useState<Record<string, number>>({})
   const [workoutNote, setWorkoutNote] = useState('')
+  // Notes from the most recent completed session of each exercise, keyed
+  // `${exerciseId}-${setNumber}`, plus that day's last workout note. Read-only
+  // hints so last time's notes are visible mid-workout.
+  const [lastSetNotes, setLastSetNotes] = useState<Record<string, string>>({})
+  const [lastWorkoutNote, setLastWorkoutNote] = useState('')
   const [undoState, setUndoState] = useState<UndoState | null>(null)
   const [editingKey, setEditingKey] = useState<string | null>(null)
   const [resumeToast, setResumeToast] = useState<string | null>(null)
@@ -619,6 +624,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
     const sid = session.id
     const sessionStart = new Date(session.started_at)
     if (session.note) setWorkoutNote(session.note)
+    void loadLastNotes(exs.map(e => e.id), sid)
     const existingLogs: ExistingLog[] = Array.isArray(resumePayload.logs)
       ? resumePayload.logs
       : []
@@ -1190,11 +1196,65 @@ export default function ActiveWorkout({ day }: { day: string }) {
     }
   }
 
+  // Last completed session's set notes per exercise (+ the day's last workout
+  // note). Best-effort: a failed read just means no hints.
+  async function loadLastNotes(exerciseIds: string[], currentSessionId: string) {
+    if (exerciseIds.length === 0) return
+    const { data } = await supabase
+      .from('session_logs')
+      .select('exercise_id, set_number, note, session_id, sessions!inner(started_at, completed_at, day_type, note)')
+      .in('exercise_id', exerciseIds)
+      .not('weight', 'is', null)
+      .not('sessions.completed_at', 'is', null)
+      .neq('session_id', currentSessionId)
+      .order('started_at', { referencedTable: 'sessions', ascending: false })
+      .limit(400)
+    type Row = {
+      exercise_id: string
+      set_number: number
+      note: string | null
+      session_id: string
+      sessions: { started_at: string; day_type: string; note: string | null } | { started_at: string; day_type: string; note: string | null }[]
+    }
+    const rows = ((data ?? []) as Row[]).map(r => ({
+      ...r,
+      sess: Array.isArray(r.sessions) ? r.sessions[0] : r.sessions,
+    }))
+    const newestPerExercise: Record<string, { sid: string; at: string }> = {}
+    for (const r of rows) {
+      const cur = newestPerExercise[r.exercise_id]
+      if (!cur || r.sess.started_at > cur.at) newestPerExercise[r.exercise_id] = { sid: r.session_id, at: r.sess.started_at }
+    }
+    const notes: Record<string, string> = {}
+    let dayNote = ''
+    let dayNoteAt = ''
+    for (const r of rows) {
+      if (newestPerExercise[r.exercise_id]?.sid === r.session_id && r.note) {
+        notes[`${r.exercise_id}-${r.set_number}`] = r.note
+      }
+      if (r.sess.day_type === day && r.sess.note && r.sess.started_at > dayNoteAt) {
+        dayNote = r.sess.note
+        dayNoteAt = r.sess.started_at
+      }
+    }
+    setLastSetNotes(notes)
+    setLastWorkoutNote(dayNote)
+  }
+
   async function handleUndo() {
     if (!undoState || !sessionId) return
-    const { key, exerciseId, setNumber } = undoState
-    const previous = logs[key]
+    const { exerciseId, setNumber } = undoState
     setUndoState(null)
+    await uncheckSet(exerciseId, setNumber)
+  }
+
+  // Puts a logged set back to "never done": deletes the row (or queues the
+  // delete offline), stops its rest timer and clears the PR flag. Shared by the
+  // undo banner and by saving an edit with the reps cleared (a mistyped set).
+  async function uncheckSet(exerciseId: string, setNumber: number, clearReps = false) {
+    if (!sessionId) return
+    const key = `${exerciseId}-${setNumber}`
+    const previous = logs[key]
     // Only kill the rest bar if it belongs to the set we just undid — undoing
     // an older set shouldn't stop an unrelated exercise's countdown.
     if (restTimer.exerciseId === exerciseId) {
@@ -1233,12 +1293,20 @@ export default function ActiveWorkout({ day }: { day: string }) {
       if (!cur) return prev
       const next = {
         ...prev,
-        [key]: { ...cur, checked: false, isPR: false, logId: undefined, pendingSync: !!error },
+        [key]: {
+          ...cur,
+          ...(clearReps ? { reps: '' } : {}),
+          checked: false,
+          isPR: false,
+          logId: undefined,
+          pendingSync: !!error,
+        },
       }
       setPreviousBests(pb => ({ ...pb, [exerciseId]: bestFromLogs(exerciseId, next) }))
       setPreviousBestVolumes(pb => ({ ...pb, [exerciseId]: bestVolumeFromLogs(exerciseId, next) }))
       return next
     })
+    setEditingKey(null)
   }
 
   function handleStartEdit(key: string) {
@@ -1250,6 +1318,15 @@ export default function ActiveWorkout({ day }: { day: string }) {
     const key = `${exerciseId}-${setNumber}`
     const logEntry = logs[key]
     if (!logEntry || !sessionId) return
+
+    // Reps cleared on a logged set = it was a mistype / not done yet. Put the
+    // set back to untouched (row deleted, rest timer stopped) so tapping the
+    // check again logs it fresh and starts the rest timer as normal.
+    if (logEntry.checked && logEntry.reps.trim() === '') {
+      setUndoState(prev => (prev?.key === key ? null : prev))
+      await uncheckSet(exerciseId, setNumber, true)
+      return
+    }
 
     const weight = logEntry.weight !== '' ? parseFloat(logEntry.weight) : null
     const reps = logEntry.reps !== '' ? parseInt(logEntry.reps, 10) : null
@@ -3558,6 +3635,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
               extraSets={extraSets[ex.id] ?? 0}
               logs={logs}
               previousBest={previousBests[ex.id] ?? null}
+              lastSetNotes={lastSetNotes}
               priorVolume={baselineBestVolumes[ex.id]}
               editingKey={editingKey}
               onCheck={handleCheck}
@@ -3638,6 +3716,14 @@ export default function ActiveWorkout({ day }: { day: string }) {
             >
               Workout note
             </label>
+            {lastWorkoutNote && (
+              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                <span style={{ fontSize: '10px', letterSpacing: 'var(--tracking-label)', textTransform: 'uppercase', color: 'var(--text-muted)', marginRight: '6px' }}>
+                  Last time
+                </span>
+                {lastWorkoutNote}
+              </div>
+            )}
             <textarea
               id="workout-note"
               value={workoutNote}
@@ -3776,6 +3862,7 @@ interface ExerciseCardProps {
   previousBest: number | null
   /** Prior-session best volume (lbs×reps). Live PR chips derive from this. */
   priorVolume: number | null | undefined
+  lastSetNotes: Record<string, string>
   editingKey: string | null
   onCheck: (exerciseId: string, setNumber: number) => void
   onUpdate: (key: string, field: 'weight' | 'reps' | 'note' | 'rpe', value: string) => void
@@ -3805,7 +3892,7 @@ interface ExerciseCardProps {
 }
 
 function ExerciseCard({
-  exercise, firstExercise, extraSets, logs, previousBest, priorVolume, editingKey,
+  exercise, firstExercise, extraSets, logs, previousBest, priorVolume, lastSetNotes, editingKey,
   onCheck, onUpdate, onSwap, onRename, canRemove, onRemove,
   onSkipSet, onUnskipSet, onDeleteSet,
   onSkipExercise, onUnskipExercise,
@@ -4031,6 +4118,7 @@ function ExerciseCard({
               showPR={liveSetIsPR(logEntry, priorVolume)}
               logEntry={logEntry}
               prevReps={prevReps}
+              lastNote={lastSetNotes[key] ?? ''}
               onCheck={() => onCheck(exercise.id, setNum)}
               onSaveEdit={() => onSaveEdit(exercise.id, setNum)}
               onStartEdit={() => onStartEdit(key)}
@@ -4259,6 +4347,8 @@ interface SetRowProps {
   showPR: boolean
   logEntry: SetState
   prevReps: string
+  /** Note left on this set the last time this exercise was done. */
+  lastNote: string
   onCheck: () => void
   onSaveEdit: () => void
   onStartEdit: () => void
@@ -4276,7 +4366,7 @@ interface SetRowProps {
 
 function SetRow({
   setNumber, isBonus, setsTarget, onboardFirst, editing,
-  showPR, logEntry, prevReps,
+  showPR, logEntry, prevReps, lastNote,
   onCheck, onSaveEdit, onStartEdit,
   onWeightChange, onRepsChange, onNoteChange, onNoteBlur, onRpeChange,
   onToggleWarmup, onSkip, onUnskip, onDelete, canDelete,
@@ -4296,7 +4386,7 @@ function SetRow({
   // mount when an in-progress session loads), an empty one starts closed.
   // The chevron under the set label sets it explicitly.
   const [noteOpen, setNoteOpen] = useState<boolean | null>(null)
-  const noteVisible = noteOpen ?? (logEntry.note !== '' || logEntry.rpe !== '')
+  const noteVisible = noteOpen ?? (logEntry.note !== '' || logEntry.rpe !== '' || lastNote !== '')
   // logEntry.weight is stored canonically in lbs. We show it in the active display unit.
   // While the field is focused we keep the raw typed string in `rawWeight` so the user can
   // type freely (decimals, partial entries) without conversion fighting the keystrokes; on
@@ -4928,6 +5018,14 @@ function SetRow({
               })}
             </div>
           </div>
+          {lastNote && (
+            <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+              <span style={{ fontSize: '10px', letterSpacing: 'var(--tracking-label)', textTransform: 'uppercase', color: 'var(--text-muted)', marginRight: '6px' }}>
+                Last time
+              </span>
+              {lastNote}
+            </div>
+          )}
           <input
             type="text"
             value={logEntry.note}
@@ -4936,7 +5034,7 @@ function SetRow({
               // Persist to DB if the row is already saved (otherwise the next
               // check/save will flush the note via upsert).
               if (logEntry.checked) onNoteBlur()
-              if (!logEntry.note && !logEntry.rpe) setNoteOpen(false)
+              if (!logEntry.note && !logEntry.rpe && !lastNote) setNoteOpen(false)
             }}
             placeholder="Set note (form, feel...)"
             aria-label={`Note for set ${setNumber}`}
