@@ -97,6 +97,7 @@ export function useTour(tourId: string, steps: TourStep[], opts: UseTourOptions)
     <CoachMark
       key={step.target}
       getEl={getEl}
+      targetKey={step.target}
       step={index + 1}
       total={steps.length}
       title={step.title}

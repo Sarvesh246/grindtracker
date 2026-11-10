@@ -15,6 +15,7 @@ import { bottomNavHeight, ensureVisible, placePopover, useAnchorRect, type Side 
  */
 export interface CoachMarkProps {
   getEl: () => HTMLElement | null
+  targetKey?: string
   step: number
   total: number
   title: string
@@ -33,6 +34,7 @@ const POINTER = 7
 
 export default function CoachMark({
   getEl,
+  targetKey,
   step,
   total,
   title,
@@ -223,6 +225,8 @@ export default function CoachMark({
         ref={cardRef}
         role="dialog"
         aria-modal="true"
+        data-onboard-card=""
+        data-onboard-for={targetKey}
         aria-label={`${title} — step ${step} of ${total}`}
         style={{
           ...cardPosition,

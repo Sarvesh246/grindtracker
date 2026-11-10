@@ -1879,6 +1879,14 @@ body.share-overlay-open .coach-fab {
   visibility: hidden !important;
   pointer-events: none !important;
 }
+
+/* Modal surfaces hide the orb; its own sheet and its tour step are excluded. */
+body:has(.wm-backdrop) .coach-fab,
+body:has([aria-modal='true']:not(.coach-sheet):not([data-onboard-card])) .coach-fab,
+body:has([data-onboard-card]:not([data-onboard-for='coach-fab'])) .coach-fab {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
 body.share-overlay-open .app-main {
   overflow: hidden !important;
   touch-action: none !important;
