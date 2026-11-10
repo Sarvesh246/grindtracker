@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, type CSSProperties } from 'react'
 import type { ProgressPhoto } from '@/lib/types'
 import type { ProgressPhotoGroupWithPhotos } from '@/lib/hooks/useProgressPhotos'
 import { formatDayType, formatShortDate } from '@/lib/utils/formatting'
@@ -161,15 +161,16 @@ export default function PhotoGroupGrid({
       </div>
 
       <div
+        className="photo-tile-grid"
         role={compareMode ? undefined : 'group'}
         aria-label={compareMode ? undefined : `Photos from ${formatShortDate(group.taken_date)}`}
         style={{
           display: 'grid',
-          gridTemplateColumns: gridColumns(group.photos.length),
-          gridTemplateRows: group.photos.length >= 4 ? 'repeat(2, 1fr)' : undefined,
+          '--photo-columns': gridColumns(group.photos.length),
+          '--photo-rows': group.photos.length >= 4 ? 'repeat(2, 1fr)' : 'auto',
           gap: '3px',
           padding: '0 3px 3px',
-        }}
+        } as CSSProperties}
       >
         {cells.map(cell => {
           const url = signedUrls[cell.photo.storage_path]
