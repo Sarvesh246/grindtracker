@@ -1094,6 +1094,18 @@ html.reduce-motion .dlg-backdrop[data-closing='true'] .dlg-panel--pop {
 
 /* Press feedback. Owns transform plus the color transitions nearly every
    control wants; the control keeps setting its own colors inline. */
+/* Extends the tap area without changing the visual size. */
+.hit-44 { position: relative; }
+.hit-44::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: max(100%, 44px);
+  height: max(100%, 44px);
+  transform: translate(-50%, -50%);
+}
+
 .press {
   transition:
     transform 120ms ease,
