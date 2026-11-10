@@ -4916,7 +4916,7 @@ function SetRow({
                     }}
                     style={{
                       position: 'relative',
-                      height: '36px',
+                      height: '40px',
                       borderRadius: 'var(--radius-sm)',
                       border: `1px solid ${selected ? 'var(--accent)' : 'var(--border)'}`,
                       backgroundColor: selected ? 'var(--accent)' : 'var(--surface-elevated)',

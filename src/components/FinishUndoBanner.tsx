@@ -153,7 +153,7 @@ export default function FinishUndoBanner() {
           disabled={undoing || closing}
           style={{
             position: 'relative',
-            height: '36px',
+            height: '40px',
             padding: '0 14px',
             backgroundColor: 'var(--accent)',
             color: 'var(--on-accent)',

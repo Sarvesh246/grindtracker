@@ -219,7 +219,7 @@ export default function WorkoutStep({
                       setCategory(c.value)
                     }}
                     style={{
-                      height: '36px',
+                      height: '40px',
                       padding: '0 14px',
                       borderRadius: '9999px',
                       border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,

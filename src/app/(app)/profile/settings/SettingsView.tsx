@@ -702,7 +702,7 @@ export default function SettingsView({
               cursor: 'pointer',
               position: 'relative',
               width: '80px',
-              height: '32px',
+              height: '40px',
               flexShrink: 0,
             }}
           >
@@ -828,7 +828,7 @@ export default function SettingsView({
                   className="press"
                   style={{
                     flex: 1,
-                    height: '36px',
+                    height: '40px',
                     borderRadius: 'var(--radius-sm)',
                     border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
                     backgroundColor: active ? 'var(--accent-wash)' : 'var(--surface-elevated)',

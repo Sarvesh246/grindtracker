@@ -176,7 +176,7 @@ export default function PlateCalculator({ initialTarget, onClose, onApply, closi
                     onClick={() => setBar(b)}
                     aria-pressed={selected}
                     style={{
-                      height: '38px',
+                      height: '40px',
                       flex: '1 1 0',
                       minWidth: '46px',
                       borderRadius: 'var(--radius-sm)',

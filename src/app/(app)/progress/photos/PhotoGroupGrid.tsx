@@ -118,7 +118,7 @@ export default function PhotoGroupGrid({
 
         {!compareMode && (
           <div style={{ position: 'relative', flexShrink: 0 }}>
-            <button
+            <button className="hit-44"
               onClick={() => setMenuOpen(v => !v)}
               aria-label="Entry options"
               aria-expanded={menuOpen}

@@ -1129,7 +1129,7 @@ export default function HomeDashboard({
               onClick={confirmRestBanner}
               disabled={restBannerBusy}
               style={{
-                flex: 1, height: '38px',
+                flex: 1, height: '40px',
                 backgroundColor: 'var(--accent)',
                 color: 'var(--on-accent)',
                 border: 'none', borderRadius: '10px',
@@ -1145,7 +1145,7 @@ export default function HomeDashboard({
               onClick={declineRestBanner}
               disabled={restBannerBusy}
               style={{
-                flex: 1, height: '38px',
+                flex: 1, height: '40px',
                 backgroundColor: 'transparent',
                 border: '1px solid var(--border)', borderRadius: '10px',
                 color: 'var(--text-secondary)',

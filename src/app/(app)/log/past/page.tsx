@@ -711,7 +711,7 @@ function LogPastContent() {
                         // Grow to fill, but wrap to a new row past ~3 days so custom
                         // rotations with many days stay readable on a phone.
                         flex: '1 1 80px',
-                        height: '36px',
+                        height: '40px',
                         padding: '0 12px',
                         borderRadius: '9999px',
                         border: active
