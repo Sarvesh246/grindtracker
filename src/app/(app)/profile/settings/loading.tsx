@@ -7,13 +7,13 @@ export default function SettingsLoading() {
       </div>
       <div className="settings-columns">
       {[1, 2, 3, 4, 5, 6, 7].map(i => (
-        <div key={i} style={{ marginBottom: '20px' }}>
+        <div key={i} className={i > 4 ? 'settings-extra-skeleton' : undefined} style={{ marginBottom: '20px' }}>
           <div className="shimmer" style={{ width: '100px', height: '12px', borderRadius: '4px', marginBottom: '10px' }} />
           <div
-            className="shimmer"
+            className={i === 2 ? 'shimmer settings-units-skeleton' : 'shimmer'}
             style={{
               width: '100%',
-              height: i === 2 ? '480px' : i === 3 ? '140px' : '88px',
+              height: i === 3 ? '140px' : '88px',
               borderRadius: '12px',
             }}
           />

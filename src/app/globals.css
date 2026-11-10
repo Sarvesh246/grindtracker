@@ -1792,6 +1792,12 @@ html.reduce-motion .grind-sheet-backdrop[data-closing='true'] {
   }
 }
 
+.progress-photo-skeleton, .ranks-friends-skeleton, .settings-extra-skeleton { display: none; }
+@media (min-width: 1024px) {
+  .progress-photo-skeleton, .ranks-friends-skeleton, .settings-extra-skeleton { display: block; }
+  .settings-units-skeleton { height: 480px !important; }
+}
+
 /* Sidebar exercise jump-list buttons: hover feedback (background lives here so
    :hover can take effect, matching the .top-nav-tab pattern). */
 .wo-jump-item {

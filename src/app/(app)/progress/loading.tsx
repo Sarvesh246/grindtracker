@@ -7,7 +7,7 @@ export default function ProgressLoading() {
       </div>
       <div className="progress-layout">
       <div className="progress-rail">
-      <div className="shimmer" style={{ height: '70px', borderRadius: '12px', marginBottom: '16px' }} />
+      <div className="shimmer progress-photo-skeleton" style={{ height: '70px', borderRadius: '12px', marginBottom: '16px' }} />
       <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', overflow: 'hidden' }}>
         {[80, 120, 100, 90, 110].map((w, i) => (
           <div key={i} className="shimmer" style={{
