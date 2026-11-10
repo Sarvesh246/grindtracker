@@ -193,7 +193,7 @@ export default function Dialog({
   return createPortal(
     <div
       role="presentation"
-      className={useDefaultMotion ? 'dlg-backdrop' : className}
+      className={['dlg-root', useDefaultMotion ? 'dlg-backdrop' : className].filter(Boolean).join(' ')}
       data-closing={isClosing ? 'true' : undefined}
       data-keyboard={avoidKeyboard && keyboardInset > 8 ? 'true' : undefined}
       onClick={e => {
@@ -206,7 +206,6 @@ export default function Dialog({
         zIndex,
         backgroundColor: 'rgba(0,0,0,0.7)',
         display: 'flex',
-        alignItems: 'flex-end',
         justifyContent: 'center',
         pointerEvents: isClosing ? 'none' : undefined,
         ...(avoidKeyboard ? { paddingBottom: keyboardInset } : null),
@@ -220,7 +219,7 @@ export default function Dialog({
         aria-labelledby={titleId}
         aria-describedby={describedBy}
         tabIndex={-1}
-        className={panelClassName ?? (useDefaultMotion ? 'dlg-panel' : undefined)}
+        className={panelClassName ?? (useDefaultMotion ? 'dlg-panel dlg-sheet' : 'dlg-sheet')}
         onKeyDown={onKeyDown}
         onClick={e => e.stopPropagation()}
         style={{

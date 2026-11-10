@@ -49,7 +49,7 @@ export default function RenameExerciseDialog({ exercise, closing, onSave, onClos
       panelStyle={{ maxWidth: '480px' }}
       avoidKeyboard
     >
-      <form
+      <form className="dlg-sheet-surface"
         onSubmit={e => { e.preventDefault(); void submit() }}
         style={{
           width: '100%',

@@ -241,7 +241,7 @@ export default function PhotoLightbox({
   const shown = visible && !closing
 
   return (
-    <Dialog open animate={false} onClose={requestClose} title="Progress photo viewer" zIndex={300} panelStyle={{ maxWidth: 'none', height: '100%' }}>
+    <Dialog open animate={false} panelClassName="photo-viewer-panel" style={{ padding: 0 }} onClose={requestClose} title="Progress photo viewer" zIndex={300} panelStyle={{ maxWidth: 'none', height: '100%' }}>
     <div
       style={{
         position: 'fixed',

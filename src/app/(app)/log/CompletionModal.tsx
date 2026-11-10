@@ -125,7 +125,7 @@ export default function CompletionModal({
       }}
       panelStyle={{ maxWidth: '100%' }}
     >
-      <div style={{
+      <div className="dlg-sheet-surface" style={{
         width: '100%',
         backgroundColor: 'var(--surface)',
         borderRadius: '20px 20px 0 0',

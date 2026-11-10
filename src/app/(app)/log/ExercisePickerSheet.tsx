@@ -268,7 +268,7 @@ export default function ExercisePickerSheet({
       <div
         ref={sheetRef}
         className={
-          'grind-sheet'
+          'grind-sheet dlg-sheet-surface'
           + (enter && !closing ? ' grind-sheet--enter' : '')
           + (closing && !closingFromDrag ? ' grind-sheet--closing' : '')
           + (closingFromDrag ? ' grind-sheet--dragging' : '')

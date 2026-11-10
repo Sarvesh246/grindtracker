@@ -509,7 +509,7 @@ export default function BodyWeightCard() {
           // covers the sheet with no compensation at all.
           avoidKeyboard
         >
-          <div
+          <div className="dlg-sheet-surface"
             style={{
               width: '100%',
               backgroundColor: 'var(--surface)',

@@ -1199,7 +1199,7 @@ export default function SettingsView({
         avoidKeyboard
         panelStyle={{ maxWidth: '480px' }}
       >
-        <div
+        <div className="dlg-sheet-surface"
           style={{
             width: '100%',
             backgroundColor: 'var(--surface)',

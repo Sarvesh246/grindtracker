@@ -74,7 +74,7 @@ export default function PlateCalculator({ initialTarget, onClose, onApply, closi
       initialFocusRef={target === '' ? undefined : sheetRef}
       panelStyle={{ maxWidth: '480px' }}
     >
-      <div
+      <div className="dlg-sheet-surface"
         ref={sheetRef}
         tabIndex={-1}
         style={{

@@ -842,6 +842,19 @@ body.coach-fab-dragging .bottom-nav [data-haptic-overlay] {
   from { opacity: 1; transform: scale(1) translateY(0); }
   to { opacity: 0; transform: scale(0.97) translateY(4px); }
 }
+.dlg-root { align-items: flex-end; }
+
+@media (min-width: 768px) {
+  .dlg-root { align-items: center; padding: 24px; }
+  .dlg-root > .dlg-sheet {
+    max-width: 480px !important;
+    max-height: min(88dvh, 760px, calc(90dvh - var(--grind-keyboard-inset, 0px))) !important;
+    border-radius: var(--radius-lg) !important;
+  }
+  .dlg-root > .dlg-sheet.dlg-panel { animation-name: dlg-pop-in; }
+  .dlg-root[data-closing='true'] > .dlg-sheet.dlg-panel { animation-name: dlg-pop-out; }
+  .dlg-sheet-surface { border-radius: var(--radius-lg) !important; border-bottom: 1px solid var(--border) !important; max-height: inherit; }
+}
 .dlg-backdrop {
   animation: sheet-backdrop-in 220ms ease backwards;
 }

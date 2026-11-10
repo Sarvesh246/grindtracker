@@ -53,7 +53,7 @@ export default function ComparePhotosView({
   if (typeof document === 'undefined') return null
 
   return (
-    <Dialog open animate={false} onClose={requestClose} title="Compare progress photos" zIndex={400} panelStyle={{ maxWidth: 'none', height: '100%' }}>
+    <Dialog open animate={false} panelClassName="photo-viewer-panel" style={{ padding: 0 }} onClose={requestClose} title="Compare progress photos" zIndex={400} panelStyle={{ maxWidth: 'none', height: '100%' }}>
     <div
       style={{
         position: 'fixed', inset: 0, zIndex: 400, backgroundColor: '#000',
