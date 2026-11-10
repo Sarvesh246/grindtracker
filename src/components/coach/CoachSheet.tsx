@@ -312,7 +312,10 @@ export default function CoachSheet() {
     const el = inputRef.current
     if (!el) return
     el.style.height = 'auto'
-    el.style.height = `${el.scrollHeight}px`
+    const contentHeight = el.scrollHeight
+    const maxHeight = parseFloat(window.getComputedStyle(el).maxHeight)
+    el.style.overflowY = contentHeight > maxHeight ? 'auto' : 'hidden'
+    el.style.height = `${contentHeight}px`
   }, [draft, mounted])
 
   // useExitingValue flips `closing` in an effect — one frame too late for
