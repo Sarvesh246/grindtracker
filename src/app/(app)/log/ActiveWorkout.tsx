@@ -3988,7 +3988,12 @@ function ExerciseCard({
            Warm-up / plates / Add set row below — not here, where it crowded the labels. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0 16px 6px' }}>
           <span aria-hidden style={{ minWidth: '38px', flexShrink: 0 }} />
-          <span aria-hidden style={{ width: '38px', flexShrink: 0 }} />
+          <span aria-hidden="true" style={{
+            width: '44px', flexShrink: 0, textAlign: 'center',
+            fontSize: '10px', fontWeight: 600, letterSpacing: '0.5px',
+            textTransform: 'uppercase', color: 'var(--text-muted)',
+            fontFamily: "'DM Sans', sans-serif",
+          }}>WU</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <span style={{
               width: '56px', textAlign: 'center',
@@ -4497,12 +4502,10 @@ function SetRow({
           </svg>
         </button>
 
-        {/* Warm-up toggle. The "W" pill is intentionally minimal; a small caption
-           under the first set of each exercise states what it does without repeating
-           on every row. The fixed-width column keeps the inputs aligned across rows. */}
+        {/* Warm-up toggle. The fixed-width column keeps the inputs aligned across rows. */}
         <div style={{
           width: '44px', flexShrink: 0, marginRight: '2px',
-          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '5px',
+          display: 'flex', alignItems: 'center',
         }}>
           <button
             data-onboard={onboardFirst ? 'aw-warmup' : undefined}
@@ -4537,17 +4540,6 @@ function SetRow({
               W
             </span>
           </button>
-          {setNumber === 1 && !isBonus && (
-            <span style={{
-              fontFamily: "'DM Sans', sans-serif",
-              fontSize: '10px', fontWeight: 600, lineHeight: 1,
-              letterSpacing: '0.3px', textTransform: 'uppercase',
-              whiteSpace: 'nowrap',
-              color: logEntry.isWarmup ? 'var(--accent-dim)' : 'var(--text-muted)',
-            }}>
-              warm-up
-            </span>
-          )}
         </div>
 
         {/* Weight + reps inputs. Both are equal-sized fixed boxes with a clear gap
