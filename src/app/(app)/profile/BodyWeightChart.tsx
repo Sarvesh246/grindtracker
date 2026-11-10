@@ -155,7 +155,7 @@ export default function BodyWeightChart({
         <ResponsiveContainer width="100%" height="100%">
           <LineChart
             data={chartPoints}
-            margin={{ top: 4, right: 20, bottom: 0, left: 4 }}
+            margin={{ top: 4, right: 20, bottom: 6, left: 4 }}
             onClick={handleChartClick}
             style={{ cursor: 'pointer' }}
           >

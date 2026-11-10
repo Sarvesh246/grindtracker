@@ -89,10 +89,9 @@ export default function ProgressChart({ data }: { data: ChartPoint[] }) {
   const values = data.map(d => d.value)
   const minV = Math.min(...values)
   const maxV = Math.max(...values)
-  const padding = Math.max((maxV - minV) * 0.2, 5)
-  // Never let the Y-axis go negative — weights and volumes are always ≥ 0.
-  const yMin = Math.max(0, Math.floor(minV - padding))
-  const yMax = Math.ceil(maxV + padding)
+  // Values are already in the user's display units.
+  const yMin = Math.max(0, Math.floor(minV / 10) * 10)
+  const yMax = Math.max(yMin + 10, Math.ceil(maxV / 10) * 10)
 
   const showAllLabels = data.length <= 6
   const tickInterval = showAllLabels ? 0 : Math.floor(data.length / 5)
@@ -133,6 +132,8 @@ export default function ProgressChart({ data }: { data: ChartPoint[] }) {
               tickLine={false}
               axisLine={false}
               domain={[yMin, yMax]}
+              tickCount={4}
+              allowDecimals={false}
               tickFormatter={(v) => v === 0 ? 'BW' : String(v)}
               width={yAxisWidth}
             />
