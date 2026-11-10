@@ -480,6 +480,51 @@ export default function ActiveWorkout({ day }: { day: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workoutNote])
 
+  // Last completed session's set notes per exercise (+ the day's last workout
+  // note). Best-effort: a failed read just means no hints.
+  const loadLastNotes = useCallback(async (exerciseIds: string[], currentSessionId: string) => {
+    if (exerciseIds.length === 0) return
+    const { data } = await supabase
+      .from('session_logs')
+      .select('exercise_id, set_number, note, session_id, sessions!inner(started_at, completed_at, day_type, note)')
+      .in('exercise_id', exerciseIds)
+      .not('weight', 'is', null)
+      .not('sessions.completed_at', 'is', null)
+      .neq('session_id', currentSessionId)
+      .order('started_at', { referencedTable: 'sessions', ascending: false })
+      .limit(400)
+    type Row = {
+      exercise_id: string
+      set_number: number
+      note: string | null
+      session_id: string
+      sessions: { started_at: string; day_type: string; note: string | null } | { started_at: string; day_type: string; note: string | null }[]
+    }
+    const rows = ((data ?? []) as Row[]).map(r => ({
+      ...r,
+      sess: Array.isArray(r.sessions) ? r.sessions[0] : r.sessions,
+    }))
+    const newestPerExercise: Record<string, { sid: string; at: string }> = {}
+    for (const r of rows) {
+      const cur = newestPerExercise[r.exercise_id]
+      if (!cur || r.sess.started_at > cur.at) newestPerExercise[r.exercise_id] = { sid: r.session_id, at: r.sess.started_at }
+    }
+    const notes: Record<string, string> = {}
+    let dayNote = ''
+    let dayNoteAt = ''
+    for (const r of rows) {
+      if (newestPerExercise[r.exercise_id]?.sid === r.session_id && r.note) {
+        notes[`${r.exercise_id}-${r.set_number}`] = r.note
+      }
+      if (r.sess.day_type === day && r.sess.note && r.sess.started_at > dayNoteAt) {
+        dayNote = r.sess.note
+        dayNoteAt = r.sess.started_at
+      }
+    }
+    setLastSetNotes(notes)
+    setLastWorkoutNote(dayNote)
+  }, [supabase, day])
+
   const initSession = useCallback(async () => {
     setLoading(true)
     setLoadError(false)
@@ -762,7 +807,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
     } finally {
       if (!redirecting) setLoading(false)
     }
-  }, [day, supabase, router])
+  }, [day, supabase, router, loadLastNotes])
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { initSession() }, [initSession])
@@ -1196,50 +1241,6 @@ export default function ActiveWorkout({ day }: { day: string }) {
     }
   }
 
-  // Last completed session's set notes per exercise (+ the day's last workout
-  // note). Best-effort: a failed read just means no hints.
-  async function loadLastNotes(exerciseIds: string[], currentSessionId: string) {
-    if (exerciseIds.length === 0) return
-    const { data } = await supabase
-      .from('session_logs')
-      .select('exercise_id, set_number, note, session_id, sessions!inner(started_at, completed_at, day_type, note)')
-      .in('exercise_id', exerciseIds)
-      .not('weight', 'is', null)
-      .not('sessions.completed_at', 'is', null)
-      .neq('session_id', currentSessionId)
-      .order('started_at', { referencedTable: 'sessions', ascending: false })
-      .limit(400)
-    type Row = {
-      exercise_id: string
-      set_number: number
-      note: string | null
-      session_id: string
-      sessions: { started_at: string; day_type: string; note: string | null } | { started_at: string; day_type: string; note: string | null }[]
-    }
-    const rows = ((data ?? []) as Row[]).map(r => ({
-      ...r,
-      sess: Array.isArray(r.sessions) ? r.sessions[0] : r.sessions,
-    }))
-    const newestPerExercise: Record<string, { sid: string; at: string }> = {}
-    for (const r of rows) {
-      const cur = newestPerExercise[r.exercise_id]
-      if (!cur || r.sess.started_at > cur.at) newestPerExercise[r.exercise_id] = { sid: r.session_id, at: r.sess.started_at }
-    }
-    const notes: Record<string, string> = {}
-    let dayNote = ''
-    let dayNoteAt = ''
-    for (const r of rows) {
-      if (newestPerExercise[r.exercise_id]?.sid === r.session_id && r.note) {
-        notes[`${r.exercise_id}-${r.set_number}`] = r.note
-      }
-      if (r.sess.day_type === day && r.sess.note && r.sess.started_at > dayNoteAt) {
-        dayNote = r.sess.note
-        dayNoteAt = r.sess.started_at
-      }
-    }
-    setLastSetNotes(notes)
-    setLastWorkoutNote(dayNote)
-  }
 
   async function handleUndo() {
     if (!undoState || !sessionId) return

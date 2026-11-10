@@ -315,26 +315,40 @@ function stopMomentum() {
   if (momentumRaf) cancelAnimationFrame(momentumRaf)
   momentumRaf = 0
 }
-function startMomentum(el: HTMLElement, samples: { t: number; y: number }[]) {
+function startMomentum(el: HTMLElement, axis: 'x' | 'y', samples: { t: number; y: number }[]) {
   stopMomentum()
-  if (samples.length < 2) return
-  const last = samples[samples.length - 1]
-  const first = samples[0]
+  const now = performance.now()
+  // Use only the release window, not the start of a long drag or a reversal.
+  const recent = samples.filter(sample => now - sample.t <= 100)
+  if (recent.length < 2) return
+  const last = recent[recent.length - 1]
+  const first = recent[0]
   const dt = last.t - first.t
-  // A long pause before release means the finger stopped: no flick.
-  if (dt <= 0 || performance.now() - last.t > 100) return
-  let v = -(last.y - first.y) / dt // px per ms, positive = scroll down
+  if (dt <= 0 || now - last.t > 60) return
+  let v = -(last.y - first.y) / dt
   if (!Number.isFinite(v) || Math.abs(v) < 0.15) return
   v = Math.max(-4, Math.min(4, v))
-  let prev = performance.now()
-  const step = (now: number) => {
-    const frame = Math.min(now - prev, 48)
-    prev = now
-    const before = el.scrollTop
-    el.scrollTop = before + v * frame
-    // Time-based exponential decay (~0.0025/ms ≈ native feel).
-    v *= Math.exp(-0.0028 * frame)
-    if (Math.abs(v) < 0.02 || el.scrollTop === before) {
+  let prev = now
+  let position = axis === 'y' ? el.scrollTop : el.scrollLeft
+  const step = (time: number) => {
+    if (!el.isConnected || document.hidden) {
+      stopMomentum()
+      return
+    }
+    const frame = Math.min(time - prev, 48)
+    prev = time
+    // Integrate exponential decay exactly: distance is independent of refresh
+    // rate. Keep fractional position even when WebKit rounds scroll offsets.
+    const decay = Math.exp(-0.0028 * frame)
+    position += v * (1 - decay) / 0.0028
+    const max = axis === 'y'
+      ? el.scrollHeight - el.clientHeight
+      : el.scrollWidth - el.clientWidth
+    position = Math.max(0, Math.min(max, position))
+    if (axis === 'y') el.scrollTop = position
+    else el.scrollLeft = position
+    v *= decay
+    if (Math.abs(v) < 0.02 || position <= 0 || position >= max) {
       momentumRaf = 0
       return
     }
@@ -407,7 +421,7 @@ export function attachHapticOverlay(el: HTMLElement): () => void {
     gestureDragged = false
     // A finger landing stops any inertia glide still running from a prior flick.
     stopMomentum()
-    samples = [{ t: e.timeStamp, y: t.clientY }]
+    samples = [{ t: performance.now(), y: t.clientY }]
     gesture = {
       x: t.clientX,
       y: t.clientY,
@@ -431,6 +445,10 @@ export function attachHapticOverlay(el: HTMLElement): () => void {
         return
       }
       gesture.axis = Math.abs(dy) >= Math.abs(dx) ? 'y' : 'x'
+      // Include the threshold distance; dropping it makes each drag start late.
+      gesture.lastX = gesture.x
+      gesture.lastY = gesture.y
+      samples = [{ t: performance.now(), y: gesture.axis === 'y' ? t.clientY : t.clientX }]
       gesture.scrollEl = nearestScrollParent(el, gesture.axis)
       if (!gesture.scrollEl) {
         if (gesture.axis === 'x') {
@@ -457,12 +475,12 @@ export function attachHapticOverlay(el: HTMLElement): () => void {
     e.preventDefault()
     if (gesture.axis === 'y') {
       gesture.scrollEl.scrollTop -= t.clientY - gesture.lastY
-      samples.push({ t: e.timeStamp, y: t.clientY })
-      if (samples.length > 6) samples.shift()
     } else {
       gesture.scrollEl.scrollLeft -= t.clientX - gesture.lastX
     }
 
+    samples.push({ t: performance.now(), y: gesture.axis === 'y' ? t.clientY : t.clientX })
+    samples = samples.filter(sample => performance.now() - sample.t <= 100)
     gesture.lastX = t.clientX
     gesture.lastY = t.clientY
   }
@@ -470,8 +488,8 @@ export function attachHapticOverlay(el: HTMLElement): () => void {
   const onTouchEnd = (e: TouchEvent) => {
     // JS-forwarded scrolling has no native inertia, which is what made lists
     // feel stuck to the finger. Re-create the flick: glide from release velocity.
-    if (e.type === 'touchend' && gesture?.axis === 'y' && gesture.scrollEl) {
-      startMomentum(gesture.scrollEl, samples)
+    if (e.type === 'touchend' && gesture?.axis && gesture.scrollEl) {
+      startMomentum(gesture.scrollEl, gesture.axis, samples)
     }
     samples = []
     gesture = null
@@ -539,6 +557,7 @@ export function attachHapticOverlay(el: HTMLElement): () => void {
       sw.removeEventListener('touchend', onTouchEnd)
       sw.removeEventListener('touchcancel', onTouchEnd)
     }
+    if (gesture?.scrollEl) stopMomentum()
     sw.remove()
   }
 }
@@ -578,6 +597,12 @@ export function setupHaptics(root: ParentNode = document): () => void {
     }
   }
 
+  // A touch anywhere must catch a forwarded glide, including blank content,
+  // text fields, dialogs and another scroller. Wheel input and teardown also stop it.
+  const stopOnHide = () => { if (document.hidden) stopMomentum() }
+  document.addEventListener('touchstart', stopMomentum, { capture: true, passive: true })
+  document.addEventListener('wheel', stopMomentum, { capture: true, passive: true })
+  document.addEventListener('visibilitychange', stopOnHide)
   const detachers = new Map<HTMLElement, () => void>()
 
   const attachOne = (el: HTMLElement) => {
@@ -635,6 +660,10 @@ export function setupHaptics(root: ParentNode = document): () => void {
 
   return () => {
     observer.disconnect()
+    stopMomentum()
+    document.removeEventListener('touchstart', stopMomentum, true)
+    document.removeEventListener('wheel', stopMomentum, true)
+    document.removeEventListener('visibilitychange', stopOnHide)
     for (const d of detachers.values()) d()
     detachers.clear()
   }
