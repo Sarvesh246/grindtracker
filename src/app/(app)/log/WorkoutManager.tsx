@@ -1,4 +1,5 @@
 'use client'
+import { formatSetsReps } from '@/lib/utils/formatting'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createClient, getClientUser } from '@/lib/supabase/client'
 import { useDemoMode } from '@/lib/contexts/DemoModeContext'
@@ -1407,7 +1408,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
                             )}
                           </div>
                           <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
-                            {ex.sets_target} sets × {ex.reps_target} reps
+                            {formatSetsReps(ex.sets_target, ex.reps_target)}
                             {ex.weight_target != null && ` @ ${fmt(ex.weight_target)} ${unitLabel}`}
                           </div>
                         </div>

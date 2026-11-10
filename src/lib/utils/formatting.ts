@@ -95,3 +95,10 @@ export function localDateKeyInTimeZone(
     return null
   }
 }
+
+/** Format numeric reps with a unit, while preserving free-text targets. */
+export function formatSetsReps(sets: number, repsTarget: string | number): string {
+  const reps = String(repsTarget).trim()
+  const bare = /^\d+(\s*[-–]\s*\d+)?$/.test(reps)
+  return `${sets} sets × ${reps}${bare ? ' reps' : ''}`
+}

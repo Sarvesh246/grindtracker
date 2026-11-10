@@ -1,4 +1,5 @@
 'use client'
+import { formatSetsReps } from '@/lib/utils/formatting'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient, getClientUser } from '@/lib/supabase/client'
@@ -3972,7 +3973,7 @@ function ExerciseCard({
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-            {exercise.sets_target} sets × {exercise.reps_target} reps
+            {formatSetsReps(exercise.sets_target, exercise.reps_target)}
           </span>
           <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: "'JetBrains Mono', monospace" }}>
             {previousBest !== null ? (previousBest === 0 ? 'prev: BW' : `prev: ${fmt(previousBest)} ${unitLabel}`) : 'no previous data'}

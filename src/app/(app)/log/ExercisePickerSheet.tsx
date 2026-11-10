@@ -1,4 +1,5 @@
 'use client'
+import { formatSetsReps } from '@/lib/utils/formatting'
 
 import { useEffect, useId, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import Dialog from '@/components/ui/Dialog'
@@ -451,7 +452,7 @@ export default function ExercisePickerSheet({
                           <HighlightName name={ex.name} query={q} />
                         </div>
                         <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
-                          {ex.sets_target} sets × {ex.reps_target} reps
+                          {formatSetsReps(ex.sets_target, ex.reps_target)}
                         </div>
                       </div>
                       <span style={{
@@ -502,7 +503,7 @@ export default function ExercisePickerSheet({
                               <HighlightName name={ex.name} query={q} />
                             </div>
                             <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
-                              {ex.sets_target} sets × {ex.reps_target} reps
+                              {formatSetsReps(ex.sets_target, ex.reps_target)}
                             </div>
                           </div>
                           {isCurrent && (
