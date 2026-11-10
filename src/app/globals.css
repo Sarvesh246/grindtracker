@@ -1737,6 +1737,9 @@ html.reduce-motion .grind-sheet-backdrop[data-closing='true'] {
 @media (min-width: 768px) { .page--settings { max-width: 880px; } }
 @media (min-width: 1024px) {
   .page--profile { max-width: 1200px; }
+  .page--settings { max-width: 1100px; }
+  .settings-columns { column-count: 2; column-gap: 24px; }
+  .settings-columns > * { break-inside: avoid; }
   .profile-layout { display: grid; grid-template-columns: 380px minmax(0, 1fr); gap: 28px; align-items: start; }
   .profile-rail { position: sticky; top: calc(var(--nav-h) + env(safe-area-inset-top) + 16px); }
 }

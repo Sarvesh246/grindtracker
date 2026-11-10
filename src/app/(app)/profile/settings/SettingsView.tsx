@@ -655,6 +655,7 @@ export default function SettingsView({
         </h1>
       </div>
 
+      <div className="settings-columns">
       {/* Appearance */}
       <Section label="Appearance">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -1185,6 +1186,8 @@ export default function SettingsView({
           />
         </Section>
       )}
+
+      </div>
 
       {feedbackOpen && <FeedbackModal onClose={() => setFeedbackOpen(false)} />}
 
