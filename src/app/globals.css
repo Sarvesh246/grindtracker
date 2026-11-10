@@ -1749,6 +1749,13 @@ html.reduce-motion .grind-sheet-backdrop[data-closing='true'] {
   .photo-tile-grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); grid-template-rows: auto; }
 }
 
+@media (min-width: 1464px) {
+  .top-nav {
+    padding-left: calc((100vw - 1400px) / 2 + 32px);
+    padding-right: calc((100vw - 1400px) / 2 + 32px);
+  }
+}
+
 /* Sidebar exercise jump-list buttons: hover feedback (background lives here so
    :hover can take effect, matching the .top-nav-tab pattern). */
 .wo-jump-item {
