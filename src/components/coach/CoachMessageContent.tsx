@@ -6,6 +6,10 @@ import {
   type CoachInline,
 } from '@/lib/coach/formatMessage'
 
+function inlineText(nodes: CoachInline[]): string {
+  return nodes.map(node => node.type === 'text' ? node.value : inlineText(node.children)).join('')
+}
+
 function renderInline(nodes: CoachInline[], keyPrefix: string): ReactNode[] {
   return nodes.map((node, i) => {
     const key = `${keyPrefix}-${i}`
@@ -46,7 +50,7 @@ export default function CoachMessageContent({
       {blocks.map((block, i) => {
         if (block.type === 'paragraph') {
           return (
-            <p key={i} className="coach-md__p">
+            <p key={i} className={blocks[i - 1]?.type === 'list' && /(?:\d\s*[x×]\s*\d|\b(?:target|rest|tempo|rpe)\s*:|\b\d+\s*(?:sec|secs|seconds|min|mins|minutes|sets?|reps?|lb|lbs|kg)\b)/i.test(inlineText(block.children)) ? 'coach-md__p coach-md__list-detail' : 'coach-md__p'}>
               {renderInline(block.children, `p${i}`)}
             </p>
           )

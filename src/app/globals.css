@@ -3336,6 +3336,10 @@ html.reduce-motion .coach-md > * {
 .coach-md__p {
   margin: 0;
 }
+.coach-md__list-detail {
+  padding-left: 1.15em;
+  color: var(--text-secondary);
+}
 .coach-md__label {
   margin: 2px 0 0;
   font-size: 12px;
