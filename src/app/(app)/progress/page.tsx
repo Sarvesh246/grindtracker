@@ -698,7 +698,7 @@ export default function ProgressPage() {
           ) : chartData.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '32px 16px' }}>
               <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px' }}>
-                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--border-strong)' }}>
+                <svg aria-hidden="true" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--border-strong)' }}>
                   <line x1="18" y1="20" x2="18" y2="10"/>
                   <line x1="12" y1="20" x2="12" y2="4"/>
                   <line x1="6" y1="20" x2="6" y2="14"/>
@@ -709,7 +709,7 @@ export default function ProgressPage() {
                 No data yet for<br />
                 <span style={{ color: 'var(--text-secondary)' }}>{selectedExercise?.name ?? 'this exercise'}</span>
               </div>
-              <div style={{ fontSize: '12px', color: 'var(--border-strong)', marginTop: '8px' }}>
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '8px' }}>
                 Log this exercise to see progress
               </div>
             </div>

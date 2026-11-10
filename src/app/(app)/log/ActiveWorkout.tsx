@@ -2877,7 +2877,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         alignItems: 'center',
         gap: '16px',
       }}>
-        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--border-strong)' }}>
+        <svg aria-hidden="true" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--border-strong)' }}>
           <line x1="6" y1="12" x2="18" y2="12" />
           <rect x="2" y="9" width="4" height="6" rx="1.5" />
           <rect x="18" y="9" width="4" height="6" rx="1.5" />
