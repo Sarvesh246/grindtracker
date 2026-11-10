@@ -258,13 +258,10 @@ export default function LeaderboardClient({ userId }: Props) {
 
       {/* Loading */}
       {loading && entries.length === 0 && (
-        <div style={{
-          textAlign: 'center',
-          padding: '40px 0',
-          fontFamily: "'DM Sans', sans-serif",
-          fontSize: '14px',
-          color: 'var(--text-muted)',
-        }}>Loading…</div>
+        <div aria-busy="true" style={{ display: 'grid', gap: '8px' }}>
+          <span className="sr-only">Loading</span>
+          {[0, 1, 2, 3, 4].map(i => <div key={i} className="shimmer" style={{ height: '56px', borderRadius: '12px' }} />)}
+        </div>
       )}
 
       {/* Empty state */}

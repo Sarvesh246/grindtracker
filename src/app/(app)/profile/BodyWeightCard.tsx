@@ -355,7 +355,7 @@ export default function BodyWeightCard() {
       </div>
 
       {loading ? (
-        <div style={{ color: 'var(--text-muted)', fontSize: '12px' }}>Loading...</div>
+        <div aria-busy="true"><span className="sr-only">Loading</span><div className="shimmer" style={{ height: '180px', borderRadius: '12px' }} /></div>
       ) : chartPoints.length === 0 ? (
         <div style={{ color: 'var(--text-muted)', fontSize: '12px', textAlign: 'center', padding: '12px 0' }}>
           No body weight data yet. Log your first reading above.

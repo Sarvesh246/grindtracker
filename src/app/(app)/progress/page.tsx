@@ -694,7 +694,7 @@ export default function ProgressPage() {
           justifyContent: 'center',
         }}>
           {loadingChart ? (
-            <div style={{ color: 'var(--text-muted)', fontSize: '14px', textAlign: 'center' }}>Loading…</div>
+            <div aria-busy="true" style={{ width: '100%' }}><span className="sr-only">Loading</span><div className="shimmer" style={{ height: '180px', borderRadius: '12px' }} /></div>
           ) : chartData.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '32px 16px' }}>
               <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px' }}>

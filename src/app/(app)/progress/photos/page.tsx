@@ -224,7 +224,10 @@ export default function ProgressPhotosPage() {
       )}
 
       {loading ? (
-        <div style={{ padding: '0 16px', color: 'var(--text-muted)', fontSize: '14px' }}>Loading…</div>
+        <div aria-busy="true" style={{ padding: '0 16px', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '8px' }}>
+          <span className="sr-only">Loading</span>
+          {[0, 1, 2, 3].map(i => <div key={i} className="shimmer" style={{ aspectRatio: '1', borderRadius: '12px' }} />)}
+        </div>
       ) : groups.length === 0 ? (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '16px', padding: '48px 24px' }}>
           <span style={{
