@@ -69,6 +69,7 @@
   /* Lime used as TEXT/number color. Same as --accent in dark; darkened to a
      readable olive in light mode (lime text is unreadable on white). */
   --accent-text: #c8f135;
+  --focus-ring: var(--accent);
   /* Faint accent-tinted panel background (active tabs, highlighted rows). */
   --accent-wash: rgba(200, 241, 53, 0.1);
   --accent-border: color-mix(in srgb, var(--accent) 35%, transparent);
@@ -139,6 +140,7 @@ html.light {
   --accent-dim: #7a9420;
   --accent-deep: #5a7a1a;
   --accent-text: #4f6612;
+  --focus-ring: var(--accent-text);
   --accent-wash: rgba(95, 122, 22, 0.14);
   --accent-border: color-mix(in srgb, var(--accent) 40%, transparent);
   --accent-border-strong: color-mix(in srgb, var(--accent) 55%, transparent);
@@ -209,6 +211,7 @@ body {
   --accent: #c8f135;
   --accent-dim: #8faa24;
   --accent-text: #c8f135;
+  --focus-ring: #c8f135;
   --accent-wash: rgba(200, 241, 53, 0.1);
   --accent-border: rgba(200, 241, 53, 0.35);
   --accent-border-strong: rgba(200, 241, 53, 0.5);
@@ -248,7 +251,7 @@ textarea:focus-visible,
 select:focus-visible,
 [role='button']:focus-visible,
 [tabindex]:focus-visible {
-  outline: 2px solid var(--accent) !important;
+  outline: 2px solid var(--focus-ring) !important;
   outline-offset: 2px;
   border-radius: var(--radius-sm);
 }
