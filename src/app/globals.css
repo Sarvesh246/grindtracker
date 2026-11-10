@@ -23,8 +23,8 @@
   --color-accent-dim: #8faa24;
   --color-accent-deep: #5a7a1a;
   --color-text-primary: #f0f0f0;
-  --color-text-secondary: #888888;
-  --color-text-muted: #7a7a7a;
+  --color-text-secondary: #a3a3a3;
+  --color-text-muted: #8c8c8c;
   --color-text-disabled: #555555;
   --color-danger: #ef4444;
   --color-danger-bg: rgba(239, 68, 68, 0.08);
@@ -78,8 +78,8 @@
      theme ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ the lime fill itself is unchanged, so text on it is always dark. */
   --on-accent: #0f0f0f;
   --text-primary: #f0f0f0;
-  --text-secondary: #888888;
-  --text-muted: #7a7a7a;
+  --text-secondary: #a3a3a3;
+  --text-muted: #8c8c8c;
   --text-disabled: #555555;
   --danger: #ef4444;
   --danger-bg: rgba(239, 68, 68, 0.08);
@@ -145,9 +145,9 @@ html.light {
   --warning: #b45309;
   --text-primary: #171614;
   --text-secondary: #45423c;
-  --text-muted: #656158;
+  --text-muted: #5c584f;
   --text-disabled: #989388;
-  --danger: #dc2626;
+  --danger: #b91c1c;
   --danger-bg: rgba(220, 38, 38, 0.08);
   --danger-bg-hover: rgba(220, 38, 38, 0.14);
   --card-shadow:
@@ -213,8 +213,8 @@ body {
   --accent-border: rgba(200, 241, 53, 0.35);
   --accent-border-strong: rgba(200, 241, 53, 0.5);
   --text-primary: #f0f0f0;
-  --text-secondary: #888888;
-  --text-muted: #7a7a7a;
+  --text-secondary: #a3a3a3;
+  --text-muted: #8c8c8c;
   --card-shadow: none;
   --chart-mark: #c8f135;
   --medal-1: #ffd700;

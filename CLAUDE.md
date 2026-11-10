@@ -31,7 +31,7 @@ these automatically; locally export placeholders to verify a build).
 ## Design System
 Background: #0f0f0f | Surface: #1a1a1a | Surface elevated: #242424
 Border: #2e2e2e | Accent: #c8f135 | Accent dim: #8faa24
-Text primary: #f0f0f0 | Text secondary: #888888 | Text muted: #555555
+Text primary: #f0f0f0 | Text secondary: #a3a3a3 | Text muted: #8c8c8c
 Danger: #ef4444
 
 Fonts: Bebas Neue (display), DM Sans (body), JetBrains Mono (numbers)
