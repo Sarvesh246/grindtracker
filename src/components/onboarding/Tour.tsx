@@ -71,14 +71,12 @@ export function useTour(tourId: string, steps: TourStep[], opts: UseTourOptions)
   }, [markTourSeen, tourId])
 
   const advance = useCallback(() => {
-    setIndex(i => {
-      if (i >= steps.length - 1) {
-        finish()
-        return i
-      }
-      return i + 1
-    })
-  }, [steps.length, finish])
+    if (index >= steps.length - 1) {
+      finish()
+      return
+    }
+    setIndex(i => Math.min(i + 1, steps.length - 1))
+  }, [index, steps.length, finish])
 
   const back = useCallback(() => setIndex(i => Math.max(0, i - 1)), [])
 
