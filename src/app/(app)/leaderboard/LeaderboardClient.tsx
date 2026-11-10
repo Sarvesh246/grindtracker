@@ -148,11 +148,10 @@ export default function LeaderboardClient({ userId }: Props) {
   }
 
   return (
-    <div className="page page--narrow" style={{
+    <div className="page page--ranks" style={{
       minHeight: '100%',
       backgroundColor: 'var(--bg)',
-      padding: '24px 16px',
-      paddingBottom: 'calc(80px + env(safe-area-inset-bottom))',
+      paddingTop: '24px', paddingLeft: '16px', paddingRight: '16px',
     }}>
       {leaderboardTour}
       {/* Header */}
@@ -199,11 +198,15 @@ export default function LeaderboardClient({ userId }: Props) {
         )}
       </div>
 
+      <div className="ranks-layout">
+      <div className="ranks-aside">
       {/* Friends accordion */}
       <div data-onboard="leaderboard-friends">
         <FriendsAccordion userId={userId} onFriendsChange={setFriendIds} />
       </div>
 
+      </div>
+      <div className="ranks-main">
       {/* Category tabs */}
       <div data-onboard="leaderboard-tabs" style={{
         display: 'flex',
@@ -430,6 +433,8 @@ export default function LeaderboardClient({ userId }: Props) {
         </div>
       )}
 
+      </div>
+      </div>
       {/* Share card modal */}
       {shareTarget && (
         <ShareCard

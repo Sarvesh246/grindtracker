@@ -1723,6 +1723,17 @@ html.reduce-motion .grind-sheet-backdrop[data-closing='true'] {
 }
 
 
+.page--ranks { padding-bottom: calc(80px + env(safe-area-inset-bottom)); }
+@media (min-width: 768px) {
+  .page--ranks { max-width: 640px; padding-bottom: 32px; }
+}
+@media (min-width: 1024px) {
+  .page--ranks { max-width: 1100px; }
+  .ranks-layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; grid-template-areas: 'main aside'; gap: 28px; align-items: start; }
+  .ranks-main { grid-area: main; }
+  .ranks-aside { grid-area: aside; position: sticky; top: calc(var(--nav-h) + env(safe-area-inset-top) + 16px); }
+}
+
 /* Sidebar exercise jump-list buttons: hover feedback (background lives here so
    :hover can take effect, matching the .top-nav-tab pattern). */
 .wo-jump-item {
