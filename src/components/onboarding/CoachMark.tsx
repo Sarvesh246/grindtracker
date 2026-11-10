@@ -86,8 +86,10 @@ export default function CoachMark({
 
   useLayoutEffect(() => {
     if (!cardRef.current) return
-    const r = cardRef.current.getBoundingClientRect()
-    setSize(prev => (prev && prev.w === r.width && prev.h === r.height ? prev : { w: r.width, h: r.height }))
+    // Offset dimensions ignore the pop-in animation’s scale transform.
+    const w = cardRef.current.offsetWidth
+    const h = cardRef.current.offsetHeight
+    setSize(prev => (prev && prev.w === w && prev.h === h ? prev : { w, h }))
   }, [title, body, step, isMobile, anchor?.width])
 
   const vh = typeof window !== 'undefined' ? window.innerHeight : 0
@@ -122,6 +124,7 @@ export default function CoachMark({
       ? placePopover(anchor, size.w, size.h, {
           preferred: (isMobile ? ['bottom', 'top'] : ['bottom', 'top', 'right', 'left']) as Side[],
           offset: 12,
+          margin: 12,
         })
       : null
 
