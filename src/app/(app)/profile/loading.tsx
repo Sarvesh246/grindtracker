@@ -1,10 +1,12 @@
 export default function ProfileLoading() {
   return (
-    <div style={{ padding: '24px 16px' }}>
+    <div className="page page--profile" style={{ padding: '24px 16px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
         <div className="shimmer" style={{ width: '100px', height: '32px', borderRadius: '8px' }} />
         <div className="shimmer" style={{ width: '44px', height: '44px', borderRadius: '12px', flexShrink: 0 }} />
       </div>
+      <div className="profile-layout">
+      <div className="profile-rail">
       <div style={{
         backgroundColor: 'var(--surface)', border: '1px solid var(--border)',
         borderRadius: '12px', padding: '16px', marginBottom: '16px',
@@ -25,6 +27,8 @@ export default function ProfileLoading() {
           <div key={i} className="shimmer" style={{ flex: 1, height: '110px', borderRadius: '12px' }} />
         ))}
       </div>
+      </div>
+      <div className="profile-main">
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '20px' }}>
         {[1, 2, 3, 4].map(i => (
           <div key={i} className="shimmer" style={{ height: '80px', borderRadius: '12px' }} />
@@ -32,6 +36,8 @@ export default function ProfileLoading() {
       </div>
       <div className="shimmer" style={{ height: '160px', borderRadius: '12px', marginBottom: '16px' }} />
       <div className="shimmer" style={{ height: '48px', borderRadius: '12px' }} />
+      </div>
+      </div>
     </div>
   )
 }

@@ -621,7 +621,7 @@ export default function SettingsView({
   )
 
   return (
-    <div className="page page--profile" style={{
+    <div className="page page--settings" style={{
       fontFamily: "'DM Sans', sans-serif",
       padding: '0 16px 48px',
     }}>

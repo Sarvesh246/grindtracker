@@ -1734,6 +1734,13 @@ html.reduce-motion .grind-sheet-backdrop[data-closing='true'] {
   .ranks-aside { grid-area: aside; position: sticky; top: calc(var(--nav-h) + env(safe-area-inset-top) + 16px); }
 }
 
+@media (min-width: 768px) { .page--settings { max-width: 880px; } }
+@media (min-width: 1024px) {
+  .page--profile { max-width: 1200px; }
+  .profile-layout { display: grid; grid-template-columns: 380px minmax(0, 1fr); gap: 28px; align-items: start; }
+  .profile-rail { position: sticky; top: calc(var(--nav-h) + env(safe-area-inset-top) + 16px); }
+}
+
 /* Sidebar exercise jump-list buttons: hover feedback (background lives here so
    :hover can take effect, matching the .top-nav-tab pattern). */
 .wo-jump-item {
@@ -1759,6 +1766,7 @@ html.reduce-motion .grind-sheet-backdrop[data-closing='true'] {
   .page--narrow,
   .page--workout,
   .page--profile,
+  .page--settings,
   .page--progress,
   .page--wide {
     max-width: 900px;

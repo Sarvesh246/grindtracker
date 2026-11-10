@@ -345,6 +345,8 @@ export default function ProfileDashboard({
         />
       )}
 
+      <div className="profile-layout">
+      <div className="profile-rail">
       {/* User card */}
       <div style={{
         backgroundColor: 'var(--surface)',
@@ -641,6 +643,10 @@ export default function ProfileDashboard({
         </div>
       </div>
 
+      </>)}
+      </div>
+      <div className="profile-main">
+      {!statsMissing && (<>
       {/* Lifetime stats */}
       <div style={{ marginBottom: '20px' }}>
         <div style={{
@@ -851,6 +857,9 @@ export default function ProfileDashboard({
         </div>
         </div>
         </div>
+      </div>
+
+      </div>
       </div>
 
       {joinedLabel && (
