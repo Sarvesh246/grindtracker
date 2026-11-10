@@ -127,8 +127,8 @@ export default function ShareCard({
   const statValue = isProfile
     ? `${entry.current_streak}`
     : category === 'overall'
-      ? `${entry.xp_total.toLocaleString()} XP`
-      : `${entry.best_lift === 0 ? '—' : `${fmt(entry.best_lift)}${unitLabel}`}`
+      ? entry.xp_total.toLocaleString()
+      : `${entry.best_lift === 0 ? '—' : `${fmt(entry.best_lift)} ${unitLabel}`}`
 
   const heroText = isProfile ? String(entry.level) : `#${rank}`
   const heroSub = isProfile ? 'LEVEL' : null

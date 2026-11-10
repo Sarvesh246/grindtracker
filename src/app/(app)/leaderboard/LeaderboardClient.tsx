@@ -139,9 +139,9 @@ export default function LeaderboardClient({ userId }: Props) {
   })
 
   function statDisplay(entry: LeaderboardEntry) {
-    if (category === 'overall') return `${entry.xp_total.toLocaleString()} XP`
+    if (category === 'overall') return entry.xp_total.toLocaleString()
     if (entry.best_lift === 0) return '—'
-    return `${fmt(entry.best_lift)}${unitLabel}`
+    return `${fmt(entry.best_lift)} ${unitLabel}`
   }
 
   return (
