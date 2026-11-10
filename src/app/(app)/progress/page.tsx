@@ -670,7 +670,7 @@ export default function ProgressPage() {
             }}>
               {stat.value}
             </div>
-            <div style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
               {stat.label}
             </div>
           </div>

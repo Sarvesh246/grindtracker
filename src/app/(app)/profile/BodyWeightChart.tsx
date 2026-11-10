@@ -162,14 +162,14 @@ export default function BodyWeightChart({
             <XAxis
               dataKey="displayDate"
               stroke="transparent"
-              tick={{ fill: 'var(--text-muted)', fontSize: 9, fontFamily: "'DM Sans', sans-serif" }}
+              tick={{ fill: 'var(--text-muted)', fontSize: 10, fontFamily: "'DM Sans', sans-serif" }}
               tickLine={false}
               axisLine={false}
               interval={Math.max(0, Math.floor(chartPoints.length / 4))}
             />
             <YAxis
               stroke="transparent"
-              tick={{ fill: 'var(--text-muted)', fontSize: 9, fontFamily: "'DM Sans', sans-serif" }}
+              tick={{ fill: 'var(--text-muted)', fontSize: 10, fontFamily: "'DM Sans', sans-serif" }}
               tickLine={false}
               axisLine={false}
               width={40}

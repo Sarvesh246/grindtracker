@@ -241,7 +241,7 @@ export default function WorkoutCalendar() {
         {WEEKDAYS.map(d => (
           <div key={d} style={{
             textAlign: 'center',
-            fontSize: '9px',
+            fontSize: '11px',
             color: 'var(--text-muted)',
             letterSpacing: '0.5px',
             paddingBottom: '6px',

@@ -34,6 +34,8 @@ Border: #2e2e2e | Accent: #c8f135 | Accent dim: #8faa24
 Text primary: #f0f0f0 | Text secondary: #a3a3a3 | Text muted: #8c8c8c
 Danger: #ef4444
 
+Nothing below 10px; use 10px only for uppercase labels with letter-spacing.
+
 Fonts: Bebas Neue (display), DM Sans (body), JetBrains Mono (numbers)
 Border radius: 12px standard, 8px small, 9999px pill
 Transitions: 150ms ease

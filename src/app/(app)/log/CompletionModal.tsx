@@ -203,7 +203,7 @@ export default function CompletionModal({
                 <div style={{
                   position: 'absolute', top: '-8px', left: '50%', transform: 'translateX(-50%)',
                   backgroundColor: 'var(--accent)', color: 'var(--on-accent)',
-                  fontSize: '8px', fontWeight: 700, letterSpacing: '0.4px',
+                  fontSize: '10px', fontWeight: 700, letterSpacing: '0.4px',
                   padding: '2px 6px', borderRadius: '9999px', whiteSpace: 'nowrap',
                 }}>
                   NEW BEST

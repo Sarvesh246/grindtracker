@@ -1033,7 +1033,7 @@ function LogPastContent() {
 
                             {/* Warm-up W pill — matches ActiveWorkout compact language */}
                             <div style={{
-                              width: '36px', flexShrink: 0,
+                              width: '44px', flexShrink: 0,
                               display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px',
                             }}>
                               <button
@@ -1071,7 +1071,7 @@ function LogPastContent() {
                               {idx === 0 && (
                                 <span style={{
                                   fontFamily: "'DM Sans', sans-serif",
-                                  fontSize: '8px', fontWeight: 600, lineHeight: 1,
+                                  fontSize: '10px', fontWeight: 600, lineHeight: 1,
                                   letterSpacing: '0.3px', textTransform: 'uppercase',
                                   whiteSpace: 'nowrap',
                                   color: s.isWarmup ? 'var(--accent-dim)' : 'var(--text-muted)',

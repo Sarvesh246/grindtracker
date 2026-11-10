@@ -4501,7 +4501,7 @@ function SetRow({
            under the first set of each exercise states what it does without repeating
            on every row. The fixed-width column keeps the inputs aligned across rows. */}
         <div style={{
-          width: '36px', flexShrink: 0, marginRight: '2px',
+          width: '44px', flexShrink: 0, marginRight: '2px',
           display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '5px',
         }}>
           <button
@@ -4540,7 +4540,7 @@ function SetRow({
           {setNumber === 1 && !isBonus && (
             <span style={{
               fontFamily: "'DM Sans', sans-serif",
-              fontSize: '8px', fontWeight: 600, lineHeight: 1,
+              fontSize: '10px', fontWeight: 600, lineHeight: 1,
               letterSpacing: '0.3px', textTransform: 'uppercase',
               whiteSpace: 'nowrap',
               color: logEntry.isWarmup ? 'var(--accent-dim)' : 'var(--text-muted)',
