@@ -192,6 +192,7 @@ export function resolveDayTextColor(
   customHex?: string | null,
 ): string {
   const custom = normalizeDayColor(customHex)
+  if (!isLight && (custom?.toLowerCase() === '#c8f135' || (!custom && resolveDayColor(type, extraTypes, false).toLowerCase() === '#c8f135'))) return 'var(--accent-text)'
   if (custom) {
     if (!isLight) return custom
     return darkenHex(custom, 0.52)

@@ -42,7 +42,7 @@ export default function DayCardPreview({
       data-up-next={upNext ? 'true' : 'false'}
       style={{
         '--day-fill': fillColor,
-        '--day-label': labelColor,
+        '--day-label': labelColor.toLowerCase() === '#c8f135' ? 'var(--accent-text)' : labelColor,
         '--day-on-fill': pillOn,
         '--day-border': upNext ? fillColor : 'var(--border)',
       } as CSSProperties}
