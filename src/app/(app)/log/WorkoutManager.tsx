@@ -1364,7 +1364,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
                             disabled={movingExerciseId !== null || idx === 0}
                             aria-label={`Move ${ex.name} up`}
                             style={{
-                              background: 'none', border: 'none', padding: '4px',
+                              background: 'none', border: 'none', padding: 0, width: '32px', height: '28px', alignItems: 'center', justifyContent: 'center',
                               cursor: (movingExerciseId !== null || idx === 0) ? 'default' : 'pointer',
                               opacity: idx === 0 ? 0.25 : 0.7, display: 'flex',
                             }}
@@ -1379,7 +1379,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
                             disabled={movingExerciseId !== null || idx === exs.length - 1}
                             aria-label={`Move ${ex.name} down`}
                             style={{
-                              background: 'none', border: 'none', padding: '4px',
+                              background: 'none', border: 'none', padding: 0, width: '32px', height: '28px', alignItems: 'center', justifyContent: 'center',
                               cursor: (movingExerciseId !== null || idx === exs.length - 1) ? 'default' : 'pointer',
                               opacity: idx === exs.length - 1 ? 0.25 : 0.7, display: 'flex',
                             }}
