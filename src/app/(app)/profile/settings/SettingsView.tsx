@@ -1017,7 +1017,7 @@ export default function SettingsView({
                       borderRadius: '9999px',
                       color: 'var(--text-primary)',
                       fontFamily: "'JetBrains Mono', monospace",
-                      fontSize: '14px',
+                      fontSize: '16px',
                       padding: '6px 12px',
                       height: '32px',
                     }}

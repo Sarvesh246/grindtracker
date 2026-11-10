@@ -1215,7 +1215,7 @@ function LogPastContent() {
                                     borderRadius: '8px',
                                     padding: '8px 10px',
                                     color: 'var(--text-primary)',
-                                    fontSize: '14px',
+                                    fontSize: '16px',
                                     fontFamily: "'DM Sans', sans-serif",
                                     outline: 'none',
                                     boxSizing: 'border-box',
