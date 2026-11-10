@@ -99,7 +99,7 @@ export default function RestDaysStep({
       </div>
 
       <div style={{ flex: 1 }}>
-        <div style={{ display: 'flex', gap: '8px', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', gap: '4px', justifyContent: 'space-between' }}>
           {REST_DAY_LABELS.map((label, dayOfWeek) => {
             const active = selected.has(dayOfWeek)
             return (
@@ -112,14 +112,13 @@ export default function RestDaysStep({
                 aria-label={`${DAY_NAMES[dayOfWeek]} rest day`}
                 onClick={() => toggle(dayOfWeek)}
                 style={{
-                  width: '44px',
-                  height: '44px',
+                  flex: '1 1 0', maxWidth: '44px', aspectRatio: '1', minHeight: '40px',
                   borderRadius: '9999px',
                   border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
                   backgroundColor: active ? 'var(--accent)' : 'var(--surface)',
                   color: active ? 'var(--on-accent)' : 'var(--text-muted)',
                   fontFamily: "'DM Sans', sans-serif",
-                  fontSize: '13px',
+                  fontSize: '12px',
                   fontWeight: 700,
                   cursor: 'pointer',
                   padding: 0,

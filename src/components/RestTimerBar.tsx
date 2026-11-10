@@ -267,7 +267,7 @@ export default function RestTimerBar({
                   }}
                   style={{
                     position: 'relative',
-                    height: '34px',
+                    height: '40px',
                     borderRadius: 'var(--radius-pill, 9999px)',
                     border: '1px solid var(--border)',
                     backgroundColor: 'transparent',
@@ -313,6 +313,7 @@ export default function RestTimerBar({
 
       {!done && (
       <button
+        className="hit-44"
         type="button"
         data-haptic="light"
         onClick={() => setOpen(o => !o)}
@@ -324,7 +325,7 @@ export default function RestTimerBar({
           justifyContent: 'center',
           alignItems: 'center',
           width: '100%',
-          height: '14px',
+          height: '28px',
           marginTop: '-6px',
           background: 'none',
           border: 'none',
@@ -391,7 +392,7 @@ export default function RestTimerBar({
                 aria-pressed={selected}
                 style={{
                   position: 'relative',
-                  height: '32px',
+                  height: '40px',
                   minWidth: '52px',
                   borderRadius: 'var(--radius-pill, 9999px)',
                   border: `1px solid ${selected ? 'var(--accent)' : 'var(--border)'}`,

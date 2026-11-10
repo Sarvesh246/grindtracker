@@ -4068,7 +4068,7 @@ function ExerciseCard({
             <button
               ref={warmupHelpBtnRef}
               type="button"
-              className="press"
+              className="press hit-44"
               data-haptic="light"
               aria-label="What warm-up percent does"
               aria-expanded={warmupHelpOpen}

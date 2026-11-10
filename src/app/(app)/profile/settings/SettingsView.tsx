@@ -103,6 +103,7 @@ function Switch({
 }) {
   return (
     <button
+      className="hit-44"
       data-haptic="light"
       onClick={onClick}
       disabled={disabled}
@@ -916,7 +917,7 @@ export default function SettingsView({
             <div style={titleStyle}>Rest Days</div>
             <div style={hintStyle}>Weekly budget — resets Sunday. Skip today from Home — turning a day on here starts the next time it comes around, not today.</div>
           </div>
-          <div style={{ display: 'flex', gap: '6px', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', gap: '4px', justifyContent: 'space-between' }}>
             {REST_DAY_LABELS.map((label, dayOfWeek) => {
               const active = restDays.has(dayOfWeek)
               return (
@@ -929,14 +930,13 @@ export default function SettingsView({
                   aria-label={`${DAY_NAMES[dayOfWeek]} rest day`}
                   data-haptic="light"
                   style={{
-                    width: '28px',
-                    height: '28px',
+                    flex: '1 1 0', maxWidth: '44px', aspectRatio: '1', minHeight: '40px',
                     borderRadius: '9999px',
                     border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
                     backgroundColor: active ? 'var(--accent)' : 'var(--surface-elevated)',
                     color: active ? 'var(--on-accent)' : 'var(--text-muted)',
                     fontFamily: "'DM Sans', sans-serif",
-                    fontSize: '11px',
+                    fontSize: '12px',
                     fontWeight: 700,
                     cursor: savingRestDay !== null ? 'default' : 'pointer',
                     opacity: savingRestDay !== null && savingRestDay !== dayOfWeek ? 0.6 : 1,

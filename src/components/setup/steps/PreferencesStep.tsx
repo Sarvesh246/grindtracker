@@ -177,6 +177,7 @@ export default function PreferencesStep({ onContinue }: { onContinue: () => void
             </div>
           </div>
           <button
+            className="hit-44"
             type="button"
             role="switch"
             aria-checked={prefReduceMotion}

@@ -72,12 +72,13 @@ export default function PhotoGroupGrid({
     >
       {compareMode && (
         <button
+          className="hit-44"
           onClick={onToggleCompareSelect}
           aria-label={compareSelected ? `Deselect ${formatShortDate(group.taken_date)}` : `Select ${formatShortDate(group.taken_date)}`}
           aria-pressed={compareSelected}
           style={{
             position: 'absolute', top: '10px', right: '10px', zIndex: 2,
-            width: '26px', height: '26px', borderRadius: '9999px',
+            width: '32px', height: '32px', borderRadius: '9999px',
             backgroundColor: compareSelected ? 'var(--accent)' : 'rgba(0,0,0,0.55)',
             border: compareSelected ? 'none' : '1.5px solid rgba(255,255,255,0.7)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',

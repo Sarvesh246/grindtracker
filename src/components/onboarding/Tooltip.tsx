@@ -115,6 +115,7 @@ export default function Tooltip({ getEl, body, title, onDismiss, onSkip, closing
       )}
       {onDismiss && (
         <button
+          className="hit-44"
           type="button"
           onClick={onDismiss}
           aria-label="Dismiss hint"

@@ -378,7 +378,7 @@ export default function FeedbackModal({ onClose }: { onClose: () => void }) {
                     onClick={() => setCategory(c.key)}
                     style={{
                       position: 'relative',
-                      height: '34px', padding: '0 14px',
+                      height: '40px', padding: '0 14px',
                       borderRadius: 'var(--radius-pill)',
                       backgroundColor: active ? 'var(--accent)' : 'var(--surface-elevated)',
                       color: active ? 'var(--on-accent)' : 'var(--text-secondary)',
@@ -463,11 +463,12 @@ export default function FeedbackModal({ onClose }: { onClose: () => void }) {
                     style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                   />
                   <button
+                    className="hit-44"
                     onClick={() => removeAttachment(a.id)}
                     aria-label={`Remove ${a.file.name}`}
                     style={{
                       position: 'absolute', top: '3px', right: '3px',
-                      width: '20px', height: '20px', borderRadius: '9999px',
+                      width: '28px', height: '28px', borderRadius: '9999px',
                       backgroundColor: 'rgba(0, 0, 0, 0.68)', border: 'none',
                       color: '#f0f0f0', cursor: 'pointer', lineHeight: 0,
                       display: 'flex', alignItems: 'center', justifyContent: 'center',

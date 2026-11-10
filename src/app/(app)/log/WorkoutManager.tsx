@@ -1418,6 +1418,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
                             deleting it (keeps history/PR bar), so it stops showing up
                             in a new live workout or past-log entry until re-enabled. */}
                         <button
+                          className="hit-44"
                           onClick={() => toggleExerciseActive(ex)}
                           disabled={togglingExerciseId !== null}
                           aria-label={ex.active ? `Disable ${ex.name} for this day` : `Enable ${ex.name} for this day`}
@@ -1443,7 +1444,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
                           aria-label={`Edit ${ex.name}`}
                           style={{
                             background: 'none', border: 'none', cursor: 'pointer',
-                            padding: '8px', opacity: 0.5,
+                            padding: '12px', opacity: 0.5,
                             display: 'flex', alignItems: 'center',
                           }}
                           onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
@@ -1459,7 +1460,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
                           aria-label={`Delete ${ex.name}`}
                           style={{
                             background: 'none', border: 'none', cursor: 'pointer',
-                            padding: '8px', opacity: 0.4,
+                            padding: '12px', opacity: 0.4,
                             display: 'flex', alignItems: 'center',
                           }}
                           onMouseEnter={e => (e.currentTarget.style.opacity = '1')}

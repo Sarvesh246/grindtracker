@@ -534,7 +534,7 @@ export default function ProgressPage() {
               aria-pressed={active}
               style={{
                 position: 'relative',
-                height: '32px',
+                height: '40px',
                 padding: '0 14px',
                 borderRadius: 'var(--radius-pill, 9999px)',
                 border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
@@ -572,7 +572,7 @@ export default function ProgressPage() {
               aria-pressed={active}
               style={{
                 position: 'relative',
-                height: '34px',
+                height: '40px',
                 padding: '0 12px',
                 borderRadius: 'var(--radius-pill, 9999px)',
                 border: active ? 'none' : '1px solid var(--border)',
@@ -618,7 +618,7 @@ export default function ProgressPage() {
                 style={{
                   position: 'relative',
                   flex: 1,
-                  height: '34px',
+                  height: '40px',
                   borderRadius: 'var(--radius-sm)',
                   border: 'none',
                   backgroundColor: active ? 'var(--accent)' : 'transparent',
