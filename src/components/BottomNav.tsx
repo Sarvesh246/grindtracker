@@ -79,12 +79,13 @@ export default function BottomNav() {
   if (pathname === '/log' && params.get('day')) return null
 
   return (
-    <nav className="bottom-nav">
+    <nav className="bottom-nav" aria-label="Primary">
       {tabs.map((tab) => {
         const active = pathname === tab.href || pathname.startsWith(tab.href + '/')
         return (
           <Link
             key={tab.href}
+            aria-current={active ? 'page' : undefined}
             href={tab.href}
             prefetch={true}
             className="press"

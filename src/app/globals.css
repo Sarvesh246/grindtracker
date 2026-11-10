@@ -286,8 +286,7 @@ select:focus-visible,
 }
 
 /* Active tab is color only ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ never keep a focus/haptic square around it. */
-.bottom-nav a:focus,
-.bottom-nav a:focus-visible {
+.bottom-nav a:focus:not(:focus-visible) {
   outline: none !important;
   box-shadow: none !important;
 }

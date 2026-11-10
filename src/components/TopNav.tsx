@@ -77,7 +77,7 @@ export default function TopNav() {
   const pathname = usePathname()
 
   return (
-    <nav className="top-nav">
+    <nav className="top-nav" aria-label="Primary">
       {/* Wordmark */}
       <Link
         href="/home"
@@ -102,6 +102,7 @@ export default function TopNav() {
           return (
             <Link
               key={tab.href}
+              aria-current={active ? 'page' : undefined}
               href={tab.href}
               prefetch={true}
               className="top-nav-tab press"
