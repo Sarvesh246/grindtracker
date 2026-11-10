@@ -1,6 +1,7 @@
 'use client'
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
 import dynamic from 'next/dynamic'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient, getClientUser } from '@/lib/supabase/client'
 import { useDemoMode } from '@/lib/contexts/DemoModeContext'
@@ -9,7 +10,6 @@ import { formatShortDate } from '@/lib/utils/formatting'
 import { enabledDayKeys } from '@/lib/utils/dayKeys'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { useTour, type TourStep } from '@/components/onboarding/Tour'
-import Card from '@/components/ui/Card'
 import TodayLabel from '@/components/TodayLabel'
 import ProgressLoading from './loading'
 import { CACHE_KEYS, getUiState, setUiState } from '@/lib/cache/appDataCache'
@@ -436,7 +436,6 @@ export default function ProgressPage() {
             count={photoCount}
             latestDate={latestPhotoDate}
             thumb={latestPhotoThumb}
-            onClick={() => router.push('/progress/photos')}
           />
         </div>
 
@@ -508,7 +507,6 @@ export default function ProgressPage() {
           count={photoCount}
           latestDate={latestPhotoDate}
           thumb={latestPhotoThumb}
-          onClick={() => router.push('/progress/photos')}
         />
       </div>
 
@@ -807,26 +805,22 @@ function PhotoEntryCard({
   count,
   latestDate,
   thumb,
-  onClick,
 }: {
   count: number | null
   latestDate: string | null
   thumb: string | null
-  onClick: () => void
 }) {
   const subtitle = count === null
     ? ''
     : count === 0
       ? 'Add your first photo'
-      : `Last logged ${latestDate ? formatShortDate(latestDate) : ''} · ${count} photo${count === 1 ? '' : 's'}`
+      : `Last logged ${latestDate ? formatShortDate(latestDate) : ''} · ${count} ${count === 1 ? 'entry' : 'entries'}`
 
   return (
     <div data-onboard="progress-photos">
-      <Card
-        as="section"
-        padding="sm"
-        onClick={onClick}
-        style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}
+      <Link
+        href="/progress/photos" className="press-card" aria-label="Progress photos"
+        style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', textDecoration: 'none', backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--card-shadow)', padding: 'var(--card-sm)' }}
       >
       <span style={{
         width: '42px', height: '42px', borderRadius: '9999px', flexShrink: 0,
@@ -856,7 +850,7 @@ function PhotoEntryCard({
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
         <polyline points="9 18 15 12 9 6" />
       </svg>
-      </Card>
+      </Link>
     </div>
   )
 }
