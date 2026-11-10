@@ -1167,7 +1167,7 @@ export default function HomeDashboard({
         const confirming = discardConfirmId === session.id
         return (
         <div key={session.id} style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '10px' }}>
-          <button
+          <button className="hover-cta"
             data-haptic="medium"
             onClick={() => handleResume(session)}
             title={DAY_MUSCLES[session.day_type]}
@@ -1186,12 +1186,6 @@ export default function HomeDashboard({
               gap: '18px',
               transition: 'opacity 150ms ease',
             }}
-            onMouseEnter={e => (e.currentTarget.style.opacity = '0.88')}
-            onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
-            onMouseDown={e => (e.currentTarget.style.opacity = '0.75')}
-            onMouseUp={e => (e.currentTarget.style.opacity = '0.88')}
-            onTouchStart={e => (e.currentTarget.style.opacity = '0.85')}
-            onTouchEnd={e => (e.currentTarget.style.opacity = '1')}
           >
             <span style={{ flexShrink: 0, display: 'flex' }}>
               <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="var(--on-accent)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -1349,7 +1343,7 @@ export default function HomeDashboard({
           clear next step instead of competing "start" affordances. */}
       {noActiveForUi && !isNewUser && (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-      <button
+      <button className="hover-cta"
         data-onboard="home-cta"
         data-haptic="medium"
         onClick={() => router.push(hasDays ? logDayHref(nextDay) : '/log')}
@@ -1369,12 +1363,6 @@ export default function HomeDashboard({
           gap: '18px',
           transition: 'opacity 150ms ease',
         }}
-        onMouseEnter={e => (e.currentTarget.style.opacity = '0.88')}
-        onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
-        onMouseDown={e => (e.currentTarget.style.opacity = '0.75')}
-        onMouseUp={e => (e.currentTarget.style.opacity = '0.88')}
-        onTouchStart={e => (e.currentTarget.style.opacity = '0.85')}
-        onTouchEnd={e => (e.currentTarget.style.opacity = '1')}
       >
         <span style={{ flexShrink: 0 }}>
           <DayIcon
@@ -1412,7 +1400,7 @@ export default function HomeDashboard({
           in the loop; a single-day rotation would just suggest itself again. */}
       {hasDays && (
         <button
-          className="press"
+          className="press hover-text-secondary"
           data-haptic="light"
           onClick={handleSkipDay}
           disabled={skippingDay}
@@ -1431,8 +1419,7 @@ export default function HomeDashboard({
             fontWeight: 600,
             opacity: skippingDay ? 0.6 : 1,
           }}
-          onMouseEnter={e => { if (!skippingDay) e.currentTarget.style.color = 'var(--text-secondary)' }}
-          onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
+
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polygon points="5 4 15 12 5 20 5 4" /><line x1="19" y1="5" x2="19" y2="19" />
@@ -1570,7 +1557,7 @@ export default function HomeDashboard({
               <span style={{ color: 'var(--text-muted)' }}> · {overdue[0].daysSince}d ago</span>
             )}
           </button>
-          <button
+          <button className="hover-text-primary"
             onClick={dismissOverdue}
             aria-label="Dismiss"
             style={{
@@ -1586,8 +1573,7 @@ export default function HomeDashboard({
               display: 'flex',
               transition: 'color 150ms ease',
             }}
-            onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-primary)')}
-            onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
+
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
@@ -1651,7 +1637,7 @@ export default function HomeDashboard({
                 </span>
                 <button
                   data-haptic="light"
-                  className="press"
+                  className="press hover-edit"
                   onClick={() => {
                     const date =
                       (lastSession as { local_date?: string | null }).local_date
@@ -1675,14 +1661,7 @@ export default function HomeDashboard({
                     cursor: 'pointer',
                     transition: 'color 150ms ease, border-color 150ms ease',
                   }}
-                  onMouseEnter={e => {
-                    e.currentTarget.style.color = 'var(--text-primary)'
-                    e.currentTarget.style.borderColor = 'var(--border-strong)'
-                  }}
-                  onMouseLeave={e => {
-                    e.currentTarget.style.color = 'var(--text-secondary)'
-                    e.currentTarget.style.borderColor = 'var(--border)'
-                  }}
+
                 >
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />

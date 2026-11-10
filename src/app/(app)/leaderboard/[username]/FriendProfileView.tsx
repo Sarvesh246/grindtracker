@@ -344,8 +344,13 @@ export default function FriendProfileView({ profile }: Props) {
                     cursor: 'pointer',
                     zIndex: showTooltip ? 2 : 'auto',
                   }}
-                  onMouseEnter={() => setTooltipBadgeId(badge.id)}
-                  onMouseLeave={() => setTooltipBadgeId(null)}
+                  onPointerEnter={e => { if (e.pointerType === 'mouse') setTooltipBadgeId(badge.id) }}
+                  onPointerLeave={e => { if (e.pointerType === 'mouse') setTooltipBadgeId(null) }}
+                  onFocus={() => setTooltipBadgeId(badge.id)}
+                  onBlur={() => setTooltipBadgeId(null)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setTooltipBadgeId(v => v === badge.id ? null : badge.id) } }}
                   onTouchEnd={(e) => { e.preventDefault(); setTooltipBadgeId(v => v === badge.id ? null : badge.id) }}
                   onClick={() => setTooltipBadgeId(v => v === badge.id ? null : badge.id)}
                 >

@@ -341,7 +341,7 @@ export default function DaySelect() {
           }}>
             CHOOSE YOUR DAY
           </h1>
-          <button
+          <button className="hover-border-accent"
             data-onboard="dayselect-manage"
             onClick={() => setShowManager(true)}
             style={{
@@ -354,8 +354,7 @@ export default function DaySelect() {
               transition: 'border-color 150ms ease',
               flexShrink: 0,
             }}
-            onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
-            onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-secondary)' }}>
               <circle cx="12" cy="12" r="3"/>
@@ -630,7 +629,7 @@ export default function DaySelect() {
               return (
                 <button
                   key={key}
-                  className="press-card"
+                  className="press-card hover-day-card"
                   data-onboard={idx === 0 ? 'dayselect-days' : undefined}
                   data-haptic="heavy"
                   onClick={() => {
@@ -638,6 +637,7 @@ export default function DaySelect() {
                   }}
                   style={{
                     '--i': idx,
+                    '--hover-day-border': fillColor,
                     position: 'relative',
                     backgroundColor: 'var(--surface)',
                     border: idleBorder,
@@ -648,18 +648,6 @@ export default function DaySelect() {
                     width: '100%',
                     transition: 'border-color 150ms ease, background-color 150ms ease',
                   } as CSSProperties}
-                  onMouseEnter={e => {
-                    if (!isUpNext) e.currentTarget.style.borderColor = fillColor
-                  }}
-                  onMouseLeave={e => {
-                    e.currentTarget.style.border = idleBorder
-                  }}
-                  onTouchStart={e => {
-                    if (!isUpNext) e.currentTarget.style.borderColor = fillColor
-                  }}
-                  onTouchEnd={e => {
-                    e.currentTarget.style.border = idleBorder
-                  }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: labelColor }}>
@@ -725,7 +713,7 @@ export default function DaySelect() {
             focus away from the one thing that matters: creating a day. */}
         {!loading && dayKeys.length > 0 && (
           <div style={{ textAlign: 'center', marginTop: '20px' }}>
-            <button
+            <button className="hover-text-secondary"
               data-onboard="dayselect-past"
               onClick={() => router.push('/log/past')}
               style={{
@@ -740,8 +728,7 @@ export default function DaySelect() {
                 padding: '4px 8px',
                 transition: 'color 150ms ease',
               }}
-              onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-secondary)')}
-              onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
+
             >
               Log a past workout
             </button>

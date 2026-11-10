@@ -696,7 +696,7 @@ export default function ProfileDashboard({
 
       {/* Badges */}
       <div style={{ marginBottom: '32px' }}>
-        <button
+        <button className="hover-border-strong"
           data-onboard="profile-badges"
           aria-expanded={badgesOpen}
           aria-controls="profile-badge-grid"
@@ -716,8 +716,7 @@ export default function ProfileDashboard({
             cursor: 'pointer',
             transition: 'border-color 150ms ease, border-radius 260ms ease',
           }}
-          onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--accent-border-strong)')}
-          onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+
         >
           <div style={{
             fontSize: '12px', color: 'var(--text-muted)',
@@ -775,8 +774,13 @@ export default function ProfileDashboard({
                   cursor: 'pointer',
                   zIndex: showTooltip ? 2 : 'auto',
                 } as CSSProperties}
-                onMouseEnter={() => setTooltipBadgeId(badge.id)}
-                onMouseLeave={() => setTooltipBadgeId(null)}
+                onPointerEnter={e => { if (e.pointerType === 'mouse') setTooltipBadgeId(badge.id) }}
+                onPointerLeave={e => { if (e.pointerType === 'mouse') setTooltipBadgeId(null) }}
+                onFocus={() => setTooltipBadgeId(badge.id)}
+                onBlur={() => setTooltipBadgeId(null)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setTooltipBadgeId(v => v === badge.id ? null : badge.id) } }}
                 onTouchEnd={(e) => { e.preventDefault(); setTooltipBadgeId(v => v === badge.id ? null : badge.id) }}
                 onClick={() => setTooltipBadgeId(v => v === badge.id ? null : badge.id)}
               >

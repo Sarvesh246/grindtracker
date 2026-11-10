@@ -1118,6 +1118,42 @@ html.reduce-motion .dlg-backdrop[data-closing='true'] .dlg-panel--pop {
   transform: translate(-50%, -50%);
 }
 
+/* Quiet controls and cards respond to keyboard focus and fine-pointer hover. */
+.hover-reveal { opacity: 0.6; transition: opacity 150ms ease; }
+.press.hover-reveal { transition: opacity 150ms ease, transform 150ms ease; }
+.hover-reveal:focus-visible { opacity: 1; }
+.hover-surface { transition: background-color 150ms ease, border-color 150ms ease; }
+.hover-calendar { background: var(--calendar-base); }
+.hover-cta:focus-visible { opacity: 0.88; }
+.hover-cta:active { opacity: 0.85; }
+.hover-text-secondary:focus-visible { color: var(--text-secondary) !important; }
+.hover-text-primary:focus-visible { color: var(--text-primary) !important; }
+.hover-text-danger:focus-visible { color: var(--danger) !important; }
+.hover-edit:focus-visible { color: var(--text-primary) !important; border-color: var(--border-strong) !important; }
+.hover-border-accent:focus-visible { border-color: var(--accent-text) !important; }
+.hover-border-strong:focus-visible { border-color: var(--accent-border-strong) !important; }
+.hover-border-dim:focus-visible { border-color: var(--accent-dim) !important; }
+.hover-day-card:focus-visible { border-color: var(--hover-day-border) !important; }
+.hover-calendar:focus-visible { background: var(--calendar-hover); border-color: var(--calendar-hover-border) !important; }
+.hover-danger-button { background-color: transparent; }
+.hover-danger-button:focus-visible { background-color: rgba(239, 68, 68, 0.06); border-color: rgba(239, 68, 68, 0.5) !important; }
+@media (hover: hover) and (pointer: fine) {
+  .hover-reveal:hover { opacity: 1; }
+  .hover-surface:hover { background-color: var(--surface-elevated); }
+  .hover-cta:hover { opacity: 0.88; }
+  .hover-cta:hover:active { opacity: 0.75; }
+  .hover-text-secondary:not(:disabled):hover { color: var(--text-secondary) !important; }
+  .hover-text-primary:hover { color: var(--text-primary) !important; }
+  .hover-text-danger:hover { color: var(--danger) !important; }
+  .hover-edit:hover { color: var(--text-primary) !important; border-color: var(--border-strong) !important; }
+  .hover-border-accent:not(:disabled):hover { border-color: var(--accent) !important; }
+  .hover-border-strong:hover { border-color: var(--accent-border-strong) !important; }
+  .hover-border-dim:hover { border-color: var(--accent-dim) !important; }
+  .hover-day-card:hover { border-color: var(--hover-day-border) !important; }
+  .hover-calendar:hover { background: var(--calendar-hover); border-color: var(--calendar-hover-border) !important; }
+  .hover-danger-button:hover { background-color: rgba(239, 68, 68, 0.06); border-color: rgba(239, 68, 68, 0.5) !important; }
+}
+
 .press {
   transition:
     transform 120ms ease,

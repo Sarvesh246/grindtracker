@@ -1,5 +1,5 @@
 'use client'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient, getClientUser } from '@/lib/supabase/client'
 import { useTheme } from '@/lib/contexts/ThemeContext'
@@ -344,7 +344,7 @@ export default function WorkoutCalendar() {
             <button
               key={idx}
               type="button"
-              className="cal-cell"
+              className="cal-cell hover-calendar"
               role="gridcell"
               aria-label={label}
               onClick={() => navigateTo(dateKey)}
@@ -356,7 +356,9 @@ export default function WorkoutCalendar() {
                 borderRadius: '8px',
                 cursor: 'pointer',
                 border: baseBorder,
-                background: baseBg,
+                '--calendar-base': baseBg,
+                '--calendar-hover': hoverBg,
+                '--calendar-hover-border': hoverBorder.replace('1px solid ', ''),
                 transition: 'background 150ms ease, border-color 150ms ease',
                 gap: '3px',
                 padding: 0,
@@ -364,15 +366,8 @@ export default function WorkoutCalendar() {
                 font: 'inherit',
                 color: 'inherit',
                 overflow: 'hidden',
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.background = hoverBg
-                e.currentTarget.style.borderColor = hoverBorder.replace('1px solid ', '')
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.background = baseBg
-                e.currentTarget.style.borderColor = baseBorder.replace('1px solid ', '')
-              }}
+              } as CSSProperties}
+
             >
               <span style={{
                 fontSize: '13px',

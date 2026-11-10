@@ -484,7 +484,7 @@ export default function FeedbackModal({ onClose }: { onClose: () => void }) {
               ))}
 
               {attachments.length < MAX_IMAGES && (
-                <button
+                <button className="hover-border-dim"
                   onClick={() => fileInputRef.current?.click()}
                   style={{
                     width: '72px', height: '72px',
@@ -496,8 +496,7 @@ export default function FeedbackModal({ onClose }: { onClose: () => void }) {
                     alignItems: 'center', justifyContent: 'center', gap: '4px',
                     transition: 'border-color 150ms ease',
                   }}
-                  onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--accent-dim)')}
-                  onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border-strong)')}
+
                 >
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                     strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">

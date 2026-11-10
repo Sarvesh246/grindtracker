@@ -779,11 +779,10 @@ function LogPastContent() {
                 ? ' — tap another day type to edit it'
                 : ' — changes will replace the saved data'}
             </div>
-            <button
+            <button className="hover-text-danger"
               onClick={() => setConfirmDelete(true)}
               style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px', color: 'var(--text-muted)', lineHeight: 1, flexShrink: 0 }}
-              onMouseEnter={e => (e.currentTarget.style.color = 'var(--danger)')}
-              onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
+
               title="Delete this workout" aria-label="Delete this workout"
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -953,18 +952,17 @@ function LogPastContent() {
                           {ex.sets_target} × {ex.reps_target}
                         </span>
                       )}
-                      <button
+                      <button className="hover-reveal"
                         type="button"
                         data-haptic="light"
                         onClick={() => toggleExerciseSkip(ex.id)}
                         style={{
                           background: 'none', border: 'none', cursor: 'pointer',
                           display: 'flex', alignItems: 'center', gap: '3px',
-                          padding: '2px 4px', opacity: 0.6,
+                          padding: '2px 4px',
                           borderRadius: '4px',
                         }}
-                        onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
-                        onMouseLeave={e => (e.currentTarget.style.opacity = '0.6')}
+
                       >
                         {skippedExercises.has(ex.id) ? (
                           <>
@@ -1274,13 +1272,13 @@ function LogPastContent() {
             </button>
 
             {isEditing && !confirmDelete && (
-              <button
+              <button className="hover-danger-button"
                 onClick={() => setConfirmDelete(true)}
                 disabled={deleting}
                 style={{
                   width: '100%',
                   height: '44px',
-                  backgroundColor: 'transparent',
+
                   color: 'var(--danger)',
                   border: '1px solid rgba(239, 68, 68, 0.3)',
                   borderRadius: '12px',
@@ -1290,14 +1288,7 @@ function LogPastContent() {
                   cursor: deleting ? 'default' : 'pointer',
                   transition: 'background-color 150ms ease, border-color 150ms ease',
                 }}
-                onMouseEnter={e => {
-                  e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.06)'
-                  e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.5)'
-                }}
-                onMouseLeave={e => {
-                  e.currentTarget.style.backgroundColor = 'transparent'
-                  e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.3)'
-                }}
+
               >
                 DELETE WORKOUT
               </button>
