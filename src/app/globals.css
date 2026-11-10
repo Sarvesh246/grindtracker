@@ -6639,3 +6639,8 @@ html.reduce-motion .landing-how-done__sheet {
 html.reduce-motion .landing-how-wo__finish {
   opacity: 0 !important;
 }
+
+/* Keep the final content clear of the floating Coach on narrow screens. */
+@media (max-width: 767px) {
+  .page--progress, .page--profile, .page--narrow { padding-bottom: 88px !important; }
+}
