@@ -11,13 +11,14 @@ import { useUnit } from '@/lib/contexts/UnitContext'
 import { useTour, type TourStep } from '@/components/onboarding/Tour'
 import Card from '@/components/ui/Card'
 import TodayLabel from '@/components/TodayLabel'
+import ProgressLoading from './loading'
 import { CACHE_KEYS, getUiState, setUiState } from '@/lib/cache/appDataCache'
 import { useCachedQuery } from '@/lib/cache/useCachedQuery'
 
 const ProgressChart = dynamic(() => import('./ProgressChart'), {
   ssr: false,
   loading: () => (
-    <div style={{ width: '100%', height: 216 }} aria-hidden="true" />
+    <div className="progress-chart-plot" style={{ width: '100%' }} aria-hidden="true" />
   ),
 })
 
@@ -406,11 +407,7 @@ export default function ProgressPage() {
   })
 
   if (loadingExercises) {
-    return (
-      <div style={{ padding: '24px 16px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif", fontSize: '14px' }}>
-        Loading…
-      </div>
-    )
+    return <ProgressLoading />
   }
 
   // Blank slate — no exercises means the day/exercise pickers, metric toggle and
@@ -504,6 +501,8 @@ export default function ProgressPage() {
         <TodayLabel style={{ fontSize: '13px', color: 'var(--text-muted)' }} />
       </div>
 
+      <div className="progress-layout">
+      <div className="progress-rail">
       <div style={{ padding: '0 16px 16px' }}>
         <PhotoEntryCard
           count={photoCount}
@@ -518,7 +517,7 @@ export default function ProgressPage() {
       <div data-onboard="progress-selector">
 
       {/* Day picker (level 1) */}
-      <div style={{ padding: '0 16px 8px', display: 'flex', gap: '6px', overflowX: 'auto', touchAction: 'pan-x' }} className="scrollbar-hide">
+      <div style={{ padding: '0 16px 8px', display: 'flex', gap: '6px', touchAction: 'pan-x' }} className="scrollbar-hide chip-row">
         {dayTypes.map(dt => {
           const active = dt === selectedDay
           return (
@@ -560,7 +559,7 @@ export default function ProgressPage() {
       <div style={{ margin: '4px 16px 12px', borderTop: '1px solid var(--border)' }} />
 
       {/* Exercise picker (level 2) */}
-      <div style={{ padding: '0 16px 12px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+      <div className="chip-row" style={{ padding: '0 16px 12px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
         {exercisesForDay.map(ex => {
           const active = ex.id === selectedId
           return (
@@ -637,6 +636,8 @@ export default function ProgressPage() {
       </div>
 
       </div>{/* end selector cluster */}
+      </div>
+      <div className="progress-main">
 
       {/* Stats bar. Keyed on the selection so the tiles re-run their entrance
           when you switch exercise or metric — the numbers all change at once,
@@ -679,12 +680,11 @@ export default function ProgressPage() {
 
       {/* Chart */}
       <div style={{ padding: '0 16px', marginBottom: '24px' }}>
-        <div data-onboard="progress-chart" style={{
+        <div data-onboard="progress-chart" className="progress-chart-card" style={{
           backgroundColor: 'var(--surface)',
           border: '1px solid var(--border)',
           borderRadius: '12px',
           padding: '16px 12px 12px',
-          minHeight: '220px',
           // Column flex (not row) so children stretch to the card's full width —
           // the chart + data table wrapper would otherwise shrink-wrap to its
           // content as a row flex item and render narrow. justifyContent still
@@ -791,6 +791,8 @@ export default function ProgressPage() {
           </div>
         </div>
       )}
+      </div>
+      </div>
     </div>
   )
 }

@@ -1472,6 +1472,11 @@ html.reduce-motion .grind-sheet-backdrop[data-closing='true'] {
 }
 
 /* Sidebar+main wrapper. Mobile = plain block (no layout change). */
+.chip-row { overflow-x: auto; }
+.progress-chart-card { min-height: 220px; }
+.progress-chart-plot { height: 216px; }
+
+
 .wo-layout {
   display: block;
 }
@@ -1707,6 +1712,16 @@ html.reduce-motion .grind-sheet-backdrop[data-closing='true'] {
     text-align: left;
   }
 }
+
+@media (min-width: 1024px) {
+  .page--progress { max-width: 1200px; }
+  .progress-layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 28px; align-items: start; }
+  .progress-rail { position: sticky; top: calc(var(--nav-h) + env(safe-area-inset-top) + 16px); }
+  .progress-rail .chip-row { flex-wrap: wrap; overflow-x: visible; }
+  .progress-chart-card { min-height: 380px; }
+  .progress-chart-plot { height: 340px; }
+}
+
 
 /* Sidebar exercise jump-list buttons: hover feedback (background lives here so
    :hover can take effect, matching the .top-nav-tab pattern). */

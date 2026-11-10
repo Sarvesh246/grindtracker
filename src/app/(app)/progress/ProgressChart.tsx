@@ -106,8 +106,8 @@ export default function ProgressChart({ data }: { data: ChartPoint[] }) {
     // the chart is a flex container, and without them this wrapper shrink-wraps
     // to the table's content width, squeezing the chart into a narrow column.
     <div style={{ width: '100%', minWidth: 0 }}>
-      <div aria-hidden="true">
-        <ResponsiveContainer width="100%" height={216}>
+      <div aria-hidden="true" className="progress-chart-plot">
+        <ResponsiveContainer width="100%" height="100%">
           <LineChart
             data={data}
             margin={{ top: 8, right: 32, bottom: 4, left: 4 }}
