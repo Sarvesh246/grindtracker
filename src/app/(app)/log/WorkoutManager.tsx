@@ -1440,6 +1440,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
                         </button>
                         <button
                           onClick={() => openExerciseForm(dayKey, ex)}
+                          aria-label={`Edit ${ex.name}`}
                           style={{
                             background: 'none', border: 'none', cursor: 'pointer',
                             padding: '8px', opacity: 0.5,
@@ -1455,6 +1456,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
                         </button>
                         <button
                           onClick={() => { setDeleteError(''); setDeleteTarget({ type: 'exercise', id: ex.id, name: ex.name, dayKey }) }}
+                          aria-label={`Delete ${ex.name}`}
                           style={{
                             background: 'none', border: 'none', cursor: 'pointer',
                             padding: '8px', opacity: 0.4,

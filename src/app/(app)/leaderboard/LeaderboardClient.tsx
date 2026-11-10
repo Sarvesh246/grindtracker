@@ -174,7 +174,7 @@ export default function LeaderboardClient({ userId }: Props) {
             data-onboard="leaderboard-share"
             data-haptic="light"
             onClick={() => setShareTarget({ entry: myEntry, rank: myRank })}
-            title="Share your rank"
+            title="Share your rank" aria-label="Share your rank"
             style={{
               position: 'relative',
               background: 'none',

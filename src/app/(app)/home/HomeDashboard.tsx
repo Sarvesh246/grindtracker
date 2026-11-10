@@ -1658,7 +1658,7 @@ export default function HomeDashboard({
                       ?? localDateKey(new Date(lastSession.completed_at!))
                     router.push(`/log/past?date=${date}`)
                   }}
-                  title="Edit or delete this workout"
+                  title="Edit or delete this workout" aria-label="Edit or delete this workout"
                   style={{
                     display: 'flex',
                     alignItems: 'center',

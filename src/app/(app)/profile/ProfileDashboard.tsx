@@ -415,7 +415,7 @@ export default function ProfileDashboard({
                     data-onboard="profile-username"
                     data-haptic="light"
                     onClick={openUsernameEdit}
-                    title="Change username"
+                    title="Change username" aria-label="Change username"
                     style={{
                       position: 'relative',
                       background: 'none', border: 'none', padding: '2px',

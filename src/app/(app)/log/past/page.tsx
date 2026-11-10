@@ -784,7 +784,7 @@ function LogPastContent() {
               style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px', color: 'var(--text-muted)', lineHeight: 1, flexShrink: 0 }}
               onMouseEnter={e => (e.currentTarget.style.color = 'var(--danger)')}
               onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
-              title="Delete this workout"
+              title="Delete this workout" aria-label="Delete this workout"
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="3 6 5 6 21 6" />
