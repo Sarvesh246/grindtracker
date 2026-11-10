@@ -102,3 +102,8 @@ export function formatSetsReps(sets: number, repsTarget: string | number): strin
   const bare = /^\d+(\s*[-–]\s*\d+)?$/.test(reps)
   return `${sets} sets × ${reps}${bare ? ' reps' : ''}`
 }
+
+/** Display a workout day key the same way as the Log day pills. */
+export function dayName(key: string): string {
+  return key.replace(/-/g, ' ').toUpperCase()
+}

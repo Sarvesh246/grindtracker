@@ -273,6 +273,7 @@ export default function CoachMark({
           </svg>
         </button>
 
+        {total > 1 && (
         <div
           style={{
             fontFamily: "'JetBrains Mono', monospace",
@@ -284,6 +285,7 @@ export default function CoachMark({
         >
           {step} / {total}
         </div>
+        )}
         <div
           style={{
             fontFamily: "'Bebas Neue', sans-serif",

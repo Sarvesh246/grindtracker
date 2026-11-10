@@ -775,7 +775,7 @@ export default function HomeDashboard({
         { target: 'home-level', title: 'Your level', body: 'This is your level. Every completed workout and PR earns XP toward the next one.' },
         { target: 'home-streak', title: 'Your streak', body: 'Train on consecutive days to keep it going. Rest days you configure don’t break the streak.' },
         { target: 'home-cta', title: 'Start a workout', body: 'Tap here to jump into your suggested next workout. GRIND rotates through your days automatically.' },
-        { target: 'home-stats', title: 'Your stats', body: 'Track your volume at a glance.' },
+        { target: 'home-stats', title: 'Your stats', body: 'Workouts this week and month, plus every PR you have set.' },
         { target: 'home-calendar', title: 'Workout history', body: "See every day you've trained, and revisit or edit past sessions." },
       ]
   // Don't fire over the resume/exit flow; wait for mount so the active-session
@@ -1739,8 +1739,8 @@ export default function HomeDashboard({
       {/* Stats Row — three equal-width, equal-height cards. */}
       <div data-onboard="home-stats" style={{ display: 'flex', gap: '20px', alignItems: 'stretch' }}>
         {[
-          { value: weeklyWorkouts, label: 'WORKOUTS', sub: 'This Week' },
-          { value: monthlyWorkouts, label: 'WORKOUTS', sub: 'This Month' },
+          { value: weeklyWorkouts, label: weeklyWorkouts === 1 ? 'WORKOUT' : 'WORKOUTS', sub: 'This Week' },
+          { value: monthlyWorkouts, label: monthlyWorkouts === 1 ? 'WORKOUT' : 'WORKOUTS', sub: 'This Month' },
           { value: totalPRs, label: 'TOTAL PRS', sub: 'All Time' },
         ].map((stat, i) => (
           <div

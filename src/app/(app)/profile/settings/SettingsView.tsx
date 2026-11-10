@@ -978,8 +978,8 @@ export default function SettingsView({
           <>
             {(
               [
-                ['rest_complete', 'Rest ended', 'In-page / local timer ping when rest hits zero (not lock-screen-accurate on Hobby cron)'] as const,
-                ['rest_warning_10s', 'Rest warning (10s)', 'Local heads-up before rest ends — use while the app is open; lock-screen timing isn’t gym-accurate'] as const,
+                ['rest_complete', 'Rest ended', 'Pings when your rest hits zero. Most reliable while GRIND is open.'] as const,
+                ['rest_warning_10s', 'Rest warning (10s)', 'A heads-up 10 seconds before rest ends. Works while GRIND is open.'] as const,
                 ['workout_status', 'Workout status', 'One card while the app is in the background'] as const,
                 ['streak_reminder', 'Streak reminder', 'Evening nudge if you have not trained'] as const,
               ] as const
@@ -1006,7 +1006,7 @@ export default function SettingsView({
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
                   <div>
                     <div style={titleStyle}>Reminder time</div>
-                    <div style={hintStyle}>Local hour (17–21)</div>
+                    <div style={hintStyle}>Between 5 and 9 PM</div>
                   </div>
                   <select
                     value={notifPrefs.streak_reminder_hour}

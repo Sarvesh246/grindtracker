@@ -1,5 +1,6 @@
 'use client'
 import { useMemo } from 'react'
+import { enabledDayKeys } from '@/lib/utils/dayKeys'
 import { createClient, getClientUser } from '@/lib/supabase/client'
 import { compressForUpload } from '@/lib/utils/imageCompression'
 import type { ProgressPhoto, ProgressPhotoGroup } from '@/lib/types'
@@ -171,11 +172,11 @@ export function useProgressPhotos() {
     const user = await requireUser()
     const { data, error } = await supabase
       .from('exercises')
-      .select('day_type')
+      .select('day_type, active')
       .eq('user_id', user.id)
       .order('day_type', { ascending: true })
     if (error) throw error
-    const distinct = Array.from(new Set(((data ?? []) as { day_type: string }[]).map(r => r.day_type)))
+    const distinct = enabledDayKeys(data ?? [])
     return distinct.sort((a, b) => (DAY_ORDER[a] ?? 9) - (DAY_ORDER[b] ?? 9))
   }
 

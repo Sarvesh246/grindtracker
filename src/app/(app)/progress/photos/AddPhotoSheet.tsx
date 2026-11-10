@@ -4,7 +4,7 @@ import Dialog from '@/components/ui/Dialog'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import { useProgressPhotos } from '@/lib/hooks/useProgressPhotos'
-import { formatDayType, localDateKey } from '@/lib/utils/formatting'
+import { dayName, localDateKey } from '@/lib/utils/formatting'
 
 // Generous relative to the 40/day server-side cap (docs/sql/21-progress-photos.sql)
 // — just keeps a single picker selection sane, the trigger is the real limit.
@@ -218,7 +218,7 @@ export default function AddPhotoSheet({
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' }}>
         {dayTypeOptions.map(dt => (
           <TagPill key={dt} active={dayType === dt} onClick={() => setDayType(dt)} disabled={submitting || loadingDate}>
-            {formatDayType(dt)}
+            {dayName(dt)}
           </TagPill>
         ))}
         <TagPill active={dayType === null} onClick={() => setDayType(null)} disabled={submitting || loadingDate}>

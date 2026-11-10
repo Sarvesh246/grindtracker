@@ -1,5 +1,5 @@
 'use client'
-import { formatSetsReps } from '@/lib/utils/formatting'
+import { dayName, formatSetsReps } from '@/lib/utils/formatting'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createClient, getClientUser } from '@/lib/supabase/client'
 import { useDemoMode } from '@/lib/contexts/DemoModeContext'
@@ -788,7 +788,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
                                 fontFamily: "'Bebas Neue', sans-serif", fontSize: '20px',
                                 color: 'var(--text-primary)', letterSpacing: '1px',
                               }}>
-                                {key.replace(/-/g, ' ').toUpperCase()}
+                                {dayName(key)}
                               </span>
                               {isDayDisabled(exercises, key) && (
                                 <span style={{
@@ -837,7 +837,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
                             data-haptic="light"
                             className="press hover-reveal"
                             onClick={() => setScreen({ id: 'day', dayKey: key })}
-                            aria-label={`Open ${key.replace(/-/g, ' ')} day`}
+                            aria-label={`Open ${dayName(key)} day`}
                             style={{
                               background: 'none', border: 'none', cursor: 'pointer',
                               padding: '8px', minWidth: '44px', minHeight: '44px',
@@ -852,8 +852,8 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
                           <button
                             data-haptic="light"
                             className="press hover-reveal"
-                            onClick={() => { setDeleteError(''); setDeleteTarget({ type: 'day', key, label: key.replace(/-/g, ' ').toUpperCase() }) }}
-                            aria-label={`Delete ${key.replace(/-/g, ' ')} day`}
+                            onClick={() => { setDeleteError(''); setDeleteTarget({ type: 'day', key, label: dayName(key) }) }}
+                            aria-label={`Delete ${dayName(key)} day`}
                             style={{
                               background: 'none', border: 'none', cursor: 'pointer',
                               padding: '8px', minWidth: '44px', minHeight: '44px',
@@ -949,7 +949,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
                           border: '1px solid var(--border)', borderRadius: '8px',
                           padding: '6px 12px',
                         }}>
-                          {key.replace(/-/g, ' ').toUpperCase()}
+                          {dayName(key)}
                         </span>
                       ))}
                     </div>
@@ -996,7 +996,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
                               flex: 1, fontFamily: "'Bebas Neue', sans-serif", fontSize: '18px',
                               letterSpacing: '0.5px', color: 'var(--text-primary)',
                             }}>
-                              {key.replace(/-/g, ' ').toUpperCase()}
+                              {dayName(key)}
                             </span>
                             <button
                               onClick={() => moveSlot(i, -1)}
@@ -1053,7 +1053,7 @@ export default function WorkoutManager({ onClose, onChanged, initialNewDay = fal
                               letterSpacing: '0.5px', color: 'var(--text-primary)',
                             }}
                           >
-                            {key.replace(/-/g, ' ').toUpperCase()}
+                            {dayName(key)}
                           </button>
                         ))}
                         <button
