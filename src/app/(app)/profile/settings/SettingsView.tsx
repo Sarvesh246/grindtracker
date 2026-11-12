@@ -22,6 +22,7 @@ import { useDemoMode } from '@/lib/contexts/DemoModeContext'
 import FeedbackModal from '@/components/FeedbackModal'
 import { markAppDataStale, resetAppDataCache } from '@/lib/cache/appDataCache'
 import { clearLastKnownStats } from '@/lib/cache/lastKnownStats'
+import { clearOfflineCaches } from '@/lib/offline/clearOnSignOut'
 import { localDateKey } from '@/lib/utils/formatting'
 import {
   downloadJson,
@@ -407,6 +408,7 @@ export default function SettingsView({
     // to sign in on this device (shared/gym computer, family tablet).
     resetAppDataCache()
     clearLastKnownStats()
+    clearOfflineCaches()
     router.push('/login')
   }
 
@@ -510,6 +512,7 @@ export default function SettingsView({
       await live.auth.signOut()
       resetAppDataCache()
       clearLastKnownStats()
+      clearOfflineCaches()
       router.push('/login')
     } catch (err) {
       reportError(err, { operation: 'deleteMyData', route: '/profile/settings' })

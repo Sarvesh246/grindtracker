@@ -4,6 +4,7 @@ import BottomNav from '@/components/BottomNav'
 import TopNav from '@/components/TopNav'
 import SwipeNavigator from '@/components/SwipeNavigator'
 import RouteCacheSync from '@/components/RouteCacheSync'
+import OfflineSyncAgent from '@/components/OfflineSyncAgent'
 import CoachRootLazy from '@/components/coach/CoachRootLazy'
 import { UnitProvider } from '@/lib/contexts/UnitContext'
 import { ToastProvider } from '@/lib/contexts/ToastContext'
@@ -53,6 +54,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <OnboardingProvider userId={onboardingUserId} initialState={onboardingInitial}>
     <ToastProvider>
     <RouteCacheSync />
+    <OfflineSyncAgent />
 {/* Coach FAB + sheet: dynamically imported (keeps Fab/Sheet off the initial
         home bundle). Mid-workout stays mounted — FAB hidden; Ask Coach opens
         a compact sheet. */}

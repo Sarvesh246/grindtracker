@@ -18,6 +18,12 @@ import { completeSession } from '@/lib/utils/completeSession'
 import { deleteIncompleteSessions } from '@/lib/utils/sessions'
 import { flushQueuedOps, getQueuedOps, clearQueuedOpsForSession } from '@/lib/utils/offlineQueue'
 import { formatShortDate } from '@/lib/utils/formatting'
+import {
+  LOG_CATALOG_STORAGE_KEY,
+  getPendingLocalSessions,
+  rememberUserId,
+  saveWorkoutSnapshot,
+} from '@/lib/offline/localSession'
 import WorkoutManager from './WorkoutManager'
 import FinishUndoBanner from '@/components/FinishUndoBanner'
 import DayIcon from '@/components/DayIcon'
@@ -62,6 +68,54 @@ type LogCatalog = {
   lastCompletion: LastCompletion | null
 }
 
+/** How long the day list may wait on the network before the device copy is used. */
+const CATALOG_TIMEOUT_MS = 10_000
+
+/**
+ * Load the Log catalog from the server and keep a copy on the device. When the
+ * server can't be reached — offline, or a connection that hangs — fall back to
+ * that copy so days can still be picked and a workout started. Workouts begun
+ * on the device but not yet synced are listed as open sessions.
+ */
+async function loadCatalogWithOfflineFallback(fetchFresh: () => Promise<LogCatalog>): Promise<LogCatalog> {
+  try {
+    const fresh = await new Promise<LogCatalog>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new TypeError('catalog request timed out')), CATALOG_TIMEOUT_MS)
+      fetchFresh().then(
+        v => { clearTimeout(timer); resolve(v) },
+        e => { clearTimeout(timer); reject(e) },
+      )
+    })
+    try {
+      window.localStorage.setItem(LOG_CATALOG_STORAGE_KEY, JSON.stringify(fresh))
+    } catch {
+      /* storage full / private mode — only the offline copy is lost */
+    }
+    return fresh
+  } catch (err) {
+    let saved: LogCatalog | null = null
+    try {
+      const raw = window.localStorage.getItem(LOG_CATALOG_STORAGE_KEY)
+      saved = raw ? (JSON.parse(raw) as LogCatalog) : null
+    } catch {
+      saved = null
+    }
+    if (!saved || !Array.isArray(saved.exercises)) throw err
+    const known = new Set(saved.openSessions.map(s => s.id))
+    const local: OpenSession[] = getPendingLocalSessions()
+      .filter(p => !known.has(p.id))
+      .map(p => ({
+        id: p.id,
+        day_type: p.day,
+        started_at: p.startedAt,
+        loggedSets: getQueuedOps(p.id).filter(
+          q => q.kind === 'upsert' && !q.isSkipped && !q.isWarmup && q.weight != null,
+        ).length,
+      }))
+    return { ...saved, openSessions: [...saved.openSessions, ...local] }
+  }
+}
+
 export default function DaySelect() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -101,8 +155,9 @@ export default function DaySelect() {
 
   const { data: catalog, loading, error, refetch } = useCachedQuery<LogCatalog>(
     CACHE_KEYS.logCatalog,
-    async () => {
+    () => loadCatalogWithOfflineFallback(async () => {
       const user = await getClientUser(supabase)
+      if (user) rememberUserId(user.id)
       const [exRes, rotRes, flexRes, catRes, colorRes, openRes, lastRes] = await Promise.all([
         supabase.from('exercises').select('*')
           .order('day_type', { ascending: true })
@@ -144,6 +199,8 @@ export default function DaySelect() {
         console.error('[grind] failed to load exercises', exRes.error)
         throw new Error(exRes.error.message)
       }
+      // The exercise list is all a workout needs to start with no signal.
+      if (user) saveWorkoutSnapshot(user.id, exRes.data ?? [], {}, {})
       const catMap: Record<string, DayCategory> = {}
       for (const r of catRes.data ?? []) catMap[r.day_key] = r.category as DayCategory
 
@@ -181,7 +238,7 @@ export default function DaySelect() {
           ? { day: lastRes.data.day_type as string, completedAt: lastRes.data.completed_at as string }
           : null,
       }
-    },
+    }),
   )
   const exercises = catalog?.exercises ?? []
   const rotation = catalog?.rotation ?? null

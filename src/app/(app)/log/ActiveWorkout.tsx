@@ -17,12 +17,29 @@ import {
   isTransientError,
   MAX_SET_WEIGHT_LBS,
   MAX_SET_REPS,
-  flushQueuedOps,
+  FLUSHED_EVENT,
   getQueuedOps,
   removeQueuedOp,
   clearQueuedOpsForSession,
   clearQueuedOpsForExercise,
+  withRequestTimeout,
+  type FlushResult,
 } from '@/lib/utils/offlineQueue'
+import { withOfflineGate, browserIsOffline, isOfflineError } from '@/lib/offline/offlineGate'
+import {
+  clearPendingLocalSession,
+  ensurePendingLocalSession,
+  getActiveWorkoutScreenSession,
+  getPendingLocalSessions,
+  isPendingLocalSessionId,
+  lastKnownUserId,
+  readWorkoutSnapshot,
+  rememberUserId,
+  resolveSessionAlias,
+  saveWorkoutSnapshot,
+  setActiveWorkoutScreenSession,
+} from '@/lib/offline/localSession'
+import { SESSION_REMAPPED_EVENT, adoptServerSession, syncSessionNow } from '@/lib/offline/sync'
 import { reportError } from '@/lib/utils/reportError'
 import { planWarmupRamp } from '@/lib/utils/warmupSets'
 import { formatWarmupPercentsList, percentsToFractions, readWarmupPercents } from '@/lib/utils/warmupPrefs'
@@ -125,12 +142,15 @@ async function runWithRetry<R extends { error: unknown }>(
 ): Promise<R> {
   let result: R | undefined
   for (let attempt = 0; attempt < attempts; attempt++) {
-    try {
-      result = await op()
-      if (!result.error) return result
-    } catch (err) {
-      result = { error: err } as R
-    }
+    // withRequestTimeout also folds a thrown fetch error into `{ error }`.
+    result = await withRequestTimeout(op())
+    if (!result.error) return result
+    // Offline (or a not-yet-synced local session): the gated client failed this
+    // instantly — queue it now rather than sit through backoff delays.
+    if (isOfflineError(result.error)) return result
+    // A request that hung for the full timeout means the link is effectively
+    // dead; queue the write instead of stacking two more doomed attempts.
+    if (result.error instanceof TypeError && result.error.message === 'request timed out') return result
     // The server understood and refused this write; retrying can't change that.
     if (!isTransientError(result.error)) return result
     if (attempt < attempts - 1) {
@@ -147,12 +167,26 @@ export default function ActiveWorkout({ day }: { day: string }) {
   // rotation) becomes a local no-op while Demo Mode is on — see
   // src/lib/demoMode/demoSafeSupabase.ts. Reads (exercises, last weights)
   // still hit Supabase normally, so the workout UI stays fully populated.
-  const supabase = useMemo(
+  // `rawSupabase` talks to the network no matter what (sync, session creation);
+  // `supabase` is the same client, except `session_logs` writes made while
+  // offline — or against a session that only exists on this device so far —
+  // fail instantly so the existing "queue it for later" path takes over.
+  const rawSupabase = useMemo(
     () => (demoMode ? demoSafeClient(createClient()) : createClient()),
     [demoMode],
   )
-
   const [sessionId, setSessionId] = useState<string | null>(null)
+  const supabase = useMemo(
+    () =>
+      withOfflineGate(
+        rawSupabase,
+        // The screen registers its session id in localSession (see the effect
+        // that calls setActiveWorkoutScreenSession).
+        () => browserIsOffline() || isPendingLocalSessionId(getActiveWorkoutScreenSession()),
+      ),
+    [rawSupabase],
+  )
+
   const [exercises, setExercises] = useState<Exercise[]>([])
   const [logs, setLogs] = useState<LogMap>({})
   // `previousBests` is the WEIGHT from the most recent completed session per
@@ -431,8 +465,8 @@ export default function ActiveWorkout({ day }: { day: string }) {
   // connectivity mid-workout.
   useEffect(() => {
     if (!sessionId) return
-    async function flush() {
-      const result = await flushQueuedOps(sessionId!, supabase)
+    const sid = sessionId
+    function apply(result: FlushResult) {
       if (result.synced.length === 0 && result.rejected.length === 0) return
       setLogs(prev => applyFlushResult(prev, result))
       if (result.rejected.length > 0) {
@@ -440,10 +474,48 @@ export default function ActiveWorkout({ day }: { day: string }) {
         setTimeout(() => setResumeToast(null), 4000)
       }
     }
-    flush()
-    window.addEventListener('online', flush)
-    return () => window.removeEventListener('online', flush)
-  }, [sessionId, supabase])
+    async function syncNow() {
+      const { result } = await syncSessionNow(sid, rawSupabase)
+      apply(result)
+    }
+    // The background agent (OfflineSyncAgent) flushes on reconnect and on its
+    // backoff timer; this screen just reflects what it did.
+    function onFlushed(e: Event) {
+      const detail = (e as CustomEvent<{ sessionId: string; result: FlushResult }>).detail
+      if (detail?.sessionId === resolveSessionAlias(sid)) apply(detail.result)
+    }
+    // A workout started offline just got its real server session.
+    function onRemapped(e: Event) {
+      const detail = (e as CustomEvent<{ from: string; to: string }>).detail
+      if (detail?.from !== sid) return
+      // Carry per-session extras (exercises added mid-workout) across the swap.
+      const extras = readSessionExtraIds(detail.from)
+      if (extras.length > 0) writeSessionExtraIds(detail.to, extras)
+      clearSessionExtraIds(detail.from)
+      setSessionId(detail.to)
+    }
+    void syncNow()
+    window.addEventListener('online', syncNow)
+    window.addEventListener(FLUSHED_EVENT, onFlushed)
+    window.addEventListener(SESSION_REMAPPED_EVENT, onRemapped)
+    return () => {
+      window.removeEventListener('online', syncNow)
+      window.removeEventListener(FLUSHED_EVENT, onFlushed)
+      window.removeEventListener(SESSION_REMAPPED_EVENT, onRemapped)
+    }
+  }, [sessionId, rawSupabase])
+
+  // Tell the sync layer which session this screen is holding, and retire the
+  // local-id record once we've switched to the server's id (until then it keeps
+  // writes queueing instead of reaching the server under an id it doesn't know).
+  useEffect(() => {
+    if (!sessionId) return
+    setActiveWorkoutScreenSession(sessionId)
+    for (const p of getPendingLocalSessions()) {
+      if (p.id !== sessionId && resolveSessionAlias(p.id) === sessionId) clearPendingLocalSession(p.id)
+    }
+    return () => setActiveWorkoutScreenSession(null)
+  }, [sessionId])
 
   useEffect(() => {
     // Freeze the displayed elapsed time once the workout is finished — otherwise
@@ -535,17 +607,52 @@ export default function ActiveWorkout({ day }: { day: string }) {
     setOriginalDayIds(new Set())
     createdThisSessionIdsRef.current = new Set()
     const user = await getClientUser(supabase)
-    if (!user) { redirecting = true; router.push('/login'); return }
+    let userId: string | null = user?.id ?? null
+    if (user) {
+      rememberUserId(user.id)
+    } else {
+      // No session and no way to ask the server: with a remembered account this
+      // is a dead connection (an expired token can't refresh offline), not a
+      // sign-out — sign-out forgets the account. Never bounce to /login here.
+      userId = lastKnownUserId()
+      if (!userId) { redirecting = true; router.push('/login'); return }
+    }
+
+    // What the device remembers from the last online load: lets a workout start
+    // with no signal at all (see src/lib/offline/localSession.ts).
+    const snapshot = readWorkoutSnapshot<Exercise>(userId)
+    let offlineStart = browserIsOffline()
 
     // One catalog read (was two sequential ones): the day's exercises are just
     // a slice of the full list, already in sort_order within each day_type.
-    const { data: allExsData, error: allExsError } = await supabase
-      .from('exercises')
-      .select('*')
-      .order('day_type', { ascending: true })
-      .order('sort_order', { ascending: true })
-    // A dropped read is not an empty day: say so and offer a retry.
-    if (allExsError) throw allExsError
+    let allExsData: Exercise[] | null = null
+    if (offlineStart && snapshot) {
+      allExsData = snapshot.exercises
+    } else {
+      const res = await withRequestTimeout(
+        Promise.resolve(
+          supabase
+            .from('exercises')
+            .select('*')
+            .order('day_type', { ascending: true })
+            .order('sort_order', { ascending: true }),
+        ),
+        10_000,
+      )
+      if (res.error) {
+        // A dead link with a saved catalog starts the workout from the device
+        // copy; a dropped read with nothing saved is not an empty day: say so
+        // and offer a retry.
+        if (snapshot && isTransientError(res.error)) {
+          allExsData = snapshot.exercises
+          offlineStart = true
+        } else {
+          throw res.error
+        }
+      } else {
+        allExsData = (res.data ?? []) as Exercise[]
+      }
+    }
     const allDayExs = (allExsData ?? []).filter(ex => ex.day_type === day)
 
     if (allDayExs.length === 0) { setLoading(false); return }
@@ -575,9 +682,14 @@ export default function ActiveWorkout({ day }: { day: string }) {
     // Kicked off now so it overlaps the "best" lookups below instead of
     // waiting behind them (we only get here once the day has exercises, so an
     // empty day never creates a session).
-    const resumePromise = Promise.resolve(
-      supabase.rpc('start_or_resume_session', { p_day_type: day }),
-    )
+    // Offline (or a dead link): resolve instantly with a transient error and
+    // fall through to a device-local session below.
+    const resumePromise = offlineStart
+      ? Promise.resolve({ data: null, error: { message: 'offline', code: '' } })
+      : withRequestTimeout(
+          Promise.resolve(supabase.rpc('start_or_resume_session', { p_day_type: day })),
+          10_000,
+        )
 
     // Two batch RPCs — was N sequential queries (one per exercise). `bests` (the
     // "prev: X lbs" hint, display-only) comes from the most recent completed
@@ -588,10 +700,16 @@ export default function ActiveWorkout({ day }: { day: string }) {
     const bests: PreviousBest = {}
     const bestVolumes: PreviousBest = {}
     const exerciseIds = exs.map(e => e.id)
-    if (exerciseIds.length > 0) {
+    if (exerciseIds.length > 0 && !offlineStart) {
       const [{ data: lastWeightRows, error: lastWeightError }, { data: bestRows }] = await Promise.all([
-        supabase.rpc('get_exercise_last_weights', { p_exercise_ids: exerciseIds }),
-        supabase.rpc('get_exercise_bests', { p_exercise_ids: exerciseIds }),
+        withRequestTimeout(
+          Promise.resolve(supabase.rpc('get_exercise_last_weights', { p_exercise_ids: exerciseIds })),
+          10_000,
+        ),
+        withRequestTimeout(
+          Promise.resolve(supabase.rpc('get_exercise_bests', { p_exercise_ids: exerciseIds })),
+          10_000,
+        ),
       ])
       if (lastWeightError) {
         // get_exercise_last_weights (docs/sql/24) missing or erroring — fall
@@ -613,6 +731,14 @@ export default function ActiveWorkout({ day }: { day: string }) {
         bestVolumes[row.exercise_id] = normalizePriorVolume(row.max_volume)
       }
     }
+    // Anything the server didn't answer for (offline, timeout) comes from the
+    // numbers saved at the last online load, so "prev" and the PR bar still work.
+    for (const ex of exs) {
+      if (snapshot && !(ex.id in bests) && ex.id in snapshot.bests) bests[ex.id] = snapshot.bests[ex.id]
+      if (snapshot && !(ex.id in bestVolumes) && ex.id in snapshot.bestVolumes) {
+        bestVolumes[ex.id] = snapshot.bestVolumes[ex.id]
+      }
+    }
     for (const ex of exs) {
       if (!(ex.id in bests)) bests[ex.id] = null
       if (!(ex.id in bestVolumes)) bestVolumes[ex.id] = null
@@ -621,6 +747,9 @@ export default function ActiveWorkout({ day }: { day: string }) {
     setBaselineBests(bests)
     setPreviousBestVolumes(bestVolumes)
     setBaselineBestVolumes(bestVolumes)
+    // Keep a device copy of what an offline start needs (catalog + prev/PR
+    // numbers). Skipped when this load itself came from that copy.
+    if (!offlineStart && allExsData) saveWorkoutSnapshot(userId, allExsData, bests, bestVolumes)
 
     // What a fresh, never-logged set actually prefills with — separate from
     // `bests` above (which stays last-session-only, driving the "prev:" hint).
@@ -646,7 +775,22 @@ export default function ActiveWorkout({ day }: { day: string }) {
       rpe?: number | null
     }
 
-    const { data: resumeData, error: resumeError } = await resumePromise
+    let { data: resumeData, error: resumeError } = await resumePromise
+
+    // Couldn't reach the server (offline, hung request, flaky cell): start — or
+    // pick back up — a session on this device. Sets queue locally and the sync
+    // agent creates the real session the moment a connection returns.
+    if ((resumeError || !resumeData) && (!resumeError || isTransientError(resumeError)) && snapshot) {
+      const alreadyStarted = getPendingLocalSessions().some(p => p.day === day)
+      const local = ensurePendingLocalSession(day, userId)
+      resumeData = {
+        session: { id: local.id, started_at: local.startedAt, note: null },
+        logs: [],
+        resumed: alreadyStarted,
+      }
+      resumeError = null
+      offlineStart = true
+    }
 
     if (resumeError || !resumeData) {
       setLoading(false)
@@ -667,6 +811,17 @@ export default function ActiveWorkout({ day }: { day: string }) {
 
     const session = resumePayload.session
     const sid = session.id
+    // Online now, but this day was started on the device earlier (offline, or on
+    // a connection that died mid-start): fold that local session into the
+    // server's before reading anything keyed by id.
+    for (const local of getPendingLocalSessions()) {
+      if (local.day === day && local.id !== sid) {
+        const extras = readSessionExtraIds(local.id)
+        await adoptServerSession(supabase, local, session)
+        if (extras.length > 0) writeSessionExtraIds(sid, extras)
+        clearSessionExtraIds(local.id)
+      }
+    }
     const sessionStart = new Date(session.started_at)
     if (session.note) setWorkoutNote(session.note)
     void loadLastNotes(exs.map(e => e.id), sid)
@@ -694,7 +849,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
     }
 
     const missingPriorIds = exs.filter(e => !(e.id in bests)).map(e => e.id)
-    if (missingPriorIds.length > 0) {
+    if (missingPriorIds.length > 0 && !offlineStart) {
       const [{ data: extraLastRows, error: extraLastError }, { data: extraBestRows }] = await Promise.all([
         supabase.rpc('get_exercise_last_weights', { p_exercise_ids: missingPriorIds }),
         supabase.rpc('get_exercise_bests', { p_exercise_ids: missingPriorIds }),
@@ -924,7 +1079,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
 
   async function retryPendingSync() {
     if (!sessionId) return
-    const result = await flushQueuedOps(sessionId, supabase)
+    const { result } = await syncSessionNow(sessionId, rawSupabase)
     if (result.rejected.length > 0) {
       setLogs(prev => applyFlushResult(prev, result))
       setResumeToast("Couldn't save that set — check the weight and reps.")
@@ -2627,6 +2782,20 @@ export default function ActiveWorkout({ day }: { day: string }) {
     // Stop queued set writes from flushing into the session mid-delete.
     if (sessionId) clearQueuedOpsForSession(sessionId)
 
+    // A workout that only exists on this device has nothing on the server to
+    // delete — drop it locally and leave, signal or not.
+    if (sessionId && isPendingLocalSessionId(sessionId)) {
+      clearPendingLocalSession(sessionId)
+      clearSessionExtraIds(sessionId)
+      clearSessionRest(sessionId)
+      restTimer.stop()
+      clearWorkoutNotifications()
+      void wakeLockRef.current?.release()
+      setSessionId(null)
+      router.replace('/log')
+      return
+    }
+
     const user = await getClientUser(supabase)
     if (!user) {
       discardingRef.current = false
@@ -2705,7 +2874,14 @@ export default function ActiveWorkout({ day }: { day: string }) {
       // Flush offline-queued set writes BEFORE complete_session — otherwise the
       // server may see NO_WORKING_SETS or finish with missing sets/wrong XP.
       await Promise.allSettled([...inflightSavesRef.current])
-      const flushed = await flushQueuedOps(sessionId, supabase)
+      // A workout started offline gets its server session here (if it hasn't
+      // already); from then on every call uses the server's id.
+      const { sessionId: liveSessionId, result: flushed } = await syncSessionNow(sessionId, rawSupabase)
+      if (isPendingLocalSessionId(liveSessionId)) {
+        setResumeToast('Still offline — your sets are saved here and will sync when you reconnect.')
+        setTimeout(() => setResumeToast(null), 5000)
+        return
+      }
       if (flushed.rejected.length > 0) {
         // Refused sets were dropped from the queue; un-check them so the
         // finish check below sees the real state.
@@ -2714,7 +2890,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
         setTimeout(() => setResumeToast(null), 5000)
         return
       }
-      if (getQueuedOps(sessionId).length > 0) {
+      if (getQueuedOps(liveSessionId).length > 0) {
         setResumeToast('Still syncing sets — check your connection and try again.')
         setTimeout(() => setResumeToast(null), 5000)
         return
@@ -2738,7 +2914,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       // undo token, badges) lives in completeSession so every finish path shares it.
       const outcome = await completeSession(supabase, {
         userId: user.id,
-        sessionId,
+        sessionId: liveSessionId,
         dayType: day,
         note: workoutNote || null,
         startHour: startedAt.getHours(),
@@ -2795,7 +2971,8 @@ export default function ActiveWorkout({ day }: { day: string }) {
         isNewBestStreak: result.current_streak > 1 && result.current_streak === result.longest_streak,
       })
       await reconcileSessionExtras(exercises, logsRef.current)
-      clearSessionExtraIds(sessionId)
+      clearSessionExtraIds(liveSessionId)
+      clearSessionRest(liveSessionId)
       clearSessionRest(sessionId)
       markAppDataStale()
     } catch (err) {

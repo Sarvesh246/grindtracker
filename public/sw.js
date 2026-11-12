@@ -1,21 +1,82 @@
 // Minimal offline-shell + Web Push service worker. Not a full precache/workbox
 // setup — just enough that a dead spot in the gym shows a branded retry screen,
 // already-fetched JS/CSS keep working, and lock-screen rest/streak pushes land.
-const CACHE_NAME = 'grind-shell-v7'
+const CACHE_NAME = 'grind-shell-v8'
 // Content-hashed /_next/static/ bundles live in their own cache so they can be
 // trimmed without touching the shell, and survive CACHE_NAME bumps cleanly.
 const STATIC_CACHE = 'grind-static-v1'
+// Last good HTML of the signed-in app screens, so the app still opens — and a
+// workout can still be started and logged — with no connection. See
+// PRIVATE_PAGE_PREFIXES for the privacy trade-off; wiped on sign-out.
+const PAGES_CACHE = 'grind-pages-v1'
+/** On a flaky link, show the saved screen instead of waiting on the network this long. */
+const NAV_NETWORK_TIMEOUT_MS = 4000
 /** Keep roughly the last few deploys' worth of bundles; older ones are evicted. */
 const STATIC_CACHE_MAX_ENTRIES = 150
 const PRECACHE_URLS = ['/offline.html', '/manifest.json', '/icon-192.png', '/icon-512.png']
 
-// Only these navigations are safe to cache-and-replay: nothing behind auth.
-// Every other route (/home, /log, /progress, /profile, ...) is per-account —
-// caching those by bare URL would let a stale authenticated page replay
-// after sign-out, or on a shared device, briefly show one user's dashboard
-// to the next person who opens the app offline. Private routes fall back to
-// the generic offline shell instead, never a cached copy of the page itself.
+// Public navigations (nothing behind auth) are cached under the shared shell
+// cache and replayed as-is.
 const PUBLIC_NAV_PATHS = new Set(['/', '/login'])
+
+// The signed-in screens are per-account. They are cached in their own bucket
+// (PAGES_CACHE) so the app can open offline, and the page wipes that bucket on
+// sign-out (CLEAR_PRIVATE_CACHES) so the next person on a shared device never
+// sees a previous user's screens. Only the screen HTML is kept — it is a thin
+// client shell; the data on it is fetched from Supabase with the user's own
+// token, never replayed from here. Keyed by pathname alone: /log?day=push and
+// /log?day=legs are the same client page.
+const PRIVATE_PAGE_PREFIXES = ['/home', '/log', '/progress', '/profile', '/leaderboard']
+
+function isPrivatePagePath(pathname) {
+  return PRIVATE_PAGE_PREFIXES.some(p => pathname === p || pathname.startsWith(p + '/'))
+}
+
+function pageCacheKey(url) {
+  const path = url.pathname.length > 1 && url.pathname.endsWith('/') ? url.pathname.slice(0, -1) : url.pathname
+  return url.origin + path
+}
+
+/** Only a clean, same-origin HTML 200 is worth keeping (never a login redirect). */
+function isCacheablePage(res) {
+  if (!res || !res.ok || res.redirected || res.type !== 'basic') return false
+  const type = res.headers.get('content-type') || ''
+  return type.includes('text/html')
+}
+
+/**
+ * Network-first with a short leash: a signed-in screen is always fetched fresh
+ * when the connection is good, but a dead or crawling one falls back to the
+ * last saved copy instead of hanging for tens of seconds.
+ */
+function handlePrivateNavigation(event, request, url) {
+  const key = pageCacheKey(url)
+  const network = fetch(request).then(res => {
+    if (isCacheablePage(res)) {
+      const copy = res.clone()
+      caches.open(PAGES_CACHE).then(cache => cache.put(key, copy))
+    }
+    return res
+  })
+  // The fetch keeps running (and refreshing the cache) even if we answer early.
+  event.waitUntil(network.catch(() => {}))
+
+  event.respondWith(
+    (async () => {
+      const cache = await caches.open(PAGES_CACHE)
+      const saved = await cache.match(key)
+      if (!saved) return network.catch(() => caches.match('/offline.html'))
+      const timeout = new Promise(resolve => setTimeout(() => resolve(null), NAV_NETWORK_TIMEOUT_MS))
+      try {
+        const res = await Promise.race([network, timeout])
+        if (!res || res.status >= 500) return saved
+        return res
+      } catch {
+        return saved
+      }
+    })(),
+  )
+}
 
 /** In-SW rest timers so rest-end can fire while the page is alive but cron hasn't. */
 const restTimeouts = new Map()
@@ -33,7 +94,9 @@ self.addEventListener('activate', event => {
       .keys()
       .then(keys =>
         Promise.all(
-          keys.filter(k => k !== CACHE_NAME && k !== STATIC_CACHE).map(k => caches.delete(k)),
+          keys
+            .filter(k => k !== CACHE_NAME && k !== STATIC_CACHE && k !== PAGES_CACHE)
+            .map(k => caches.delete(k)),
         ),
       )
       .then(trimStaticCache)
@@ -89,6 +152,10 @@ self.addEventListener('fetch', event => {
   // shell so a signed-out or different user on this device never sees a
   // stale copy of someone else's dashboard.
   if (request.mode === 'navigate') {
+    if (isPrivatePagePath(url.pathname)) {
+      handlePrivateNavigation(event, request, url)
+      return
+    }
     const isPublic = PUBLIC_NAV_PATHS.has(url.pathname)
     event.respondWith(
       fetch(request)
@@ -109,6 +176,46 @@ self.addEventListener('fetch', event => {
     )
   }
 })
+
+/**
+ * Quietly save the main screens (and the JS/CSS they load) while the connection
+ * is good, so the first time the app is opened with no signal it already has
+ * everything. The page asks at most once a day and never mid-workout; this
+ * stays small — four pages and their content-hashed bundles, each fetched once.
+ */
+async function warmRoutes(routes) {
+  try {
+    const conn = self.navigator && self.navigator.connection
+    if (conn && (conn.saveData || /^(slow-2g|2g)$/.test(conn.effectiveType || ''))) return
+    const pages = await caches.open(PAGES_CACHE)
+    const statics = await caches.open(STATIC_CACHE)
+    const assets = new Set()
+    for (const route of routes) {
+      if (typeof route !== 'string' || !route.startsWith('/') || route.startsWith('//')) continue
+      const url = new URL(route, self.location.origin)
+      if (!isPrivatePagePath(url.pathname)) continue
+      const res = await fetch(url.href, { credentials: 'same-origin', headers: { Accept: 'text/html' } })
+      if (!isCacheablePage(res)) continue
+      const copy = res.clone()
+      const html = await res.text()
+      await pages.put(pageCacheKey(url), copy)
+      const found = html.match(/\/_next\/static\/[^"'\s\\)]+?\.(?:js|css)/g) || []
+      for (const asset of found) assets.add(asset)
+    }
+    for (const asset of assets) {
+      if (await statics.match(asset)) continue
+      try {
+        const res = await fetch(asset)
+        if (res.ok) await statics.put(asset, res)
+      } catch {
+        /* best-effort: it'll be fetched on demand later */
+      }
+    }
+    await trimStaticCache()
+  } catch {
+    /* warming is an optimisation, never an error */
+  }
+}
 
 async function anyClientFocused() {
   const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
@@ -191,6 +298,16 @@ self.addEventListener('notificationclick', event => {
 self.addEventListener('message', event => {
   const msg = event.data
   if (!msg || typeof msg !== 'object') return
+
+  if (msg.type === 'CLEAR_PRIVATE_CACHES') {
+    event.waitUntil(caches.delete(PAGES_CACHE))
+    return
+  }
+
+  if (msg.type === 'WARM_ROUTES') {
+    event.waitUntil(warmRoutes(Array.isArray(msg.routes) ? msg.routes : []))
+    return
+  }
 
   if (msg.type === 'SHOW_NOTIFICATION') {
     event.waitUntil(showGrindNotification(msg.payload || {}))
