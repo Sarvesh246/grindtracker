@@ -14,6 +14,7 @@ import {
 } from 'react'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { COACH_MAX_MESSAGE_CHARS } from '@/lib/coach'
+import { CoachModelPicker } from './CoachModelPicker'
 import { coachStarterChips } from '@/lib/coach/starterChips'
 import { useMotionPref } from '@/lib/contexts/MotionContext'
 import {
@@ -1931,6 +1932,9 @@ export default function CoachSheet() {
           </div>
         </div>
 
+        <div className="coach-sheet__modelbar">
+          <CoachModelPicker />
+        </div>
         <form className="coach-sheet__composer" onSubmit={onSubmit}>
           <textarea
             ref={inputRef}

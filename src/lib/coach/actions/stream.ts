@@ -4,6 +4,8 @@ export type CoachChatStreamEvent =
   | { type: 'text-delta'; text: string }
   | { type: 'proposal'; proposal: CoachProposalView }
   | { type: 'error'; error: string }
+  /** The requested model failed before replying; `model` answers instead. */
+  | { type: 'model'; model: string; from: string }
   | { type: 'done' }
 
 export type CoachActionStreamEvent =

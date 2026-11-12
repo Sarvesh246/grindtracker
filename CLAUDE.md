@@ -468,6 +468,14 @@ group (A short chat · B long · C compound actions · D messy agentic).
 - **Cards the Coach proposed** are fed back each turn (`recentActions.ts`) so
   follow-ups work; several cards from one reply get a "Confirm all" bar that
   confirms in order and stops on the first failure.
+- **Models & fallback** (`src/lib/coach/models.ts`). The composer's model pill
+  (`CoachModelPicker`, saved in localStorage) sends `model`; the route tries it,
+  then every other listed model, on any failure that produced nothing (429,
+  503, 404, or 15s of silence — `FIRST_PART_MS`). Free-tier quotas are per
+  model, so a fallback usually has room. A `model` NDJSON event tells the
+  client which model answered. Only list a model after it passes eval cases
+  A2, C10 and D5 (`--model <id> --id <case> --runs 1`); Gemma is too slow for
+  the 52s deadline and 3.7/3.8 Flash 503'd on every call when tested.
 - **`enforce_coach_rate_limit()`** has an admin `coach_dev_unlimited` bypass
   (55). Any redefinition must start from `55-*.sql`.
 - Every Coach turn logs one `[grind] coach turn {…}` JSON line (intent, tools

@@ -27,6 +27,7 @@ import {
 } from '@/lib/coach/openCoachBus'
 import type { CoachChipHints } from '@/lib/coach/starterChips'
 import { titleFromMessage } from '@/lib/coach/conversations'
+import { COACH_AUTO_MODEL, isCoachModelId } from '@/lib/coach/models'
 import { markAppDataStale } from '@/lib/cache/appDataCache'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { localDateKey } from '@/lib/utils/formatting'
@@ -103,6 +104,33 @@ type CoachContextValue = {
   loadConversation: (id: string) => Promise<void>
   deleteConversation: (id: string) => Promise<void>
   refreshConversations: () => Promise<void>
+  /** Picked model id, or COACH_AUTO_MODEL. Server falls back past it on 429. */
+  model: string
+  setModel: (id: string) => void
+  /** Set when the last reply came from a fallback model; cleared on send. */
+  servedBy: { model: string; from: string } | null
+}
+
+const MODEL_KEY = 'grind_coach_model'
+const MODEL_EVENT = 'grind-coach-model'
+
+function readStoredModel(): string {
+  try {
+    const raw = window.localStorage.getItem(MODEL_KEY)
+    if (raw && isCoachModelId(raw)) return raw
+  } catch {
+    // private mode / blocked storage
+  }
+  return COACH_AUTO_MODEL
+}
+
+function subscribeModel(onChange: () => void) {
+  window.addEventListener(MODEL_EVENT, onChange)
+  window.addEventListener('storage', onChange)
+  return () => {
+    window.removeEventListener(MODEL_EVENT, onChange)
+    window.removeEventListener('storage', onChange)
+  }
 }
 
 const DOCK_KEY = 'grind_coach_fab_dock'
@@ -185,6 +213,25 @@ export function CoachProvider({
 
   const setDock = useCallback((next: CoachDockId) => {
     persistDock(next)
+  }, [])
+
+  const model = useSyncExternalStore(
+    subscribeModel,
+    readStoredModel,
+    () => COACH_AUTO_MODEL,
+  )
+  const [servedBy, setServedBy] = useState<{ model: string; from: string } | null>(
+    null,
+  )
+  const setModel = useCallback((next: string) => {
+    setServedBy(null)
+    try {
+      if (next === COACH_AUTO_MODEL) window.localStorage.removeItem(MODEL_KEY)
+      else window.localStorage.setItem(MODEL_KEY, next)
+    } catch {
+      // ignore — the pick just won't survive a reload
+    }
+    window.dispatchEvent(new Event(MODEL_EVENT))
   }, [])
 
   const refreshQuota = useCallback(async () => {
@@ -445,6 +492,7 @@ export function CoachProvider({
         } catch {
           timeZone = undefined
         }
+        setServedBy(null)
         const res = await fetch('/api/coach/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -455,6 +503,7 @@ export function CoachProvider({
             conversationId: activeConversationId,
             localDate: localDateKey(),
             timeZone,
+            model,
           }),
         })
 
@@ -624,6 +673,8 @@ export function CoachProvider({
             flushAssistant(textAcc, [...proposals])
           } else if (event.type === 'error') {
             setError(event.error)
+          } else if (event.type === 'model') {
+            setServedBy({ model: event.model, from: event.from })
           } else if (event.type === 'done') {
             sawDone = true
           }
@@ -726,6 +777,7 @@ export function CoachProvider({
       refreshQuota,
       refreshConversations,
       activeConversationId,
+      model,
     ],
   )
   // Latest-ref pattern: openCoach() reads sendMessageRef.current from an
@@ -1002,8 +1054,14 @@ export function CoachProvider({
       loadConversation,
       deleteConversation,
       refreshConversations,
+      model,
+      setModel,
+      servedBy,
     }),
     [
+      model,
+      setModel,
+      servedBy,
       open,
       size,
       dock,

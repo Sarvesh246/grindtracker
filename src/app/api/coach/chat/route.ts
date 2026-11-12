@@ -30,6 +30,11 @@ import {
   type CoachToolContext,
 } from '@/lib/coach/actions'
 import { titleFromMessage } from '@/lib/coach/conversations'
+import {
+  COACH_MODELS,
+  coachModelSettings,
+  resolveCoachModelChain,
+} from '@/lib/coach/models'
 import { type CoachTurn } from '@/lib/coach/history'
 import { loadCoachChipHints } from '@/lib/coach/chipHints'
 import {
@@ -54,6 +59,11 @@ const RETRY_DEADLINE_MS = 35_000
  * instead of Vercel killing the function mid-stream.
  */
 const MODEL_DEADLINE_MS = 52_000
+/**
+ * Silence budget per model attempt: no text, tool call or thinking within
+ * this long and the attempt is abandoned for the next model in the chain.
+ */
+const FIRST_PART_MS = 15_000
 
 type HistoryItem = CoachTurn
 
@@ -337,8 +347,13 @@ export async function POST(request: Request) {
   }
 
   const history = sanitizeHistory(body.history)
-  const modelId =
-    process.env.GEMINI_MODEL?.trim() || COACH_DEFAULT_MODEL
+  // Requested model first (dropdown), then the rest of the list: free-tier
+  // quotas are per model, so a 429 on one usually isn't a 429 on the next.
+  const modelChain = resolveCoachModelChain(
+    body.model,
+    process.env.GEMINI_MODEL?.trim() || COACH_DEFAULT_MODEL,
+  )
+  let modelId = modelChain[0]
 
   // What happened to the cards proposed earlier in this chat — read fresh each
   // turn (the cached USER_DATA can be a minute stale) so follow-ups like
@@ -385,25 +400,31 @@ export async function POST(request: Request) {
   // lets @ai-sdk/google map per family:
   //   2.5 → thinkingBudget: 0
   //   3.x / -latest → thinkingLevel: 'minimal'
-  const baseCall = {
-    model: google(modelId),
-    system,
-    messages,
-    // Google: for Gemini 3 keep temperature at the 1.0 default — lower values
-    // can cause looping / degraded output (and runs that end with no text).
-    ...(/gemini-3|-latest$/.test(modelId) ? {} : { temperature: 0.4 }),
-    // Minimal thinking for chat and plain tool calls; advice that has to stay
-    // self-consistent (recommendation / comparison / analysis / troubleshooting
-    // / program) gets 'low' — see THINKING in intent.ts.
-    reasoning: plan.reasoning,
-    onError: ({ error }: { error: unknown }) => {
+  const baseCall = (id: string, reasoning: typeof plan.reasoning) => {
+    // Gemini 3 keeps the 1.0 default temperature (lower values loop); Gemma
+    // has no thinking config at all — see coachModelSettings.
+    const settings = coachModelSettings(id)
+    return {
+      model: google(id),
+      system,
+      messages,
+      ...(settings.temperature != null ? { temperature: settings.temperature } : {}),
+      // Minimal thinking for chat and plain tool calls; advice that has to
+      // stay self-consistent gets 'low' — see THINKING in intent.ts.
+      ...(settings.supportsReasoning ? { reasoning } : {}),
+      // No same-model retries: a 429 won't clear in seconds, and the chain
+      // below moves to a model with its own quota instead.
+      maxRetries: 0,
+      onError: baseOnError,
+    }
+  }
+  const baseOnError = ({ error }: { error: unknown }) => {
       // streamText() returns before the model call actually runs, so this
       // is the ONLY place upstream failures (bad key, quota, model
       // rename, safety block, network) surface — the outer try/catch below
       // never sees them, since they happen while the stream is consumed,
       // not while streamText() itself is called.
       console.error('[grind] coach stream error', error)
-    },
   }
 
   try {
@@ -417,11 +438,15 @@ export async function POST(request: Request) {
     const abortSignal = AbortSignal.timeout(
       Math.max(5_000, MODEL_DEADLINE_MS - (startedAt - requestStartedAt)),
     )
-    const startAttempt = (withTools: boolean) =>
+    const startAttempt = (
+      withTools: boolean,
+      id: string,
+      signal: AbortSignal,
+    ) =>
       withTools && plan.toolsEnabled
         ? streamText({
-            ...baseCall,
-            abortSignal,
+            ...baseCall(id, plan.reasoning),
+            abortSignal: signal,
             maxOutputTokens,
             tools,
             stopWhen: stepCountIs(MAX_STEPS),
@@ -434,11 +459,10 @@ export async function POST(request: Request) {
                 : undefined,
           })
         : streamText({
-            ...baseCall,
-            abortSignal,
             // Headroom for whatever ate the first budget (thinking, a
             // half-built tool call). The retry never thinks.
-            reasoning: 'none' as const,
+            ...baseCall(id, 'none'),
+            abortSignal: signal,
             maxOutputTokens: Math.max(maxOutputTokens * 2, 2048),
           })
 
@@ -449,6 +473,7 @@ export async function POST(request: Request) {
     let sawError = false
     let retried = false
     let truncated = false
+    const fellBackFrom: string[] = []
     const emittedProposalIds = new Set<string>()
     // Per-turn telemetry, logged as one JSON line so a bad reply can be traced
     // (which intent, which tools with what arguments, why it stopped).
@@ -475,10 +500,28 @@ export async function POST(request: Request) {
           }
         }
         const consume = async (withTools: boolean) => {
-          const result = startAttempt(withTools)
+          // A model can accept the request and then send nothing at all
+          // (seen on overloaded Flash models). Give up on it after
+          // FIRST_PART_MS of silence so the chain can try the next one,
+          // instead of the user staring at "…" until the hard deadline.
+          const stall = new AbortController()
+          const stallTimer = setTimeout(() => stall.abort(), FIRST_PART_MS)
+          const result = startAttempt(
+            withTools,
+            modelId,
+            AbortSignal.any([abortSignal, stall.signal]),
+          )
           let finishReason: string | undefined
           let rawFinishReason: string | undefined
           for await (const part of result.fullStream) {
+            if (
+              part.type === 'text-delta' ||
+              part.type === 'tool-call' ||
+              part.type === 'reasoning-delta' ||
+              part.type === 'finish'
+            ) {
+              clearTimeout(stallTimer)
+            }
             if (part.type === 'text-delta') {
               full += part.text
               emit({ type: 'text-delta', text: part.text })
@@ -509,16 +552,38 @@ export async function POST(request: Request) {
               console.error('[grind] coach stream error', part.error)
             }
           }
+          clearTimeout(stallTimer)
+          if (stall.signal.aborted) {
+            console.warn('[grind] coach model stalled', { model: modelId })
+          }
           // Safety net if tool-result parts were skipped by the provider.
           flushProposals()
           return { finishReason, rawFinishReason }
         }
         let lastFinish: Awaited<ReturnType<typeof consume>> | undefined
-        try {
-          lastFinish = await consume(true)
-        } catch (err) {
-          sawError = true
-          console.error('[grind] coach stream error', err)
+        // Walk the model chain while a model fails before producing anything
+        // (429 quota, 503 overloaded, 404 retired). Anything streamed —
+        // text or a card — ends the walk: it can't be unsent.
+        for (let i = 0; i < modelChain.length; i++) {
+          if (i > 0) {
+            if (abortSignal.aborted || Date.now() - startedAt >= RETRY_DEADLINE_MS) break
+            console.warn('[grind] coach model failed, falling back', {
+              from: modelId,
+              to: modelChain[i],
+            })
+            fellBackFrom.push(modelId)
+            emit({ type: 'model', model: modelChain[i], from: modelChain[0] })
+            modelId = modelChain[i]
+            sawError = false
+          }
+          try {
+            lastFinish = await consume(true)
+          } catch (err) {
+            sawError = true
+            console.error('[grind] coach stream error', err)
+          }
+          const producedNothing = !full.trim() && emittedProposalIds.size === 0
+          if (!(sawError && producedNothing)) break
         }
         // Nothing usable came back — no text, no proposal. Covers transient
         // upstream errors (overloaded / 5xx mid-stream) as well as the silent
@@ -580,6 +645,7 @@ export async function POST(request: Request) {
             '[grind] coach turn',
             JSON.stringify({
               model: modelId,
+              fellBackFrom,
               intent: intentProfile.intent,
               thinking: plan.reasoning,
               tools: plan.toolsEnabled,
@@ -723,6 +789,7 @@ export async function GET() {
   return NextResponse.json({
     quota,
     model: process.env.GEMINI_MODEL?.trim() || COACH_DEFAULT_MODEL,
+    models: COACH_MODELS,
     configured: !!(
       process.env.GEMINI_API_KEY?.trim() ||
       process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim()

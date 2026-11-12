@@ -20,6 +20,7 @@ import { writeFileSync } from 'node:fs'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { generateText, stepCountIs } from 'ai'
 import { COACH_DEFAULT_MODEL } from '../../src/lib/coach/constants'
+import { coachModelSettings } from '../../src/lib/coach/models'
 import { planCoachTurn } from '../../src/lib/coach/turn'
 import { localizeCoachContext } from '../../src/lib/coach/localizeUnits'
 import { formatRecentActions, type RecentActionRow } from '../../src/lib/coach/recentActions'
@@ -46,6 +47,7 @@ const ONLY_GROUP = flag('group')
 const ONLY_ID = flag('id')
 const OUT = flag('out')
 const MODEL_ID = flag('model') || process.env.GEMINI_MODEL?.trim() || COACH_DEFAULT_MODEL
+const MODEL_SETTINGS = coachModelSettings(MODEL_ID)
 const NEED = Math.ceil((RUNS * 2) / 3)
 
 const apiKey = process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim()
@@ -214,8 +216,8 @@ async function runTurn(state: FixtureState, history: CoachTurn[], message: strin
         model: google(MODEL_ID),
         system: plan.system,
         messages: plan.messages,
-        ...(/gemini-3|-latest$/.test(MODEL_ID) ? {} : { temperature: 0.4 }),
-        reasoning: withTools ? plan.reasoning : 'none',
+        ...(MODEL_SETTINGS.temperature != null ? { temperature: MODEL_SETTINGS.temperature } : {}),
+        ...(MODEL_SETTINGS.supportsReasoning ? { reasoning: withTools ? plan.reasoning : 'none' } : {}),
         maxOutputTokens: withTools ? plan.maxOutputTokens : Math.max(plan.maxOutputTokens * 2, 2048),
         ...(withTools && plan.toolsEnabled
           ? {
