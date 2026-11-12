@@ -16,7 +16,7 @@ export default function ServiceWorkerRegister() {
   // set save for bandwidth) and on the login/public pages (nothing to save).
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return
-    const WARM_KEY = 'grind_sw_warm_at'
+    const WARM_KEY = 'grind_sw_warm_at_v2'
     const WARM_EVERY_MS = 24 * 60 * 60 * 1000
     const timer = setTimeout(async () => {
       try {
@@ -32,7 +32,16 @@ export default function ServiceWorkerRegister() {
         const reg = await navigator.serviceWorker.ready
         reg.active?.postMessage({
           type: 'WARM_ROUTES',
-          routes: ['/home', '/log', '/progress', '/profile'],
+          routes: [
+            '/home',
+            '/log',
+            '/progress',
+            '/profile',
+            '/leaderboard',
+            '/profile/settings',
+            '/log/past',
+            '/progress/photos',
+          ],
         })
         window.localStorage.setItem(WARM_KEY, String(Date.now()))
       } catch {

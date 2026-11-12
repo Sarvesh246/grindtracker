@@ -32,7 +32,7 @@ const CHAIN_METHODS = [
 ]
 
 /** Thenable that behaves like a Postgrest builder but resolves to a transient error. */
-function offlineBuilder() {
+export function offlineBuilder() {
   const result = {
     data: null,
     error: { message: OFFLINE_ERROR_MESSAGE, code: '', details: '', hint: '' },
@@ -63,6 +63,27 @@ export function withOfflineGate(
           table === 'session_logs' && shouldQueue()
             ? offlineBuilder()
             : target.from(table)
+      }
+      const value = Reflect.get(target, prop, target)
+      return typeof value === 'function' ? value.bind(target) : value
+    },
+  })
+}
+
+/**
+ * Offline, every table read and RPC fails immediately with a transient error.
+ *
+ * Without this each call first asks the auth layer for a token, and an expired
+ * token can't refresh with no network — supabase-js then retries for up to
+ * ~30s before giving up, and every screen that loads data sits on that. Failing
+ * fast lets the offline fallbacks (saved catalog, cached query data) paint
+ * straight away.
+ */
+export function withOfflineFastFail(client: SupabaseClient): SupabaseClient {
+  return new Proxy(client, {
+    get(target, prop) {
+      if ((prop === 'from' || prop === 'rpc') && browserIsOffline()) {
+        return () => offlineBuilder()
       }
       const value = Reflect.get(target, prop, target)
       return typeof value === 'function' ? value.bind(target) : value

@@ -1,7 +1,7 @@
 // Minimal offline-shell + Web Push service worker. Not a full precache/workbox
 // setup — just enough that a dead spot in the gym shows a branded retry screen,
 // already-fetched JS/CSS keep working, and lock-screen rest/streak pushes land.
-const CACHE_NAME = 'grind-shell-v9'
+const CACHE_NAME = 'grind-shell-v10'
 // Content-hashed /_next/static/ bundles live in their own cache so they can be
 // trimmed without touching the shell, and survive CACHE_NAME bumps cleanly.
 const STATIC_CACHE = 'grind-static-v1'
@@ -66,6 +66,8 @@ function handlePrivateNavigation(event, request, url) {
       const cache = await caches.open(PAGES_CACHE)
       const saved = await cache.match(key, { ignoreVary: true })
       if (!saved) return network.catch(() => caches.match('/offline.html'))
+      // Known offline: answer from the device at once, no waiting on a fetch.
+      if (self.navigator && self.navigator.onLine === false) return saved
       const timeout = new Promise(resolve => setTimeout(() => resolve(null), NAV_NETWORK_TIMEOUT_MS))
       try {
         const res = await Promise.race([network, timeout])

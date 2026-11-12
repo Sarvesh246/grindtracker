@@ -1,5 +1,7 @@
 import { createBrowserClient } from '@supabase/ssr'
 import type { SupabaseClient, User } from '@supabase/supabase-js'
+import { browserIsOffline, withOfflineFastFail } from '@/lib/offline/offlineGate'
+import { lastKnownUserId, rememberUserId } from '@/lib/offline/localSession'
 
 /**
  * Upper bound on a single REST / RPC / auth request from the browser.
@@ -41,18 +43,20 @@ const timeoutFetch = makeTimeoutFetch(REQUEST_TIMEOUT_MS)
 export function createClient() {
   // Singleton in the browser (@supabase/ssr default), so these options apply
   // to the one shared client every component gets.
-  return createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      global: { fetch: timeoutFetch },
-      auth: {
-        // Default is 5s before an orphaned Web Lock is stolen. iOS suspends a
-        // backgrounded PWA mid-refresh often enough that the first taps after
-        // resume each paid that 5s — the "discard got stuck" feel.
-        lockAcquireTimeout: 2_000,
+  return withOfflineFastFail(
+    createBrowserClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        global: { fetch: timeoutFetch },
+        auth: {
+          // Default is 5s before an orphaned Web Lock is stolen. iOS suspends a
+          // backgrounded PWA mid-refresh often enough that the first taps after
+          // resume each paid that 5s — the "discard got stuck" feel.
+          lockAcquireTimeout: 2_000,
+        },
       },
-    },
+    ),
   )
 }
 
@@ -67,9 +71,19 @@ export function createClient() {
  * /login.
  */
 export async function getClientUser(supabase: SupabaseClient): Promise<User | null> {
+  // Offline: an expired token can't refresh, and supabase-js retries that for
+  // ~30s before answering. The remembered id is all callers need (RLS, not this
+  // value, authorizes writes), so answer instantly from it.
+  if (browserIsOffline()) {
+    const id = lastKnownUserId()
+    if (id) return { id } as User
+  }
   try {
     const { data: { session } } = await supabase.auth.getSession()
-    if (session?.user) return session.user
+    if (session?.user) {
+      rememberUserId(session.user.id)
+      return session.user
+    }
   } catch {
     // fall through to the network check
   }

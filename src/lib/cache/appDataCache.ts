@@ -48,8 +48,43 @@ export function subscribe(listener: () => void): () => void {
   return () => { listeners.delete(listener) }
 }
 
+// ── Device copy ─────────────────────────────────────────────────────────────
+// The in-memory store dies with the tab, so a cold open with no signal had
+// nothing to paint. Successful payloads are mirrored to localStorage and read
+// back on a miss as STALE entries (generation -1): they paint instantly, and
+// the usual revalidation replaces them when the network answers. Cleared with
+// the rest of the cache on sign-out.
+const PERSIST_PREFIX = 'grind_qc_v1:'
+const PERSIST_MAX_CHARS = 400_000
+
+function persist(key: string, data: unknown) {
+  if (typeof window === 'undefined') return
+  try {
+    const json = JSON.stringify(data)
+    if (json.length <= PERSIST_MAX_CHARS) window.localStorage.setItem(PERSIST_PREFIX + key, json)
+  } catch {
+    /* storage full / unserialisable — memory copy still works */
+  }
+}
+
+function readPersisted(key: string): unknown {
+  if (typeof window === 'undefined') return undefined
+  try {
+    const raw = window.localStorage.getItem(PERSIST_PREFIX + key)
+    return raw ? JSON.parse(raw) : undefined
+  } catch {
+    return undefined
+  }
+}
+
 export function getCached<T>(key: string): T | undefined {
-  return store.get(key)?.data as T | undefined
+  const hit = store.get(key)
+  if (hit) return hit.data as T
+  const saved = readPersisted(key)
+  if (saved === undefined) return undefined
+  // Stored once so repeated snapshot reads return the same reference.
+  store.set(key, { data: saved, generation: -1 })
+  return saved as T
 }
 
 export function isFresh(key: string): boolean {
@@ -59,6 +94,7 @@ export function isFresh(key: string): boolean {
 
 export function setCached<T>(key: string, data: T): void {
   store.set(key, { data, generation })
+  persist(key, data)
   notify()
 }
 
@@ -113,6 +149,15 @@ function normalizePath(pathname: string): string {
 export function resetAppDataCache(): void {
   generation = 0
   store.clear()
+  if (typeof window !== 'undefined') {
+    try {
+      for (const k of Object.keys(window.localStorage)) {
+        if (k.startsWith(PERSIST_PREFIX)) window.localStorage.removeItem(k)
+      }
+    } catch {
+      /* ignore */
+    }
+  }
   uiStore.clear()
   routeGeneration.clear()
 }
