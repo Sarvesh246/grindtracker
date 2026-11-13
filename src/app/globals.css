@@ -1836,6 +1836,30 @@ html.reduce-motion .grind-sheet-backdrop[data-closing='true'] {
   }
 }
 
+/* Live workout on a landscape phone: the width clears 768px, so the desktop
+   top nav would show and push the workout's own sticky header down by
+   --nav-h - on a ~390px-tall screen that left the header floating mid-screen.
+   Portrait already drops the bottom nav during a workout (BottomNav returns
+   null on /log?day=…); this is the landscape mirror. Keyed on the rendered
+   workout (.page--workout only exists in ActiveWorkout) rather than the URL,
+   so the nav comes straight back on DaySelect and every other page. No
+   max-width cap: a wide rotated phone that reaches the 1024px sidebar layout
+   needs the same treatment for the sidebar's sticky offset. */
+@media (orientation: landscape) and (max-height: 500px) and (min-width: 768px) {
+  .app-shell:has(.page--workout) .top-nav {
+    display: none;
+  }
+  .app-shell:has(.page--workout) .app-main {
+    padding-top: env(safe-area-inset-top);
+  }
+  .app-shell:has(.page--workout) .wo-sticky-header {
+    top: 0;
+  }
+  .app-shell:has(.page--workout) .wo-sidebar {
+    top: 16px;
+  }
+}
+
 /* - Feedback inbox (developer-only, /admin/feedback) -
    Two panes side by side once there's room; below 900px exactly one pane is
    visible at a time (list, or detail after tapping a row) - the same
