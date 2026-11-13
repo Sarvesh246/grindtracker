@@ -136,7 +136,9 @@ self.addEventListener('fetch', event => {
       caches.match(request).then(
         cached =>
           cached ||
-          fetch(request).then(res => {
+          // One quick retry: a single dropped packet on a weak signal used to
+          // reject the chunk and crash the route (ChunkLoadError).
+          fetch(request).catch(() => new Promise(r => setTimeout(r, 400)).then(() => fetch(request))).then(res => {
             if (res.ok) {
               const copy = res.clone()
               caches.open(STATIC_CACHE).then(cache => cache.put(request, copy))

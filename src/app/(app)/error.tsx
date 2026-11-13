@@ -14,6 +14,21 @@ export default function Error({
       operation: 'app-error-boundary',
       digest: error.digest,
     })
+    // A JS chunk that failed to download (weak signal, or a deploy replaced the
+    // old bundle) isn't a real crash: one reload fetches fresh chunks. Guarded
+    // by a short-lived flag so a persistent failure shows the error screen
+    // instead of looping.
+    if (error.name === 'ChunkLoadError' || /Loading chunk|Failed to load chunk/i.test(error.message)) {
+      try {
+        const last = Number(sessionStorage.getItem('grind_chunk_reload') ?? 0)
+        if (Date.now() - last > 30_000) {
+          sessionStorage.setItem('grind_chunk_reload', String(Date.now()))
+          window.location.reload()
+        }
+      } catch {
+        /* storage blocked — fall through to the retry screen */
+      }
+    }
   }, [error])
 
   return (

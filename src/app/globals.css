@@ -1845,18 +1845,36 @@ html.reduce-motion .grind-sheet-backdrop[data-closing='true'] {
    so the nav comes straight back on DaySelect and every other page. No
    max-width cap: a wide rotated phone that reaches the 1024px sidebar layout
    needs the same treatment for the sidebar's sticky offset. */
-@media (orientation: landscape) and (max-height: 500px) and (min-width: 768px) {
-  .app-shell:has(.page--workout) .top-nav {
+@media (orientation: landscape) and (max-height: 600px) and (min-width: 768px) {
+  html.in-workout .top-nav {
     display: none;
   }
-  .app-shell:has(.page--workout) .app-main {
+  html.in-workout .app-main {
     padding-top: env(safe-area-inset-top);
   }
-  .app-shell:has(.page--workout) .wo-sticky-header {
+  /* Phones wide enough to hit the 1024px sidebar layout are still only ~400px
+     tall: the sticky sidebar card floated mid-screen. Fall back to the single
+     column with the sticky title/timer/progress header pinned at the top. */
+  html.in-workout .page--workout {
+    max-width: 900px;
+  }
+  html.in-workout .wo-layout {
+    display: block;
+  }
+  html.in-workout .wo-sidebar {
+    display: none;
+  }
+  html.in-workout .wo-mobile-header {
+    display: block;
+  }
+  html.in-workout .wo-sticky-header {
     top: 0;
   }
-  .app-shell:has(.page--workout) .wo-sidebar {
-    top: 16px;
+  html.in-workout .wo-main-inner {
+    max-width: none;
+  }
+  html.in-workout .wo-fixed-bar {
+    max-width: 900px;
   }
 }
 

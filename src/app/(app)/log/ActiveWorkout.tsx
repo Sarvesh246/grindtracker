@@ -284,6 +284,14 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const restStartedOnce = useRef(false)
   const setCompletionNotifyDebounce = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Flag the document while a live workout is on screen so landscape-phone CSS
+  // can drop the top nav / sidebar without relying on :has() support.
+  useEffect(() => {
+    const root = document.documentElement
+    root.classList.add('in-workout')
+    return () => root.classList.remove('in-workout')
+  }, [])
+
   useEffect(() => {
     let cancelled = false
     async function loadPrefs() {

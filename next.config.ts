@@ -25,11 +25,14 @@ const isProd = process.env.NODE_ENV === 'production'
 
 const csp = [
   `default-src 'self'`,
-  `script-src 'self' 'unsafe-inline'${isProd ? '' : " 'unsafe-eval'"}`,
-  `style-src 'self' 'unsafe-inline'`,
-  `img-src 'self' data: blob: https://lh3.googleusercontent.com ${supabaseOrigin}`,
-  `font-src 'self' data:`,
-  `connect-src 'self' ${supabaseOrigin} wss://*.supabase.co https://vitals.vercel-insights.com https://va.vercel-scripts.com`,
+  // https://vercel.live is Vercel's own feedback/comments toolbar, injected on
+  // preview deploys; without it the browser logs a blocked-script error.
+  `script-src 'self' 'unsafe-inline' https://vercel.live${isProd ? '' : " 'unsafe-eval'"}`,
+  `style-src 'self' 'unsafe-inline' https://vercel.live`,
+  `img-src 'self' data: blob: https://lh3.googleusercontent.com ${supabaseOrigin} https://vercel.live https://vercel.com`,
+  `font-src 'self' data: https://vercel.live https://assets.vercel.com`,
+  `connect-src 'self' ${supabaseOrigin} wss://*.supabase.co https://vitals.vercel-insights.com https://va.vercel-scripts.com https://vercel.live wss://ws-us3.pusher.com`,
+  `frame-src https://vercel.live`,
   `frame-ancestors 'none'`,
   `object-src 'none'`,
   `base-uri 'self'`,

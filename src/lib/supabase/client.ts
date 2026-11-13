@@ -1,4 +1,5 @@
 import { createBrowserClient } from '@supabase/ssr'
+import { navigatorLock } from '@supabase/supabase-js'
 import type { SupabaseClient, User } from '@supabase/supabase-js'
 import { browserIsOffline, withOfflineFastFail } from '@/lib/offline/offlineGate'
 import { lastKnownUserId, rememberUserId } from '@/lib/offline/localSession'
@@ -40,6 +41,25 @@ export function makeTimeoutFetch(
 
 const timeoutFetch = makeTimeoutFetch(REQUEST_TIMEOUT_MS)
 
+/**
+ * Auth-token lock. supabase-js's background refresh tick asks for the lock with
+ * a 0ms timeout and expects "someone else has it" to mean "skip this tick" —
+ * but the stock navigatorLock throws instead, which surfaced as an uncaught
+ * "Acquiring an exclusive Navigator LockManager lock immediately failed"
+ * whenever a second tab / resumed PWA held it. Skip quietly in that case; every
+ * real caller (timeout > 0) keeps the library behaviour.
+ */
+async function authLock<R>(name: string, acquireTimeout: number, fn: () => Promise<R>): Promise<R> {
+  if (acquireTimeout === 0 && typeof navigator !== 'undefined' && navigator.locks) {
+    return navigator.locks.request(
+      name,
+      { mode: 'exclusive', ifAvailable: true },
+      async lock => (lock ? fn() : (undefined as R)),
+    )
+  }
+  return navigatorLock(name, acquireTimeout, fn)
+}
+
 export function createClient() {
   // Singleton in the browser (@supabase/ssr default), so these options apply
   // to the one shared client every component gets.
@@ -54,6 +74,7 @@ export function createClient() {
           // backgrounded PWA mid-refresh often enough that the first taps after
           // resume each paid that 5s — the "discard got stuck" feel.
           lockAcquireTimeout: 2_000,
+          lock: authLock,
         },
       },
     ),

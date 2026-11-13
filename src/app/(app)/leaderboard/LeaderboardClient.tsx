@@ -43,6 +43,7 @@ export default function LeaderboardClient({ userId }: Props) {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([])
   const [friendIds, setFriendIds] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
+  const [loadFailed, setLoadFailed] = useState(false)
   const [shareTarget, setShareTarget] = useState<{ entry: LeaderboardEntry; rank: number } | null>(null)
   // Tracks the most recently issued request. Earlier in-flight requests dropped
   // their result outright when a newer one started — fine for the same category,
@@ -78,17 +79,29 @@ export default function LeaderboardClient({ userId }: Props) {
 
     lastFetchAtRef.current = Date.now()
     const userIds = [userId, ...ids]
-    const { data, error } = await supabase.rpc('get_leaderboard', {
-      p_day_type: cat,
-      p_user_ids: userIds,
-    })
+    const call = async () => {
+      try {
+        return await supabase.rpc('get_leaderboard', { p_day_type: cat, p_user_ids: userIds })
+      } catch (err) {
+        return { data: null, error: err as Error }
+      }
+    }
+    let { data, error } = await call()
+    // One quiet retry: a dropped request on weak signal shouldn't read as an
+    // empty leaderboard.
+    if (error && reqId === requestIdRef.current) {
+      await new Promise(r => setTimeout(r, 1200))
+      if (reqId === requestIdRef.current) ({ data, error } = await call())
+    }
     if (reqId !== requestIdRef.current) return
     setLoading(false)
     if (error) {
       console.error('[grind] get_leaderboard failed', error)
       if (!cached) setEntries([])
+      setLoadFailed(true)
       return
     }
+    setLoadFailed(false)
     if (data) {
       const rows = data as LeaderboardEntry[]
       setCached(key, rows)
@@ -264,8 +277,25 @@ export default function LeaderboardClient({ userId }: Props) {
         </div>
       )}
 
+      {/* Failed load — distinct from "no friends yet" */}
+      {!loading && loadFailed && entries.length === 0 && (
+        <div role="alert" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', padding: '48px 24px', textAlign: 'center' }}>
+          <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '14px', color: 'var(--text-muted)' }}>
+            Couldn&apos;t load the leaderboard.
+          </div>
+          <button
+            type="button"
+            className="press"
+            onClick={() => fetchLeaderboard(category, friendIds, true)}
+            style={{ height: '44px', padding: '0 24px', borderRadius: '12px', border: '1px solid var(--border)', backgroundColor: 'var(--surface-elevated)', color: 'var(--text-primary)', fontFamily: "'Bebas Neue', sans-serif", fontSize: '16px', letterSpacing: '1px', cursor: 'pointer' }}
+          >
+            RETRY
+          </button>
+        </div>
+      )}
+
       {/* Empty state */}
-      {!loading && entries.length <= 1 && friendIds.length === 0 && (
+      {!loading && !loadFailed && entries.length <= 1 && friendIds.length === 0 && (
         <div style={{
           display: 'flex',
           flexDirection: 'column',
