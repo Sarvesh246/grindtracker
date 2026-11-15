@@ -57,6 +57,35 @@ export const ALL_BADGES: BadgeDefinition[] = [
   { id: 'not_alone', label: 'Not Alone', emoji: '🤝', description: 'Add a friend' },
   { id: 'rep_machine', label: 'Rep Machine', emoji: '🔁', description: 'Log a set with 20 or more reps' },
   { id: 'weight_tracked', label: 'Tracked', emoji: '⚖️', description: 'Log your body weight 5 times' },
+  // ── 57-badge-expansion.sql ──
+  // Consistency
+  { id: 'perfect_week', label: 'Perfect Week', emoji: '🗓️', description: 'Train or rest as planned every day of a week, with 3+ workouts' },
+  { id: 'saved_it', label: 'Saved It', emoji: '🛟', description: 'Keep a streak alive with a one-off rest day' },
+  { id: 'rest_day_pro', label: 'Rest Day Pro', emoji: '🛌', description: 'Take 10 rest days without breaking a streak' },
+  { id: 'early_bird_regular', label: 'Early Bird Regular', emoji: '🌄', description: 'Start 10 workouts before 7 AM' },
+  { id: 'night_owl_regular', label: 'Night Owl Regular', emoji: '🦉', description: 'Start 10 workouts at 10 PM or later' },
+  // Training quality
+  { id: 'warmup_ritual', label: 'Warm-Up Ritual', emoji: '🔥', description: 'Log warm-up sets in 25 workouts' },
+  { id: 'triple_threat', label: 'Triple Threat', emoji: '🔺', description: 'Complete 10 Push, 10 Pull, and 10 Legs workouts' },
+  { id: 'variety_pack', label: 'Variety Pack', emoji: '🎲', description: 'Log 25 different exercises' },
+  { id: 'max_effort', label: 'Max Effort', emoji: '💥', description: 'Log 10 working sets at RPE 10' },
+  // Progression
+  { id: 'hat_trick', label: 'Hat Trick', emoji: '🎩', description: 'Set PRs on 3 different exercises in one workout' },
+  { id: 'podium_push', label: 'Podium Push', emoji: '🥇', description: 'PR 5 different exercises in one calendar month' },
+  // Body
+  { id: 'daily_weigh_in', label: 'Daily Weigh-In', emoji: '⚖️', description: 'Log your body weight 14 days in a row' },
+  { id: 'goal_getter', label: 'Goal Getter', emoji: '🎯', description: 'Lift past your target weight on 3 exercises' },
+  { id: 'before_after', label: 'Before & After', emoji: '📸', description: 'Save 5 progress photos' },
+  // Social
+  { id: 'squad_goals', label: 'Squad Goals', emoji: '👥', description: 'Have 5 friends' },
+  { id: 'podium', label: 'Podium', emoji: '🏅', description: 'Rank top 3 on any leaderboard tab (4+ on the board)' },
+  { id: 'top_of_board', label: 'Top of the Board', emoji: '👑', description: 'Rank #1 on any leaderboard tab (3+ on the board)' },
+  // App & ritual
+  { id: 'off_the_grid', label: 'Off the Grid', emoji: '📴', description: 'Start a workout offline and finish it after it syncs' },
+  { id: 'coached', label: 'Coached', emoji: '🧠', description: 'Apply a weekly plan from the Coach' },
+  { id: 'holiday_grind', label: 'Holiday Grind', emoji: '🎄', description: 'Train on a US federal holiday' },
+  { id: 'own_your_data', label: 'Own Your Data', emoji: '📦', description: 'Export your GRIND data' },
+  { id: 'speak_up', label: 'Speak Up', emoji: '💬', description: 'Send feedback from the app' },
   { id: 'completionist', label: 'Completionist', emoji: '🏅', description: 'Earn every other badge' },
 ]
 

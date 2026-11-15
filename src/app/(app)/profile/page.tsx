@@ -41,6 +41,15 @@ export default async function ProfilePage() {
     )
   }
 
+  // Badges like Speak Up, Squad Goals or Coached come from actions outside a
+  // workout, so evaluate here too or they'd wait for the next finish. Silent
+  // and non-blocking on failure — the badge read below shows whatever stuck.
+  try {
+    await supabase.rpc('award_earned_badges')
+  } catch {
+    // ignore: awarding is retried on every finish and profile visit
+  }
+
   const [
     statsRes,
     badgesRes,

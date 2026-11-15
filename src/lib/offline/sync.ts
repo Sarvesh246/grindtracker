@@ -58,6 +58,12 @@ export async function adoptServerSession(
     )
   }
 
+  // Off the Grid badge: this session began with no connection. Best effort —
+  // the badge only lands once the workout is also finished.
+  await withRequestTimeout(
+    Promise.resolve(supabase.rpc('mark_session_started_offline', { p_session_id: serverId })),
+  ).catch(() => {})
+
   // A mounted workout screen still holds the local id in its closures; it
   // clears the record itself once it has switched over, so writes in that gap
   // keep queueing instead of hitting the server with an id it has never seen.

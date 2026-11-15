@@ -3,7 +3,7 @@
 ## Status: COMPLETE ✅
 Core phases (1–7) plus later ships (flex days, photos, onboarding, web push,
 weight targets, offline set queue, RPE, data export) — single-user PWA in daily use.
-Schema migrations run through `docs/sql/56-*.sql`.
+Schema migrations run through `docs/sql/57-*.sql`.
 
 ## Git Workflow
 Single-user repo, no review process. Commit and push directly to `main` —
@@ -208,12 +208,24 @@ session for that exercise (migration `15-volume-based-prs.sql`). The first
 completed session for an exercise is the baseline, not a PR (migration `51`).
 
 ## Badges (src/lib/utils/badges.ts)
-35 badges — streak/workout-count/PR-count/level tiers, plus lifetime volume
+57 badges — streak/workout-count/PR-count/level tiers, plus lifetime volume
 (100K/500K/1M Club), plate milestones (Two/Three/Four Plates — a single set's
 heaviest weight), time-of-day (early bird/night owl), weekend warrior, a
 comeback badge (14+ day gap since the prior workout), flawless (a session with
 zero skipped sets), rest-day/friend/body-weight-log config badges, and a
-`completionist` meta-badge for earning every other one. `checkAndAwardBadges()`
+`completionist` meta-badge for earning every other one. Migration `57` added 22
+more (57 total): consistency (Perfect Week, Saved It, Rest Day Pro, early/night
+"Regular"), training quality, Hat Trick / Podium Push, body (14-day weigh-in,
+Goal Getter = beat `exercises.weight_target` on 3 lifts, 5 progress photos),
+social (5 friends, leaderboard top-3 / #1 over self + friends), and app events
+(offline-started session, Coach weekly plan, US federal holiday, data export,
+feedback). The rules live in `grind_award_badges_for(user)` — internal only,
+`award_earned_badges()` wraps it for `auth.uid()` — so 57 could backfill every
+account. **Adding a badge: redefine that function starting from 57, add it to
+`v_all_but_completionist`, `ALL_BADGES`, and a `BadgeIcon` case, and end the
+migration with the same backfill loop.** `profile/page.tsx` also runs
+`award_earned_badges()` on every visit so non-workout badges land promptly.
+`checkAndAwardBadges()`
 calls `award_earned_badges()` with no client hour/skip args (migration `38`).
 Early bird / night owl / flawless are derived server-side from
 `sessions.start_hour` (set by `complete_session`, same trust model as

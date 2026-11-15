@@ -22,6 +22,8 @@ const MUTATING_RPCS = new Set([
   'set_rest_weekday',
   'delete_my_grind_data',
   'grind_insert_coach_assistant',
+  'record_data_export',
+  'mark_session_started_offline',
 ])
 
 const MUTATING_TABLE_METHODS = new Set(['insert', 'upsert', 'update', 'delete'])

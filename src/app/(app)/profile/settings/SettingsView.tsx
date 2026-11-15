@@ -412,6 +412,15 @@ export default function SettingsView({
     router.push('/login')
   }
 
+  // Own Your Data badge: the download happens in the browser, so the server only
+  // learns about it from this ping (57-badge-expansion.sql). Best effort — a
+  // failure here must never turn a successful export into an error toast.
+  function markExported() {
+    void Promise.resolve(supabase.rpc('record_data_export'))
+      .then(() => supabase.rpc('award_earned_badges'))
+      .catch(() => {})
+  }
+
   async function handleExportData(format: 'json' | 'csv') {
     if (exporting) return
     setExporting(true)
@@ -464,6 +473,7 @@ export default function SettingsView({
           'text/csv;charset=utf-8',
         )
         toast.show('Exported sets as CSV')
+        markExported()
         return
       }
 
@@ -482,6 +492,7 @@ export default function SettingsView({
       }
       downloadJson(exportFilename(), payload)
       toast.show('Exported your GRIND data')
+      markExported()
     } catch (err) {
       reportError(err, { operation: 'exportData', route: '/profile/settings' })
       toast.show('Export failed — check your connection')
