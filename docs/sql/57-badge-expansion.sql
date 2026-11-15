@@ -667,3 +667,6 @@ end;
 $$;
 
 commit;
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('57-badge-expansion') on conflict (version) do nothing;

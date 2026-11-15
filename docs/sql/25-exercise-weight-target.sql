@@ -19,3 +19,6 @@
 -- UnitContext, never store a display-unit value here.
 
 alter table exercises add column if not exists weight_target numeric;
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('25-exercise-weight-target') on conflict (version) do nothing;

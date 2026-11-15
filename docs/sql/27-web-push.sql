@@ -336,3 +336,6 @@ revoke all on function cancel_rest_schedules(text) from public, anon;
 grant execute on function cancel_rest_schedules(text) to authenticated;
 
 commit;
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('27-web-push') on conflict (version) do nothing;

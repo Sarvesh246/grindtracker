@@ -37,10 +37,87 @@ jobs:
       - name: Audit (critical)
         run: npm audit --audit-level=critical
 
-      # e2e/smoke.spec.ts (Playwright) is not run here: it needs real Supabase
-      # credentials, which CI doesn't have. Run `npm run test:e2e` locally.
+      # Playwright runs in the separate `e2e` job below.
       - name: Build
         env:
           NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.placeholder
         run: npm run build
+
+  # Runs the SQL rules that have TypeScript mirrors (XP level curve, Sunday
+  # week start, rest-day connectivity and budget) against a real Postgres.
+  # The test cuts the function text out of docs/sql/*.sql, so a change to the
+  # SQL or to gamification.ts / restDays.ts alone fails here. Without
+  # PARITY_DATABASE_URL the same test is skipped inside `npm test`.
+  sql-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: parity
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PARITY_DATABASE_URL: postgres://postgres:parity@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: SQL <-> TypeScript parity
+        run: npm run test:sql-parity
+
+  # Playwright against `npm run dev`. With no secrets set it uses placeholder
+  # Supabase values, which is enough for the public shell (login page, redirects,
+  # offline service worker) that e2e/ covers today. To point it at a throwaway
+  # Supabase project instead, add the repository secrets below; see docs/CI.md.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.E2E_SUPABASE_URL || 'https://example.supabase.co' }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.E2E_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.placeholder' }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.E2E_SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      # Only when the throwaway project is configured: fail if it is missing
+      # any docs/sql migration (see docs/sql/00-migration-tracking.sql).
+      - name: Migrations applied on the e2e project
+        if: ${{ env.SUPABASE_SERVICE_ROLE_KEY != '' }}
+        run: npx tsx scripts/check-migrations.ts
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: E2E
+        run: npm run test:e2e -- --trace off
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

@@ -91,3 +91,6 @@ $$;
 
 revoke all on function public.delete_my_grind_data() from public;
 grant execute on function public.delete_my_grind_data() to authenticated;
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('50-delete-my-data-complete') on conflict (version) do nothing;

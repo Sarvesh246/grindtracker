@@ -154,3 +154,6 @@ create policy "delete own progress photos"
     bucket_id = 'progress-photos'
     and (storage.foldername(name))[1] = auth.uid()::text
   );
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('21-progress-photos') on conflict (version) do nothing;

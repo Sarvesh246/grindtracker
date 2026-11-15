@@ -22,3 +22,6 @@ create policy "own body weights"
 
 create index if not exists body_weights_user_date_idx
   on body_weights (user_id, recorded_at desc);
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('03-body-weights') on conflict (version) do nothing;

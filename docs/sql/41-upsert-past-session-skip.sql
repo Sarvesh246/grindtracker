@@ -211,3 +211,6 @@ revoke all on function upsert_past_session(text, date, json, uuid, text) from pu
 grant execute on function upsert_past_session(text, date, json, uuid, text) to authenticated;
 
 commit;
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('41-upsert-past-session-skip') on conflict (version) do nothing;

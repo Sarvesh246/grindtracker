@@ -52,3 +52,6 @@ alter table public.coach_action_proposals
     'apply_weekly_plan',
     'set_day_enabled'
   ));
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('56-coach-set-day-enabled') on conflict (version) do nothing;

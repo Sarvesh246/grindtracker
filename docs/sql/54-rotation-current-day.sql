@@ -18,3 +18,6 @@ alter table public.user_rotation
   add column if not exists current_day text;
 
 notify pgrst, 'reload schema';
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('54-rotation-current-day') on conflict (version) do nothing;

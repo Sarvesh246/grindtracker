@@ -48,3 +48,6 @@ create policy "own exercises"
 -- ── 5. Index for the per-user reads (grouped by day, ordered within a day) ──
 create index if not exists exercises_user_day_idx
   on exercises (user_id, day_type, sort_order);
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('07-exercises-per-user') on conflict (version) do nothing;

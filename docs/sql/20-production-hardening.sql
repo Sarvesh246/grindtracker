@@ -1158,3 +1158,6 @@ revoke all on function grind_home_history(int) from public, anon;
 grant execute on function grind_home_history(int) to authenticated;
 
 commit;
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('20-production-hardening') on conflict (version) do nothing;

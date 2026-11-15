@@ -367,3 +367,6 @@ commit;
 --     user_rest_days for today's day_of_week, or any day within your actual
 --     workout gap) and calling refresh_stats, current_streak should reflect
 --     the bridged gap instead of resetting to 0.
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('14-rest-days') on conflict (version) do nothing;

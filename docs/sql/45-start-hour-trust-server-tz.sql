@@ -143,3 +143,6 @@ $$;
 
 revoke all on function public.complete_session(uuid, date, text, integer) from public, anon;
 grant execute on function public.complete_session(uuid, date, text, integer) to authenticated;
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('45-start-hour-trust-server-tz') on conflict (version) do nothing;

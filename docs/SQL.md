@@ -11,8 +11,31 @@ Schema changes ship as standalone SQL snippets in [docs/sql/](sql/). Apply each 
 `supabase/migrations/` mirror (it was incomplete and had drifted, so
 `supabase db push` would have built a partial schema).
 
+## Tracking what has been applied
+
+Run [00-migration-tracking.sql](sql/00-migration-tracking.sql) first. It creates
+`grind_migrations` (locked down by RLS; the app cannot read or write it), and
+every file from 02 onward ends with
+`insert into public.grind_migrations (version) values ('NN-name') on conflict (version) do nothing;`
+so pasting a migration records it. Copy that line into every new migration —
+`npm test` fails if a file is missing it.
+
+- **See what a project has:** `select version, applied_at from grind_migrations order by version;`
+- **Find gaps:** `npm run migrations:check` lists every `docs/sql` file with no row.
+  It reads the table with the service-role key (`NEXT_PUBLIC_SUPABASE_URL` and
+  `SUPABASE_SERVICE_ROLE_KEY` in `.env.local`).
+- **First time on an existing project:** the tracker starts empty, so every
+  earlier migration looks missing. Verify the project by hand first (the sanity
+  checks below, and the migration 22/23 gap the mobile audit found), apply any
+  that are really missing, then run `npm run migrations:check -- --backfill` and
+  paste the printed `insert` once. Do not backfill a file you have not confirmed.
+- `10-parts/` and `11-parts/` are split-paste fallbacks of 10 and 11; only the
+  main `10`/`11` files record themselves, so insert those two rows by hand if you
+  applied the parts instead.
+
 | File | Phase | What it adds |
 | --- | --- | --- |
+| [00-migration-tracking.sql](sql/00-migration-tracking.sql) | 00 | **Apply first.** `grind_migrations` table that records which files ran |
 | [02-warmup-and-notes.sql](sql/02-warmup-and-notes.sql) | 2 | Warm-up/notes columns |
 | [03-body-weights.sql](sql/03-body-weights.sql) | 3 | Body weights table |
 | [04-session-delete-rls.sql](sql/04-session-delete-rls.sql) | 4 | Session delete RLS |

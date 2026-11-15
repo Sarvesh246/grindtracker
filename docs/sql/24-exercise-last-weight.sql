@@ -54,3 +54,6 @@ $$;
 
 revoke all on function get_exercise_last_weights(uuid[]) from public, anon;
 grant execute on function get_exercise_last_weights(uuid[]) to authenticated;
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('24-exercise-last-weight') on conflict (version) do nothing;

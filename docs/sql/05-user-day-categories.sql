@@ -126,3 +126,6 @@ language sql stable security definer as $$
 $$;
 
 commit;
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('05-user-day-categories') on conflict (version) do nothing;

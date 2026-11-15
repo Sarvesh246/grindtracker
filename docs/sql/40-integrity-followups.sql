@@ -423,3 +423,6 @@ create trigger grind_guard_coach_proposal_immutable
   for each row execute function public.grind_guard_coach_proposal_immutable();
 
 commit;
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('40-integrity-followups') on conflict (version) do nothing;

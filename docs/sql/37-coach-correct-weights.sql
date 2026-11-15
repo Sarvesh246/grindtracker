@@ -76,3 +76,6 @@ revoke all on function coach_correct_session_weights(uuid, uuid, numeric, numeri
   from public, anon;
 grant execute on function coach_correct_session_weights(uuid, uuid, numeric, numeric, date)
   to authenticated;
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('37-coach-correct-weights') on conflict (version) do nothing;

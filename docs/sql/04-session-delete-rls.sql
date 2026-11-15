@@ -16,3 +16,6 @@ create policy "own session logs delete"
         and sessions.user_id = auth.uid()
     )
   );
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('04-session-delete-rls') on conflict (version) do nothing;

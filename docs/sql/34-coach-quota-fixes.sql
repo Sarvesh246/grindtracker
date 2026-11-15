@@ -82,3 +82,6 @@ begin
   return new;
 end;
 $$;
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('34-coach-quota-fixes') on conflict (version) do nothing;

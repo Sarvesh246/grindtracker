@@ -12,3 +12,6 @@
 
 alter table exercises
   add column if not exists active boolean not null default true;
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('17-exercise-active-flag') on conflict (version) do nothing;

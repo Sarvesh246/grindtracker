@@ -94,3 +94,6 @@ $$;
 
 revoke all on function get_friend_profile(uuid) from public, anon;
 grant execute on function get_friend_profile(uuid) to authenticated;
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('26-friend-profile-total-sets-fix') on conflict (version) do nothing;

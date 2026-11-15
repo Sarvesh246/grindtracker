@@ -21,3 +21,6 @@ alter table session_logs
 alter table session_logs
   add constraint session_logs_skip_implies_no_weight
   check (not is_skipped or (weight is null and reps is null));
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('18-skip-persistence') on conflict (version) do nothing;

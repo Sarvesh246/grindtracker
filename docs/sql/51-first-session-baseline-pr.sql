@@ -229,3 +229,6 @@ end;
 $$;
 
 commit;
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('51-first-session-baseline-pr') on conflict (version) do nothing;

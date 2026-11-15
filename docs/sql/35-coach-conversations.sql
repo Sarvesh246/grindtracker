@@ -137,3 +137,6 @@ begin
     last_at := r.created_at;
   end loop;
 end $$;
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('35-coach-conversations') on conflict (version) do nothing;

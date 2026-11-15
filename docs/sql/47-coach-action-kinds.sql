@@ -44,3 +44,6 @@ alter table public.coach_action_proposals
     'edit_session_log',
     'update_notification_prefs'
   ));
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('47-coach-action-kinds') on conflict (version) do nothing;

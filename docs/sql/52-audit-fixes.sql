@@ -568,3 +568,6 @@ $$;
 -- create or replace above is sufficient, no trigger redefinition needed.
 
 commit;
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('52-audit-fixes') on conflict (version) do nothing;

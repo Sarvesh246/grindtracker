@@ -89,3 +89,6 @@ drop trigger if exists coach_rate_limit on coach_messages;
 create trigger coach_rate_limit
   before insert on coach_messages
   for each row execute function enforce_coach_rate_limit();
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('33-coach') on conflict (version) do nothing;

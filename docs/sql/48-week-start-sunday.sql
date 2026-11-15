@@ -22,3 +22,6 @@ $$;
 
 comment on function public.grind_week_start(date) is
   'Sunday of the week containing p_date (0=Sun). Rest budget and Home this-week stats.';
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('48-week-start-sunday') on conflict (version) do nothing;

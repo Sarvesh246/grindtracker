@@ -140,3 +140,6 @@ commit;
 --   -- 3. anon profile dump: run with the publishable key and NO session,
 --   --    should return zero rows
 --   --    curl "$SUPABASE_URL/rest/v1/user_profiles?select=username" -H "apikey: $ANON"
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('12-friendship-authz') on conflict (version) do nothing;

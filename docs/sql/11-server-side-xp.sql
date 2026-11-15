@@ -565,3 +565,6 @@ $$;
 
 revoke all on function grind_stats_drift() from public, anon;
 grant execute on function grind_stats_drift() to authenticated;
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('11-server-side-xp') on conflict (version) do nothing;

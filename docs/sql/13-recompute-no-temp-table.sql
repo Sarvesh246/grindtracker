@@ -204,3 +204,6 @@ $$;
 revoke all on function grind_recompute_stats(uuid, date) from public, anon, authenticated;
 
 commit;
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('13-recompute-no-temp-table') on conflict (version) do nothing;

@@ -24,3 +24,6 @@ create policy "own rotation"
   on user_rotation for all
   using  (auth.uid() = user_id)
   with check (auth.uid() = user_id);
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('06-user-rotation') on conflict (version) do nothing;

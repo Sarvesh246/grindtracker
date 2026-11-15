@@ -110,3 +110,6 @@ revoke all on function complete_session(uuid, date, text) from public, anon;
 grant execute on function complete_session(uuid, date, text) to authenticated;
 
 commit;
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('29-complete-session-all-prs') on conflict (version) do nothing;

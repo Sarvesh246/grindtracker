@@ -170,3 +170,6 @@ drop policy if exists "admin deletes feedback images" on storage.objects;
 create policy "admin deletes feedback images"
   on storage.objects for delete to authenticated
   using (bucket_id = 'feedback-images' and is_grind_admin());
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('09-feedback') on conflict (version) do nothing;

@@ -19,3 +19,6 @@ create policy "own flex days"
   on user_flex_days for all
   using  (auth.uid() = user_id)
   with check (auth.uid() = user_id);
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('08-flex-days') on conflict (version) do nothing;

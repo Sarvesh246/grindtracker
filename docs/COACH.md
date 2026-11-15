@@ -252,3 +252,40 @@ Ask Coach** uses this path.
 `userId|localDate|unit` so multi-turn chats skip rebuilding USER_DATA.
 
 Not a nav tab; the full experience is an overlay page, not a `/coach` route.
+
+## Coach reliability (src/lib/coach, `scripts/coach-eval/`)
+The Coach (Gemini via the AI SDK) is tuned against a measured golden set, not by
+feel. **Before changing the prompt, router, tools or model settings, run
+`npm run coach:eval`** (needs `GEMINI_API_KEY` in `.env.local`; 45 cases × 3
+runs, synthetic account, stubbed tools, deterministic scoring) and compare per
+group (A short chat · B long · C compound actions · D messy agentic).
+- **One planner.** `planCoachTurn` (`turn.ts`) decides intent, token ceiling,
+  thinking level, whether tools are offered and which prompt sections apply; the
+  chat route and the eval both call it, so they cannot drift.
+- **Router is regex** (`intent.ts`) and first-match-wins — keep safety words
+  exact-form (`numb` once matched "numbers") and never route on "doctor".
+  Pure Q&A intents drop the tools; everything else keeps all of them.
+- **Tools never guess numbers.** `actions/grounding.ts` refuses a history-writing
+  call (correct weights, body weight, set edits) whose numbers the user didn't
+  type, and tool descriptions must contain no concrete example numbers — the
+  model once copied "90 → 95" from one into a real proposal.
+- **Prompt** is tagged sections (`prompt.ts`): base always, GRIND rules only for
+  "why"-style intents, action rules only when tools are on. `USER_DATA` weights
+  are converted to the user's unit server-side (`localizeUnits.ts`); don't ask
+  the model to convert.
+- **Cards the Coach proposed** are fed back each turn (`recentActions.ts`) so
+  follow-ups work; several cards from one reply get a "Confirm all" bar that
+  confirms in order and stops on the first failure.
+- **Models & fallback** (`src/lib/coach/models.ts`). The composer's model pill
+  (`CoachModelPicker`, saved in localStorage) sends `model`; the route tries it,
+  then every other listed model, on any failure that produced nothing (429,
+  503, 404, or 15s of silence — `FIRST_PART_MS`). Free-tier quotas are per
+  model, so a fallback usually has room. A `model` NDJSON event tells the
+  client which model answered. Only list a model after it passes eval cases
+  A2, C10 and D5 (`--model <id> --id <case> --runs 1`); Gemma is too slow for
+  the 52s deadline and 3.7/3.8 Flash 503'd on every call when tested.
+- **`enforce_coach_rate_limit()`** has an admin `coach_dev_unlimited` bypass
+  (55). Any redefinition must start from `55-*.sql`.
+- Every Coach turn logs one `[grind] coach turn {…}` JSON line (intent, tools
+  with arguments, finish reason, tokens, retry) — read it before guessing why a
+  reply was bad.

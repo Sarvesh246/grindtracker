@@ -34,3 +34,6 @@ create policy "update own coach action proposals"
   on coach_action_proposals for update
   using (auth.uid() = user_id and status = 'pending')
   with check (auth.uid() = user_id and status in ('confirmed', 'cancelled', 'failed'));
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('46-coach-proposal-execution-integrity') on conflict (version) do nothing;

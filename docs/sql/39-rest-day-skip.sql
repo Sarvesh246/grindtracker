@@ -586,3 +586,6 @@ revoke all on function schedule_streak_reminders(timestamptz) from public, anon;
 grant execute on function schedule_streak_reminders(timestamptz) to service_role;
 
 commit;
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('39-rest-day-skip') on conflict (version) do nothing;

@@ -311,3 +311,6 @@ commit;
 --  recompute-and-diff approach is simpler and exactly matches what the
 --  migration actually does.
 -- ════════════════════════════════════════════════════════════════════════════
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('15-volume-based-prs') on conflict (version) do nothing;

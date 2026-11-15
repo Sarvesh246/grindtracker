@@ -15,3 +15,6 @@ alter table sessions
 create index if not exists session_logs_exercise_completed_working_idx
   on session_logs (exercise_id, is_warmup)
   where is_warmup = false;
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('02-warmup-and-notes') on conflict (version) do nothing;

@@ -18,3 +18,6 @@
 
 alter table user_profiles
   add column if not exists onboarding_tooltips_skipped boolean not null default false;
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('23-tooltip-skip') on conflict (version) do nothing;

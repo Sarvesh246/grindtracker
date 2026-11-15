@@ -22,3 +22,6 @@ alter table user_profiles
   add column if not exists onboarding_tours_seen text[] not null default '{}',
   add column if not exists onboarding_tooltips_seen text[] not null default '{}',
   add column if not exists onboarding_skip_all boolean not null default false;
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('22-onboarding-state') on conflict (version) do nothing;

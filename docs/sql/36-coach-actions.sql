@@ -71,3 +71,6 @@ drop trigger if exists coach_action_proposals_touch on coach_action_proposals;
 create trigger coach_action_proposals_touch
   before update on coach_action_proposals
   for each row execute function grind_touch_coach_action_proposal();
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('36-coach-actions') on conflict (version) do nothing;

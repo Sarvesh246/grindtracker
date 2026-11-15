@@ -331,3 +331,6 @@ revoke all on function public.schedule_streak_reminders(timestamptz) from public
 grant execute on function public.schedule_streak_reminders(timestamptz) to service_role;
 
 commit;
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('43-rest-weekday-history') on conflict (version) do nothing;

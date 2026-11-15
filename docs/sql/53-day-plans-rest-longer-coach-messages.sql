@@ -95,3 +95,6 @@ alter table public.coach_action_proposals
     'update_notification_prefs',
     'apply_weekly_plan'
   ));
+
+-- Record that this migration ran (needs 00-migration-tracking.sql).
+insert into public.grind_migrations (version) values ('53-day-plans-rest-longer-coach-messages') on conflict (version) do nothing;
