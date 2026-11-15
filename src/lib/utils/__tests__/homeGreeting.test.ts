@@ -74,14 +74,20 @@ describe('pickHomeGreetingPhrase', () => {
 
   it('trained beats rest and does not tell them the bar misses them', () => {
     assert.ok(
-      ['Session in the books', 'Consistency pays out'].includes(
+      ['Session in the books', 'Consistency pays out', 'Another one in the bank'].includes(
         pickHomeGreetingPhrase({ ...base, hour: 14, trainedToday: true, isRestDay: true }),
       ),
     )
   })
 
   it('late + already trained is the sleep line', () => {
-    const late = ["You're good. Sleep.", 'Good work. Go to bed.']
+    const late = [
+      "You're good. Sleep.",
+      'Good work. Go to bed.',
+      'Recovery starts now',
+      'Logged. Now rest.',
+      'Rest is part of the program',
+    ]
     assert.ok(late.includes(pickHomeGreetingPhrase({ ...base, hour: 22, trainedToday: true })))
     assert.ok(late.includes(pickHomeGreetingPhrase({ ...base, hour: 2, trainedToday: true })))
   })
@@ -95,7 +101,14 @@ describe('pickHomeGreetingPhrase', () => {
 
   it('past midnight and still empty is the 3am club pool', () => {
     const phrase = pickHomeGreetingPhrase({ ...base, hour: 3, nextDay: 'legs' })
-    assert.ok(["3am club, let's go", "Nobody's up but us"].includes(phrase))
+    assert.ok(
+      [
+        "3am club, let's go",
+        "Nobody's up but us",
+        'Night shift',
+        'Only the committed are awake',
+      ].includes(phrase),
+    )
   })
 
   it('late and still empty stays in the night pool', () => {
@@ -109,7 +122,11 @@ describe('pickHomeGreetingPhrase', () => {
   })
 
   it('evening and still empty is Evening session?', () => {
-    assert.equal(pickHomeGreetingPhrase({ ...base, hour: 18 }), 'Evening session?')
+    assert.ok(
+      ['Evening session?', "Evening's wide open"].includes(
+        pickHomeGreetingPhrase({ ...base, hour: 18 }),
+      ),
+    )
   })
 
   it('legs overlay wins morning/afternoon when they have not trained', () => {
@@ -119,7 +136,13 @@ describe('pickHomeGreetingPhrase', () => {
   })
 
   it('early morning is World\'s still asleep', () => {
-    assert.equal(pickHomeGreetingPhrase({ ...base, hour: 6 }), "World's still asleep")
+    assert.ok(
+      [
+        "World's still asleep",
+        "Sun's not up, we are",
+        'Get the work in before the day gets you',
+      ].includes(pickHomeGreetingPhrase({ ...base, hour: 6 })),
+    )
   })
 
   it('morning pool includes Rise and shine / grind / get after it', () => {
@@ -155,9 +178,10 @@ describe('pickHomeGreetingPhrase', () => {
 
 describe('homeGreeting', () => {
   it('returns the ready-to-render heading', () => {
-    assert.equal(
-      homeGreeting({ ...base, hour: 18, firstName: 'Sam' }),
-      'Evening session, Sam?',
+    assert.ok(
+      ['Evening session, Sam?', "Evening's wide open, Sam."].includes(
+        homeGreeting({ ...base, hour: 18, firstName: 'Sam' }),
+      ),
     )
   })
 })

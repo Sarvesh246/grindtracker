@@ -28,18 +28,33 @@ const IN_PROGRESS = [
   'Finish what you started',
 ] as const
 const REST = ['Official rest day', 'Chill. You earned it', 'Recovery is training'] as const
-const TRAINED = ['Session in the books', 'Consistency pays out'] as const
-const TRAINED_LATE = ["You're good. Sleep.", 'Good work. Go to bed.'] as const
-const GRAVEYARD = ["3am club, let's go", "Nobody's up but us"] as const
+const TRAINED = ['Session in the books', 'Consistency pays out', 'Another one in the bank'] as const
+const TRAINED_LATE = [
+  "You're good. Sleep.",
+  'Good work. Go to bed.',
+  'Recovery starts now',
+  'Logged. Now rest.',
+  'Rest is part of the program',
+] as const
+const GRAVEYARD = [
+  "3am club, let's go",
+  "Nobody's up but us",
+  'Night shift',
+  'Only the committed are awake',
+] as const
 const LATE_OPEN = [
   "Gym doesn't sleep",
   "Late, but we're here",
   "Night's not closed",
   'Night owls lift too',
 ] as const
-const EVENING_OPEN = ['Evening session?'] as const
+const EVENING_OPEN = ['Evening session?', "Evening's wide open"] as const
 const LEGS = ["Fresh legs, let's go", "Leg day. Don't skip it.", 'Legs are calling'] as const
-const EARLY = ["World's still asleep"] as const
+const EARLY = [
+  "World's still asleep",
+  "Sun's not up, we are",
+  'Get the work in before the day gets you',
+] as const
 const MORNING = [
   'Rise and grind',
   'Rise and shine',
