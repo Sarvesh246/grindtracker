@@ -1,6 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useNavWatchdog } from '@/lib/hooks/useNavWatchdog'
 import ThemeToggle from '@/components/ThemeToggle'
 
 const tabs = [
@@ -75,6 +76,7 @@ const tabs = [
 export default function TopNav() {
   // Desktop top bar (hidden on mobile via CSS at <768px).
   const pathname = usePathname()
+  const watchNavigation = useNavWatchdog(pathname)
 
   return (
     <nav className="top-nav" aria-label="Primary">
@@ -108,6 +110,7 @@ export default function TopNav() {
               className="top-nav-tab press"
               data-active={active}
               data-haptic="light"
+              onClick={() => watchNavigation(tab.href)}
               style={{
                 position: 'relative',
                 display: 'flex',

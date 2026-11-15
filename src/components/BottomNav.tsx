@@ -1,6 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
+import { useNavWatchdog } from '@/lib/hooks/useNavWatchdog'
 
 const tabs = [
   {
@@ -74,6 +75,7 @@ const tabs = [
 export default function BottomNav() {
   const pathname = usePathname()
   const params = useSearchParams()
+  const watchNavigation = useNavWatchdog(pathname)
 
   // Hide during an active workout so the Finish bar isn't stacked with the nav.
   if (pathname === '/log' && params.get('day')) return null
@@ -93,6 +95,7 @@ export default function BottomNav() {
             onClick={(e) => {
               // Drop any focus ring left on the tapped tab after client nav.
               e.currentTarget.blur()
+              watchNavigation(tab.href)
             }}
             style={{
               position: 'relative',

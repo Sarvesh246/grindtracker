@@ -19,3 +19,22 @@ Moved out of [CLAUDE.md](../CLAUDE.md) to keep that file short; its text is unch
 - `src/proxy.ts` uses `getClaims()` (local JWKS verification) rather than
   `getUser()` (a network round trip per request), and caches the "profile exists"
   check in the `grind_profile_ok` cookie instead of querying on every navigation.
+
+## Auth check on every navigation (`src/proxy.ts`)
+The proxy verifies the session with `getClaims()` before every page request. The
+installed PWA resumes with an expired access token, so that call has to refresh
+it, and supabase-js retries a failed refresh with back-off for about 30 seconds.
+A per-request timeout cannot stop that loop, so the whole check is wrapped in
+`withDeadline` (`src/lib/supabase/deadline.ts`, 4.5s).
+
+If the check cannot finish, the proxy answers **503** immediately (a small
+"Can't reach GRIND" page with a retry button; JSON for `/api`). It does not
+redirect to `/login` (an unreachable server is not a signed-out user) and does
+not pass the request on (the page would retry the same refresh). A 5xx also
+makes the service worker answer with the last saved copy of the page. Signed-out
+visitors still redirect to `/login`. The tab bar adds a last-resort watchdog
+(`useNavWatchdog`): if a tap hasn't changed the page in 8s, it does a normal
+full page load.
+
+`getAuthUser()` (layout + pages) gives the Auth server 3s and then falls back to
+the token the proxy already verified.
