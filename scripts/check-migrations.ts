@@ -49,7 +49,14 @@ async function main(): Promise<number> {
   return 1
 }
 
-main().then(code => process.exit(code), err => {
-  console.error(err)
-  process.exit(2)
-})
+// Set the exit code and let Node drain open handles; calling process.exit()
+// while fetch's socket is closing trips a libuv assertion on Windows.
+main().then(
+  code => {
+    process.exitCode = code
+  },
+  err => {
+    console.error(err)
+    process.exitCode = 2
+  },
+)
