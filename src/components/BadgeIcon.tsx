@@ -44,7 +44,8 @@ export default function BadgeIcon({ badgeId, size = 28, earned }: { badgeId: str
     case 'workouts_200':
       return <svg {...props}><path d="M12 2l8 3.5v5c0 5-3.4 8.7-8 10.5-4.6-1.8-8-5.5-8-10.5v-5L12 2z"/><polyline points="8.5 12 11 14.5 15.5 9.5"/></svg>
     case 'workouts_365':
-      return <svg {...props}><path d="M4 4a8 8 0 1 0 7-4"/><polyline points="8 1 11 0 10 3"/></svg>
+      // One trip around the sun — an orbit with the planet partway round.
+      return <svg {...props}><ellipse cx="12" cy="12" rx="10" ry="7" transform="rotate(-20 12 12)" strokeWidth="1.5"/><circle cx="12" cy="12" r="2.3" fill={color} fillOpacity="0.35"/><path d="M15.7 12L16.6 12M14.62 14.62L15.25 15.25M12 15.7L12 16.6M9.38 14.62L8.75 15.25M8.3 12L7.4 12M9.38 9.38L8.75 8.75M12 8.3L12 7.4M14.62 9.38L15.25 8.75" strokeWidth="1.4"/><circle cx="17.66" cy="5.15" r="2" fill={color} stroke="none"/></svg>
     case 'all_three_days':
       return <svg {...props}><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="15" x2="8.01" y2="15" strokeWidth="2.5"/><line x1="12" y1="15" x2="12.01" y2="15" strokeWidth="2.5"/><line x1="16" y1="15" x2="16.01" y2="15" strokeWidth="2.5"/></svg>
     case 'weekend_warrior':
@@ -67,19 +68,12 @@ export default function BadgeIcon({ badgeId, size = 28, earned }: { badgeId: str
         </svg>
       )
     case 'pr_50':
-      // Powerhouse — ascending power columns + crest spark (50 PRs).
-      return (
-        <svg {...props}>
-          <line x1="2.2" y1="20" x2="21.8" y2="20" strokeWidth="1.5" />
-          <rect x="3" y="13.6" width="3.7" height="6.4" rx="1" fill={color} fillOpacity="0.1" strokeWidth="1.5" />
-          <rect x="7.9" y="10.2" width="3.7" height="9.8" rx="1" fill={color} fillOpacity="0.16" strokeWidth="1.5" />
-          <rect x="12.8" y="6.6" width="3.7" height="13.4" rx="1" fill={color} fillOpacity="0.22" strokeWidth="1.5" />
-          <rect x="17.7" y="3.2" width="3.7" height="16.8" rx="1" fill={color} fillOpacity="0.3" strokeWidth="1.5" />
-          <path d="M19.55 1.35 L19.55 3.05 M18.4 2.2 L20.7 2.2" strokeWidth="1.55" />
-        </svg>
-      )
+      // Powerhouse — kettlebell stamped with a PR chevron (50 PRs). Kept off the
+      // bar-chart motif so it doesn't read as another volume tier.
+      return <svg {...props}><path d="M8.85 21A6.6 6.6 0 1 1 15.15 21z" fill={color} fillOpacity="0.15"/><path d="M8.6 9.6 7.9 6.4a3 3 0 0 1 2.9-3.9h2.4a3 3 0 0 1 2.9 3.9l-.7 3.2"/><polyline points="9.6 17.4 12 15 14.4 17.4"/></svg>
     case 'pr_100':
-      return <svg {...props}><path d="M6 21V10a6 6 0 0 1 12 0v11"/><path d="M6 21h12"/><circle cx="12" cy="8" r="2.2"/></svg>
+      // Trophy — the 100-PR milestone (Personal Best is the podium arrow).
+      return <svg {...props}><path d="M6.5 3h11v6a5.5 5.5 0 0 1-11 0z" fill={color} fillOpacity="0.15"/><path d="M6.5 5H4a2.8 2.8 0 0 0 3 4.6"/><path d="M17.5 5H20a2.8 2.8 0 0 1-3 4.6"/><line x1="12" y1="14.5" x2="12" y2="18"/><rect x="8" y="18" width="8" height="3.5" rx="1"/></svg>
     case 'level_5':
       return <svg {...props}><polygon points="12 2 20 12 12 22 4 12 12 2"/><line x1="4" y1="12" x2="20" y2="12"/></svg>
     case 'level_10':
@@ -105,7 +99,9 @@ export default function BadgeIcon({ badgeId, size = 28, earned }: { badgeId: str
     case 'night_owl':
       return <svg {...props}><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/><line x1="18" y1="3" x2="18" y2="6" strokeWidth="1.4"/><line x1="16.5" y1="4.5" x2="19.5" y2="4.5" strokeWidth="1.4"/></svg>
     case 'comeback':
-      return <svg {...props}><path d="M3 12a9 9 0 1 0 3-6.7"/><polyline points="3 3 3 6 6.5 6"/></svg>
+      // The break (dots), then the arc coming back round. Arrowhead tip sits on
+      // the arc's end, wings follow its tangent.
+      return <svg {...props}><path d="M6.84 19.37A9 9 0 1 0 3.84 8.2"/><polyline points="7.01 6.72 3.84 8.2 2.93 4.82"/><path d="M4.63 17.16h.01M3.39 14.63h.01" strokeWidth="2.4"/></svg>
     case 'flawless':
       return <svg {...props}><path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2z"/><path d="M19 15l.7 2.3L22 18l-2.3.7L19 21l-.7-2.3L16 18l2.3-.7L19 15z" strokeWidth="1.3"/></svg>
     case 'rest_day_set':
@@ -143,7 +139,7 @@ export default function BadgeIcon({ badgeId, size = 28, earned }: { badgeId: str
       return <svg {...props}><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.2" cy="8.2" r="2.3"/><rect x="13.5" y="5.9" width="4.6" height="4.6" rx="0.8" fill={color} fillOpacity="0.25"/><polygon points="8.2 13.5 10.7 18 5.7 18 8.2 13.5" fill={color} fillOpacity="0.25"/><path d="M15.8 13.4v5M13.3 15.9h5"/></svg>
     case 'max_effort':
       // Impact burst — RPE 10, nothing left in the tank.
-      return <svg {...props}><polygon points="12 2 13.7 7.8 18 6 16.2 10.3 22 12 16.2 13.7 17.7 17.7 13.7 16.2 12 22 10.3 16.2 6 18 7.8 13.7 2 12 7.8 10.3 6.3 6.3 10.3 7.8 12 2" fill={color} fillOpacity="0.15"/><circle cx="12" cy="12" r="1.6" fill={color} stroke="none"/></svg>
+      return <svg {...props}><polygon points="12 2 13.68 7.93 19.07 4.93 16.07 10.32 22 12 16.07 13.68 19.07 19.07 13.68 16.07 12 22 10.32 16.07 4.93 19.07 7.93 13.68 2 12 7.93 10.32 4.93 4.93 10.32 7.93" fill={color} fillOpacity="0.15"/><circle cx="12" cy="12" r="1.6" fill={color} stroke="none"/></svg>
     case 'hat_trick':
       // Top hat with three PRs popping out of it.
       return <svg {...props}><path d="M7.5 17.5V9.5a1 1 0 0 1 1-1h7a1 1 0 0 1 1 1v8"/><path d="M3.5 17.5c0 1.6 3.8 2.8 8.5 2.8s8.5-1.2 8.5-2.8"/><path d="M3.5 17.5h17"/><rect x="7.5" y="13.5" width="9" height="2.3" fill={color} fillOpacity="0.3" stroke="none"/><path d="M6.6 5.6l1-2M12 4.6V2M17.4 5.6l-1-2" strokeWidth="1.6"/></svg>
