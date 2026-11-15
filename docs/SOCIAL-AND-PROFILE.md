@@ -55,7 +55,7 @@ choice: `user_id` is always recorded (abuse control) and the inbox has a
 "reveal sender" affordance.
 
 ## Body weight editing (src/app/(app)/profile/BodyWeightCard.tsx)
-The card shows the last 90 days. The text field at the top only ever logs
+The chart and trend number show the last 90 days; the History list shows every entry (capped at 1000, newest kept). The text field at the top only ever logs
 TODAY; every past entry is corrected by **tapping its dot on the chart**
 (each dot carries a transparent r=14 hit circle so the target clears 44px,
 and the selected one gets an accent halo), which opens a bottom-sheet

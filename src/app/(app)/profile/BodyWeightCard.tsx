@@ -32,6 +32,11 @@ function todayDateKey(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+/** The chart and trend number cover this many days; History covers everything. */
+const CHART_WINDOW_DAYS = 90
+/** Safety cap on History (about 2.7 years of daily weigh-ins). */
+const HISTORY_LIMIT = 1000
+
 export default function BodyWeightCard() {
   const { demoMode } = useDemoMode()
   // Writes (save/update/delete) become local no-ops in Demo Mode — see
@@ -109,23 +114,22 @@ export default function BodyWeightCard() {
       const user = await getClientUser(supabase)
       if (!user) return
 
-      const since = new Date()
-      since.setDate(since.getDate() - 90)
-      const sinceKey = `${since.getFullYear()}-${String(since.getMonth() + 1).padStart(2, '0')}-${String(since.getDate()).padStart(2, '0')}`
-
+      // Everything, newest first and capped: the chart trims to its own window
+      // below, but History is the full record. (Newest-first so a cap — and
+      // PostgREST's own row limit — can only ever drop the oldest entries.)
       const { data, error } = await supabase
         .from('body_weights')
         .select('weight, recorded_at')
         .eq('user_id', user.id)
-        .gte('recorded_at', sinceKey)
-        .order('recorded_at', { ascending: true })
+        .order('recorded_at', { ascending: false })
+        .limit(HISTORY_LIMIT)
 
       if (error) {
         reportError(error, { operation: 'body-weight-load' })
         return
       }
 
-      const next = (data ?? []) as Row[]
+      const next = ((data ?? []) as Row[]).reverse()
       setCached(CACHE_KEYS.bodyWeights, next)
       setRows(next)
     } catch (err) {
@@ -237,13 +241,20 @@ export default function BodyWeightCard() {
     toast.show('Entry deleted')
   }
 
+  // `rows` is the full history, oldest first. The chart and the trend number
+  // cover only the last CHART_WINDOW_DAYS; History lists everything.
+  const windowStart = new Date()
+  windowStart.setDate(windowStart.getDate() - CHART_WINDOW_DAYS)
+  const windowKey = `${windowStart.getFullYear()}-${String(windowStart.getMonth() + 1).padStart(2, '0')}-${String(windowStart.getDate()).padStart(2, '0')}`
+  const recentRows = rows.filter(r => r.recorded_at >= windowKey)
+
   const latest = rows.length > 0 ? rows[rows.length - 1] : null
-  const earliest = rows.length > 0 ? rows[0] : null
+  const earliest = recentRows.length > 0 ? recentRows[0] : null
   const change = latest && earliest && latest.recorded_at !== earliest.recorded_at
     ? toDisplay(latest.weight) - toDisplay(earliest.weight)
     : 0
 
-  const chartPoints: Point[] = rows.map(r => {
+  const toPoint = (r: Row): Point => {
     const d = new Date(r.recorded_at + 'T00:00:00')
     return {
       date: r.recorded_at,
@@ -252,9 +263,10 @@ export default function BodyWeightCard() {
       longDate: d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }),
       weight: toDisplay(r.weight),
     }
-  })
+  }
 
-  const pointsNewestFirst = [...chartPoints].reverse()
+  const chartPoints: Point[] = recentRows.map(toPoint)
+  const pointsNewestFirst: Point[] = [...rows].reverse().map(toPoint)
 
   return (
     <div
@@ -356,20 +368,26 @@ export default function BodyWeightCard() {
 
       {loading ? (
         <div aria-busy="true"><span className="sr-only">Loading</span><div className="shimmer" style={{ height: '180px', borderRadius: '12px' }} /></div>
-      ) : chartPoints.length === 0 ? (
+      ) : rows.length === 0 ? (
         <div style={{ color: 'var(--text-muted)', fontSize: '12px', textAlign: 'center', padding: '12px 0' }}>
           No body weight data yet. Log your first reading above.
         </div>
       ) : (
         <>
-          <BodyWeightChart
-            chartPoints={chartPoints}
-            peeked={peeked}
-            selectedDate={selected?.date}
-            onDotClick={handleDotClick}
-            fmt={fmt}
-            unitLabel={unitLabel}
-          />
+          {chartPoints.length > 0 ? (
+            <BodyWeightChart
+              chartPoints={chartPoints}
+              peeked={peeked}
+              selectedDate={selected?.date}
+              onDotClick={handleDotClick}
+              fmt={fmt}
+              unitLabel={unitLabel}
+            />
+          ) : (
+            <div style={{ color: 'var(--text-muted)', fontSize: '12px', textAlign: 'center', padding: '12px 0' }}>
+              Nothing logged in the last {CHART_WINDOW_DAYS} days. Your full history is below.
+            </div>
+          )}
 
                     {/* The dots are the primary edit affordance, so say so — nothing about a
               plotted point reads as tappable on its own. Two-step because a bare
@@ -410,7 +428,7 @@ export default function BodyWeightCard() {
               </span>
               <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)' }}>
                 <span style={{ fontFamily: 'var(--font-mono)' }}>
-                  {chartPoints.length} {chartPoints.length === 1 ? 'entry' : 'entries'}
+                  {pointsNewestFirst.length} {pointsNewestFirst.length === 1 ? 'entry' : 'entries'}
                 </span>
                 <svg
                   width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
