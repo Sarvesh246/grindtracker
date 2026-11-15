@@ -62,37 +62,40 @@ describe('pickHomeGreetingPhrase', () => {
       isRestDay: true,
       nextDay: 'legs',
     })
-    assert.ok(phrase === 'Unfinished business' || phrase === "Let's finish this")
+    assert.ok(
+      [
+        'Unfinished business',
+        "Let's finish this",
+        "Mid-workout, don't bail",
+        'Finish what you started',
+      ].includes(phrase),
+    )
   })
 
   it('trained beats rest and does not tell them the bar misses them', () => {
-    assert.equal(
-      pickHomeGreetingPhrase({ ...base, hour: 14, trainedToday: true, isRestDay: true }),
-      'Session in the books',
+    assert.ok(
+      ['Session in the books', 'Consistency pays out'].includes(
+        pickHomeGreetingPhrase({ ...base, hour: 14, trainedToday: true, isRestDay: true }),
+      ),
     )
   })
 
   it('late + already trained is the sleep line', () => {
-    assert.equal(
-      pickHomeGreetingPhrase({ ...base, hour: 22, trainedToday: true }),
-      "You're good. Sleep.",
-    )
-    assert.equal(
-      pickHomeGreetingPhrase({ ...base, hour: 2, trainedToday: true }),
-      "You're good. Sleep.",
-    )
+    const late = ["You're good. Sleep.", 'Good work. Go to bed.']
+    assert.ok(late.includes(pickHomeGreetingPhrase({ ...base, hour: 22, trainedToday: true })))
+    assert.ok(late.includes(pickHomeGreetingPhrase({ ...base, hour: 2, trainedToday: true })))
   })
 
   it('rest day when they have not trained', () => {
     const phrase = pickHomeGreetingPhrase({ ...base, hour: 10, isRestDay: true })
-    assert.ok(phrase === 'Official rest day' || phrase === 'Chill. You earned it')
+    assert.ok(
+      ['Official rest day', 'Chill. You earned it', 'Recovery is training'].includes(phrase),
+    )
   })
 
-  it('past midnight and still empty is 3am club', () => {
-    assert.equal(
-      pickHomeGreetingPhrase({ ...base, hour: 3, nextDay: 'legs' }),
-      "3am club, let's go",
-    )
+  it('past midnight and still empty is the 3am club pool', () => {
+    const phrase = pickHomeGreetingPhrase({ ...base, hour: 3, nextDay: 'legs' })
+    assert.ok(["3am club, let's go", "Nobody's up but us"].includes(phrase))
   })
 
   it('late and still empty stays in the night pool', () => {
@@ -100,7 +103,8 @@ describe('pickHomeGreetingPhrase', () => {
     assert.ok(
       phrase === "Gym doesn't sleep"
         || phrase === "Late, but we're here"
-        || phrase === "Night's not closed",
+        || phrase === "Night's not closed"
+        || phrase === 'Night owls lift too',
     )
   })
 
@@ -109,14 +113,9 @@ describe('pickHomeGreetingPhrase', () => {
   })
 
   it('legs overlay wins morning/afternoon when they have not trained', () => {
-    assert.equal(
-      pickHomeGreetingPhrase({ ...base, hour: 9, nextDay: 'legs' }),
-      "Fresh legs, let's go",
-    )
-    assert.equal(
-      pickHomeGreetingPhrase({ ...base, hour: 14, nextDay: 'LEGS' }),
-      "Fresh legs, let's go",
-    )
+    const legs = ["Fresh legs, let's go", "Leg day. Don't skip it.", 'Legs are calling']
+    assert.ok(legs.includes(pickHomeGreetingPhrase({ ...base, hour: 9, nextDay: 'legs' })))
+    assert.ok(legs.includes(pickHomeGreetingPhrase({ ...base, hour: 14, nextDay: 'LEGS' })))
   })
 
   it('early morning is World\'s still asleep', () => {
@@ -128,7 +127,8 @@ describe('pickHomeGreetingPhrase', () => {
     assert.ok(
       phrase === 'Rise and grind'
         || phrase === 'Rise and shine'
-        || phrase === "Let's get after it",
+        || phrase === "Let's get after it"
+        || phrase === 'Morning reps hit different',
     )
   })
 
@@ -141,6 +141,7 @@ describe('pickHomeGreetingPhrase', () => {
         'Plot twist: you lift',
         'The bar misses you',
         "Workout's waiting",
+        "Afternoon's still yours",
       ].includes(phrase),
     )
   })

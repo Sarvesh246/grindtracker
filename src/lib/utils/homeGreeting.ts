@@ -21,22 +21,38 @@ export interface HomeGreetingInput {
   dateKey: string
 }
 
-const IN_PROGRESS = ["Unfinished business", "Let's finish this"] as const
-const REST = ['Official rest day', 'Chill. You earned it'] as const
-const TRAINED = ['Session in the books'] as const
-const TRAINED_LATE = ["You're good. Sleep."] as const
-const GRAVEYARD = ["3am club, let's go"] as const
-const LATE_OPEN = ["Gym doesn't sleep", "Late, but we're here", "Night's not closed"] as const
+const IN_PROGRESS = [
+  'Unfinished business',
+  "Let's finish this",
+  "Mid-workout, don't bail",
+  'Finish what you started',
+] as const
+const REST = ['Official rest day', 'Chill. You earned it', 'Recovery is training'] as const
+const TRAINED = ['Session in the books', 'Consistency pays out'] as const
+const TRAINED_LATE = ["You're good. Sleep.", 'Good work. Go to bed.'] as const
+const GRAVEYARD = ["3am club, let's go", "Nobody's up but us"] as const
+const LATE_OPEN = [
+  "Gym doesn't sleep",
+  "Late, but we're here",
+  "Night's not closed",
+  'Night owls lift too',
+] as const
 const EVENING_OPEN = ['Evening session?'] as const
-const LEGS = ["Fresh legs, let's go"] as const
+const LEGS = ["Fresh legs, let's go", "Leg day. Don't skip it.", 'Legs are calling'] as const
 const EARLY = ["World's still asleep"] as const
-const MORNING = ['Rise and grind', 'Rise and shine', "Let's get after it"] as const
+const MORNING = [
+  'Rise and grind',
+  'Rise and shine',
+  "Let's get after it",
+  'Morning reps hit different',
+] as const
 const AFTERNOON = [
   'Still plenty of day',
   "Let's get after it",
   'Plot twist: you lift',
   'The bar misses you',
   "Workout's waiting",
+  "Afternoon's still yours",
 ] as const
 
 export type HomeHourBucket =
