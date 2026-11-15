@@ -6,7 +6,7 @@
 | --- | --- |
 | `check` | typecheck, unit tests (`npm test`), lint, `npm audit` (critical), production build with placeholder Supabase values |
 | `sql-parity` | `npm run test:sql-parity` against a Postgres 16 service container |
-| `e2e` | installs Chromium and runs Playwright (`npm run test:e2e`) against `npm run dev` |
+| `e2e` | builds the app, installs Chromium and runs Playwright (`npm run test:e2e`) against `npm run start` |
 
 ## SQL ↔ TypeScript parity
 

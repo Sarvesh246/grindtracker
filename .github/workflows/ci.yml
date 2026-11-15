@@ -106,6 +106,10 @@ jobs:
         if: ${{ env.SUPABASE_SERVICE_ROLE_KEY != '' }}
         run: npx tsx scripts/check-migrations.ts
 
+      # Served by `npm run start` (see playwright.config.ts), so build first.
+      - name: Build
+        run: npm run build
+
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 

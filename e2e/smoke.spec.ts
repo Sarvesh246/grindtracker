@@ -10,9 +10,12 @@ test.describe('public shell', () => {
     })
   })
 
-  test('root redirects into the app or login', async ({ page }) => {
+  // `/` is the public landing page for signed-out visitors (a signed-in user is
+  // redirected to /home), so a fresh browser stays on `/` and sees the brand.
+  test('root serves the landing page to a signed-out visitor', async ({ page }) => {
     const res = await page.goto('/')
-    expect(res?.ok() || res?.status() === 307 || res?.status() === 308).toBeTruthy()
-    await expect(page).toHaveURL(/\/(login|home|setup)/)
+    expect(res?.ok()).toBeTruthy()
+    await expect(page).toHaveURL(/\/$/)
+    await expect(page.getByText('GRIND').first()).toBeVisible()
   })
 })
