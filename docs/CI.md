@@ -25,7 +25,14 @@ you don't mind it creating `public.user_rest_*` tables in:
 PARITY_DATABASE_URL=postgres://postgres:pw@localhost:5432/postgres npm run test:sql-parity
 ```
 
-It covers only the rules above. `grind_recompute_stats` (streak runs, XP, PRs)
+The same job runs `src/lib/watch/__tests__/watchApi.db.test.ts`, which loads a
+Supabase stand-in (`scripts/__tests__/fixtures/supabase-stub.sql`: API roles,
+`auth.uid()`, the dashboard-created base tables and policies) plus **every**
+`docs/sql` migration into a `grind_watch_test` database next to the one the URL
+names, then drives the watch API handlers against it. It keeps that database
+between runs (migrations are idempotent; each run uses fresh user ids).
+
+The parity comparison covers only the rules above. `grind_recompute_stats` (streak runs, XP, PRs)
 needs the full Supabase schema and is not compared.
 
 ## End-to-end tests
