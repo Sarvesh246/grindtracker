@@ -3,7 +3,8 @@
 ## Status
 Live and in daily use: workout logging, streaks/XP/badges, rest days, flex days,
 progress photos, onboarding, web push, offline set queue, Coach, friends and
-leaderboard. Schema migrations run through `docs/sql/57-*.sql`.
+leaderboard, and a token-authenticated API for a Garmin watch app (`/api/watch/v1`).
+Schema migrations run through `docs/sql/58-*.sql`.
 
 One developer, but a **multi-user app**: friends, a leaderboard and public
 usernames mean RLS and per-caller authorization are required everywhere.
@@ -51,6 +52,7 @@ file and are authoritative.
 | Friend profiles, feedback inbox, body weight | [docs/SOCIAL-AND-PROFILE.md](docs/SOCIAL-AND-PROFILE.md) |
 | Coach (Gemini), rate limits, eval | [docs/COACH.md](docs/COACH.md) |
 | Web push | [docs/PUSH.md](docs/PUSH.md) |
+| Garmin watch API, device tokens | [docs/watch-api.md](docs/watch-api.md) |
 | Migrations | [docs/SQL.md](docs/SQL.md) |
 | CI, e2e, parity tests | [docs/CI.md](docs/CI.md) |
 | Scrolling on mobile | [docs/MOBILE-SCROLLING.md](docs/MOBILE-SCROLLING.md) |
@@ -88,7 +90,7 @@ file and are authoritative.
   `grind_migrations` (created by `00-migration-tracking.sql`); copy that line into
   any new migration, add its row to `docs/SQL.md`, and run
   `npm run migrations:check` against production after pasting. Apply the SQL
-  *before* deploying code that calls new RPCs. Next free number: `58`.
+  *before* deploying code that calls new RPCs. Next free number: `59`.
 - **Rotation pointer:** every write goes through `rotationStore.ts`, never a bare
   `user_rotation` upsert (WORKOUT-LOGIC).
 - **Offline sync is deliberately gentle:** no polling, no per-set requests
@@ -181,6 +183,7 @@ src/
     utils/gamification.ts + formatting.ts + badges.ts + haptics.ts + sessions.ts + rotation.ts
          + admin.ts (admin-email check for routing/UI only)
     brand-icon.tsx
+    watch/ (handlers, schema, today, token, deps) — Garmin watch API; routes in app/api/watch/v1/
   proxy.ts                        — auth gate + redirect to /setup if no profile
                                     (Next 16 renamed the Middleware convention to Proxy)
 docs/
