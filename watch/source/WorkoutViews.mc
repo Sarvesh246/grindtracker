@@ -200,8 +200,9 @@ class RestDelegate extends WatchUi.BehaviorDelegate {
         return true;
     }
 
+    // START skips rest. A tap doesn't: a brushed screen shouldn't cut rest short.
     function onSelect() { return skip(); }
-    function onTap(evt) { return skip(); }
+    function onTap(evt) { return true; }
     function onPreviousPage() { return add(Config.REST_STEP); }
     function onNextPage() { return add(-Config.REST_STEP); }
 
@@ -308,15 +309,17 @@ class SummaryDelegate extends WatchUi.BehaviorDelegate {
         return act(xy[0] < size / 2 ? 0 : 1);
     }
 
-    // BACK never drops a workout: after saving it goes Home, before that it
-    // returns to logging if there are sets left, otherwise stays put.
+    // BACK never drops a workout. After saving it goes Home. Before that it
+    // returns to logging if there are sets left; otherwise it offers
+    // Save / Discard rather than doing nothing.
     function onBack() {
         if (Workout.saved || !Workout.active()) { return act(0); }
         if (Workout.canLeaveSummary()) {
             Workout.leaveSummary();
             Nav.show();
+            return true;
         }
-        return true;
+        return Menus.finish();
     }
 
     function onMenu() { return true; }

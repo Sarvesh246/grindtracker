@@ -59,8 +59,10 @@ class HomeDelegate extends WatchUi.BehaviorDelegate {
         return true;
     }
 
+    // START only. A tap would start a workout (and recording) whenever a
+    // sleeve brushes the screen.
     function onSelect() { return go(); }
-    function onTap(evt) { return go(); }
+    function onTap(evt) { return true; }
 
     // MENU refreshes. If the server has refused a session for good, it opens
     // a menu instead so that state can be cleared.

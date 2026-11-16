@@ -16,6 +16,15 @@ module Menus {
         return true;
     }
 
+    // BACK on a finished workout with nothing left to log.
+    function finish() {
+        var m = new WatchUi.Menu2({ :title => "Workout done" });
+        m.addItem(new WatchUi.MenuItem("Save workout", null, :save, null));
+        m.addItem(new WatchUi.MenuItem("Discard workout", null, :discard, null));
+        WatchUi.pushView(m, new FinishDelegate(), WatchUi.SLIDE_UP);
+        return true;
+    }
+
     // `push` when opened from a normal screen; from the pause menu it
     // replaces that menu, so the confirm always sits exactly one above the
     // workout screen.
@@ -67,5 +76,15 @@ class ConfirmDelegate extends WatchUi.Menu2InputDelegate {
             Workout.finish(false);
             Nav.show();
         }
+    }
+}
+
+class FinishDelegate extends WatchUi.Menu2InputDelegate {
+    function initialize() { Menu2InputDelegate.initialize(); }
+
+    function onSelect(item) {
+        WatchUi.popView(WatchUi.SLIDE_IMMEDIATE);
+        // 0 = Save, 1 = Discard (which still asks to confirm).
+        new SummaryDelegate().act(item.getId() == :save ? 0 : 1);
     }
 }
