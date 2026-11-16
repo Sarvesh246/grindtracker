@@ -120,6 +120,17 @@ module Draw {
         line(dc, 0.895, [Graphics.FONT_XTINY], s, Config.DIM);
     }
 
+    // Small up/down triangles beside the left-hand UP and DOWN buttons: Home
+    // uses them to scroll the workout days.
+    function scrollArrows(dc) {
+        var x = yAt(dc, 0.16) + 8;
+        var yu = yAt(dc, 0.40);
+        var yd = yAt(dc, 0.60);
+        dc.setColor(Config.DIM, Graphics.COLOR_TRANSPARENT);
+        dc.fillPolygon([[x, yu - 7], [x - 8, yu + 5], [x + 8, yu + 5]]);
+        dc.fillPolygon([[x, yd + 7], [x - 8, yd - 5], [x + 8, yd - 5]]);
+    }
+
     // DEBUG: screen circle, zone boundaries drawn at their usable width,
     // and the tap columns of the logging screen.
     function debug(dc) {

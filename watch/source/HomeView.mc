@@ -1,5 +1,65 @@
 using Toybox.Graphics;
+using Toybox.Timer;
 using Toybox.WatchUi;
+
+// Which workout day Home is offering. Starts as the day GRIND says is up
+// next; UP/DOWN scroll through the user's other days. Lives for the session.
+module Pick {
+    var id = null;      // null = the default
+    var want = false;   // START was pressed before that day's plan arrived
+
+    function defaultId() {
+        var wk = Store.today();
+        return wk == null ? null : wk["id"];
+    }
+
+    function currentId() { return id != null ? id : defaultId(); }
+
+    function indexOf(days, did) {
+        if (did == null) { return -1; }
+        for (var i = 0; i < days.size(); i++) {
+            if (did.equals(days[i]["id"])) { return i; }
+        }
+        return -1;
+    }
+
+    function nameOf(did) {
+        var d = Store.days();
+        var i = d == null ? -1 : indexOf(d, did);
+        return i >= 0 ? d[i]["name"] : did;
+    }
+
+    // Scroll one day. False if there is nothing to scroll to.
+    function step(dir) {
+        var d = Store.days();
+        if (d == null) { return false; }
+        var n = d.size();
+        var cur = indexOf(d, currentId());
+        if (n < 2 && cur >= 0) { return false; }
+        var next = cur < 0 ? (dir > 0 ? 0 : n - 1) : (cur + dir + n) % n;
+        id = d[next]["id"];
+        want = false;
+        return true;
+    }
+
+    function begin(plan) {
+        id = null;
+        want = false;
+        Workout.start(plan);
+        Nav.buzz(80);
+        Nav.show();
+    }
+
+    // A fetched day arrived. If START was already pressed for it, go.
+    function arrived(did, ok) {
+        if (!want || did == null || !did.equals(currentId())) { return; }
+        want = false;
+        var plan = ok ? Store.planFor(did) : null;
+        if (plan != null && plan["ex"].size() > 0 && WatchUi.getCurrentView()[0] instanceof HomeView) {
+            begin(plan);
+        }
+    }
+}
 
 class HomeView extends WatchUi.View {
     function initialize() { View.initialize(); }
@@ -18,19 +78,35 @@ class HomeView extends WatchUi.View {
             Draw.hint(dc, "START");
         } else {
             var wk = Store.today();
+            var days = Store.days();
+            var did = Pick.currentId();
             if (wk == null) {
                 Draw.line(dc, 0.47, title, "No workout", Config.FG);
                 Draw.line(dc, 0.63, [Graphics.FONT_TINY, Graphics.FONT_XTINY],
                     gNet.connected() ? "MENU to load" : "Connect phone to load", Config.DIM);
-            } else if (wk["ex"] == null) {
+            } else if (did == null) {
+                // Rest day or no plan, and nothing chosen.
                 var rest = wk["reason"] != null && wk["reason"].equals("rest_day");
                 Draw.line(dc, 0.47, title, rest ? "Rest day" : "No workout today", Config.FG);
+                if (days != null) { Draw.line(dc, 0.63, [Graphics.FONT_XTINY], "UP/DOWN: train anyway", Config.DIM); }
             } else {
-                Draw.line(dc, 0.31, small, "TODAY", Config.DIM);
-                Draw.line(dc, 0.50, title, wk["name"], Config.FG);
-                Draw.line(dc, 0.65, [Graphics.FONT_TINY], wk["ex"].size() + " exercises", Config.DIM);
+                var plan = Store.planFor(did);
+                var isDefault = did.equals(Pick.defaultId());
+                var pos = "";
+                if (days != null && days.size() > 1) {
+                    pos = "  " + (Pick.indexOf(days, did) + 1) + "/" + days.size();
+                }
+                Draw.line(dc, 0.31, small, (isDefault ? "TODAY" : "CHOSEN") + pos, Config.DIM);
+                Draw.line(dc, 0.50, title, Pick.nameOf(did), Config.FG);
+                var sub;
+                if (plan != null) { sub = plan["ex"].size() + " exercises"; }
+                else if (Pick.want || gNet.busy) { sub = "loading..."; }
+                else if (!gNet.connected()) { sub = "Connect phone to load"; }
+                else { sub = "START to load"; }
+                Draw.line(dc, 0.65, [Graphics.FONT_TINY, Graphics.FONT_XTINY], sub, Config.DIM);
                 Draw.hint(dc, "START");
             }
+            if (days != null && (days.size() > 1 || did == null)) { Draw.scrollArrows(dc); }
         }
         Draw.line(dc, 0.78, small, gNet.homeStatus(), gNet.statusColor());
         Draw.ring(dc, 0.0, Config.ACCENT);
@@ -39,6 +115,8 @@ class HomeView extends WatchUi.View {
 }
 
 class HomeDelegate extends WatchUi.BehaviorDelegate {
+    var prefetch = null;
+
     function initialize() { BehaviorDelegate.initialize(); }
 
     function go() {
@@ -50,14 +128,40 @@ class HomeDelegate extends WatchUi.BehaviorDelegate {
             WatchUi.pushView(m, new PauseDelegate(), WatchUi.SLIDE_UP);
             return true;
         }
-        var wk = Store.today();
-        if (wk != null && wk["ex"] != null && wk["ex"].size() > 0) {
-            Workout.start(wk);
-            Nav.buzz(80);
-            Nav.show();
+        var did = Pick.currentId();
+        if (did == null) { return true; }
+        var plan = Store.planFor(did);
+        if (plan != null) {
+            if (plan["ex"].size() > 0) { Pick.begin(plan); }
+        } else if (gNet.connected()) {
+            // Not downloaded yet: fetch it and start the moment it lands.
+            Pick.want = true;
+            gNet.fetchDay(did);
+            WatchUi.requestUpdate();
         }
         return true;
     }
+
+    // UP / DOWN (or a swipe) scroll the days. The chosen day's plan is
+    // fetched once the scrolling stops, so START is usually instant.
+    function scroll(dir) {
+        if (!Workout.active() && Pick.step(dir)) {
+            if (prefetch != null) { prefetch.stop(); }
+            prefetch = new Timer.Timer();
+            prefetch.start(method(:onSettled), 700, false);
+            WatchUi.requestUpdate();
+        }
+        return true;
+    }
+
+    function onSettled() {
+        var did = Pick.currentId();
+        if (did != null && Store.planFor(did) == null) { gNet.fetchDay(did); }
+        WatchUi.requestUpdate();
+    }
+
+    function onPreviousPage() { return scroll(-1); }   // UP
+    function onNextPage() { return scroll(1); }        // DOWN
 
     // START only. A tap would start a workout (and recording) whenever a
     // sleeve brushes the screen.

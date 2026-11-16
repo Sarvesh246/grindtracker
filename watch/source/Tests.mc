@@ -256,3 +256,57 @@ function testWorkoutFlow(logger) {
     Workout.saved = false;
     return ok;
 }
+
+(:test)
+function testDayPicker(logger) {
+    // /today as the updated backend sends it: up-next plan plus every day.
+    var d = Logic.localDate();
+    Store.cacheToday({ "date" => d, "unit" => "lbs",
+        "workout" => { "id" => "pull", "name" => "Pull", "exercises" => [
+            { "id" => "p1", "name" => "Row", "sets" => 3, "reps" => 8, "reps_max" => null, "weight" => 100, "rest" => null } ] },
+        "days" => [{ "id" => "pull", "name" => "Pull" }, { "id" => "push", "name" => "Push" }, { "id" => "legs", "name" => "Legs" }] });
+    Pick.id = null;
+    var ok = T.ck(logger, "default is up-next", Pick.currentId().equals("pull") && Store.days().size() == 3);
+    ok = T.ck(logger, "default plan cached under its day", Store.planFor("pull")["ex"].size() == 1) && ok;
+    ok = T.ck(logger, "other day not downloaded yet", Store.planFor("push") == null) && ok;
+
+    ok = T.ck(logger, "down -> next", Pick.step(1) && Pick.id.equals("push")) && ok;
+    ok = T.ck(logger, "down -> next", Pick.step(1) && Pick.id.equals("legs")) && ok;
+    ok = T.ck(logger, "wraps forward", Pick.step(1) && Pick.id.equals("pull")) && ok;
+    ok = T.ck(logger, "up wraps back", Pick.step(-1) && Pick.id.equals("legs") && Pick.nameOf("legs").equals("Legs")) && ok;
+
+    // A fetched day lands in its own key and leaves the default alone.
+    Store.cacheDay({ "date" => d, "unit" => "lbs", "workout" => { "id" => "push", "name" => "Push", "exercises" => [
+        { "id" => "x1", "name" => "Bench", "sets" => 3, "reps" => 5, "reps_max" => null, "weight" => 135, "rest" => 90 },
+        { "id" => "x2", "name" => "Dips", "sets" => 3, "reps" => 8, "reps_max" => null, "weight" => 0, "rest" => null } ] } });
+    ok = T.ck(logger, "picked day cached", Store.planFor("push")["ex"].size() == 2 && Store.planFor("push")["id"].equals("push")) && ok;
+    ok = T.ck(logger, "default untouched", Store.today()["id"].equals("pull") && Store.days().size() == 3) && ok;
+
+    // A plan from another date is never offered.
+    Store.put("wk_push", { "date" => "1999-01-01", "unit" => "lbs", "id" => "push", "name" => "Push", "ex" => [] });
+    ok = T.ck(logger, "stale day ignored", Store.planFor("push") == null) && ok;
+
+    // Rest day: nothing is picked until the user scrolls, then either end works.
+    Store.cacheToday({ "date" => d, "unit" => "lbs", "workout" => null, "reason" => "rest_day",
+        "days" => [{ "id" => "pull", "name" => "Pull" }, { "id" => "push", "name" => "Push" }] });
+    Pick.id = null;
+    ok = T.ck(logger, "rest day: nothing picked", Pick.currentId() == null && Store.days().size() == 2) && ok;
+    ok = T.ck(logger, "rest day: down -> first", Pick.step(1) && Pick.id.equals("pull")) && ok;
+    Pick.id = null;
+    ok = T.ck(logger, "rest day: up -> last", Pick.step(-1) && Pick.id.equals("push")) && ok;
+
+    // One day only: nothing to scroll.
+    Store.cacheToday({ "date" => d, "unit" => "lbs",
+        "workout" => { "id" => "pull", "name" => "Pull", "exercises" => [] },
+        "days" => [{ "id" => "pull", "name" => "Pull" }] });
+    Pick.id = null;
+    ok = T.ck(logger, "single day: no scroll", !Pick.step(1) && Pick.id == null) && ok;
+
+    // An older server (no days) just means no picker.
+    Store.cacheToday({ "date" => d, "unit" => "lbs", "workout" => { "id" => "pull", "name" => "Pull", "exercises" => [] } });
+    ok = T.ck(logger, "no days: no picker", Store.days() == null && !Pick.step(1)) && ok;
+
+    Pick.id = null; Pick.want = false;
+    Store.del("wk"); Store.del("wk_pull"); Store.del("wk_push"); Store.del("wk_legs"); Store.del("wkAt");
+    return ok;
+}

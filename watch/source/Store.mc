@@ -8,7 +8,8 @@ using Toybox.Time;
 // recall it; not measured here), and each setValue rewrites the whole value
 // to flash. The largest thing we store is the cached workout, around 3 KB.
 //
-//   wk          trimmed GET /today response
+//   wk          trimmed GET /today response (the up-next day) + dy: day list
+//   wk_<day>    the plan for one day (the up-next one, or one the user picked)
 //   wkAt        epoch secs it was fetched
 //   ls          epoch secs of the last successful sync
 //   cur         position in the active workout (see Workout)
@@ -31,8 +32,10 @@ module Store {
     function queue() { return list("q"); }
     function dead() { return list("qd"); }
 
-    // Keeps only the fields the watch uses, so the cached value stays ~3 KB.
-    function cacheToday(data) {
+    // Keeps only the fields the watch uses, so a cached plan stays ~3 KB.
+    // { date, unit, id, name, ex: [...] } for a workout day, or
+    // { date, unit, reason } when nothing is planned.
+    function trimPlan(data) {
         var out = { "date" => data["date"], "unit" => data["unit"] };
         var w = data["workout"];
         if (w instanceof Lang.Dictionary) {
@@ -54,17 +57,56 @@ module Store {
         } else {
             out["reason"] = data["reason"];
         }
-        put("wk", out);
-        put("wkAt", Time.now().value());
+        return out;
     }
 
-    // The cached workout, only if it was fetched for today's local date.
+    // The default response (the day GRIND says is up next). Also keeps the
+    // list of days for the picker, and the plan under its own day key.
+    function cacheToday(data) {
+        var out = trimPlan(data);
+        var d = data["days"];
+        if (d instanceof Lang.Array) {
+            var dy = [];
+            for (var i = 0; i < d.size(); i++) {
+                dy.add({ "id" => d[i]["id"], "name" => d[i]["name"] });
+            }
+            out["dy"] = dy;
+        }
+        put("wk", out);
+        put("wkAt", Time.now().value());
+        if (out["id"] != null) { put("wk_" + out["id"], out); }
+    }
+
+    // A day the user picked (GET /today?day=...). The default stays as is.
+    function cacheDay(data) {
+        var out = trimPlan(data);
+        if (out["id"] != null) { put("wk_" + out["id"], out); }
+    }
+
+    function isToday(w) {
+        return w instanceof Lang.Dictionary && w["date"] != null && w["date"].equals(Logic.localDate());
+    }
+
+    // The default plan, only if it was fetched for today's local date.
     function today() {
         var w = get("wk");
-        if (w instanceof Lang.Dictionary && w["date"] != null && w["date"].equals(Logic.localDate())) {
-            return w;
-        }
-        return null;
+        return isToday(w) ? w : null;
+    }
+
+    // The days to choose between, or null (old cache, or nothing planned).
+    function days() {
+        var w = today();
+        if (w == null) { return null; }
+        var d = w["dy"];
+        return d instanceof Lang.Array && d.size() > 0 ? d : null;
+    }
+
+    // The plan for one day if we hold it for today's date, else null.
+    function planFor(id) {
+        var w = today();
+        if (w != null && w["id"] != null && w["id"].equals(id)) { return w; }
+        var p = get("wk_" + id);
+        return isToday(p) && p["ex"] != null ? p : null;
     }
 
     function meta(sid) { return get("m_" + sid); }

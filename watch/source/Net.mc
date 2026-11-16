@@ -12,6 +12,7 @@ class Net {
     var fails = 0;       // upload failures in a row
     var nextAt = 0;      // epoch secs before which we don't retry uploads
     var todayAt = 0;     // same, for re-fetching a missing workout
+    var dayWant = null;  // day id being fetched for the picker
     var upSid = null;
     var upSets = null;
 
@@ -83,6 +84,33 @@ class Net {
         } else if (code == 401) {
             authError = true;
         }
+        WatchUi.requestUpdate();
+        flush();
+    }
+
+    // --- a day the user chose on Home ----------------------------------
+
+    // GET /today?day=<id>. Returns false if it could not start (busy / no phone).
+    function fetchDay(id) {
+        if (busy || !connected() || id == null) { return false; }
+        dayWant = id;
+        request("/today", { "date" => Logic.localDate(), "unit" => Config.UNIT, "day" => id }, false, method(:onDay));
+        return true;
+    }
+
+    function onDay(code, data) {
+        System.println("day " + dayWant + " -> " + code + " " + errCode(data));
+        busy = false;
+        var id = dayWant;
+        dayWant = null;
+        var ok = code == 200 && data instanceof Lang.Dictionary && data["workout"] instanceof Lang.Dictionary
+            && id != null && id.equals(data["workout"]["id"]);
+        if (ok) {
+            Store.cacheDay(data);
+        } else if (code == 401) {
+            authError = true;
+        }
+        Pick.arrived(id, ok);
         WatchUi.requestUpdate();
         flush();
     }
