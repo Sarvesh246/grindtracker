@@ -53,16 +53,28 @@ export async function loadRotationState(
   if (dayErr) throw dayErr
   if (rotErr) throw rotErr
 
-  const dayKeys = enabledDayKeys(dayTypeRows ?? [])
-  const rotation = (rotationRow as UserRotation | null) ?? null
-  const flex = new Set((flexRows ?? []).map((r: { day_key: string }) => r.day_key))
-  const seq = effectiveSequence(rotation, dayKeys, flex)
   const last = lastRow as { day_type: string; completed_at: string } | null
-  const lastCompletion: LastCompletion | null = last
-    ? { day: last.day_type, completedAt: last.completed_at }
-    : null
-  const index = resolveRotationIndex(seq, rotation, lastCompletion)
-  return { rotation, dayKeys, seq, index, nextDay: nextDay(seq, index) }
+  return rotationStateFrom({
+    exerciseRows: dayTypeRows ?? [],
+    rotation: (rotationRow as UserRotation | null) ?? null,
+    flexDays: (flexRows ?? []).map((r: { day_key: string }) => r.day_key),
+    lastCompletion: last ? { day: last.day_type, completedAt: last.completed_at } : null,
+  })
+}
+
+/** The pure half of loadRotationState, for callers that already hold the rows
+ *  (the watch API reads them in one RPC). Same resolver, so the watch's
+ *  "today" can never disagree with Home's Start button. */
+export function rotationStateFrom(input: {
+  exerciseRows: ReadonlyArray<{ day_type: string; active?: boolean | null }>
+  rotation: UserRotation | null
+  flexDays: Iterable<string>
+  lastCompletion: LastCompletion | null
+}): RotationState {
+  const dayKeys = enabledDayKeys(input.exerciseRows)
+  const seq = effectiveSequence(input.rotation, dayKeys, new Set(input.flexDays))
+  const index = resolveRotationIndex(seq, input.rotation, input.lastCompletion)
+  return { rotation: input.rotation, dayKeys, seq, index, nextDay: nextDay(seq, index) }
 }
 
 // Set once a write proves `current_day` isn't in the schema yet (migration 54

@@ -65,7 +65,9 @@ function isPublicPath(pathname: string): boolean {
     pathname.startsWith('/login') ||
     pathname.startsWith('/auth') ||
     // Cron authenticates via CRON_SECRET bearer, not the user session.
-    pathname.startsWith('/api/cron')
+    pathname.startsWith('/api/cron') ||
+    // The watch authenticates with its own device token (docs/watch-api.md).
+    pathname.startsWith('/api/watch/')
   )
 }
 
