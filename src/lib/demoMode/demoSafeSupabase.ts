@@ -24,6 +24,8 @@ const MUTATING_RPCS = new Set([
   'grind_insert_coach_assistant',
   'record_data_export',
   'mark_session_started_offline',
+  'create_watch_device',
+  'revoke_watch_device',
 ])
 
 const MUTATING_TABLE_METHODS = new Set(['insert', 'upsert', 'update', 'delete'])

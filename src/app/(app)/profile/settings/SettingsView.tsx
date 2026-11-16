@@ -20,6 +20,7 @@ import ThemeToggle from '@/components/ThemeToggle'
 import { useMotionPref } from '@/lib/contexts/MotionContext'
 import { useDemoMode } from '@/lib/contexts/DemoModeContext'
 import FeedbackModal from '@/components/FeedbackModal'
+import WatchDevices from './WatchDevices'
 import { markAppDataStale, resetAppDataCache } from '@/lib/cache/appDataCache'
 import { clearLastKnownStats } from '@/lib/cache/lastKnownStats'
 import { clearOfflineCaches } from '@/lib/offline/clearOnSignOut'
@@ -1060,6 +1061,10 @@ export default function SettingsView({
       </Section>
 
       {/* Data */}
+      <Section label="Watch">
+        <WatchDevices supabase={supabase} />
+      </Section>
+
       <Section label="Data">
         <NavRow
           title={exporting ? 'Exporting…' : 'Export Data'}
