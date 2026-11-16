@@ -18,7 +18,9 @@ Moved out of [CLAUDE.md](../CLAUDE.md) to keep that file short; its text is unch
   save. ActiveWorkout never does a wholesale replace, so the same filter is
   really just about not hiding a set the user can still finish mid-session.
   See migration `17-exercise-active-flag.sql`.
-- sessions — user_id, day_type, started_at, completed_at, xp_earned, note.
+- sessions — user_id, day_type, started_at, completed_at, xp_earned, note,
+  source ('web' | 'watch'), avg_heart_rate, max_heart_rate, calories (watch
+  only, migration `58`).
   Client DELETE is only for open sessions (`completed_at is null`, migration
   `40`); finished workouts go through `delete_session` so stats recompute.
 - session_logs — session_id, exercise_id, set_number, weight, reps, is_pr,
@@ -29,6 +31,10 @@ Moved out of [CLAUDE.md](../CLAUDE.md) to keep that file short; its text is unch
   (weight/reps always null, enforced by a CHECK) that let a skipped set in
   ActiveWorkout survive closing/resuming the app — see Skip persistence in [WORKOUT-LOGIC.md](WORKOUT-LOGIC.md)
   and migration `18-skip-persistence.sql`.
+  Migration `58` adds source ('web' | 'watch'), entered_weight + entered_unit
+  (what a watch sent; `weight` stays canonical lbs) and rest_seconds. Watch
+  rows use the device's UUIDs as `sessions.id` / `session_logs.id`, which is
+  what makes re-uploads idempotent ([watch-api.md](watch-api.md)).
 - user_stats — xp_total, level, current_streak, longest_streak,
   last_workout_date, total_workouts
 - user_badges — user_id, badge_id, earned_at
@@ -62,6 +68,11 @@ Moved out of [CLAUDE.md](../CLAUDE.md) to keep that file short; its text is unch
   scheduled rest date given up this week because a one-off used the weekly budget
   (`stolen_for`). See Rest days in [WORKOUT-LOGIC.md](WORKOUT-LOGIC.md) and migrations `14-rest-days.sql`,
   `39-rest-day-skip.sql`, `43-rest-weekday-history.sql`.
+- watch_devices — user_id, name, token_hash (SHA-256, unique), token_hint
+  (last 4 chars), created_at, last_used_at, revoked_at, rl_window_start/rl_count
+  (per-device rate limit). Clients can SELECT their own rows but not the hash or
+  counters; writes only via `create_watch_device` / `revoke_watch_device`
+  (migration `58`, [watch-api.md](watch-api.md)).
 RLS on exercises, sessions, session_logs, user_stats, user_badges, body_weights,
 user_day_categories, user_day_colors, user_rotation, feedback, user_rest_days, user_rest_dates,
 user_rest_cancels

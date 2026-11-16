@@ -15,6 +15,15 @@ Moved out of [CLAUDE.md](../CLAUDE.md) to keep that file short; its text is unch
   requester accept their own request and let anyone insert a pre-accepted
   friendship naming someone else as requester (fixed in `12`). Split by command
   and assert what each one actually means: who may create, who may approve.
+- **Watch API (`/api/watch/v1`, [watch-api.md](watch-api.md))** authenticates
+  with a per-device Bearer token, not a Supabase session, so its routes use the
+  service-role key. That is safe only because every watch RPC
+  (`watch_authenticate`, `watch_today_context`, `watch_sync_session`) is revoked
+  from `anon`/`authenticated` and granted to `service_role` alone: they take a
+  user id, and only the route — which derived it from the token hash — may pass
+  one. `watch_sync_session` re-checks that every exercise and set id belongs to
+  that user. Tokens are 244-bit random and stored as SHA-256 only; the proxy
+  lets `/api/watch/` through without a session.
 - Security headers (CSP, HSTS, `frame-ancestors 'none'`) live in `next.config.ts`.
 - `src/proxy.ts` uses `getClaims()` (local JWKS verification) rather than
   `getUser()` (a network round trip per request), and caches the "profile exists"
