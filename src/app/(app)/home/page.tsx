@@ -21,6 +21,11 @@ export default async function HomePage() {
 
   const user = await getAuthUser()
   if (!user) redirect('/login')
+  // Stamped before the reads, so the dashboard can tell a render it is being
+  // shown hours later (service-worker replay, restored PWA) from a live one.
+  // A server component runs once per request; the per-request clock is the point.
+  // eslint-disable-next-line react-hooks/purity
+  const renderedAt = Date.now()
 
   // Parallelize independent dashboard reads. History uses bounded SQL aggregates
   // (docs/sql/20-production-hardening.sql) instead of fetching every session row.
@@ -254,6 +259,7 @@ export default async function HomePage() {
     <HomeDashboard
       stats={demoMode ? demoHomeStats() : stats}
       userId={user.id}
+      renderedAt={renderedAt}
       statsUnavailable={statsUnavailable}
       restDataUnavailable={restDataUnavailable}
       recurringRestDays={(restDayRows ?? [])

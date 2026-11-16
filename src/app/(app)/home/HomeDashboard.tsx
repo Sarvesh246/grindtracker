@@ -24,6 +24,7 @@ import WorkoutCalendar from '@/components/WorkoutCalendar'
 import FinishUndoBanner from '@/components/FinishUndoBanner'
 import ToastPill, { TOAST_SLIDE_OUT_MS } from '@/components/ToastPill'
 import { useExitingValue } from '@/lib/hooks/useExitingValue'
+import { useRenderFreshness } from '@/lib/hooks/useRenderFreshness'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { useToast } from '@/lib/contexts/ToastContext'
 import { useTour, type TourStep } from '@/components/onboarding/Tour'
@@ -98,6 +99,8 @@ interface Props {
   stats: UserStats | null
   /** Owner of this dashboard — keys the last-known-stats cache. */
   userId: string
+  /** Server clock when this render's data was read — see useRenderFreshness. */
+  renderedAt: number
   /**
    * The `user_stats` read failed (server retried — see home/page.tsx). Every
    * account is seeded a stats row at signup, so this is never "new user": the
@@ -160,6 +163,7 @@ export default function HomeDashboard({
   // which resolves the caller from the session rather than a passed-in id.
   stats,
   userId,
+  renderedAt,
   statsUnavailable = false,
   restDataUnavailable = false,
   activeSessions: activeSessionsProp,
@@ -180,6 +184,11 @@ export default function HomeDashboard({
   restIntervals = [],
 }: Props) {
   const router = useRouter()
+  // True while this is an old render (the service worker's saved copy on a slow
+  // launch, or a PWA restored from the background) and its replacement is still
+  // on the way. Old stats against today's date invent a gap that isn't there,
+  // so nothing below may prompt about or correct the streak until it clears.
+  const renderStale = useRenderFreshness(renderedAt)
   // Sessions this screen just saved or discarded. The resume card used to
   // linger until router.refresh() re-rendered all of Home on the server — on
   // a slow connection that's seconds of a "discarded" workout still sitting
@@ -409,7 +418,7 @@ export default function HomeDashboard({
   const restBannerSig = gapUncoveredDates.join(',')
   const restBannerDismissedSig = useSyncExternalStore(restDismissStore.subscribe, restDismissStore.read, () => null)
   const showRestBanner =
-    !restDataUnavailable &&
+    !restDataUnavailable && !renderStale &&
     (effectiveStats?.current_streak ?? 0) > 0 && gapEligibleForPrompt && restBannerDismissedSig !== restBannerSig
   const correctedStaleStreak = useRef(false)
   useEffect(() => {
@@ -417,6 +426,9 @@ export default function HomeDashboard({
     // Without the rest-day rows every gap looks uncovered, which would zero a
     // streak the user never actually broke. Wait for a load that has them.
     if (restDataUnavailable) return
+    // Same reasoning for an old render: its last_workout_date may predate a
+    // workout the server already knows about.
+    if (renderStale) return
     if (!effectiveStats || effectiveStats.current_streak <= 0 || !effectiveStats.last_workout_date) return
     if (gapUncoveredDates.length === 0) return // no real gap, or fully rest-day-covered — nothing to correct
     // A small, plausibly-a-rest-day gap gets the banner instead of an
@@ -436,7 +448,7 @@ export default function HomeDashboard({
       if (error) console.error('[grind] refresh_stats failed (stale streak correction)', error)
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveStats?.current_streak, effectiveStats?.last_workout_date, gapUncoveredDates, gapEligibleForPrompt, restBannerDismissedSig, restDataUnavailable])
+  }, [effectiveStats?.current_streak, effectiveStats?.last_workout_date, gapUncoveredDates, gapEligibleForPrompt, restBannerDismissedSig, restDataUnavailable, renderStale])
   const currentStreak = streakOverride ?? effectiveStats?.current_streak ?? 0
 
   async function confirmRestBanner() {

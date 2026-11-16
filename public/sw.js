@@ -22,10 +22,11 @@ const PUBLIC_NAV_PATHS = new Set(['/', '/login'])
 // The signed-in screens are per-account. They are cached in their own bucket
 // (PAGES_CACHE) so the app can open offline, and the page wipes that bucket on
 // sign-out (CLEAR_PRIVATE_CACHES) so the next person on a shared device never
-// sees a previous user's screens. Only the screen HTML is kept — it is a thin
-// client shell; the data on it is fetched from Supabase with the user's own
-// token, never replayed from here. Keyed by pathname alone: /log?day=push and
-// /log?day=legs are the same client page.
+// sees a previous user's screens. Only the screen HTML is kept. For the client
+// pages that is a thin shell, but /home is server-rendered with its stats
+// inline, so a replayed copy shows the data of whenever it was saved — the page
+// re-fetches itself when that happens (useRenderFreshness). Keyed by pathname
+// alone: /log?day=push and /log?day=legs are the same client page.
 const PRIVATE_PAGE_PREFIXES = ['/home', '/log', '/progress', '/profile', '/leaderboard']
 
 function isPrivatePagePath(pathname) {

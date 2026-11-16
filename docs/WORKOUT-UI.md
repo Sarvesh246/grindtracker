@@ -10,6 +10,12 @@ user logged may be lost, and it syncs later on its own.
   pathname — `/log?day=x` is one client page). A daily `WARM_ROUTES` pass
   (ServiceWorkerRegister) saves the pages + their bundles. Sign-out wipes it
   (`clearOfflineCaches`). Bump the cache name if the cached-page shape changes.
+  A replayed `/home` carries the stats of whenever it was saved (it is
+  server-rendered), and the 4s leash trips on most cold launches — so Home
+  stamps each render (`renderedAt`) and `useRenderFreshness` refreshes one older
+  than 5 minutes on launch/resume, holding the rest-day prompt and stale-streak
+  correction until the fresh copy lands. Any other server-rendered screen that
+  gets cached this way needs the same.
 - **Starting offline:** `ActiveWorkout.initSession` falls back to the device copy
   of the catalog/bests (`saveWorkoutSnapshot`, also fed by DaySelect) and mints a
   local session id (`localSession.ts`). The server row is created later
