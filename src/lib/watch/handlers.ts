@@ -119,7 +119,7 @@ export function watchToday(request: Request, deps: WatchDeps): Promise<Response>
       deps.log('watch_today_context failed', error)
       return watchError(503, 'service_unavailable', 'GRIND is temporarily unavailable. Retry later.', { headers: { 'Retry-After': '30' } })
     }
-    return watchJson(buildTodayPayload(data as TodayContext, query.data.unit ?? 'lbs'))
+    return watchJson(buildTodayPayload(data as TodayContext, query.data.unit ?? 'lbs', query.data.day))
   })
 }
 

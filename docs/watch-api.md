@@ -92,12 +92,16 @@ Query parameters (all optional):
 | `date` | `2026-11-16` | The watch's local date. Clamped server-side to UTC today ±1. |
 | `utc_offset_seconds` | `-18000` | Used when `date` is absent, to work out the local date. |
 | `unit` | `kg` | Unit for `weight` in the response. Default `lbs`. |
+| `day` | `pull` | A day id from `days` (below): return that day's exercises instead of the up-next one. An unknown or disabled day is ignored (you get the up-next day, not an error). Honored on rest days too. |
 
 Send `date` from the watch clock (`Gregorian.info(Time.now(), …)`); without
 it the server falls back to the user's saved push timezone, then UTC.
 
 The workout is whatever GRIND's Home screen shows as **up next** (the user's
 rotation, skipping disabled days), unless today is one of their rest days.
+`days` lists every enabled day in rotation order so the watch can let the user
+pick another one; fetch it with `?day=<id>`. Only the chosen day's exercises
+are sent, which keeps the payload small.
 
 `200` with a workout:
 
@@ -112,12 +116,14 @@ rotation, skipping disabled days), unless today is one of their rest days.
       { "id": "3f0e1c7a-6a8b-4f1e-9a43-2c8d6b1f0e55", "name": "Bench Press", "sets": 3, "reps": 8, "reps_max": 12, "weight": 135, "rest": 120 },
       { "id": "9b2d4e10-1c3f-4a5b-8d7e-6f1a2b3c4d5e", "name": "Overhead Press", "sets": 3, "reps": 6, "reps_max": null, "weight": null, "rest": null }
     ]
-  }
+  },
+  "days": [{ "id": "pull", "name": "Pull" }, { "id": "push", "name": "Push" }, { "id": "legs", "name": "Legs" }]
 }
 ```
 
 | Field | Type | Notes |
 | --- | --- | --- |
+| `days[]` | array | Every enabled day, rotation order, at most 14. `id` is what `?day=` takes. Present whenever there is at least one day, including on rest days. |
 | `workout.id` | string | The GRIND day key. Send it back as `workout_id`. |
 | `exercises[]` | array | Plan order. At most 20. |
 | `id` | UUID | Send back as a set's `exercise_id`. |
@@ -131,11 +137,12 @@ rotation, skipping disabled days), unless today is one of their rest days.
 `200` with nothing planned:
 
 ```json
-{ "date": "2026-11-16", "unit": "lbs", "workout": null, "reason": "rest_day" }
+{ "date": "2026-11-16", "unit": "lbs", "workout": null, "reason": "rest_day", "days": [{ "id": "pull", "name": "Pull" }] }
 ```
 
-`reason` is `rest_day` (a scheduled or one-off rest day) or `no_plan` (the user
-has no enabled days yet). Payloads are well under 4 KB (20 exercises with
+`reason` is `rest_day` (a scheduled or one-off rest day; `days` is still sent
+so the user can train anyway) or `no_plan` (the user has no enabled days yet,
+so there is no `days`). Payloads are well under 4 KB (20 exercises with
 32-character names ≈ 3 KB); a test enforces the 4 KB budget.
 
 ## POST /sessions

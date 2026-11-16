@@ -322,10 +322,52 @@ describe('GET /today payload', () => {
   it('clear empty responses for rest days and no plan', () => {
     assert.deepEqual(buildTodayPayload(ctx({ is_rest_day: true }), 'lbs'), {
       date: '2026-11-16', unit: 'lbs', workout: null, reason: 'rest_day',
+      days: [{ id: 'pull', name: 'Pull' }, { id: 'push', name: 'Push' }],
     })
     assert.deepEqual(buildTodayPayload(ctx({ exercises: [] }), 'lbs'), {
       date: '2026-11-16', unit: 'lbs', workout: null, reason: 'no_plan',
     })
+  })
+
+  it('lists every enabled day for the watch picker', () => {
+    const p = buildTodayPayload(ctx(), 'lbs')
+    assert.ok(p.workout)
+    assert.deepEqual(p.days, [{ id: 'pull', name: 'Pull' }, { id: 'push', name: 'Push' }])
+    const none = buildTodayPayload(ctx({ exercises: [] }), 'lbs')
+    assert.equal('days' in none, false, 'no plan, nothing to pick from')
+  })
+
+  it('returns the requested day instead of the up-next one', () => {
+    const p = buildTodayPayload(ctx(), 'lbs', 'push')
+    assert.ok(p.workout)
+    assert.equal(p.workout.id, 'push', 'up-next is pull; the user picked push')
+    assert.deepEqual(p.workout.exercises.map(e => e.id), ['a', 'b'])
+    assert.equal(p.days.length, 2, 'the list is the same whichever day is picked')
+  })
+
+  it('ignores an unknown or disabled day instead of failing', () => {
+    const unknown = buildTodayPayload(ctx(), 'lbs', 'legs')
+    assert.ok(unknown.workout)
+    assert.equal(unknown.workout.id, 'pull')
+    const disabledOnly = ctx({ exercises: [ex({ id: 'x', day_type: 'legs', active: false }), ex({ id: 'p', day_type: 'pull' })] })
+    const p = buildTodayPayload(disabledOnly, 'lbs', 'legs')
+    assert.ok(p.workout)
+    assert.equal(p.workout.id, 'pull', 'legs has no active exercises, so it is not a day')
+  })
+
+  it('honors a picked day even on a rest day', () => {
+    const p = buildTodayPayload(ctx({ is_rest_day: true }), 'lbs', 'push')
+    assert.ok(p.workout)
+    assert.equal(p.workout.id, 'push')
+  })
+
+  it('follows rotation order, not alphabetical', () => {
+    const p = buildTodayPayload(
+      ctx({ rotation: { mode: 'manual', sequence: ['push', 'pull'], current_index: 0 } as TodayContext['rotation'] }),
+      'lbs',
+    )
+    assert.ok(p.workout)
+    assert.deepEqual(p.days.map(d => d.id), ['push', 'pull'])
   })
 
   it('stays under 4 KB even for a maxed-out day', () => {
@@ -343,5 +385,12 @@ describe('GET /today payload', () => {
     const res = await watchToday(req('/today?unit=stone'), fakeDeps())
     assert.equal(res.status, 422)
     assert.equal((await errorOf(res)).code, 'validation_failed')
+  })
+
+  it('accepts ?day= and still rejects other unknown parameters', async () => {
+    const ok = await watchToday(req('/today?day=push'), fakeDeps())
+    assert.notEqual(ok.status, 422)
+    const bad = await watchToday(req('/today?dya=push'), fakeDeps())
+    assert.equal(bad.status, 422)
   })
 })

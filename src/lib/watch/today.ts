@@ -49,13 +49,25 @@ export interface TodayExercise {
   rest: number | null
 }
 
+/** One of the user's workout days, for the watch's day picker. */
+export interface TodayDay {
+  id: string
+  name: string
+}
+
+/** Enough for any real split; keeps `days` to a few hundred bytes. */
+export const MAX_TODAY_DAYS = 14
+
 export type TodayPayload =
   | {
       date: string
       unit: 'lbs' | 'kg'
       workout: { id: string; name: string; exercises: TodayExercise[] }
+      /** Every enabled day in rotation order, so the watch can offer a choice. */
+      days: TodayDay[]
     }
-  | { date: string; unit: 'lbs' | 'kg'; workout: null; reason: 'rest_day' | 'no_plan' }
+  | { date: string; unit: 'lbs' | 'kg'; workout: null; reason: 'rest_day'; days: TodayDay[] }
+  | { date: string; unit: 'lbs' | 'kg'; workout: null; reason: 'no_plan' }
 
 /** "8-12" → [8, 12], "10" → [10, null], "AMRAP" → [null, null]. */
 export function parseRepsTarget(raw: string | null | undefined): [number | null, number | null] {
@@ -70,9 +82,17 @@ function round1(n: number): number {
   return Math.round(n * 10) / 10
 }
 
-export function buildTodayPayload(ctx: TodayContext, unit: 'lbs' | 'kg'): TodayPayload {
-  if (ctx.is_rest_day) return { date: ctx.local_date, unit, workout: null, reason: 'rest_day' }
-
+/**
+ * `requestedDay` is the day the user picked on the watch. It is honored only
+ * if it's one of their enabled days (anything else falls back to the up-next
+ * pick, never an error), and it is honored even on a rest day: choosing to
+ * train anyway is the user's call.
+ */
+export function buildTodayPayload(
+  ctx: TodayContext,
+  unit: 'lbs' | 'kg',
+  requestedDay?: string | null,
+): TodayPayload {
   const state = rotationStateFrom({
     exerciseRows: ctx.exercises,
     rotation: ctx.rotation,
@@ -81,8 +101,16 @@ export function buildTodayPayload(ctx: TodayContext, unit: 'lbs' | 'kg'): TodayP
       ? { day: ctx.last_completion.day, completedAt: ctx.last_completion.completed_at }
       : null,
   })
+  // Rotation order first, then any enabled day the sequence leaves out.
+  const dayKeys = new Set(state.dayKeys)
+  const ordered = [...new Set([...state.seq.filter(d => dayKeys.has(d)), ...[...state.dayKeys].sort()])]
+  const days = ordered.slice(0, MAX_TODAY_DAYS).map((id): TodayDay => ({ id, name: formatDayType(id) }))
+
+  const picked = requestedDay && dayKeys.has(requestedDay) ? requestedDay : null
+  if (ctx.is_rest_day && !picked) return { date: ctx.local_date, unit, workout: null, reason: 'rest_day', days }
+
   // Same fallback as Home: an empty rotation still offers the first day.
-  const day = state.nextDay ?? [...state.dayKeys].sort()[0] ?? null
+  const day = picked ?? state.nextDay ?? [...state.dayKeys].sort()[0] ?? null
   if (!day) return { date: ctx.local_date, unit, workout: null, reason: 'no_plan' }
 
   const exercises = ctx.exercises
@@ -108,5 +136,6 @@ export function buildTodayPayload(ctx: TodayContext, unit: 'lbs' | 'kg'): TodayP
     date: ctx.local_date,
     unit,
     workout: { id: day, name: formatDayType(day), exercises },
+    days,
   }
 }

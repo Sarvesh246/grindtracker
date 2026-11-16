@@ -90,6 +90,8 @@ export const todayQuerySchema = z.strictObject({
   date: z.iso.date({ message: 'must be YYYY-MM-DD' }).optional(),
   utc_offset_seconds: z.coerce.number().int().min(-14 * 3600).max(14 * 3600).optional(),
   unit: z.enum(['lbs', 'kg']).optional(),
+  /** A day id from `days`, to get that day's exercises instead of the up-next one. */
+  day: z.string().min(1).max(64).optional(),
 })
 
 /** Zod issues as `{ path, message }`, path dotted (`sets.2.reps`). */
