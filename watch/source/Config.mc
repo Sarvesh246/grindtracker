@@ -6,6 +6,9 @@ module Config {
     // in the simulator without a token. Never ship with this on.
     const DEMO_DATA = false;
     const TOUR_STEP_MS = 3000;
+    // Phase 0 of the GRIND Body plan: log every sensor value to
+    // GARMIN/APPS/LOGS/GRIND.TXT on open, every 15 min, and on Save.
+    const PROBE = true;
 
     // Unit the watch shows and uploads. "lbs" or "kg". The server converts.
     const UNIT = "lbs";

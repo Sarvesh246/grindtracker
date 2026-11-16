@@ -90,6 +90,15 @@ Two switches in `source/Config.mc`:
 
 `UNIT`, the weight step and the default rest are in the same file.
 
+## Reading logs off the watch
+
+`System.println` only reaches the watch's disk if
+`GARMIN/APPS/LOGS/GRIND.TXT` already exists, so copy an empty file there once.
+With `PROBE` on in `Config.mc`, every launch, every 15 minutes while open, and
+every Save writes one line listing each sensor value the watch gives the app
+(`-` empty, `!` threw, `n/a` not on this firmware). Plug in and copy the file
+back to read it.
+
 ## Not built yet
 
 Background sync. Right now the queue only flushes while the app is open (on

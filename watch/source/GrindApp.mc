@@ -8,6 +8,7 @@ var gNet = null;
 
 class GrindApp extends Application.AppBase {
     var timer = null;
+    var ticks = 0;
     var tour = null;
 
     function initialize() { AppBase.initialize(); }
@@ -22,6 +23,7 @@ class GrindApp extends Application.AppBase {
             ] } });
         }
         System.println("GRIND start, active=" + Workout.active() + " queue=" + Store.queue().size());
+        Probe.log("open");
         // Sync trigger 1 of 3: on app open. (2: right after Save. 3: the tick.)
         gNet.refresh();
         gNet.flush();
@@ -34,6 +36,8 @@ class GrindApp extends Application.AppBase {
     }
 
     function onTick() {
+        ticks += 1;
+        if (ticks % 30 == 0) { Probe.log("tick"); } // every 15 min while open
         gNet.tick();
         WatchUi.requestUpdate();
     }

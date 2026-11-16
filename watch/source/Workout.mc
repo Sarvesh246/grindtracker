@@ -223,6 +223,7 @@ module Workout {
             meta["cal"] = st["cal"];
             Store.putMeta(meta);
             Store.enqueue(sid);
+            Probe.log("save"); // while the activity is still recording: training effect, avg HR
             Recorder.stop(true);
             saved = true;
         } else {

@@ -259,6 +259,8 @@ function testWorkoutFlow(logger) {
 
 (:test)
 function testDayPicker(logger) {
+    // Start clean: a real run in the same simulator may have cached days.
+    Store.del("wk"); Store.del("wk_pull"); Store.del("wk_push"); Store.del("wk_legs");
     // /today as the updated backend sends it: up-next plan plus every day.
     var d = Logic.localDate();
     Store.cacheToday({ "date" => d, "unit" => "lbs",
