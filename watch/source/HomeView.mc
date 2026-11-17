@@ -181,8 +181,7 @@ class HomeDelegate extends WatchUi.BehaviorDelegate {
         } else if (gNet.connected()) {
             // Not downloaded yet: fetch it and start the moment it lands.
             Pick.want = true;
-            gNet.fetchDay(did);
-            WatchUi.requestUpdate();
+            onSettled();
         }
         return true;
     }
@@ -191,17 +190,25 @@ class HomeDelegate extends WatchUi.BehaviorDelegate {
     // fetched once the scrolling stops, so START is usually instant.
     function scroll(dir) {
         if (!Workout.active() && Pick.step(dir)) {
-            if (prefetch != null) { prefetch.stop(); }
-            prefetch = new Timer.Timer();
-            prefetch.start(method(:onSettled), 700, false);
+            scheduleFetch();
             WatchUi.requestUpdate();
         }
         return true;
     }
 
+    function scheduleFetch() {
+        if (prefetch != null) { prefetch.stop(); }
+        prefetch = new Timer.Timer();
+        prefetch.start(method(:onSettled), 700, false);
+    }
+
     function onSettled() {
+        if (Workout.active() || !(WatchUi.getCurrentView()[0] instanceof HomeView)
+            || !gNet.connected() || gNet.authError) { Pick.want = false; return; }
         var did = Pick.currentId();
-        if (did != null && Store.planFor(did) == null) { gNet.fetchDay(did); }
+        if (did == null) { return; }
+        if (Store.planFor(did) != null) { Pick.arrived(did, true); }
+        else if (!did.equals(gNet.dayWant) && !gNet.fetchDay(did)) { scheduleFetch(); }
         WatchUi.requestUpdate();
     }
 

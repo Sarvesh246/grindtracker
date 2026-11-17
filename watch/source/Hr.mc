@@ -28,6 +28,7 @@ module Hr {
         lastPeak = null;
         buzzed = false;
         var rec = Store.get("h_" + sid);
+        trace = null; zs = null; zones = null; now = null; unsaved = 0;
         if (rec instanceof Lang.Dictionary) {
             trace = rec["tr"];
             zs = rec["zs"];
@@ -97,6 +98,7 @@ module Hr {
     // The set at index i was taken back: stop tracking its peak and drop.
     function onSetUndone(i) {
         if (pend != null && pend["i"] >= i) { pend = null; }
+        lastPeak = null;
         buzzed = false;
     }
 

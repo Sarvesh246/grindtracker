@@ -3,6 +3,7 @@ using Toybox.Lang;
 using Toybox.Math;
 using Toybox.Sensor;
 using Toybox.System;
+using Toybox.Timer;
 using Toybox.WatchUi;
 
 // Counts reps from wrist motion while a set or rest screen is up, and offers
@@ -66,6 +67,14 @@ module Reps {
     var batches = 0;
     var dirty = false;         // moved since the last analysis
 
+    var job = null;
+    var worker = null;
+
+    function cancelAnalysis() {
+        if (worker != null) { worker.stop(); worker = null; }
+        job = null;
+    }
+
     // On unless switched off in the Home menu.
     function enabled() {
         var v = Store.get("rc");
@@ -79,6 +88,7 @@ module Reps {
 
     // A new set: forget the motion so far.
     function reset() {
+        cancelAnalysis();
         bx = []; by = []; bz = []; bs = [];
         carry = null;
         count = null;
@@ -95,7 +105,7 @@ module Reps {
     }
 
     function start() {
-        if (listening || !enabled()) { return; }
+        if (listening || (Config.DEMO_DATA && Config.TOUR) || !enabled()) { return; }
         try {
             if (!(Sensor has :registerSensorDataListener)) { return; }
             if (Sensor has :getMaxSampleRate && Sensor.getMaxSampleRate() < RATE) { return; }
@@ -111,6 +121,7 @@ module Reps {
     }
 
     function stop() {
+        cancelAnalysis();
         if (!listening) { return; }
         try { Sensor.unregisterSensorDataListener(); } catch (e) { }
         listening = false;
@@ -170,14 +181,22 @@ module Reps {
     }
 
     function update() {
-        if (manual || !enabled() || !dirty) { return; }
+        if (manual || job != null || !dirty || !listening) { return; }
         dirty = false;
-        var r = analyze(bx, by, bz, bs);
-        // Keep the last confident count when a later look is unsure (say,
-        // walking off after the set); replace it only with a newer one.
-        if (r[1]) {
-            if (count != r[0]) { WatchUi.requestUpdate(); }
-            count = r[0];
+        // The sensor keeps appending while this snapshot is being analyzed.
+        job = new RepAnalysis(bx.slice(0, null), by.slice(0, null), bz.slice(0, null), bs.slice(0, null));
+        worker = new Timer.Timer();
+        worker.start(new Lang.Method(Reps, :advanceAnalysis), 50, true);
+    }
+
+    function advanceAnalysis() {
+        if (manual || !listening || job == null) { cancelAnalysis(); return; }
+        var result = job.step();
+        if (result == null) { return; }
+        cancelAnalysis();
+        if (result[1] && count != result[0]) {
+            count = result[0];
+            WatchUi.requestUpdate();
         }
     }
 
@@ -307,21 +326,16 @@ module Reps {
     // --- 3. period ------------------------------------------------------------
 
     // [period in 12.5 Hz samples, autocorrelation peak], or [0, 0].
-    function period(s) {
-        var n2 = s.size() / 2;
-        var d = new [n2];
-        for (var i = 0; i < n2; i++) { d[i] = (s[2 * i] + s[2 * i + 1]) / 2.0; }
-        var lmax = imin(LAG_MAX, n2 / 2);
-        if (lmax <= LAG_MIN + 1) { return [0.0, 0.0]; }
-        var r = new [lmax + 2];
-        for (var L = 0; L < lmax + 2; L++) { r[L] = 0.0; }
-        for (var L = LAG_MIN - 1; L <= lmax + 1 && L < n2; L++) {
-            var sxy = 0.0; var sxx = 0.0; var syy = 0.0;
-            for (var i = 0; i + L < n2; i++) {
-                sxy += d[i] * d[i + L]; sxx += d[i] * d[i]; syy += d[i + L] * d[i + L];
-            }
-            r[L] = sxx > 0 && syy > 0 ? sxy / Math.sqrt(sxx * syy) : 0.0;
+    function correlation(d, lo, hi, lag) {
+        var xy = 0.0; var xx = 0.0; var yy = 0.0;
+        for (var i = lo; i + lag < hi; i++) {
+            var a = d[i]; var b = d[i + lag];
+            xy += a * b; xx += a * a; yy += b * b;
         }
+        return xx > 0 && yy > 0 ? xy / Math.sqrt(xx * yy) : 0.0;
+    }
+
+    function selectPeriod(r, lmax) {
         var best = 0.0;
         for (var L = LAG_MIN; L <= lmax; L++) {
             if (r[L] > r[L - 1] && r[L] >= r[L + 1] && r[L] > best) { best = r[L]; }
@@ -340,24 +354,6 @@ module Reps {
             }
         }
         return [0.0, 0.0];
-    }
-
-    // Best normalised autocorrelation of y[a0, a1) within 15 % of lag T.
-    function spanAc(y, a0, a1, T) {
-        var best = 0.0;
-        var l0 = imax(1, (0.85 * T).toNumber());
-        var lf = 1.15 * T;
-        var l1 = lf.toNumber();
-        if (l1 < lf) { l1 += 1; }
-        for (var L = l0; L <= l1; L++) {
-            var sxy = 0.0; var sxx = 0.0; var syy = 0.0;
-            for (var i = a0; i + L < a1; i++) {
-                sxy += y[i] * y[i + L]; sxx += y[i] * y[i]; syy += y[i + L] * y[i + L];
-            }
-            var r = sxx > 0 && syy > 0 ? sxy / Math.sqrt(sxx * syy) : 0.0;
-            if (r > best) { best = r; }
-        }
-        return best;
     }
 
     // --- 5-8. swings, pairs, the set ---------------------------------------
@@ -584,64 +580,11 @@ module Reps {
         return [bestN, bestCv, amp, bestT, bestAgree];
     }
 
-    // --- one bout, the whole buffer -----------------------------------------
-
-    // [reps, ac, cv, T, ok]
-    function analyzeBout(x, y, z, lo, hi) {
-        var n = hi - lo;
-        var res = [0, 0.0, 1.0, 0.0, false];
-        if (n < 38) { return res; }
-        var pr = principal(x, y, z, lo, hi);
-        var s = new [n];
-        for (var i = 0; i < n; i++) {
-            s[i] = pr[0] * (x[lo + i] - pr[3]) + pr[1] * (y[lo + i] - pr[4]) + pr[2] * (z[lo + i] - pr[5]);
-        }
-        var slow = movAvg(s, 63);
-        var s1 = new [n];
-        for (var i = 0; i < n; i++) { s1[i] = s[i] - slow[i]; }
-        slow = null;
-        var pd = period(s1);
-        s1 = null;
-        var T = pd[0];
-        res[1] = pd[1];
-        res[3] = T;
-        if (T <= 0 || n < 1.8 * T) { return res; }
-        var base = movAvg(s, imax(3, rnd(T)));
-        var y1 = new [n];
-        for (var i = 0; i < n; i++) { y1[i] = s[i] - base[i]; }
-        base = null;
-        var w5 = imax(1, rnd(T / 5.0));
-        var yy = movAvg(y1, w5);
-        y1 = null;
-        var ax = movAvg(x.slice(lo, hi), w5);
-        var ay = movAvg(y.slice(lo, hi), w5);
-        var az = movAvg(z.slice(lo, hi), w5);
-        var raw = movAvg(s, w5);
-        var c = countCycles(yy, T, ax, ay, az, raw);
-        var reps = c[0];
-        res[0] = reps;
-        res[2] = c[1];
-        if (reps >= 2) {
-            var tm = c[3];
-            var a0 = imax(0, tm[0] - rnd(0.6 * T));
-            var a1 = imin(n, tm[tm.size() - 1] + rnd(1.2 * T));
-            res[1] = spanAc(yy, a0, a1, T);
-        }
-        var few = reps <= SHORT_REPS;
-        res[4] = res[1] >= (few ? SHORT_AC : MIN_AC) && c[1] <= (few ? SHORT_CV : MAX_CV)
-            && reps >= MIN_REPS && c[2] >= MIN_AMP && c[4];
-        return res;
-    }
-
-    // [reps, ok] for the whole buffer.
-    function analyze(x, y, z, steps) {
-        var bs2 = bouts(x, y, z, steps);
-        var all = [];
+    function selectBout(all) {
         var best = -1;
         var bestScore = 0.0;
-        for (var i = 0; i < bs2.size(); i++) {
-            var r = analyzeBout(x, y, z, bs2[i][0], bs2[i][1]);
-            all.add(r);
+        for (var i = 0; i < all.size(); i++) {
+            var r = all[i];
             if (!r[4]) { continue; }
             var score = r[0] * r[1];
             if (score >= bestScore) { best = i; bestScore = score; }
@@ -655,5 +598,110 @@ module Reps {
             if (fabs(r[3] - b[3]) <= FRAG_T * b[3]) { return [0, false]; }
         }
         return [b[0], true];
+    }
+}
+
+// Each step returns to the event loop before the next filter or correlation
+// batch. Even a full motion buffer cannot monopolize a sensor callback.
+class RepAnalysis {
+    var x; var y; var z; var steps;
+    var ranges; var index = 0; var all = [];
+    var phase = :ranges;
+    var lo; var hi; var signal; var pr; var d; var correlations;
+    var lag; var maxLag; var period; var ac; var w;
+    var filtered; var ax; var ay; var az; var raw; var cycles;
+    var spanStart; var spanEnd;
+
+    function initialize(xs, ys, zs, walking) {
+        x = xs; y = ys; z = zs; steps = walking;
+    }
+
+    function step() {
+        switch (phase) {
+        case :ranges:
+            ranges = Reps.bouts(x, y, z, steps);
+            phase = :bout;
+            break;
+        case :bout:
+            if (index >= ranges.size()) { return Reps.selectBout(all); }
+            lo = ranges[index][0]; hi = ranges[index][1]; index++;
+            if (hi - lo < 38) { break; }
+            pr = Reps.principal(x, y, z, lo, hi);
+            phase = :project;
+            break;
+        case :project:
+            signal = new [hi - lo];
+            for (var i = lo; i < hi; i++) {
+                signal[i-lo] = pr[0]*(x[i]-pr[3]) + pr[1]*(y[i]-pr[4]) + pr[2]*(z[i]-pr[5]);
+            }
+            phase = :detrend;
+            break;
+        case :detrend:
+            var slow = Reps.movAvg(signal, 63);
+            d = new [signal.size() / 2];
+            for (var i = 0; i < d.size(); i++) {
+                var j = 2*i;
+                d[i] = ((signal[j]-slow[j]) + (signal[j+1]-slow[j+1])) / 2.0;
+            }
+            maxLag = Reps.imin(Reps.LAG_MAX, d.size()/2);
+            if (maxLag <= Reps.LAG_MIN + 1) { phase = :bout; break; }
+            correlations = new [maxLag + 2];
+            lag = Reps.LAG_MIN - 1;
+            phase = :lags;
+            break;
+        case :lags:
+            for (var k = 0; k < 3 && lag <= maxLag + 1; k++) {
+                correlations[lag] = Reps.correlation(d, 0, d.size(), lag);
+                lag++;
+            }
+            if (lag > maxLag + 1) {
+                var pd = Reps.selectPeriod(correlations, maxLag);
+                period = pd[0]; ac = pd[1]; d = null;
+                phase = period > 0 && hi-lo >= 1.8*period ? :baseline : :bout;
+            }
+            break;
+        case :baseline:
+            var base = Reps.movAvg(signal, Reps.imax(3, Reps.rnd(period)));
+            for (var i = 0; i < base.size(); i++) { base[i] = signal[i]-base[i]; }
+            filtered = base;
+            w = Reps.imax(1, Reps.rnd(period/5.0));
+            phase = :smooth;
+            break;
+        case :smooth: filtered = Reps.movAvg(filtered, w); phase = :axisX; break;
+        case :axisX: ax = Reps.movAvg(x.slice(lo, hi), w); phase = :axisY; break;
+        case :axisY: ay = Reps.movAvg(y.slice(lo, hi), w); phase = :axisZ; break;
+        case :axisZ: az = Reps.movAvg(z.slice(lo, hi), w); phase = :raw; break;
+        case :raw: raw = Reps.movAvg(signal, w); signal = null; phase = :cycles; break;
+        case :cycles:
+            cycles = Reps.countCycles(filtered, period, ax, ay, az, raw);
+            ax = null; ay = null; az = null; raw = null;
+            if (cycles[0] < 2) { phase = :finish; break; }
+            var times = cycles[3];
+            spanStart = Reps.imax(0, times[0]-Reps.rnd(0.6*period));
+            spanEnd = Reps.imin(hi-lo, times[times.size()-1]+Reps.rnd(1.2*period));
+            lag = Reps.imax(1, (0.85*period).toNumber());
+            maxLag = Math.ceil(1.15*period).toNumber();
+            ac = 0.0;
+            phase = :span;
+            break;
+        case :span:
+            for (var k = 0; k < 2 && lag <= maxLag; k++) {
+                var value = Reps.correlation(filtered, spanStart, spanEnd, lag);
+                if (value > ac) { ac = value; }
+                lag++;
+            }
+            if (lag > maxLag) { phase = :finish; }
+            break;
+        case :finish:
+            var few = cycles[0] <= Reps.SHORT_REPS;
+            var ok = ac >= (few ? Reps.SHORT_AC : Reps.MIN_AC)
+                && cycles[1] <= (few ? Reps.SHORT_CV : Reps.MAX_CV)
+                && cycles[0] >= Reps.MIN_REPS && cycles[2] >= Reps.MIN_AMP && cycles[4];
+            all.add([cycles[0], ac, cycles[1], period, ok]);
+            cycles = null; filtered = null;
+            phase = :bout;
+            break;
+        }
+        return null;
     }
 }

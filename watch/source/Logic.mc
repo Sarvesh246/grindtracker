@@ -147,15 +147,15 @@ module Logic {
             "utc_offset_seconds" => meta["off"],
             "sets" => out
         };
-        if (meta["en"] != null) { p["ended_at"] = isoUtc(meta["en"]); }
+        var finalBatch = meta["en"] != null && out.size() == pendingCount(sets);
+        if (finalBatch) { p["ended_at"] = isoUtc(meta["en"]); }
         var hr = {};
         if (validHr(meta["ha"])) { hr["avg"] = meta["ha"]; }
         if (validHr(meta["hm"])) { hr["max"] = meta["hm"]; }
         if (hr.size() > 0) { p["heart_rate"] = hr; }
         if (meta["cal"] != null && meta["cal"] >= 0 && meta["cal"] <= 20000) { p["calories"] = meta["cal"]; }
-        // The trace goes with every request of a finished workout; the server
-        // overwrites it, so a retried or split upload stays correct.
-        if (meta["en"] != null && body != null) {
+        // Complete the workout and send its trace after all batches are accounted for.
+        if (finalBatch && body != null) {
             var b = {};
             var tr = body["tr"];
             if (tr instanceof Lang.Array && tr.size() > 1) { b["trace"] = tr; b["step"] = Config.HR_STEP; }

@@ -35,8 +35,14 @@ module Workout {
             clear();
             return;
         }
+        if (meta["en"] != null) {
+            // Save was interrupted after stamping the workout as finished.
+            Store.enqueue(cur["sid"]);
+            clear();
+            return;
+        }
         sets = Store.sets(cur["sid"]);
-        if (cur["dn"] == null) { upgrade(); }
+        if (cur["dn"] == null) { upgrade(); } else { reconcileSets(); }
         Hr.begin(meta);
     }
 
@@ -51,6 +57,30 @@ module Workout {
             if (cur["dn"][j] < plan["ex"][j]["sets"]) { cur["sk"][j] = 1; }
         }
         saveCur();
+    }
+
+    // A set write or undo can reach flash before the cursor update. The
+    // persisted rows determine which set numbers are still available.
+    function reconcileSets() {
+        var counts = Logic.doneCounts(plan["ex"], sets);
+        for (var i = 0; i < counts.size(); i++) {
+            if (counts[i] == cur["dn"][i]) { continue; }
+            if (counts[i] == cur["dn"][i] + 1 && i == cur["ei"]) {
+                var row = sets[sets.size() - 1];
+                cur["w"] = row["w"];
+                cur["r"] = row["r"];
+                advanceAfterSet(ex(), row["t"]);
+                return;
+            }
+            cur["dn"] = counts;
+            cur["sum"] = false;
+            cur["re"] = null;
+            cur["rs"] = null;
+            jumpTo(i);
+            if (isDone(i) && !nextExercise()) { toSummary(); }
+            else { saveCur(); }
+            return;
+        }
     }
 
     function clear() {
@@ -157,6 +187,10 @@ module Workout {
         sets.add(s);
         Hr.onSetLogged(sets.size() - 1, s["t"]);
         Reps.reset();
+        return advanceAfterSet(e, s["t"]);
+    }
+
+    function advanceAfterSet(e, loggedAt) {
         cur["rs"] = null;
         cur["dn"][cur["ei"]] += 1;
 
@@ -171,9 +205,9 @@ module Workout {
         if (done) {
             toSummary();
         } else {
-            cur["r0"] = now();
+            cur["r0"] = loggedAt;
             cur["rd"] = rest;
-            cur["re"] = now() + rest;
+            cur["re"] = loggedAt + rest;
             saveCur();
         }
         return done;
@@ -286,8 +320,7 @@ module Workout {
     }
 
     function adjustRest(delta) {
-        var left = restLeft() + delta;
-        if (left < 0) { left = 0; }
+        var left = Logic.clamp(restLeft() + delta, 0, 3600);
         cur["re"] = now() + left;
         cur["rd"] = Logic.clamp(cur["rd"] + delta, left, 3600);
         if (cur["rd"] < 1) { cur["rd"] = 1; }
@@ -314,7 +347,11 @@ module Workout {
 
     function leaveSummary() {
         cur["sum"] = false;
-        if (isDone(cur["ei"])) { nextExercise(); }
+        if (isDone(cur["ei"]) && !nextExercise()) {
+            for (var i = 0; i < exCount(); i++) {
+                if (!isDone(i)) { jumpTo(i); break; }
+            }
+        }
         if (isSkipped(cur["ei"])) { cur["sk"][cur["ei"]] = 0; }
         saveCur();
     }

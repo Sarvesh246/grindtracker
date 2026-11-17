@@ -130,9 +130,10 @@ function testPayload(logger) {
         && p["sets"][0]["hr_rest_drop_60"] == 30 && !p["sets"][1].hasKey("hr_peak")) && ok;
     ok = T.ck(logger, "session hr", p["hr"]["trace"].size() == 3 && p["hr"]["step"] == Config.HR_STEP
         && p["hr"]["zone_seconds"][1] == 10 && p["hr"]["zones"].size() == 6) && ok;
+    ok = T.ck(logger, "final batch completes session", p["ended_at"].equals("2026-11-16T17:52:30Z")) && ok;
     p = Logic.buildPayload(meta, sets, 1, null);
     ok = T.ck(logger, "no hr block without a record", !p.hasKey("hr")) && ok;
-    ok = T.ck(logger, "ended_at", p["ended_at"].equals("2026-11-16T17:52:30Z")) && ok;
+    ok = T.ck(logger, "partial batch stays open", !p.hasKey("ended_at")) && ok;
     ok = T.ck(logger, "hr", p["heart_rate"]["avg"] == 128 && !p["heart_rate"].hasKey("max")) && ok;
     ok = T.ck(logger, "calories", p["calories"] == 410) && ok;
     ok = T.ck(logger, "batch cap", p["sets"].size() == 1) && ok;
@@ -217,6 +218,9 @@ function testWorkoutFlow(logger) {
     ok = T.ck(logger, "reps step", Workout.cur["r"] == 13) && ok;
 
     ok = T.ck(logger, "first set not last", !Workout.logSet()) && ok;
+    // Simulate the set reaching storage before the cursor advance.
+    Workout.cur["dn"][0] = 0; Workout.cur["sn"] = 1; Workout.saveCur();
+    Workout.load();
     ok = T.ck(logger, "resting", Workout.inRest() && Workout.restLeft() > 55 && Workout.restLeft() <= 60) && ok;
     ok = T.ck(logger, "next set, reps focused, values carried", Workout.cur["sn"] == 2 && Workout.cur["f"] == 1
         && Workout.cur["w"] == 135.0 && Workout.cur["r"] == 13) && ok;
@@ -358,6 +362,14 @@ function testExerciseOrder(logger) {
     ok = T.ck(logger, "last set ends it", Workout.logSet() && Workout.atSummary() && Workout.progress() == 1.0) && ok;
     ok = T.ck(logger, "set numbers per exercise", Workout.sets[0]["n"] == 1 && Workout.sets[1]["n"] == 1
         && Workout.sets[2]["n"] == 2 && Workout.sets[3]["n"] == 1) && ok;
+
+    // All remaining work is skipped and the current exercise is complete.
+    Workout.finish(false);
+    Workout.start(plan);
+    Workout.skipExercise(); Workout.skipExercise(); Workout.logSet();
+    Workout.leaveSummary();
+    ok = T.ck(logger, "resume selects unfinished exercise", !Workout.isDone(Workout.cur["ei"])
+        && !Workout.isSkipped(Workout.cur["ei"])) && ok;
 
     // Skipping every exercise lands on the summary, and BACK can return.
     Workout.finish(false);
@@ -561,7 +573,12 @@ module RepFx {
         return [x, y, z, s];
     }
 
-    function run(d) { return Reps.analyze(d[0], d[1], d[2], d[3]); }
+    function run(d) {
+        var job = new RepAnalysis(d[0], d[1], d[2], d[3]);
+        var result = null;
+        while (result == null) { result = job.step(); }
+        return result;
+    }
 }
 
 (:test)
@@ -596,19 +613,43 @@ function testRepsFidgetSaysNothing(logger) {
 
 (:test)
 function testRepsTooLittleData(logger) {
-    return T.ck(logger, "empty", !Reps.analyze([], [], [], [])[1])
+    return T.ck(logger, "empty", !RepFx.run([[], [], [], []])[1])
         && T.ck(logger, "short", !RepFx.run([[1.0, 1.0], [0.0, 0.0], [0.0, 0.0], [0, 0]])[1]);
 }
 
 (:test)
 function testRepsFullBufferTime(logger) {
-    // The watch analyses a full 75 s buffer every 2 s: it must stay well
-    // under the watchdog. Logged so the cost on the device can be compared.
     var d = RepFx.curl(20, false);
-    var n = d[0].size() > Reps.MAX_SAMPLES ? Reps.MAX_SAMPLES : d[0].size();
-    var x = d[0].slice(0, n); var y = d[1].slice(0, n); var z = d[2].slice(0, n); var s = d[3].slice(0, n);
-    var t0 = System.getTimer();
-    var r = Reps.analyze(x, y, z, s);
-    logger.debug("75 s buffer (" + n + " samples): " + (System.getTimer() - t0) + " ms -> " + r);
-    return true;
+    var job = new RepAnalysis(d[0], d[1], d[2], d[3]);
+    var longest = 0;
+    var result = null;
+    var calls = 0;
+    while (result == null && calls < 500) {
+        var start = System.getTimer();
+        result = job.step();
+        longest = Reps.imax(longest, System.getTimer() - start);
+        calls++;
+    }
+    logger.debug("Full buffer: " + calls + " callbacks, longest " + longest + " ms");
+    return T.ck(logger, "bounded callbacks and accurate count", calls > 10 && longest < 250
+        && result != null && result[1] && result[0] == 20);
+}
+
+(:test)
+function testLiveRepAnalysis(logger) {
+    var data = RepFx.curl(8, false);
+    Reps.reset();
+    Reps.listening = true;
+    Reps.bx = data[0]; Reps.by = data[1]; Reps.bz = data[2]; Reps.bs = data[3];
+    Reps.dirty = true;
+    Reps.update();
+    var ok = T.ck(logger, "analysis scheduled outside sensor event", Reps.job != null && Reps.count == null);
+    for (var i = 0; Reps.job != null && i < 500; i++) { Reps.advanceAnalysis(); }
+    ok = T.ck(logger, "result delivered", Reps.count == 8 && Reps.worker == null) && ok;
+    Reps.dirty = true;
+    Reps.update();
+    Reps.reset();
+    Reps.advanceAnalysis();
+    Reps.listening = false;
+    return T.ck(logger, "new set cancels previous analysis", Reps.count == null && Reps.worker == null) && ok;
 }

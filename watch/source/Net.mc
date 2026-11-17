@@ -166,14 +166,21 @@ class Net {
         var sets = meta == null ? [] : Store.sets(sid);
         if (meta == null || Logic.pendingCount(sets) == 0) {
             // Nothing left to send for this one.
-            Store.dropSession(sid);
-            Store.dequeue(sid);
+            retire(sid, sets);
             flush();
             return;
         }
         upSid = sid;
         upSets = sets;
         request("/sessions", Logic.buildPayload(meta, sets, Config.SYNC_BATCH, Store.get("h_" + sid)), true, method(:onUpload));
+    }
+
+    function retire(sid, sets) {
+        for (var i = 0; i < sets.size(); i++) {
+            if (sets[i]["y"] == 2) { Store.bury(sid); return; }
+        }
+        Store.dropSession(sid);
+        Store.dequeue(sid);
     }
 
     function onUpload(code, data) {
@@ -199,8 +206,7 @@ class Net {
                 fails = 1;
                 nextAt = now() + Logic.backoffSecs(fails);
             } else if (Logic.pendingCount(sets) == 0) {
-                Store.dropSession(sid);
-                Store.dequeue(sid);
+                retire(sid, sets);
                 // The finished workout moved GRIND's "up next": fetch it, so
                 // Home stops offering the day that was just done.
                 if (Store.queue().size() == 0) {

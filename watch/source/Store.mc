@@ -141,7 +141,7 @@ module Store {
     // set and writing anything else can therefore never orphan it.
     function sets(sid) {
         var out = [];
-        for (var i = 0; i < 200; i++) {
+        for (var i = 0; true; i++) {
             var s = get("t_" + sid + "_" + i);
             if (s == null) { break; }
             out.add(s);
@@ -150,7 +150,7 @@ module Store {
     }
 
     function dropSession(sid) {
-        for (var i = 0; i < 200; i++) {
+        for (var i = 0; true; i++) {
             var k = "t_" + sid + "_" + i;
             if (get(k) == null) { break; }
             del(k);
@@ -163,7 +163,7 @@ module Store {
     function dequeue(sid) { put("q", Logic.qRemove(queue(), sid)); }
 
     function bury(sid) {
-        dequeue(sid);
         put("qd", Logic.qAdd(dead(), sid));
+        dequeue(sid);
     }
 }
