@@ -1,5 +1,6 @@
 'use client'
 import { formatSetsReps } from '@/lib/utils/formatting'
+import { parseWeightOverrides } from '@/lib/utils/weightOverrides'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient, getClientUser } from '@/lib/supabase/client'
@@ -233,6 +234,8 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const [renameTarget, setRenameTarget] = useState<Exercise | null>(null)
   const [addExerciseOpen, setAddExerciseOpen] = useState(false)
   const [extraSets, setExtraSets] = useState<Record<string, number>>({})
+  // Coach "lighter weights today" (sessions.weight_overrides), canonical lbs.
+  const [weightOverrides, setWeightOverrides] = useState<Record<string, number>>({})
   const [workoutNote, setWorkoutNote] = useState('')
   // Notes from the most recent completed session of each exercise, keyed
   // `${exerciseId}-${setNumber}`, plus that day's last workout note. Read-only
@@ -883,6 +886,28 @@ export default function ActiveWorkout({ day }: { day: string }) {
       setBaselineBests({ ...bests })
       setPreviousBestVolumes({ ...bestVolumes })
       setBaselineBestVolumes({ ...bestVolumes })
+    }
+
+    // Today-only weights from the Coach's "lighter weights today" (migration
+    // 60). They win over weight_target / last weight for sets not logged yet;
+    // logged sets keep what was lifted. Missing column or a failed read just
+    // means no overrides: the workout prefills as usual.
+    let todayOverrides: Record<string, number> = {}
+    if (!offlineStart) {
+      const { data: ovRow } = await supabase
+        .from('sessions')
+        .select('weight_overrides')
+        .eq('id', sid)
+        .maybeSingle()
+      todayOverrides = parseWeightOverrides((ovRow as { weight_overrides?: unknown } | null)?.weight_overrides)
+      for (const [id, lbs] of Object.entries(todayOverrides)) {
+        if (id in fillWeights || exs.some(e => e.id === id)) fillWeights[id] = lbs
+      }
+    }
+    setWeightOverrides(todayOverrides)
+    if (Object.keys(todayOverrides).length > 0) {
+      setResumeToast("Coach's lighter weights are prefilled for today")
+      setTimeout(() => setResumeToast(null), 4000)
     }
 
     if (existingLogs.length > 0 || resumePayload.resumed) {
@@ -1665,9 +1690,9 @@ export default function ActiveWorkout({ day }: { day: string }) {
     if (!ex) return
     const currentExtras = extraSets[exerciseId] ?? 0
     const newSetNum = ex.sets_target + currentExtras + 1
-    // Same precedence as the initial prefill: the exercise's own weight_target
-    // (docs/sql/25) when set, else last session's weight.
-    const fillWeight = ex.weight_target ?? previousBests[exerciseId] ?? null
+    // Same precedence as the initial prefill: today's Coach override, then the
+    // exercise's own weight_target (docs/sql/25), else last session's weight.
+    const fillWeight = weightOverrides[exerciseId] ?? ex.weight_target ?? previousBests[exerciseId] ?? null
     setExtraSets(prev => ({ ...prev, [exerciseId]: currentExtras + 1 }))
     setLogs(prev => ({
       ...prev,

@@ -99,20 +99,57 @@ describe('adjust_today card', () => {
     assert.match(card.riskNote ?? '', /saved plan stays as it is/)
   })
 
-  it('is honest that scaling saves nothing', () => {
+  it('says scaling prefills today and leaves the plan alone', () => {
     const card = adjustTodayCard({ ...base, mode: 'scale_weights', percent: 10 }, ['Bench: 135 lb → 120 lb'])
-    assert.match(card.riskNote ?? '', /Nothing is saved/)
+    assert.match(card.riskNote ?? '', /Prefills these weights/)
+    assert.match(card.riskNote ?? '', /saved targets stay as they are/)
   })
 })
 
 describe('executeAdjustToday', () => {
-  it('scale_weights writes nothing', async () => {
+  it('scale_weights refuses an old card without exercise ids, touching nothing', async () => {
     const client = new Proxy({}, { get: () => () => { throw new Error('should not touch the database') } })
     const r = await executeAdjustToday(client as never, {
       userId: 'u1',
-      execute: { mode: 'scale_weights', dayType: 'push', startsSession: false, drops: [], percent: 10, weights: [], unitLabel: 'lb' },
+      execute: {
+        mode: 'scale_weights', dayType: 'push', startsSession: false, drops: [], percent: 10,
+        weights: [{ exerciseName: 'Bench', fromLbs: 135, toLbs: 120 }], unitLabel: 'lb',
+      },
     })
-    assert.deepEqual(r, { ok: true, count: 0 })
+    assert.equal(r.ok, false)
+  })
+
+  it('scale_weights writes today-only overrides through the RPC, never exercises', async () => {
+    const tablesRead: string[] = []
+    const rpcs: { fn: string; args: unknown }[] = []
+    const builder = (table: string) => {
+      tablesRead.push(table)
+      const self: Record<string, unknown> = {}
+      for (const m of ['select', 'eq', 'is', 'order', 'limit']) self[m] = () => self
+      self.maybeSingle = async () => ({ data: { id: 's1' }, error: null })
+      return self
+    }
+    const client = {
+      from: builder,
+      rpc: async (fn: string, args: unknown) => {
+        rpcs.push({ fn, args })
+        return { data: null, error: null }
+      },
+    }
+    const r = await executeAdjustToday(client as never, {
+      userId: 'u1',
+      execute: {
+        mode: 'scale_weights', dayType: 'push', startsSession: false, drops: [], percent: 10,
+        weights: [
+          { exerciseId: 'e1', exerciseName: 'Bench', fromLbs: 135, toLbs: 120 },
+          { exerciseId: 'e2', exerciseName: 'Press', fromLbs: 95, toLbs: 85 },
+        ],
+        unitLabel: 'lb',
+      },
+    })
+    assert.deepEqual(r, { ok: true, count: 2, href: '/log?day=push' })
+    assert.deepEqual(rpcs, [{ fn: 'set_session_weight_overrides', args: { p_session_id: 's1', p_overrides: { e1: 120, e2: 85 } } }])
+    assert.ok(!tablesRead.includes('exercises'))
   })
 
   it('drop_last_set writes skip markers only, never exercises', async () => {

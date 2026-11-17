@@ -750,7 +750,7 @@ export async function POST(request: Request) {
 }
 
 /** Optional: remaining quota without sending a message (for UI later). */
-export async function GET() {
+export async function GET(request: Request) {
   const supabase = await createClient()
   const {
     data: { user },
@@ -774,13 +774,17 @@ export async function GET() {
     has_active_session: boolean
     next_day: string | null
     last_pr_exercise: string | null
+    charge_score: number | null
   } | null = null
   try {
-    const hints = await loadCoachChipHints(supabase, user.id)
+    // The viewer's day (localDateKey()), so Charge reads today's daily_body row.
+    const localDate = new URL(request.url).searchParams.get('local_date')
+    const hints = await loadCoachChipHints(supabase, user.id, { localDate })
     chipHints = {
       has_active_session: hints.hasActiveSession,
       next_day: hints.nextDay,
       last_pr_exercise: hints.lastPrExercise,
+      charge_score: hints.chargeScore ?? null,
     }
   } catch (err) {
     console.error('[grind] coach chip hints', err)

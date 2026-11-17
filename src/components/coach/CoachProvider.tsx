@@ -236,7 +236,7 @@ export function CoachProvider({
 
   const refreshQuota = useCallback(async () => {
     try {
-      const res = await fetch('/api/coach/chat')
+      const res = await fetch(`/api/coach/chat?local_date=${localDateKey()}`)
       const data = (await res.json().catch(() => ({}))) as {
         quota?: CoachQuotaState
         configured?: boolean
@@ -245,6 +245,7 @@ export function CoachProvider({
           has_active_session?: boolean
           next_day?: string | null
           last_pr_exercise?: string | null
+          charge_score?: number | null
         }
       }
       if (!res.ok) {
@@ -264,6 +265,7 @@ export function CoachProvider({
           hasActiveSession: !!data.chipHints.has_active_session,
           nextDay: data.chipHints.next_day ?? null,
           lastPrExercise: data.chipHints.last_pr_exercise ?? null,
+          chargeScore: data.chipHints.charge_score ?? null,
         })
       }
       setConfigured(data.configured ?? true)

@@ -281,8 +281,7 @@ export async function executeConfirmedPayload(
           mode: payload.execute.mode,
           dayType: payload.execute.dayType,
           count: result.count,
-          // scale_weights is guidance only; nothing was written.
-          applied: payload.execute.mode === 'drop_last_set',
+          applied: result.count > 0,
         },
       }
     }

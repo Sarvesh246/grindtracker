@@ -556,7 +556,7 @@ export function buildCoachProposalTools(ctx: CoachToolContext) {
 
     propose_adjust_today: tool({
       description:
-        'Propose a lighter version of TODAY’s workout only — the saved plan and exercise targets never change. mode=drop_last_set skips the last set of every lift (on the open workout, or starts today’s day with those sets skipped). mode=scale_weights takes a percent off each working weight and shows the lighter numbers. Use when they ask for a lighter, easier or shorter session today, or agree to go lighter after you suggested it. For a lasting change use propose_edit_exercise; to skip specific sets use propose_skip_sets. Preview only — user must Confirm.',
+        'Propose a lighter version of TODAY’s workout only — the saved plan and exercise targets never change. mode=drop_last_set skips the last set of every lift (on the open workout, or starts today’s day with those sets skipped). mode=scale_weights takes a percent off each working weight and prefills those lighter numbers in today’s workout (starting it if needed). Use when they ask for a lighter, easier or shorter session today, or agree to go lighter after you suggested it. For a lasting change use propose_edit_exercise; to skip specific sets use propose_skip_sets. Preview only — user must Confirm.',
       inputSchema: z.object({
         mode: z.enum(['drop_last_set', 'scale_weights']),
         percent: z

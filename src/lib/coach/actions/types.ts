@@ -227,9 +227,9 @@ export type AdjustTodayExecutePayload = {
   startsSession: boolean
   /** drop_last_set: the one set per lift that becomes a skip marker. */
   drops: { exerciseId: string; exerciseName: string; setNumber: number }[]
-  /** scale_weights: guidance only (see adjustToday.ts), canonical lbs. */
+  /** scale_weights: today's prefill per lift (sessions.weight_overrides), canonical lbs. */
   percent: number | null
-  weights: { exerciseName: string; fromLbs: number; toLbs: number }[]
+  weights: { exerciseId?: string; exerciseName: string; fromLbs: number; toLbs: number }[]
   unitLabel: 'lb' | 'kg'
 }
 

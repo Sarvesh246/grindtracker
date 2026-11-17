@@ -281,6 +281,7 @@ export default function CoachSheet() {
     hasActiveSession: chipHints?.hasActiveSession,
     nextDay: chipHints?.nextDay,
     lastPrExercise: chipHints?.lastPrExercise,
+    chargeScore: chipHints?.chargeScore,
   })
   const { reduceMotion } = useMotionPref()
   const { theme } = useTheme()

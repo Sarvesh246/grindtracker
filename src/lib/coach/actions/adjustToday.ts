@@ -22,13 +22,11 @@ import type {
  * session — started on Confirm when none is open yet. Inserted with
  * ignoreDuplicates, so a set logged in the meantime is never overwritten.
  *
- * scale_weights has no such seam: ActiveWorkout prefills from
- * exercises.weight_target / last weight, and the only per-session rows it
- * reads back mark a set done (weight + reps) or skipped. Writing either would
- * log sets the user never lifted, and changing weight_target would edit the
- * plan. So that mode is guidance only: the card lists the lighter numbers,
- * Confirm writes nothing, and the card says so. Wiring it needs a today-only
- * prefill override in ActiveWorkout (outside src/lib/coach).
+ * scale_weights writes today's lighter numbers to the open session's
+ * weight_overrides (migration 60) through set_session_weight_overrides.
+ * ActiveWorkout prefills unlogged sets from that map before weight_target /
+ * last weight, so the plan (exercises.weight_target) is never touched and no
+ * set is logged for the user. The overrides end with the session.
  */
 
 export const ADJUST_TODAY_MIN_PERCENT = 5
@@ -124,7 +122,7 @@ export function planAdjustToday(args: {
     if (from == null || !(from > 0)) continue
     const to = lighterWeightLbs(from, percent, args.unit)
     if (!(to > 0)) continue
-    weights.push({ exerciseName: ex.name, fromLbs: from, toLbs: to })
+    weights.push({ exerciseId: ex.id, exerciseName: ex.name, fromLbs: from, toLbs: to })
     lines.push(`${ex.name}: ${fmtWeightForUnit(from, args.unit)} → ${fmtWeightForUnit(to, args.unit)}`)
   }
   if (weights.length === 0) {
@@ -149,8 +147,9 @@ export function adjustTodayCard(execute: AdjustTodayExecutePayload, lines: strin
   return {
     title: 'Lighter weights today',
     summaryLines: [`${execute.dayType} · ${execute.percent}% off working weights`, ...shown, ...tail],
-    riskNote:
-      "Nothing is saved: GRIND can't change today's prefilled weights yet, so type these as you log. Your saved targets stay as they are.",
+    riskNote: execute.startsSession
+      ? 'Starts this workout now with these weights prefilled. Your saved targets stay as they are.'
+      : 'Prefills these weights for the sets you have left today. Your saved targets stay as they are.',
   }
 }
 
@@ -282,9 +281,15 @@ export async function executeAdjustToday(
   args: { userId: string; execute: AdjustTodayExecutePayload },
 ): Promise<{ ok: true; count: number; href?: string } | { ok: false; message: string }> {
   const { execute } = args
-  // Guidance only — see the module comment.
-  if (execute.mode === 'scale_weights') return { ok: true, count: 0 }
-  if (execute.drops.length === 0) return { ok: false, message: 'No sets to trim.' }
+  if (execute.mode === 'scale_weights') {
+    const overrides: Record<string, number> = {}
+    for (const w of execute.weights) if (w.exerciseId && w.toLbs > 0) overrides[w.exerciseId] = w.toLbs
+    if (Object.keys(overrides).length === 0) {
+      return { ok: false, message: 'This card is from an older version. Ask the Coach for lighter weights again.' }
+    }
+  } else if (execute.drops.length === 0) {
+    return { ok: false, message: 'No sets to trim.' }
+  }
 
   const findOpen = () =>
     supabase
@@ -300,7 +305,7 @@ export async function executeAdjustToday(
   let { data: open } = await findOpen()
   if (!open) {
     if (!execute.startsSession) {
-      return { ok: false, message: 'That workout is no longer open, so there is nothing to trim.' }
+      return { ok: false, message: 'That workout is no longer open, so there is nothing to change.' }
     }
     const started = await executeStartWorkout(supabase, execute.dayType)
     if (!started.ok) return { ok: false, message: started.message }
@@ -309,6 +314,25 @@ export async function executeAdjustToday(
   }
 
   const sessionId = String(open.id)
+
+  if (execute.mode === 'scale_weights') {
+    const overrides: Record<string, number> = {}
+    for (const w of execute.weights) if (w.exerciseId && w.toLbs > 0) overrides[w.exerciseId] = w.toLbs
+    const { error } = await supabase.rpc('set_session_weight_overrides', {
+      p_session_id: sessionId,
+      p_overrides: overrides,
+    })
+    if (error) {
+      return {
+        ok: false,
+        message: /set_session_weight_overrides|function/i.test(error.message)
+          ? 'GRIND needs a database update (migration 60) before it can change today’s weights.'
+          : error.message,
+      }
+    }
+    return { ok: true, count: Object.keys(overrides).length, href: logDayHref(execute.dayType) }
+  }
+
   // ignoreDuplicates: a set logged (or skipped) since the preview stays as it is.
   const { error } = await supabase.from('session_logs').upsert(
     execute.drops.map(d => ({
@@ -335,7 +359,7 @@ export function formatAdjustTodayMessage(execute: AdjustTodayExecutePayload, cou
       .slice(0, MAX_CARD_LIFTS)
       .map(w => `${w.exerciseName} ${fmtWeightForUnit(w.toLbs, execute.unitLabel)}`)
       .join(', ')
-    return `Today's lighter weights: ${list}. Type these as you log; your plan is unchanged.`
+    return `Prefilled today's lighter weights: ${list}. Your plan is unchanged.`
   }
   return `Trimmed ${count} set${count === 1 ? '' : 's'} from today's ${execute.dayType}. Your plan is unchanged.`
 }
