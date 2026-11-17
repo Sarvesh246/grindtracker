@@ -110,7 +110,6 @@ export function HealthDateHeader({
       </div>
       <div className="health-title-row">
         <h1>{view === 'sleep' ? 'SLEEP' : view === 'overview' ? 'HEALTH' : 'YOUR METRICS'}</h1>
-        <span className="health-date-caption">{date === today ? 'Today' : dateLabel(date)}</span>
       </div>
       <div className="health-date-controls">
         <button
@@ -126,7 +125,11 @@ export function HealthDateHeader({
           aria-label="Choose health date"
           onClick={() => setCalendarOpen(true)}
         >
-          {dateLabel(date)} <span aria-hidden="true">⌄</span>
+          <span>
+            {date === today && <em>Today</em>}
+            {dateLabel(date)}
+          </span>
+          <span aria-hidden="true">⌄</span>
         </button>
         <button
           aria-label="Next day"
@@ -217,11 +220,9 @@ const STATUS_TEXT = {
   error: 'Needs attention'
 } as const
 
-export function HealthSourceStatus({ data, date }: { data: HealthSummary; date: string }) {
-  const [now] = useState(() => Date.now())
+export function sourceSummary(data: HealthSummary, date: string, now: number): string {
   const { body, connections } = data
   const row = body.days.find((d) => d.local_date === date)
-  const latest = body.days.at(-1)
   const lastSync =
     connections
       .map((c) => c.last_success_at)
@@ -231,17 +232,28 @@ export function HealthSourceStatus({ data, date }: { data: HealthSummary; date: 
     row?.synced_at ??
     null
   const synced = relativeTime(lastSync, now)
+  if (!body.hasWatch && !connections.length) return 'Connection & data sources'
+  return `Garmin${body.hasWatch ? ' watch' : ''}${synced ? ` · synced ${synced}` : row ? ` · snapshot ${dateLabel(date)}` : ' · no snapshot'}`
+}
+
+export function HealthSourceStatus({
+  data,
+  date,
+  id
+}: {
+  data: HealthSummary
+  date: string
+  id?: string
+}) {
+  const [now] = useState(() => Date.now())
+  const { body, connections } = data
+  const row = body.days.find((d) => d.local_date === date)
   const provenance = Object.entries(data.provenance[date] ?? {}) as [
     HealthMetric,
     NonNullable<HealthSummary['provenance'][string][HealthMetric]>
   ][]
   return (
-    <details className="health-source">
-      <summary>
-        {body.hasWatch || connections.length
-          ? `Garmin${body.hasWatch ? ' watch' : ''} · ${row ? `Snapshot dated ${dateLabel(date)}` : latest ? `Last record ${dateLabel(latest.local_date)}` : 'No daily snapshot'}${synced ? ` · synced ${synced}` : ''}`
-          : 'Connection & data sources'}
-      </summary>
+    <div className="health-source" id={id}>
       {connections.length > 0 && (
         <div className="health-source-grid">
           {connections.map((c) => (
@@ -306,7 +318,26 @@ export function HealthSourceStatus({ data, date }: { data: HealthSummary; date: 
         later measurement. Readings are never averaged together.
       </p>
       <Link href="/profile/settings#health">Manage connections & privacy ›</Link>
-    </details>
+    </div>
+  )
+}
+
+/** 7h 18m with quiet units, so the numbers carry the weight. */
+function DurationText({ seconds }: { seconds: number }) {
+  const minutes = Math.round(seconds / 60)
+  const h = Math.floor(minutes / 60),
+    m = minutes % 60
+  return (
+    <span aria-hidden="true">
+      {h > 0 && (
+        <>
+          {h}
+          <small>h</small>{' '}
+        </>
+      )}
+      {m}
+      <small>m</small>
+    </span>
   )
 }
 
@@ -436,7 +467,21 @@ export function SleepSummary({
       action={!detail && <Link href={`/progress/health/sleep?date=${date}`}>View sleep ›</Link>}
     >
       {!sleep ? (
-        <>
+        <div className="health-empty">
+          <span className="health-empty-icon" aria-hidden="true">
+            <svg
+              width="22"
+              height="22"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" />
+            </svg>
+          </span>
           <h3>{naps.length ? 'Nap recorded' : 'No sleep record received'}</h3>
           <p>
             {data.sleepState === 'error'
@@ -446,11 +491,13 @@ export function SleepSummary({
                 : 'No main sleep record is available for this date. Missing sleep is not zero sleep.'}
           </p>
           <Link href="/profile/settings#health">Connection details ›</Link>
-        </>
+        </div>
       ) : (
         <>
           <div className="health-measurement">
-            <strong>{duration(sleep.duration_seconds)}</strong>
+            <strong aria-label={duration(sleep.duration_seconds)}>
+              <DurationText seconds={sleep.duration_seconds} />
+            </strong>
             {sleep.score != null && (
               <span className="health-score">
                 Sleep score <b>{sleep.score}</b>
@@ -535,13 +582,13 @@ export function RecoveryBreakdown({ body }: { body: BodySummary }) {
       <div className="health-recovery">
         {charge && <Ring score={charge.score} size={112} stroke={9} />}
         <div>
-          <p className="health-eyebrow">Daily Charge · heuristic</p>
+          <p className="health-eyebrow">Daily Charge</p>
           <h3>
             {charge ? `${charge.score} · ${charge.bandLabel}` : 'Still building your picture'}
           </h3>
           <p>
             {charge
-              ? `${charge.inputs.length} contributing signals. Use this as context alongside how you feel.`
+              ? `${charge.inputs.length} contributing signals. A training heuristic: use it as context alongside how you feel.`
               : 'At least two contributing signals are needed. Available measurements still appear below.'}
           </p>
         </div>
@@ -714,8 +761,8 @@ export function HealthTrend({
         </div>
       )}
       <div className="health-trend-controls">
-        <p className="health-trend-title">
-          {METRICS[metric].label}
+        <p className="health-trend-title" data-fixed={fixed}>
+          <span className="health-trend-label">{METRICS[metric].label}</span>
           <small>
             {metric === 'overnight_hrv'
               ? 'Provided overnight value'
@@ -782,7 +829,7 @@ export function HealthTrend({
           <i aria-hidden="true" /> Shaded band is your usual range
         </p>
       )}
-      <p>
+      <p className="health-coverage">
         {count} of {window} days recorded.{' '}
         {data.historyError ? 'History refresh failed; retry above.' : 'Blank days have no reading.'}
       </p>
@@ -850,23 +897,72 @@ export function HealthView({
 }) {
   const body = data?.body
   const selectedRow = data?.history.find((d) => d.local_date === date) ?? null
+  const [sourceOpen, setSourceOpen] = useState(false)
+  const [now] = useState(() => Date.now())
   const hasMetric = (m: HealthMetric) => !!data?.history.some((d) => metricValue(d, m) != null)
   return (
     <>
       <div className="health-refresh" data-state={error ? 'error' : updating ? 'busy' : 'ok'}>
-        <span role="status">
-          <i aria-hidden="true" />
-          {updating
-            ? 'Updating server records…'
-            : error
-              ? 'Health is temporarily unavailable'
-              : 'Your records, in perspective'}
-        </span>
-        <button data-haptic="light" disabled={updating} onClick={onRefresh}>
+        {data ? (
+          <button
+            type="button"
+            className="health-refresh-main"
+            data-haptic="light"
+            aria-expanded={sourceOpen}
+            aria-controls="health-source-panel"
+            onClick={() => setSourceOpen((o) => !o)}
+          >
+            <i aria-hidden="true" />
+            <span role="status">
+              {updating
+                ? 'Updating server records…'
+                : error
+                  ? 'Health is temporarily unavailable'
+                  : sourceSummary(data, date, now)}
+            </span>
+            <b aria-hidden="true" data-open={sourceOpen}>
+              ›
+            </b>
+          </button>
+        ) : (
+          <span className="health-refresh-main">
+            <i aria-hidden="true" />
+            <span role="status">
+              {updating
+                ? 'Updating server records…'
+                : error
+                  ? 'Health is temporarily unavailable'
+                  : 'Your records, in perspective'}
+            </span>
+          </span>
+        )}
+        <button
+          className="health-refresh-btn"
+          data-haptic="light"
+          disabled={updating}
+          onClick={onRefresh}
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+            data-spin={updating}
+          >
+            <path d="M20 11a8 8 0 0 0-14.9-3M4 5v4h4" />
+            <path d="M4 13a8 8 0 0 0 14.9 3M20 19v-4h-4" />
+          </svg>
           {error ? 'Retry' : 'Refresh'}
         </button>
       </div>
-      {data && <HealthSourceStatus data={data} date={date} />}
+      {data && sourceOpen && (
+        <HealthSourceStatus data={data} date={date} id="health-source-panel" />
+      )}
       {error && (
         <p role="alert" className="health-error">
           We couldn’t refresh health data.{' '}
@@ -889,15 +985,31 @@ export function HealthView({
             <SleepSummary data={data} date={date} today={today} detail />
           ) : view === 'metric' && metric ? (
             <Panel title={METRICS[metric].label}>
-              <div className="health-measurement">
-                <strong>{metricValue(selectedRow, metric)?.toLocaleString() ?? '—'}</strong>
-                <span>{METRICS[metric].unit}</span>
-              </div>
-              <p>
-                {metricValue(selectedRow, metric) == null
-                  ? 'No reading for this date.'
-                  : `${metric === 'overnight_hrv' ? 'Overnight reading' : 'Garmin watch snapshot'} · ${dateLabel(date)}`}
-              </p>
+              {(() => {
+                const value = metricValue(selectedRow, metric)
+                const state = standing(
+                  value,
+                  metricBaseline(data.history, data.sleeps, metric, date),
+                  metric
+                )
+                return (
+                  <>
+                    <div className="health-hero-value">
+                      <strong>{value?.toLocaleString() ?? '—'}</strong>
+                      <span>{METRICS[metric].unit}</span>
+                    </div>
+                    <p className="health-hero-sub">
+                      {value == null
+                        ? 'No reading for this date.'
+                        : `${metric === 'overnight_hrv' ? 'Overnight reading' : 'Garmin watch snapshot'} · ${dateLabel(date)}`}
+                    </p>
+                    <span className="health-tile-state health-pill" data-standing={state.key}>
+                      <i aria-hidden="true" />
+                      {state.text}
+                    </span>
+                  </>
+                )
+              })()}
               <p className="health-insight">{METRICS[metric].meaning}</p>
               <HealthTrend key={metric} data={data} date={date} initialMetric={metric} fixed />
             </Panel>
@@ -921,7 +1033,8 @@ export function HealthView({
                 </Panel>
               )}
               {data.history.length > 0 && (
-                <Panel title="Your metrics" index={1}>
+                <section className="health-section" style={{ '--i': 1 } as CSSProperties}>
+                  <h2 className="health-section-title">Your metrics</h2>
                   <div className="health-tiles">
                     {PRIMARY_METRICS.filter(hasMetric).map((m) => (
                       <MetricTile key={m} metric={m} data={data} date={date} />
@@ -940,7 +1053,7 @@ export function HealthView({
                       </p>
                     </details>
                   )}
-                </Panel>
+                </section>
               )}
               {!data.history.length && body?.hasWatch && (
                 <Panel title="Your metrics" index={1}>

@@ -3,6 +3,7 @@ import { useId, useRef, useState, type KeyboardEvent, type PointerEvent } from '
 import {
   clockLabel,
   duration,
+  durationShort,
   seriesStats,
   stageSeconds,
   STAGE_NAMES,
@@ -80,7 +81,7 @@ export function StageBreakdown({ sleep }: { sleep: SleepSession }) {
               {names[s]}
             </dt>
             <dd>
-              <strong>{secs[s] == null ? '—' : duration(secs[s] ?? 0)}</strong>
+              <strong>{secs[s] == null ? '—' : durationShort(secs[s] ?? 0)}</strong>
               {secs[s] != null && <small>{pct(secs[s] ?? 0, total)}%</small>}
             </dd>
           </div>
@@ -122,7 +123,7 @@ export function SleepStageChart({ sleep }: { sleep: SleepSession }) {
               {clockLabel(interval.start, sleep.timezone)} –{' '}
               {clockLabel(interval.end, sleep.timezone)}
             </span>
-            <b>{duration((Date.parse(interval.end) - Date.parse(interval.start)) / 1000)}</b>
+            <b>{durationShort((Date.parse(interval.end) - Date.parse(interval.start)) / 1000)}</b>
           </>
         ) : (
           <span className="health-muted">No stage reading here · drag across the night</span>
@@ -177,6 +178,24 @@ export function SleepStageChart({ sleep }: { sleep: SleepSession }) {
           {[25, 50, 75].map((x) => (
             <div key={x} className="health-stage-tick" style={{ left: `${x}%` }} />
           ))}
+          {stages.slice(1).map((s, i) => {
+            const before = stages[i]
+            if (before.end !== s.start) return null
+            const a = STAGES.indexOf(before.stage),
+              b = STAGES.indexOf(s.stage)
+            if (a === b) return null
+            return (
+              <span
+                key={`link-${s.start}`}
+                className="health-stage-link"
+                style={{
+                  left: `${((Date.parse(s.start) - start) / span) * 100}%`,
+                  top: `${Math.min(a, b) * 25 + 12.5}%`,
+                  height: `${Math.abs(a - b) * 25}%`
+                }}
+              />
+            )
+          })}
           {stages.map((s, i) => (
             <span
               key={`${s.start}-${i}`}
@@ -528,15 +547,14 @@ export function DailyHealthTimeline({
         [
           ['High', summary.high],
           ['Low', summary.low],
-          ['Latest', summary.latest],
-          ['Avg stress', summary.stress]
+          ['Latest', summary.latest]
         ] as const
       ).filter(([, v]) => v != null)
     : []
   return (
     <div data-swipe-ignore>
       {chips.length > 0 && (
-        <div className="health-chips">
+        <div className="health-statgrid" role="group" aria-label="Body Battery today">
           {chips.map(([k, v]) => (
             <span key={k}>
               {k}
@@ -577,7 +595,9 @@ export function DailyHealthTimeline({
         marks={annotations}
         envelope={usual?.bb}
       />
-      <p className="health-eyebrow health-plot-title">Physiological stress</p>
+      <p className="health-eyebrow health-plot-title">
+        Physiological stress{summary?.stress != null && <> · avg {summary.stress}</>}
+      </p>
       <SeriesPlot
         values={strain}
         label="Physiological stress"

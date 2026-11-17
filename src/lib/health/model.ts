@@ -119,6 +119,11 @@ export function duration(seconds: number): string {
   const minutes = Math.round(seconds / 60)
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`
 }
+/** "42m" under an hour, "7h 18m" otherwise: short readings read faster. */
+export function durationShort(seconds: number): string {
+  const minutes = Math.round(seconds / 60)
+  return minutes < 60 ? `${minutes}m` : duration(seconds)
+}
 export function dateLabel(date: string): string {
   return new Date(`${date}T12:00:00`).toLocaleDateString(undefined, {
     weekday: 'short',
@@ -208,7 +213,9 @@ export function sleepComparison(sleep: SleepSession, sessions: SleepSession[]): 
     if (!old || s.revision_at > old.revision_at) recent.set(s.wake_date, s)
   }
   if (recent.size < 14)
-    return `${recent.size} recent recorded nights; more history will make comparisons useful.`
+    return recent.size === 0
+      ? 'No earlier nights recorded yet. Comparisons appear as your history builds.'
+      : `${recent.size} earlier recorded night${recent.size === 1 ? '' : 's'}; more history will make comparisons useful.`
   const average = [...recent.values()].reduce((n, s) => n + s.duration_seconds, 0) / recent.size
   const delta = Math.round((sleep.duration_seconds - average) / 60)
   return delta === 0

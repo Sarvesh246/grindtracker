@@ -1461,3 +1461,353 @@ html.reduce-motion .health-skeleton > div {
   -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 16px), transparent);
   mask-image: linear-gradient(90deg, #000 calc(100% - 16px), transparent);
 }
+
+/* ═════════ Refinement pass ═════════ */
+/* Header */
+.health-title-row {
+  align-items: flex-end;
+}
+.health-date-caption {
+  display: none;
+}
+.health-date-controls {
+  align-items: stretch;
+}
+.health-page .health-date-controls button {
+  width: 48px;
+  min-height: 48px;
+  border-radius: 16px;
+  font-size: 1.375rem;
+  color: var(--text-secondary);
+}
+.health-page .health-date-controls .health-calendar-open {
+  width: auto;
+  padding: 0 16px;
+  border-radius: 16px;
+  justify-content: center;
+  color: var(--text-primary);
+}
+.health-calendar-open > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.health-calendar-open em {
+  font-style: normal;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.health-page .health-strip button {
+  border-radius: 16px;
+  transition:
+    background 150ms ease,
+    transform 150ms ease,
+    box-shadow 150ms ease;
+}
+.health-page .health-strip button[aria-pressed='true'] {
+  box-shadow: 0 6px 20px -6px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+/* Status bar (sync state + refresh + source details) */
+.health-refresh {
+  margin: 10px 0 14px;
+  padding: 0 4px 0 14px;
+  min-height: 48px;
+  gap: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+.health-page .health-refresh .health-refresh-main {
+  flex: 1 1 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  text-align: left;
+}
+.health-refresh-main > span {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.health-refresh-main > b {
+  font-weight: 400;
+  font-size: 1.25rem;
+  line-height: 1;
+  color: var(--text-muted);
+  transition: transform 150ms ease;
+}
+.health-refresh-main > b[data-open='true'] {
+  transform: rotate(90deg);
+}
+.health-refresh-main > i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-wash);
+  flex-shrink: 0;
+}
+.health-refresh[data-state='error'] .health-refresh-main > i {
+  background: var(--danger);
+  box-shadow: 0 0 0 4px var(--danger-bg);
+}
+.health-refresh[data-state='busy'] .health-refresh-main > i {
+  background: var(--warning);
+  box-shadow: none;
+}
+.health-page .health-refresh .health-refresh-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 10px;
+  background: var(--surface-elevated);
+  border: 0;
+  color: var(--accent-text);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+.health-refresh-btn svg[data-spin='true'] {
+  animation: health-spin 900ms linear infinite;
+}
+@keyframes health-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.health-source {
+  margin: -6px 0 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+/* Sections without a card (metrics sit directly on the page) */
+.health-section {
+  margin-bottom: 24px;
+}
+.health-section-title {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.11em;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin: 0 0 12px 4px !important;
+}
+.health-page a.health-tile {
+  display: grid;
+  grid-template-rows: auto auto minmax(34px, 1fr) auto;
+  gap: 6px;
+  min-height: 150px;
+  padding: 14px;
+  border-radius: 18px;
+  transition:
+    border-color 150ms ease,
+    background 150ms ease;
+}
+.health-page a.health-tile:active {
+  border-color: var(--accent-border);
+}
+.health-tile .health-spark {
+  align-self: end;
+  margin: 0;
+}
+.health-tile-value strong {
+  font-size: 1.75rem;
+}
+.health-tile-label i {
+  color: var(--text-muted);
+}
+.health-pill {
+  display: inline-flex !important;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-elevated);
+  margin: 4px 0 4px;
+}
+
+/* Sleep */
+.health-measurement > strong small {
+  font: 400 0.5em var(--font-display);
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-left: 2px;
+}
+.health-stage-link {
+  position: absolute;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--border-strong);
+  border-radius: 1px;
+}
+.health-stage-mark {
+  z-index: 1;
+}
+.health-stage-plot {
+  background: linear-gradient(180deg, transparent, transparent);
+}
+.health-badge {
+  font-style: normal;
+  font-size: 0.625rem;
+  letter-spacing: 0.1em;
+  padding: 2px 7px;
+  margin-left: 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  vertical-align: 1px;
+}
+
+/* Day */
+.health-statgrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 16px;
+  border-radius: 14px;
+  background: var(--surface-elevated);
+}
+.health-statgrid > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 12px;
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.health-statgrid > span + span {
+  border-left: 1px solid var(--border);
+}
+.health-statgrid strong {
+  font: 600 1.125rem/1.2 var(--font-mono);
+  letter-spacing: -0.03em;
+  color: var(--text-primary);
+  text-transform: none;
+}
+.health-chart-reading {
+  border-left: 3px solid var(--accent-border-strong);
+  border-radius: 4px 12px 12px 4px;
+}
+.health-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.health-hint::before {
+  content: '\2194';
+  color: var(--accent-text);
+  font-size: 0.9375rem;
+}
+
+/* Trends + metric detail */
+.health-trend-title[data-fixed='true'] .health-trend-label {
+  display: none;
+}
+.health-trend-title[data-fixed='true'] {
+  font-size: 0.8125rem;
+}
+.health-coverage {
+  font-size: 0.8125rem !important;
+  margin-top: 4px;
+}
+.health-hero-value {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.health-hero-value strong {
+  font: 5rem/1 var(--font-display);
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+}
+.health-hero-value span {
+  font-size: 1rem;
+  color: var(--text-muted);
+}
+.health-hero-sub {
+  margin: 4px 0 10px !important;
+  font-size: 0.875rem;
+}
+
+/* Quieter, consistent body copy in panels */
+.health-panel > p {
+  font-size: 0.875rem;
+}
+.health-panel h3 {
+  font-size: 1.1875rem;
+}
+
+/* Empty states */
+.health-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.health-empty-icon {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: var(--accent-wash);
+  color: var(--accent-text);
+  margin-bottom: 8px;
+}
+.health-empty p {
+  font-size: 0.875rem;
+}
+@media (max-width: 340px) {
+  .health-statgrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .health-statgrid > span:nth-child(3) {
+    border-left: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .health-refresh-btn svg[data-spin='true'] {
+    animation: none;
+  }
+}
+html.reduce-motion .health-refresh-btn svg[data-spin='true'] {
+  animation: none;
+}
+.health-calendar-open > span:first-child {
+  color: var(--text-primary);
+  font-size: 0.9375rem;
+  font-weight: 500;
+}
+.health-calendar-open > span:last-child {
+  color: var(--accent-text);
+}
+
+.health-statgrid > span:first-child::before {
+  content: none;
+}
+.health-annotations i.health-mark-usual {
+  background: color-mix(in srgb, var(--accent-text) 38%, transparent);
+  border: 1px dashed var(--accent-border-strong);
+  opacity: 1;
+}
+.health-annotations i.health-mark-sleep {
+  background: color-mix(in srgb, var(--sleep-deep) 55%, transparent);
+  opacity: 1;
+}

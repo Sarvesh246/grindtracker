@@ -119,3 +119,11 @@ the page so scrolling over a chart still works. Plots carry `data-swipe-ignore`
 so the tab swipe navigator never steals the gesture. The page's bottom padding is
 small on purpose: `.app-main` already clears the nav and home indicator.
 
+Refinement rules for Health (keep when adding to it): the date appears once in
+the pill (a "Today" badge marks today) and once as the selected day in the strip;
+sync state, source details and Refresh share one status bar; metric tiles sit on
+the page under a section label instead of inside a second card; durations use
+large numbers with quiet units (`7h 18m`), and anything under an hour reads
+`42m`; the hypnogram draws connectors between stage changes; and all panel body
+copy is 14px so only data is large.
+
