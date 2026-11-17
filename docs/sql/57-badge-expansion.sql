@@ -81,6 +81,35 @@ revoke all on function public.record_data_export() from public, anon;
 grant execute on function public.record_data_export() to authenticated;
 
 -- ════════════════════════════════════════════════════════════════════════════
+-- 1b. Badge catalog constraint
+-- ════════════════════════════════════════════════════════════════════════════
+-- 20-production-hardening.sql limits user_badges.badge_id to the catalog of
+-- the day. Without the 22 new ids here, the backfill below (and every award
+-- after it) fails with user_badges_badge_id_known. Same list as
+-- v_all_but_completionist in grind_award_badges_for, plus completionist.
+
+alter table public.user_badges drop constraint if exists user_badges_badge_id_known;
+alter table public.user_badges
+  add constraint user_badges_badge_id_known
+  check (badge_id in (
+    'first_workout','first_pr','streak_3','streak_7','streak_14','streak_30','streak_60',
+    'workouts_10','workouts_50','workouts_100','workouts_200','workouts_365',
+    'all_three_days','weekend_warrior',
+    'pr_5','pr_25','pr_50','pr_100',
+    'level_5','level_10','level_15','level_20',
+    'volume_100k','volume_500k','volume_1m',
+    'plates_225','plates_315','plates_405',
+    'early_bird','night_owl','comeback','flawless',
+    'rest_day_set','not_alone','rep_machine','weight_tracked','completionist',
+    'perfect_week','saved_it','rest_day_pro','early_bird_regular','night_owl_regular',
+    'warmup_ritual','triple_threat','variety_pack','max_effort',
+    'hat_trick','podium_push',
+    'daily_weigh_in','goal_getter','before_after',
+    'squad_goals','podium','top_of_board',
+    'off_the_grid','coached','holiday_grind','own_your_data','speak_up'
+  ));
+
+-- ════════════════════════════════════════════════════════════════════════════
 -- 2. US federal holidays (Holiday Grind). Fixed dates + nth-weekday rules,
 --    no observed-day shifts — training on the actual holiday is the point.
 -- ════════════════════════════════════════════════════════════════════════════
