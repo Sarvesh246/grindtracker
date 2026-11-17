@@ -45,6 +45,30 @@ const apple = {
   ]
 }
 
+describe('POST /health-import token in the body', () => {
+  it('accepts the token in the JSON body when the Authorization header is missing', async () => {
+    const { d, calls } = deps()
+    const res = await healthImportRequest(post({ ...apple, token: TOKEN }, null), d)
+    assert.equal(res.status, 200)
+    assert.equal(calls.find((c) => c.fn === 'token_import_health_batch')!.args.p_user, 'u1')
+    assert.ok(
+      !JSON.stringify(calls.find((c) => c.fn === 'token_import_health_batch')!.args).includes(TOKEN)
+    )
+  })
+  it('still demands a token when neither the header nor the body has one', async () => {
+    const { d } = deps()
+    const res = await healthImportRequest(post(apple, null), d)
+    assert.equal(res.status, 401)
+    assert.equal(((await res.json()) as { error: { code: string } }).error.code, 'missing_token')
+  })
+  it('rejects a malformed body token without a database lookup', async () => {
+    const { d, calls } = deps()
+    const res = await healthImportRequest(post({ ...apple, token: 'nope' }, null), d)
+    assert.equal(res.status, 401)
+    assert.equal(calls.length, 0)
+  })
+})
+
 describe('POST /health-import', () => {
   it('needs a device token', async () => {
     const { d } = deps()

@@ -14,6 +14,7 @@ const MAX_BYTES = 1024 * 1024
 const bodySchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('apple_health'),
+    token: z.string().max(100).optional(),
     timezone: z.string().max(80).optional(),
     samples: z
       .array(
@@ -21,7 +22,11 @@ const bodySchema = z.discriminatedUnion('kind', [
       )
       .max(6000)
   }),
-  z.object({ kind: z.literal('garmin_api'), days: z.array(z.unknown()).max(120) })
+  z.object({
+    kind: z.literal('garmin_api'),
+    token: z.string().max(100).optional(),
+    days: z.array(z.unknown()).max(120)
+  })
 ])
 
 async function readLimited(request: Request): Promise<unknown | Response> {
@@ -48,11 +53,29 @@ async function readLimited(request: Request): Promise<unknown | Response> {
 
 export async function healthImportRequest(request: Request, deps: WatchDeps) {
   try {
-    const auth = await authenticateWatch(request, deps)
-    if (!auth.ok) return auth.response
     if (request.method !== 'POST') return watchError(400, 'invalid_json', 'Use POST.')
-    const input = await readLimited(request)
-    if (input instanceof Response) return input
+    // iOS Shortcuts often drops custom headers, so the token may also ride in the JSON body
+    // (over TLS, like the header). The body is only read before auth when no header was sent.
+    const hasHeader = !!request.headers.get('authorization')?.trim()
+    let input: unknown
+    let authRequest = request
+    if (!hasHeader) {
+      if (Number(request.headers.get('content-length')) > MAX_BYTES)
+        return watchError(413, 'payload_too_large', 'Send fewer nights per request.')
+      input = await readLimited(request)
+      if (input instanceof Response) return input
+      const bodyToken = (input as { token?: unknown } | null)?.token
+      if (typeof bodyToken === 'string' && bodyToken.trim())
+        authRequest = new Request(request.url, {
+          headers: { authorization: `Bearer ${bodyToken.trim()}` }
+        })
+    }
+    const auth = await authenticateWatch(authRequest, deps)
+    if (!auth.ok) return auth.response
+    if (hasHeader) {
+      input = await readLimited(request)
+      if (input instanceof Response) return input
+    }
     const parsed = bodySchema.safeParse(input)
     if (!parsed.success)
       return watchError(

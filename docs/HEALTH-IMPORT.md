@@ -58,3 +58,11 @@ fields become null; unusable nights are skipped with a reason), and the Settings
 screen previews an export before saving so the first import can be compared with
 Garmin Connect. If a real file differs, the parser is one function
 (`parseGarminNight`) and the fix is a test plus a few lines.
+
+## Shortcut troubleshooting
+
+iOS Shortcuts sometimes drops custom request headers, which shows up as
+`missing_token` even when a header is configured. The endpoint therefore also
+accepts the device token as a `token` field in the JSON body (same TLS, same
+revocation and rate limits; the body is never logged). Use the header when it works
+and the body field when it does not.

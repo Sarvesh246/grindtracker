@@ -360,8 +360,10 @@ python3 garmin-sleep-sync.py --days 14`
           <li>
             After the loop, add <b>Get Contents of URL</b>: URL{' '}
             <code>{origin + ENDPOINT_PATH}</code>, method POST, header <code>Authorization</code> ={' '}
-            <code>Bearer YOUR-TOKEN</code>, request body JSON with <code>kind</code> = apple_health,{' '}
-            <code>timezone</code> = {zone}, and <code>samples</code> = the samples variable.
+            <code>Bearer YOUR-TOKEN</code>, request body JSON with <code>token</code> = your token
+            (more reliable than the header, which iOS sometimes drops), <code>kind</code> =
+            apple_health, <code>timezone</code> = {zone}, and <code>samples</code> = the samples
+            variable.
           </li>
           <li>
             Optional: Automation → Sleep Focus turns off (or a time each morning) → Run Shortcut,
