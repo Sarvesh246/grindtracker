@@ -5,6 +5,7 @@ import {
   chooseZone,
   dateInZone,
   etcZone,
+  localToIso,
   parseAppleSamples,
   parseGarminExportText,
   parseGarminNight,
@@ -195,6 +196,46 @@ describe('Apple Health sleep samples', () => {
       { now: NOW }
     )
     assert.deepEqual(nights.map((n) => n.kind).sort(), ['main', 'nap'])
+  })
+  it('reads a time with no offset as wall-clock time in the supplied zone, not UTC', () => {
+    const naive = [
+      s('2026-11-15T23:40:00', '2026-11-16T03:30:00', 'Core'),
+      s('2026-11-16T03:30:00', '2026-11-16T07:24:00', 'REM')
+    ]
+    const n = parseAppleSamples(naive, { timezone: 'America/Chicago', now: NOW }).nights[0]
+    assert.equal(n.start_at, '2026-11-16T05:40:00.000Z') // 23:40 CST
+    assert.equal(n.wake_date, '2026-11-16')
+    // across a DST change the same wall time lands on the right side of the offset change
+    assert.equal(
+      localToIso('2026-11-01T01:30:00', 'America/Chicago')?.slice(0, 13),
+      '2026-11-01T06'
+    )
+    assert.equal(localToIso('2026-07-01T23:00:00', 'America/Chicago'), '2026-07-02T04:00:00.000Z')
+    assert.equal(localToIso('not a date', 'America/Chicago'), null)
+  })
+  it('recognises the stage names iOS reports in several spellings', () => {
+    const values = [
+      'Core',
+      'Asleep (Core)',
+      'Asleep (Deep)',
+      'REM',
+      'Awake',
+      'In Bed',
+      'Asleep',
+      'Asleep (Unspecified)'
+    ]
+    const base = Date.parse('2026-11-16T01:00:00Z')
+    const r = parseAppleSamples(
+      values.map((v, i) => ({
+        start: new Date(base + i * 3600000).toISOString(),
+        end: new Date(base + (i + 1) * 3600000).toISOString(),
+        value: v
+      })),
+      { timezone: 'UTC', now: NOW }
+    )
+    assert.equal(r.nights.length, 1)
+    // In Bed is ignored for sleep time (7 other hours), and stages exist for the typed ones only
+    assert.equal(r.nights[0].duration_seconds, 6 * 3600) // all but In Bed and Awake
   })
   it('skips fragments too short to be sleep', () => {
     const r = parseAppleSamples([s('2026-11-16T05:00:00Z', '2026-11-16T05:10:00Z', 'Core')], {

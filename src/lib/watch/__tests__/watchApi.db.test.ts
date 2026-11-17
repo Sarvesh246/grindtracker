@@ -248,6 +248,25 @@ describe('watch API against the real schema', { skip: !baseUrl && 'set PARITY_DA
       assert.equal(asUser(BOB, `select count(*) from sleep_sessions where user_id='${ALICE}'`), '0')
       assert.equal(db(`select count(*) from health_connections where user_id='${ALICE}' and source='apple_health'`), '1')
     })
+    it('saves a night sent exactly as the Shortcut builds it: token in the body, samples as text lines', async () => {
+      const lines = [
+        `${iso(60 * 9)} | ${iso(60 * 5)} | Asleep (Core)`,
+        `${iso(60 * 5)} | ${iso(60 * 4)} | Asleep (Deep)`,
+        `${iso(60 * 4)} | ${iso(60 * 2)} | Asleep (REM)`,
+        `${iso(60 * 10)} | ${iso(60 * 2)} | In Bed`
+      ].join('\n')
+      const res = await healthImportRequest(
+        new Request('https://grind.test/api/watch/v1/health-import', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ kind: 'apple_health', timezone: 'America/Chicago', token: aliceToken, samples: lines })
+        }),
+        deps
+      )
+      assert.equal(res.status, 200)
+      assert.equal(((await res.json()) as { imported: number }).imported, 1)
+      assert.equal(db(`select count(*) from sleep_sessions where user_id='${ALICE}' and source='apple_health' and stages is not null`), '1')
+    })
     it('refuses to import while collection is paused', async () => {
       asUser(ALICE, 'select set_health_collection(false);')
       assert.equal(await codeOf(await send(aliceToken, body('UTC'))), 'collection_paused')

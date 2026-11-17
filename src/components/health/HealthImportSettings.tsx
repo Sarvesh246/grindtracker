@@ -238,11 +238,8 @@ export default function HealthImportSettings() {
   const shortcutJson = `{
   "kind": "apple_health",
   "timezone": "${zone}",
-  "samples": [
-    { "start": "2026-11-15T23:40:00-06:00",
-      "end":   "2026-11-16T01:10:00-06:00",
-      "value": "Core" }
-  ]
+  "token": "gwt_…",
+  "samples": "2026-11-15T23:40:00-06:00 | 2026-11-16T01:10:00-06:00 | Core\\n2026-11-16T01:10:00-06:00 | 2026-11-16T02:10:00-06:00 | Deep"
 }`
   const scriptEnv = `pip install garminconnect
 export GRIND_URL="${origin}"
@@ -349,25 +346,29 @@ python3 garmin-sleep-sync.py --days 14`
         <ol className="hi-steps">
           <li>
             In Shortcuts, create a shortcut. Add <b>Find Health Samples</b>: Type = Sleep Analysis,
-            Start Date is in the last 3 days, sort by Start Date.
+            Start Date is in the last 3 days, sort by Start Date (oldest first).
           </li>
           <li>
-            Add <b>Repeat with Each</b> over the samples. Inside it, add a <b>Dictionary</b> with{' '}
-            <code>start</code> = Start Date formatted as ISO 8601, <code>end</code> = End Date as
-            ISO 8601, and <code>value</code> = the sample’s Value. Add it to a variable called
-            samples.
+            Add <b>Repeat with Each</b> over the samples. Inside it: <b>Format Date</b> (Start Date,
+            ISO 8601), <b>Format Date</b> (End Date, ISO 8601), then a <b>Text</b> action with{' '}
+            <code>start | end | value</code> built from those two results and the sample’s Value,
+            then <b>Add to Variable</b> named lines.
           </li>
           <li>
-            After the loop, add <b>Get Contents of URL</b>: URL{' '}
-            <code>{origin + ENDPOINT_PATH}</code>, method POST, header <code>Authorization</code> ={' '}
-            <code>Bearer YOUR-TOKEN</code>, request body JSON with <code>token</code> = your token
-            (more reliable than the header, which iOS sometimes drops), <code>kind</code> =
-            apple_health, <code>timezone</code> = {zone}, and <code>samples</code> = the samples
-            variable.
+            After the loop, <b>Combine Text</b> (lines, New Lines).
+          </li>
+          <li>
+            Add <b>Get Contents of URL</b>: URL <code>{origin + ENDPOINT_PATH}</code>, method POST,
+            request body JSON with <code>kind</code> = apple_health, <code>timezone</code> = {zone},{' '}
+            <code>token</code> = your token, and <code>samples</code> = the combined text. A header
+            is optional.
+          </li>
+          <li>
+            Add <b>Show Result</b>. A reply starting {'{"imported": 1'} means it worked.
           </li>
           <li>
             Optional: Automation → Sleep Focus turns off (or a time each morning) → Run Shortcut,
-            “Run Immediately”. That keeps it flowing without opening anything.
+            “Run Immediately”. Manual runs work any time.
           </li>
         </ol>
         <p className="hi-note">What the Shortcut must send:</p>

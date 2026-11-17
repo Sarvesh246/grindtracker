@@ -34,8 +34,8 @@ const sampleShape = z.object({
 
 /**
  * Samples as a list, or as the text Shortcuts produces when it flattens a list of
- * dictionaries: a JSON array, back-to-back JSON objects, or Apple-style
- * `"key" : "value"` blocks. Anything unrecognisable yields null (a 422), never a guess.
+ * dictionaries: a JSON array, back-to-back JSON objects, Apple-style
+ * `"key" : "value"` blocks, or one `start | end | value` line per sample. Anything unrecognisable yields null (a 422), never a guess.
  */
 export function normalizeSamples(raw: unknown): z.infer<typeof sampleShape>[] | null {
   let list: unknown[] | null = null
@@ -57,6 +57,19 @@ export function normalizeSamples(raw: unknown): z.infer<typeof sampleShape>[] | 
       } catch {
         /* try the next shape */
       }
+    }
+    if (!list && !/["']?start["']?\s*[:=]/i.test(text)) {
+      // One sample per line: "start | end | value" (or comma/tab separated). This is the
+      // most reliable thing for a Shortcut to build, since it is just text.
+      const rows = text
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter(Boolean)
+      const parsed = rows.map((row) =>
+        row.split(row.includes('|') ? '|' : row.includes('\t') ? '\t' : ',').map((c) => c.trim())
+      )
+      if (parsed.length && parsed.every((c) => c.length === 3 && c[0] && c[1] && c[2]))
+        list = parsed.map(([start, end, value]) => ({ start, end, value }))
     }
     if (!list) {
       const grab = (key: string) =>

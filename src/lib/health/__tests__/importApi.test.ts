@@ -60,6 +60,15 @@ describe('samples flattened to text by Shortcuts', () => {
     const text = rows.map((r) => `start: ${r.start}\nend: ${r.end}\nvalue: ${r.value}`).join('\n\n')
     assert.deepEqual(normalizeSamples(text), rows)
   })
+  it('accepts one "start | end | value" line per sample, the easiest thing for a Shortcut to build', () => {
+    const text = rows.map((r) => `${r.start} | ${r.end} | ${r.value}`).join('\n')
+    assert.deepEqual(normalizeSamples(text), rows)
+    assert.deepEqual(
+      normalizeSamples(rows.map((r) => `${r.start},${r.end},${r.value}`).join('\n')),
+      rows
+    )
+    assert.deepEqual(normalizeSamples('\n' + text + '\n\n'), rows)
+  })
   it('refuses text it cannot read instead of guessing', () => {
     assert.equal(normalizeSamples('hello world'), null)
     assert.equal(normalizeSamples([{ start: 'x' }]), null)

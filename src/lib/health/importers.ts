@@ -56,6 +56,38 @@ export function toIso(v: unknown): string | null {
   return Number.isFinite(ms) ? new Date(ms).toISOString() : null
 }
 
+/** UTC offset (ms) of `zone` at the instant `utcMs`. */
+function offsetMs(zone: string, utcMs: number): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: zone,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  }).formatToParts(new Date(utcMs))
+  const p = (t: string) => Number(parts.find((x) => x.type === t)?.value)
+  return (
+    Date.UTC(p('year'), p('month') - 1, p('day'), p('hour'), p('minute'), p('second')) -
+    Math.floor(utcMs / 1000) * 1000
+  )
+}
+/** "2026-11-16T07:24:00" (no offset) read as wall-clock time in `zone`; null if it isn't that shape. */
+export function localToIso(text: string, zone: string): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?$/.exec(text.trim())
+  if (!m) return null
+  const naive = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] ?? 0))
+  try {
+    let guess = naive - offsetMs(zone, naive)
+    guess = naive - offsetMs(zone, guess) // second pass settles DST edges
+    return new Date(guess).toISOString()
+  } catch {
+    return null
+  }
+}
+
 export function dateInZone(iso: string, timeZone: string): string | null {
   try {
     const parts = new Intl.DateTimeFormat('en-CA', {
@@ -277,9 +309,15 @@ export function parseAppleSamples(
   opts: { timezone?: string; now?: Date } = {}
 ): { nights: ImportedNight[]; skipped: { key: string; reason: string }[] } {
   const skipped: { key: string; reason: string }[] = []
+  const given = validZone(opts.timezone)
+  // A time with no offset means the person's wall clock, not UTC.
+  const at = (v: string) =>
+    given && typeof v === 'string' && !/(Z|[+-]\d{2}:?\d{2})$/.test(v.trim())
+      ? (localToIso(v, given) ?? toIso(v))
+      : toIso(v)
   const typed = samples.flatMap((s) => {
-    const from = toIso(s.start),
-      to = toIso(s.end),
+    const from = at(s.start),
+      to = at(s.end),
       kind = typeof s.value === 'string' ? APPLE_STAGE(s.value) : null
     if (!from || !to || !kind || !(Date.parse(to) > Date.parse(from))) return []
     return kind === 'inbed' ? [] : [{ from: Date.parse(from), to: Date.parse(to), kind }]
