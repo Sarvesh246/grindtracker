@@ -121,7 +121,7 @@ test('charts are read by dragging, with no slider', async ({ page }) => {
   })
   await plot.scrollIntoViewIfNeeded()
   const box = (await plot.boundingBox())!
-  const reading = page.locator('.health-page .health-chart-reading').last()
+  const reading = plot.getByRole('status')
   const y = box.y + box.height / 2
   await page.mouse.move(box.x + box.width * 0.2, y)
   await page.mouse.down()
@@ -130,8 +130,35 @@ test('charts are read by dragging, with no slider', async ({ page }) => {
   await page.mouse.move(box.x + box.width * 0.7, y, { steps: 10 })
   await page.mouse.up()
   expect(await reading.innerText()).not.toEqual(early)
-  // The shared cursor follows on the stress chart too.
   await expect(reading).toContainText('Energy')
+})
+test('the lower chart shows the readings above its selected point', async ({ page }) => {
+  await render(page, { width: 1280 })
+  await page.setViewportSize({ width: 1280, height: 370 })
+  const day = page.locator('#day')
+  const stress = day.getByRole('group', { name: /^Physiological stress chart/ })
+  await stress.scrollIntoViewIfNeeded()
+  const box = (await stress.getByRole('img').boundingBox())!
+  const x = box.x + box.width * (8 + (56 / 95) * (360 - 16)) / 360
+  await page.mouse.move(x, box.y + box.height / 2)
+  const reading = stress.getByRole('status')
+  await expect(reading).toContainText('14:00')
+  await expect(reading).toContainText('Energy')
+  await expect(reading).toContainText('Stress')
+  await expect(reading).toBeInViewport()
+  await expect(day.getByRole('status')).toHaveCount(1)
+  const dot = (await stress.locator('.health-focus').boundingBox())!
+  const callout = (await reading.boundingBox())!
+  expect(callout.y + callout.height).toBeLessThan(dot.y)
+  expect(dot.x + dot.width / 2).toBeGreaterThan(callout.x)
+  expect(dot.x + dot.width / 2).toBeLessThan(callout.x + callout.width)
+  await stress.focus()
+  await stress.press('ArrowRight')
+  await expect(reading).toContainText('14:15')
+  await expect(day.locator('.health-plot-accent .health-cursor')).toHaveAttribute(
+    'x1',
+    (await stress.locator('.health-cursor').getAttribute('x1'))!
+  )
 })
 test('touch drag scrubs a chart', async ({ browser }) => {
   const context = await browser.newContext({
@@ -145,7 +172,7 @@ test('touch drag scrubs a chart', async ({ browser }) => {
   })
   await plot.scrollIntoViewIfNeeded()
   const box = (await plot.boundingBox())!
-  const reading = page.locator('.health-page .health-chart-reading').last()
+  const reading = plot.getByRole('status')
   const client = await context.newCDPSession(page)
   const touch = (type: 'touchStart' | 'touchMove' | 'touchEnd', x: number, y: number) =>
     client.send('Input.dispatchTouchEvent', {

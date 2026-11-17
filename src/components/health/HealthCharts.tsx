@@ -1,5 +1,13 @@
 'use client'
-import { useId, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
+import {
+  useId,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+  type PointerEvent,
+  type ReactNode
+} from 'react'
 import {
   clockLabel,
   duration,
@@ -310,7 +318,8 @@ export function SeriesPlot({
   band = null,
   tone = 'accent',
   marks = [],
-  envelope = null
+  envelope = null,
+  reading
 }: {
   values: (number | null)[]
   label: string
@@ -324,6 +333,7 @@ export function SeriesPlot({
   marks?: { from: number; to: number; kind: 'workout' | 'sleep' }[]
   /** The usual range at each point (same length as values), drawn as a soft ribbon. */
   envelope?: Envelope | null
+  reading?: ReactNode
 }) {
   const id = cleanId(useId())
   const stats = seriesStats(values)
@@ -343,10 +353,12 @@ export function SeriesPlot({
   const segs = segments(values)
   const small = n <= 32
   const ticks = [lo, (lo + hi) / 2, hi]
+  const plot = useRef<SVGSVGElement>(null)
   const gesture = useRef<{ x: number; y: number; dragging: boolean } | null>(null)
   const choose = (e: PointerEvent<HTMLDivElement>) => {
-    if (!onSelect) return
-    const rect = e.currentTarget.getBoundingClientRect()
+    if (!onSelect || !plot.current || n === 0) return
+    const rect = plot.current.getBoundingClientRect()
+    if (!rect.width) return
     const fx = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
     onSelect(Math.round(Math.max(0, Math.min(1, (fx * W - PX) / (W - 2 * PX))) * (n - 1)))
   }
@@ -356,6 +368,8 @@ export function SeriesPlot({
     onSelect(Math.max(0, Math.min(n - 1, (selected ?? n - 1) + (e.key === 'ArrowRight' ? 1 : -1))))
   }
   const selectedValue = selected != null ? values[selected] : null
+  const readingY = selectedValue != null ? y(selectedValue) : H / 2
+  const placement = readingY < H * 0.2 ? 'below' : readingY < H * 0.45 ? 'adaptive' : 'above'
   return (
     <div
       className={`health-plot health-plot-${tone}`}
@@ -413,6 +427,7 @@ export function SeriesPlot({
         </span>
       ))}
       <svg
+        ref={plot}
         className="health-series"
         viewBox={`0 0 ${W} ${H}`}
         role="img"
@@ -496,6 +511,21 @@ export function SeriesPlot({
           </>
         )}
       </svg>
+      {reading && selected != null && (
+        <div className="health-plot-overlay">
+          <div
+            className="health-plot-reading"
+            role="status"
+            data-placement={placement}
+            style={{
+              '--point-x': `${(x(selected) / W) * 100}%`,
+              '--point-y': `${(readingY / H) * 100}%`
+            } as CSSProperties}
+          >
+            {reading}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -523,7 +553,7 @@ export function DailyHealthTimeline({
   /** Previous days' usual shape, per metric. */
   usual?: { bb: Envelope | null; stress: Envelope | null }
 }) {
-  const [picked, setPicked] = useState<number | null>(null)
+  const [picked, setPicked] = useState<{ index: number; plot: 'energy' | 'stress' } | null>(null)
   const limit =
     date === today ? Math.floor((new Date().getHours() * 60 + new Date().getMinutes()) / 15) : 95
   const observed = (values: (number | null)[]) =>
@@ -536,8 +566,29 @@ export function DailyHealthTimeline({
     0,
     ...energy.flatMap((v, i) => (v != null || strain[i] != null ? [i] : []))
   )
-  const selected = Math.min(picked ?? latestIndex, limit)
-  const setSelected = (i: number) => setPicked(i)
+  const selected = Math.min(picked?.index ?? latestIndex, limit)
+  const activePlot = picked?.plot ?? (energy[selected] != null ? 'energy' : 'stress')
+  const reading = (
+    <>
+      <strong>{time(selected)}</strong>
+      <div className="health-plot-reading-values">
+        {([
+          ['energy', 'Energy', energy[selected], usual?.bb],
+          ['stress', 'Stress', strain[selected], usual?.stress]
+        ] as const).map(([key, label, value, range]) => {
+          const low = range?.low[selected]
+          const high = range?.high[selected]
+          return (
+            <div key={key}>
+              <span><i className={`health-dot-${key}`} aria-hidden="true" />{label}</span>
+              <b>{value ?? 'No reading'}</b>
+              {low != null && high != null && <small>usual {Math.round(low)}–{Math.round(high)}</small>}
+            </div>
+          )
+        })}
+      </div>
+    </>
+  )
   const chips = summary
     ? (
         [
@@ -559,37 +610,16 @@ export function DailyHealthTimeline({
           ))}
         </div>
       )}
-      <div className="health-chart-reading">
-        <strong>{time(selected)}</strong>
-        <span>
-          <i className="health-dot-energy" aria-hidden="true" />
-          Energy <b>{energy[selected] ?? 'no reading'}</b>
-          {usual?.bb?.low[selected] != null && usual.bb.high[selected] != null && (
-            <em>
-              usual {Math.round(usual.bb.low[selected]!)}–{Math.round(usual.bb.high[selected]!)}
-            </em>
-          )}
-        </span>
-        <span>
-          <i className="health-dot-stress" aria-hidden="true" />
-          Stress <b>{strain[selected] ?? 'no reading'}</b>
-          {usual?.stress?.low[selected] != null && usual.stress.high[selected] != null && (
-            <em>
-              usual {Math.round(usual.stress.low[selected]!)}–
-              {Math.round(usual.stress.high[selected]!)}
-            </em>
-          )}
-        </span>
-      </div>
       <p className="health-eyebrow health-plot-title">Body Battery</p>
       <SeriesPlot
         values={energy}
         label="Body Battery"
         maximum={100}
         selected={selected}
-        onSelect={setSelected}
+        onSelect={index => setPicked({ index, plot: 'energy' })}
         marks={annotations}
         envelope={usual?.bb}
+        reading={activePlot === 'energy' ? reading : undefined}
       />
       <p className="health-eyebrow health-plot-title">
         Stress{summary?.stress != null && <> · avg {summary.stress}</>}
@@ -600,9 +630,10 @@ export function DailyHealthTimeline({
         maximum={100}
         tone="stress"
         selected={selected}
-        onSelect={setSelected}
+        onSelect={index => setPicked({ index, plot: 'stress' })}
         marks={annotations}
         envelope={usual?.stress}
+        reading={activePlot === 'stress' ? reading : undefined}
       />
       {(annotations.length > 0 || usual?.bb || usual?.stress) && (
         <ul className="health-annotations">
