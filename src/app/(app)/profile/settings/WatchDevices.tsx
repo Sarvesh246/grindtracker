@@ -78,6 +78,12 @@ export default function WatchDevices({ supabase }: { supabase: SupabaseClient })
     // eslint-disable-next-line react-hooks/set-state-in-effect -- async load, state set after await
     void load()
   }, [load])
+  // Tokens made in "Sleep & health sources" must show up here without a reload.
+  useEffect(() => {
+    const again = () => void load()
+    window.addEventListener('grind:watch-devices-changed', again)
+    return () => window.removeEventListener('grind:watch-devices-changed', again)
+  }, [load])
 
   async function handleCreate() {
     const deviceName = name.trim() || 'Garmin watch'
@@ -119,6 +125,7 @@ export default function WatchDevices({ supabase }: { supabase: SupabaseClient })
     setRevokeTarget(null)
     toast.show('Watch revoked')
     void load()
+    window.dispatchEvent(new CustomEvent('grind:watch-devices-changed', { detail: 'revoked' }))
   }
 
   return (

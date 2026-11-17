@@ -73,7 +73,20 @@ function TokenMaker({ name, onToken }: { name: string; onToken: (token: string) 
     }
     setToken(made)
     onToken(made)
+    window.dispatchEvent(new CustomEvent('grind:watch-devices-changed', { detail: 'created' }))
   }
+  // A revoke anywhere else may have killed the token on screen, so never keep showing it.
+  useEffect(() => {
+    const onChange = (e: Event) => {
+      if ((e as CustomEvent).detail === 'revoked') {
+        setToken('')
+        onToken('')
+      }
+    }
+    window.addEventListener('grind:watch-devices-changed', onChange)
+    return () => window.removeEventListener('grind:watch-devices-changed', onChange)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   if (token)
     return (
       <div className="hi-token">
@@ -82,6 +95,17 @@ function TokenMaker({ name, onToken }: { name: string; onToken: (token: string) 
           it any time under Watch below.
         </p>
         <CopyBlock text={token} label="Device token" />
+        <button
+          type="button"
+          className="hi-secondary"
+          data-haptic="light"
+          onClick={() => {
+            setToken('')
+            onToken('')
+          }}
+        >
+          Create another token
+        </button>
       </div>
     )
   return (
