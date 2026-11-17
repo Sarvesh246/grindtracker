@@ -9,10 +9,12 @@ import {
   ResponsiveContainer,
 } from 'recharts'
 import { useMotionPref } from '@/lib/contexts/MotionContext'
+import type { Metric } from './page'
 
 interface ChartPoint {
   date: string
   displayDate: string
+  fullDate: string
   value: number
   label: string
   isPR: boolean
@@ -35,7 +37,7 @@ function CustomTooltip({ active, payload }: { active?: boolean; payload?: Toolti
       fontFamily: "'DM Sans', sans-serif",
     }}>
       <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px' }}>
-        {point.displayDate}
+        {point.fullDate}
       </div>
       <div style={{
         fontFamily: "'JetBrains Mono', monospace",
@@ -81,7 +83,7 @@ function CustomDot({ cx, cy, payload }: CustomDotProps) {
   return <circle cx={cx} cy={cy} r={3.5} fill="var(--chart-mark)" />
 }
 
-export default function ProgressChart({ data }: { data: ChartPoint[] }) {
+export default function ProgressChart({ data, metric }: { data: ChartPoint[]; metric: Metric }) {
   // Recharts' line-draw is a JS (react-smooth) animation, not CSS — the
   // `html.reduce-motion` class in globals.css can't reach it, so it has to be
   // gated explicitly or it keeps playing with the setting on.
@@ -93,11 +95,10 @@ export default function ProgressChart({ data }: { data: ChartPoint[] }) {
   const yMin = Math.max(0, Math.floor(minV / 10) * 10)
   const yMax = Math.max(yMin + 10, Math.ceil(maxV / 10) * 10)
 
-  const showAllLabels = data.length <= 6
-  const tickInterval = showAllLabels ? 0 : Math.floor(data.length / 5)
+  const usesBodyweight = metric === 'weight' || metric === 'best'
 
   // Size the y-axis gutter from the widest tick label so 4–5 digit values don't clip.
-  const maxTickLen = Math.max(String(yMin).length, String(yMax).length)
+  const maxTickLen = Math.max(yMin.toLocaleString().length, yMax.toLocaleString().length)
   const yAxisWidth = Math.max(36, maxTickLen * 9 + 8)
 
   return (
@@ -109,7 +110,7 @@ export default function ProgressChart({ data }: { data: ChartPoint[] }) {
         <ResponsiveContainer width="100%" height="100%">
           <LineChart
             data={data}
-            margin={{ top: 8, right: 32, bottom: 4, left: 4 }}
+            margin={{ top: 12, right: 12, bottom: 2, left: 6 }}
           >
             <CartesianGrid
               strokeDasharray="3 3"
@@ -119,22 +120,24 @@ export default function ProgressChart({ data }: { data: ChartPoint[] }) {
             <XAxis
               dataKey="displayDate"
               stroke="transparent"
-              tick={{ fill: 'var(--text-muted)', fontSize: 10, fontFamily: "'DM Sans', sans-serif" }}
+              tick={{ fill: 'var(--text-muted)', fontSize: 11, fontFamily: 'var(--font-sans)' }}
               tickLine={false}
               axisLine={false}
-              interval={tickInterval}
-              height={36}
-              tickMargin={12}
+              interval="preserveStartEnd"
+              minTickGap={22}
+              padding={{ left: 14, right: 14 }}
+              height={30}
+              tickMargin={8}
             />
             <YAxis
               stroke="transparent"
-              tick={{ fill: 'var(--text-muted)', fontSize: 10, fontFamily: "'DM Sans', sans-serif" }}
+              tick={{ fill: 'var(--text-muted)', fontSize: 11, fontFamily: 'var(--font-sans)' }}
               tickLine={false}
               axisLine={false}
               domain={[yMin, yMax]}
               tickCount={4}
               allowDecimals={false}
-              tickFormatter={(v) => v === 0 ? 'BW' : String(v)}
+              tickFormatter={(v: number) => v === 0 && usesBodyweight ? 'BW' : v.toLocaleString()}
               width={yAxisWidth}
             />
             <Tooltip
@@ -170,7 +173,7 @@ export default function ProgressChart({ data }: { data: ChartPoint[] }) {
         <tbody>
           {[...data].reverse().slice(0, 12).map((p, i) => (
             <tr key={`${p.date}-${i}`}>
-              <td>{p.displayDate}</td>
+              <td>{p.fullDate}</td>
               <td>{p.label}</td>
               <td>{p.isPR ? 'Yes' : 'No'}</td>
             </tr>

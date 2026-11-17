@@ -1,30 +1,26 @@
 export default function ProgressLoading() {
   return (
-    <div className="page page--progress" style={{ padding: '24px 16px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
-        <div className="shimmer" style={{ width: '120px', height: '32px', borderRadius: '8px' }} />
-        <div className="shimmer" style={{ width: '80px', height: '16px', borderRadius: '8px', marginTop: '8px' }} />
+    <div className="page page--progress progress-workspace" aria-busy="true">
+      <span className="sr-only">Loading progress</span>
+      <div className="progress-heading" aria-hidden="true">
+        <div className="shimmer" style={{ width: 110, height: 32, borderRadius: 8 }} />
       </div>
-      <div className="progress-layout">
-      <div className="progress-rail">
-      <div className="shimmer progress-photo-skeleton" style={{ height: '70px', borderRadius: '12px', marginBottom: '16px' }} />
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', overflow: 'hidden' }}>
-        {[80, 120, 100, 90, 110].map((w, i) => (
-          <div key={i} className="shimmer" style={{
-            width: `${w}px`, height: '36px',
-            borderRadius: '9999px', flexShrink: 0,
-          }} />
-        ))}
-      </div>
-      </div>
-      <div className="progress-main">
-      <div style={{ display: 'flex', gap: '6px', marginBottom: '16px' }}>
-        {[1, 2, 3, 4].map(i => (
-          <div key={i} className="shimmer" style={{ flex: 1, height: '56px', borderRadius: '10px' }} />
-        ))}
-      </div>
-      <div className="shimmer progress-chart-card" style={{ borderRadius: '12px' }} />
-      </div>
+      <div className="progress-layout" aria-hidden="true">
+        <div className="progress-filters">
+          <div className="progress-selectors">
+            {[1, 2].map(i => <div key={i} className="shimmer" style={{ height: 58, borderRadius: 8 }} />)}
+          </div>
+          <div className="progress-chips shimmer" style={{ height: 88, borderRadius: 12 }} />
+        </div>
+        <div className="progress-main">
+          <div className="progress-chart-card">
+            <div className="progress-chart-header">
+              <div className="shimmer" style={{ width: '55%', height: 36, borderRadius: 8 }} />
+            </div>
+            <div className="progress-chart-plot shimmer" />
+            <div className="progress-stats shimmer" style={{ height: 55 }} />
+          </div>
+        </div>
       </div>
     </div>
   )

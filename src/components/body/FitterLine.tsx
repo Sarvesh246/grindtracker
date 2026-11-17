@@ -78,45 +78,43 @@ export function FitterLineView({ line }: { line: FitterLineData }) {
   const y = (v: number) => 8 + (1 - (v - lo) / Math.max(1, hi - lo)) * (Hh - 16)
 
   return (
-    <div style={{ padding: '0 16px', marginBottom: '24px' }}>
-      <div
-        className="swap-in"
-        style={{
-          backgroundColor: 'var(--surface)',
-          border: '1px solid var(--border)',
-          borderRadius: '12px',
-          padding: '14px 16px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '16px',
-        }}
-      >
-        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1.5px' }}>
-            {easier ? 'Getting fitter' : 'Working harder'}
-          </div>
-          {/* Its own line: "185 lbs × 8" breaking after the number reads as two things. */}
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-            {line.label}
-          </div>
-          <p style={{ fontSize: '14px', lineHeight: 1.4, color: 'var(--text-primary)', fontWeight: 500 }}>{line.sentence}</p>
+    <div
+      className="swap-in"
+      style={{
+        backgroundColor: 'var(--surface)',
+        border: '1px solid var(--border)',
+        borderRadius: '12px',
+        padding: '14px 16px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '16px',
+      }}
+    >
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1.5px' }}>
+          {easier ? 'Getting fitter' : 'Working harder'}
         </div>
-        <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: '4px' }}>
-          <svg
-            role="img"
-            aria-label={`Peak heart rate ${Math.round(line.earlierAvg)} bpm in ${line.then}, ${Math.round(line.recentAvg)} bpm now.`}
-            width={W}
-            height={Hh}
-            viewBox={`0 0 ${W} ${Hh}`}
-          >
-            <line x1={14} y1={y(line.earlierAvg)} x2={W - 14} y2={y(line.recentAvg)} stroke="var(--border-strong)" strokeWidth={2} strokeLinecap="round" />
-            <circle cx={14} cy={y(line.earlierAvg)} r={5} fill="var(--text-muted)" />
-            <circle cx={W - 14} cy={y(line.recentAvg)} r={6} fill={easier ? 'var(--accent)' : 'var(--text-primary)'} />
-          </svg>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--text-muted)' }}>
-            <span>{Math.round(line.earlierAvg)}</span>
-            <span style={{ color: 'var(--text-primary)' }}>{Math.round(line.recentAvg)}</span>
-          </div>
+        {/* Its own line: "185 lbs × 8" breaking after the number reads as two things. */}
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+          {line.label}
+        </div>
+        <p style={{ fontSize: '14px', lineHeight: 1.4, color: 'var(--text-primary)', fontWeight: 500 }}>{line.sentence}</p>
+      </div>
+      <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: '4px' }}>
+        <svg
+          role="img"
+          aria-label={`Peak heart rate ${Math.round(line.earlierAvg)} bpm in ${line.then}, ${Math.round(line.recentAvg)} bpm now.`}
+          width={W}
+          height={Hh}
+          viewBox={`0 0 ${W} ${Hh}`}
+        >
+          <line x1={14} y1={y(line.earlierAvg)} x2={W - 14} y2={y(line.recentAvg)} stroke="var(--border-strong)" strokeWidth={2} strokeLinecap="round" />
+          <circle cx={14} cy={y(line.earlierAvg)} r={5} fill="var(--text-muted)" />
+          <circle cx={W - 14} cy={y(line.recentAvg)} r={6} fill={easier ? 'var(--accent)' : 'var(--text-primary)'} />
+        </svg>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--text-muted)' }}>
+          <span>{Math.round(line.earlierAvg)}</span>
+          <span style={{ color: 'var(--text-primary)' }}>{Math.round(line.recentAvg)}</span>
         </div>
       </div>
     </div>

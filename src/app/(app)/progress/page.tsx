@@ -1,5 +1,5 @@
 'use client'
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useState, type KeyboardEvent } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -22,7 +22,7 @@ import { useCachedQuery } from '@/lib/cache/useCachedQuery'
 const ProgressChart = dynamic(() => import('./ProgressChart'), {
   ssr: false,
   loading: () => (
-    <div className="progress-chart-plot" style={{ width: '100%' }} aria-hidden="true" />
+    <div className="progress-chart-plot shimmer" aria-hidden="true" />
   ),
 })
 
@@ -31,16 +31,10 @@ export type Metric = 'weight' | 'volume' | 'e1rm' | 'best'
 interface ChartPoint {
   date: string
   displayDate: string
+  fullDate: string
   value: number
   label: string
   isPR: boolean
-}
-
-interface ExerciseStats {
-  bestWeight: number | null
-  sessionCount: number
-  lastWeight: number | null
-  prCount: number
 }
 
 interface RecentSession {
@@ -72,12 +66,13 @@ const DAY_ORDER: Record<string, number> = { push: 0, pull: 1, legs: 2 }
 
 /** Upper bound on set logs pulled for one exercise's chart (~4 years of 5x5). */
 const MAX_CHART_LOGS = 2000
+const NO_LOGS: RawLog[] = []
 
 const METRIC_IDS: { id: Metric; label: string }[] = [
   { id: 'weight', label: 'Weight' },
   { id: 'volume', label: 'Volume' },
   { id: 'e1rm', label: 'e1RM' },
-  { id: 'best', label: 'Best Set' },
+  { id: 'best', label: 'Best set' },
 ]
 
 function epley(weight: number, reps: number): number {
@@ -122,14 +117,6 @@ export default function ProgressPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [selectedDay, setSelectedDay] = useState<string | null>(null)
   const [metric, setMetric] = useState<Metric>('weight')
-  const [chartData, setChartData] = useState<ChartPoint[]>([])
-  const [stats, setStats] = useState<ExerciseStats>({
-    bestWeight: null,
-    sessionCount: 0,
-    lastWeight: null,
-    prCount: 0,
-  })
-  const [recentSessions, setRecentSessions] = useState<RecentSession[]>([])
   // GRIND Body: null unless this user has watch data (and migration 59 is in).
   const body = useBodySummary()
 
@@ -197,7 +184,7 @@ export default function ProgressPage() {
   const latestPhotoDate = photoSummary?.latestDate ?? null
   const latestPhotoThumb = photoSummary?.thumb ?? null
 
-  const { data: rawLogs = [], loading: loadingChart } = useCachedQuery<RawLog[]>(
+  const { data: rawLogs, loading: loadingChart } = useCachedQuery<RawLog[]>(
     selectedId ? CACHE_KEYS.progressLogs(selectedId) : null,
     async () => {
       const user = await getClientUser(supabase)
@@ -282,7 +269,8 @@ export default function ProgressPage() {
     return () => cancelAnimationFrame(frame)
   }, [loadingExercises, loadingChart, selectedId, exercises.length])
 
-  const recomputeForMetric = useCallback((logs: RawLog[], m: Metric, ul: string) => {
+  const { chartData, stats, recentSessions } = useMemo(() => {
+    const logs = rawLogs ?? NO_LOGS
     interface SessionAgg {
       id: string
       completedAt: string
@@ -325,19 +313,19 @@ export default function ProgressPage() {
       if (s.sets.length === 0) continue
       let value: number
       let label: string
-      switch (m) {
+      switch (metric) {
         case 'weight':
           value = Math.round(Math.max(...s.sets.map(x => x.weight)) * 10) / 10
-          label = value === 0 ? 'BW' : `${value} ${ul}`
+          label = value === 0 ? 'BW' : `${value} ${unitLabel}`
           break
         case 'volume':
           value = Math.round(s.sets.reduce((sum, x) => sum + x.weight * x.reps, 0))
-          label = `${value.toLocaleString()} ${ul} · vol`
+          label = `${value.toLocaleString()} ${unitLabel} · vol`
           break
         case 'e1rm': {
           const e = Math.max(...s.sets.map(x => epley(x.weight, x.reps)))
           value = Math.round(e * 10) / 10
-          label = `${value} ${ul} e1RM`
+          label = `${value} ${unitLabel} e1RM`
           break
         }
         case 'best': {
@@ -355,6 +343,9 @@ export default function ProgressPage() {
         displayDate: display.toLocaleDateString('en-US', {
           month: 'short',
           day: 'numeric',
+        }),
+        fullDate: display.toLocaleDateString('en-US', {
+          month: 'short', day: 'numeric', year: 'numeric',
         }),
         value,
         label,
@@ -395,34 +386,23 @@ export default function ProgressPage() {
         }
       })
 
-    setChartData(points)
-    setStats({ bestWeight, sessionCount: sessions.length, lastWeight, prCount })
-    setRecentSessions(recent)
-  }, [toDisplay])
-
-  // Recompute the chart/stats from the raw logs whenever they or the selected
-  // metric change (recomputeForMetric does the setState work internally).
-  useEffect(() => {
-    if (rawLogs.length === 0) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setChartData([])
-      setStats({ bestWeight: null, sessionCount: 0, lastWeight: null, prCount: 0 })
-      setRecentSessions([])
-      return
+    return {
+      chartData: points,
+      stats: { bestWeight, sessionCount: sessions.length, lastWeight, prCount },
+      recentSessions: recent,
     }
-    recomputeForMetric(rawLogs, metric, unitLabel)
-  }, [rawLogs, metric, unitLabel, recomputeForMetric])
+  }, [rawLogs, metric, unitLabel, toDisplay])
 
   const selectedExercise = exercises.find(e => e.id === selectedId)
   const dayTypes = orderedDayTypes(exercises)
   const exercisesForDay = selectedDay ? exercises.filter(e => e.day_type === selectedDay) : exercises
 
-  // Two-step walkthrough (hook must run before the early returns below). Only
+  // Walkthrough (hook must run before the early returns below). Only
   // active once exercises exist — the blank-slate hero has nothing to point at.
   const progressSteps: TourStep[] = [
-    { target: 'progress-photos', title: 'Progress photos', body: 'Log physique shots here and compare them over time — separate from the lift charts below.' },
-    { target: 'progress-selector', title: 'Pick what to chart', body: 'Choose which lift or metric to chart.' },
-    { target: 'progress-chart', title: 'Read your chart', body: 'Each point is a working set; the highlighted ones are PRs.' },
+    { target: 'progress-photos', title: 'Progress photos', body: 'Log physique photos here and compare them over time.' },
+    { target: 'progress-selector', title: 'Pick what to chart', body: 'Choose a workout day and exercise.' },
+    { target: 'progress-chart', title: 'Read your chart', body: 'Switch metrics above the plot. Each point is a workout session, and highlighted points mark PRs.' },
   ]
   const progressTour = useTour('progress', progressSteps, {
     active: !loadingExercises && exercises.length > 0,
@@ -504,321 +484,186 @@ export default function ProgressPage() {
     )
   }
 
-  return (
-    <div className="page page--progress" style={{ fontFamily: "'DM Sans', sans-serif", paddingBottom: '32px' }}>
-      {progressTour}
+  function selectDay(day: string) {
+    if (day === selectedDay) return
+    setSelectedDay(day)
+    setSelectedId(exercises.find(exercise => exercise.day_type === day)?.id ?? null)
+  }
 
-      {/* Header */}
-      <div style={{
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        padding: '24px 16px 16px',
-      }}>
-        <h1 style={{
-          fontFamily: "'Bebas Neue', sans-serif",
-          fontSize: '32px', color: 'var(--text-primary)', letterSpacing: '1px',
-          fontWeight: 'normal',
-        }}>
-          PROGRESS
-        </h1>
-        <TodayLabel style={{ fontSize: '13px', color: 'var(--text-muted)' }} />
-      </div>
+  function handleMetricKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
+    const last = METRIC_IDS.length - 1
+    let next: number
+    switch (event.key) {
+      case 'ArrowRight': next = index === last ? 0 : index + 1; break
+      case 'ArrowLeft': next = index === 0 ? last : index - 1; break
+      case 'Home': next = 0; break
+      case 'End': next = last; break
+      default: return
+    }
+    event.preventDefault()
+    const nextMetric = METRIC_IDS[next].id
+    setMetric(nextMetric)
+    document.getElementById(`progress-metric-${nextMetric}`)?.focus()
+  }
+
+  const formatWeight = (weight: number | null) =>
+    weight === null ? '—' : weight === 0 ? 'BW' : `${weight} ${unitLabel}`
+  const summary = [
+    { label: 'Best weight', value: formatWeight(stats.bestWeight) },
+    { label: 'Last weight', value: formatWeight(stats.lastWeight) },
+    { label: 'Sessions', value: stats.sessionCount },
+    { label: 'PR sets', value: stats.prCount },
+  ]
+
+  return (
+    <div className="page page--progress progress-workspace">
+      {progressTour}
+      <header className="progress-heading">
+        <h1>Progress</h1>
+        <TodayLabel />
+      </header>
 
       <div className="progress-layout">
-      <div className="progress-rail">
-      <div style={{ padding: '0 16px 16px' }}>
-        <PhotoEntryCard
-          count={photoCount}
-          latestDate={latestPhotoDate}
-          thumb={latestPhotoThumb}
-        />
-      </div>
-
-      <div style={{ padding: '0 16px 16px' }}><HealthEntry body={body} /></div>
-      {/* Selector cluster — day picker, exercise picker, and metric toggle. Wrapped
-          so the onboarding coach mark can spotlight the whole "what to chart" area. */}
-      <div data-onboard="progress-selector">
-
-      {/* Day picker (level 1) */}
-      <div style={{ padding: '0 16px 8px', display: 'flex', gap: '6px', touchAction: 'pan-x' }} className="scrollbar-hide chip-row">
-        {dayTypes.map(dt => {
-          const active = dt === selectedDay
-          return (
-            <button
-              key={dt}
-              className="press"
-              data-haptic="light"
-              onClick={() => {
-                setSelectedDay(dt)
-                const first = exercises.find(e => e.day_type === dt)
-                if (first) setSelectedId(first.id)
-              }}
-              aria-pressed={active}
-              style={{
-                position: 'relative',
-                height: '40px',
-                padding: '0 14px',
-                borderRadius: 'var(--radius-pill, 9999px)',
-                border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
-                backgroundColor: active ? 'var(--accent-wash)' : 'var(--surface)',
-                color: active ? 'var(--accent-text)' : 'var(--text-secondary)',
-                fontFamily: 'var(--font-sans)',
-                fontSize: '11px',
-                fontWeight: 600,
-                letterSpacing: 'var(--tracking-label)',
-                textTransform: 'uppercase',
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-                flexShrink: 0,
-              }}
-            >
-              {dt.replace(/-/g, ' ')}
-            </button>
-          )
-        })}
-      </div>
-
-      {/* Divider */}
-      <div style={{ margin: '4px 16px 12px', borderTop: '1px solid var(--border)' }} />
-
-      {/* Exercise picker (level 2) */}
-      <div className="chip-row" style={{ padding: '0 16px 12px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-        {exercisesForDay.map(ex => {
-          const active = ex.id === selectedId
-          return (
-            <button
-              key={ex.id}
-              className="press"
-              data-haptic="light"
-              onClick={() => setSelectedId(ex.id)}
-              aria-pressed={active}
-              style={{
-                position: 'relative',
-                minHeight: '44px', height: 'auto', maxWidth: '100%',
-                padding: '0 12px',
-                borderRadius: 'var(--radius-pill, 9999px)',
-                border: active ? 'none' : '1px solid var(--border)',
-                backgroundColor: active ? 'var(--accent)' : 'var(--surface)',
-                color: active ? 'var(--on-accent)' : 'var(--text-secondary)',
-                fontSize: '13px',
-                fontFamily: 'var(--font-sans)',
-                fontWeight: active ? 700 : 500,
-                cursor: 'pointer',
-                whiteSpace: 'normal', overflowWrap: 'anywhere', textAlign: 'left',
-              }}
-            >
-              {ex.name}
-            </button>
-          )
-        })}
-      </div>
-
-      {/* Metric toggle */}
-      <div style={{ padding: '0 16px 12px' }}>
-        <div
-          role="tablist"
-          aria-label="Chart metric"
-          style={{
-            display: 'flex',
-            gap: '4px',
-            backgroundColor: 'var(--surface)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-md)',
-            padding: '4px',
-          }}
-        >
-          {METRIC_IDS.map(m => {
-            const active = m.id === metric
-            return (
-              <button
-                key={m.id}
-                className="press"
-                data-haptic="light"
-                role="tab"
-                aria-selected={active}
-                onClick={() => setMetric(m.id)}
-                style={{
-                  position: 'relative',
-                  flex: 1,
-                  height: '40px',
-                  borderRadius: 'var(--radius-sm)',
-                  border: 'none',
-                  backgroundColor: active ? 'var(--accent)' : 'transparent',
-                  color: active ? 'var(--on-accent)' : 'var(--text-secondary)',
-                  fontSize: '12px',
-                  fontFamily: 'var(--font-sans)',
-                  fontWeight: active ? 700 : 500,
-                  cursor: 'pointer',
-                }}
-              >
-                {m.label}
-              </button>
-            )
-          })}
-        </div>
-      </div>
-
-      </div>{/* end selector cluster */}
-      </div>
-      <div className="progress-main">
-
-      {/* Stats bar. Keyed on the selection so the tiles re-run their entrance
-          when you switch exercise or metric — the numbers all change at once,
-          and swapping them in place reads as a glitch. */}
-      <div
-        key={`${selectedId}-${metric}`}
-        className="stagger"
-        style={{ display: 'flex', gap: '6px', padding: '0 16px', marginBottom: '16px' }}
-      >
-        {[
-          { label: 'BEST', value: stats.bestWeight !== null ? (stats.bestWeight === 0 ? 'BW' : `${stats.bestWeight} ${unitLabel}`) : '—', accent: true },
-          { label: 'SESSIONS', value: String(stats.sessionCount), accent: false },
-          { label: 'LAST', value: stats.lastWeight !== null ? (stats.lastWeight === 0 ? 'BW' : `${stats.lastWeight} ${unitLabel}`) : '—', accent: false },
-          { label: 'PRs', value: String(stats.prCount), accent: false },
-        ].map((stat, i) => (
-          <div key={stat.label} style={{
-            '--i': i,
-            flex: 1,
-            backgroundColor: 'var(--surface)',
-            border: '1px solid var(--border)',
-            borderRadius: '10px',
-            padding: '10px 6px',
-            textAlign: 'center',
-          } as CSSProperties}>
-            <div style={{
-              fontFamily: "'Bebas Neue', sans-serif",
-              fontSize: '22px',
-              color: stat.accent ? 'var(--accent-text)' : 'var(--text-primary)',
-              lineHeight: 1,
-              marginBottom: '3px',
-            }}>
-              {stat.value}
+        <section className="progress-filters" data-onboard="progress-selector" aria-label="Chart filters">
+          <div className="progress-selectors">
+            <label>
+              Workout day
+              <select value={selectedDay ?? ''} onChange={event => selectDay(event.target.value)}>
+                {dayTypes.map(day => (
+                  <option key={day} value={day}>{day.replace(/-/g, ' ')}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Exercise
+              <select value={selectedId ?? ''} onChange={event => setSelectedId(event.target.value)}>
+                {exercisesForDay.map(exercise => (
+                  <option key={exercise.id} value={exercise.id}>{exercise.name}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="progress-chips">
+            <div role="group" aria-label="Workout day" className="scrollbar-hide chip-row progress-day-chips">
+              {dayTypes.map(day => (
+                <button
+                  key={day}
+                  type="button"
+                  className="press"
+                  data-haptic="light"
+                  aria-pressed={day === selectedDay}
+                  onClick={() => selectDay(day)}
+                >
+                  {day.replace(/-/g, ' ')}
+                </button>
+              ))}
             </div>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              {stat.label}
+            <div role="group" aria-label="Exercise" className="progress-exercise-chips">
+              {exercisesForDay.map(exercise => (
+                <button
+                  key={exercise.id}
+                  type="button"
+                  className="press"
+                  data-haptic="light"
+                  aria-pressed={exercise.id === selectedId}
+                  onClick={() => setSelectedId(exercise.id)}
+                >
+                  {exercise.name}
+                </button>
+              ))}
             </div>
           </div>
-        ))}
-      </div>
+        </section>
 
-      {body?.hasWatch && body.load && <LoadGauge load={body.load} />}
-
-      {/* Chart */}
-      <div style={{ padding: '0 16px', marginBottom: '24px' }}>
-        <div data-onboard="progress-chart" className="progress-chart-card" style={{
-          backgroundColor: 'var(--surface)',
-          border: '1px solid var(--border)',
-          borderRadius: '12px',
-          padding: '16px 12px 12px',
-          // Column flex (not row) so children stretch to the card's full width —
-          // the chart + data table wrapper would otherwise shrink-wrap to its
-          // content as a row flex item and render narrow. justifyContent still
-          // vertically centers the loading / empty states.
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center',
-        }}>
-          {loadingChart ? (
-            <div aria-busy="true" style={{ width: '100%' }}><span className="sr-only">Loading</span><div className="shimmer" style={{ height: '180px', borderRadius: '12px' }} /></div>
-          ) : chartData.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '32px 16px' }}>
-              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px' }}>
-                <svg aria-hidden="true" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--border-strong)' }}>
-                  <line x1="18" y1="20" x2="18" y2="10"/>
-                  <line x1="12" y1="20" x2="12" y2="4"/>
-                  <line x1="6" y1="20" x2="6" y2="14"/>
-                  <line x1="2" y1="20" x2="22" y2="20"/>
-                </svg>
-              </div>
-              <div style={{ fontSize: '14px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                No data yet for<br />
-                <span style={{ color: 'var(--text-secondary)' }}>{selectedExercise?.name ?? 'this exercise'}</span>
-              </div>
-              <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '8px' }}>
-                Log this exercise to see progress
+        <div className="progress-main">
+          <section data-onboard="progress-chart" className="progress-chart-card" aria-labelledby="progress-exercise-title">
+            <div className="progress-chart-header">
+              <h2 id="progress-exercise-title" title={selectedExercise?.name}>{selectedExercise?.name ?? 'Exercise progress'}</h2>
+              <div className="progress-metrics" role="tablist" aria-label="Chart metric">
+                {METRIC_IDS.map(({ id, label }, index) => (
+                  <button
+                    key={id}
+                    type="button"
+                    id={`progress-metric-${id}`}
+                    className="press"
+                    data-haptic="light"
+                    role="tab"
+                    aria-selected={metric === id}
+                    aria-controls="progress-metric-panel"
+                    tabIndex={metric === id ? 0 : -1}
+                    onClick={() => setMetric(id)}
+                    onKeyDown={event => handleMetricKeyDown(event, index)}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
             </div>
-          ) : (
-            // Keyed so switching exercise or metric replays the entrance
-            // instead of hard-cutting one series into the next.
-            <div key={`${selectedId}-${metric}`} className="swap-in" style={{ width: '100%' }}>
-              <ProgressChart data={chartData} />
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Same weight, lower heart rate: only when the watch has enough sets to say so. */}
-      {selectedId && body?.hasWatch && <FitterLine key={selectedId} exerciseId={selectedId} />}
-
-      {/* Recent sessions */}
-      {recentSessions.length > 0 && (
-        <div style={{ padding: '0 16px' }}>
-          <div style={{
-            fontSize: '12px', color: 'var(--text-muted)',
-            textTransform: 'uppercase', letterSpacing: '1.5px',
-            marginBottom: '10px',
-          }}>
-            RECENT SESSIONS
-          </div>
-
-          <div
-            key={`${selectedId}-${metric}`}
-            className="stagger"
-            style={{
-              backgroundColor: 'var(--surface)',
-              border: '1px solid var(--border)',
-              borderRadius: '12px',
-              overflow: 'hidden',
-            }}
-          >
-            {recentSessions.map((session, i) => (
-              <div
-                key={i}
-                style={{
-                  '--i': i,
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  padding: '11px 16px',
-                  backgroundColor: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)',
-                  borderBottom: i < recentSessions.length - 1 ? '1px solid var(--border)' : 'none',
-                } as CSSProperties}
-              >
-                <span style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>
-                  {session.date}
-                </span>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  {session.isPR && (
-                    <span style={{
-                      fontSize: '10px',
-                      fontFamily: "'Bebas Neue', sans-serif",
-                      color: 'var(--accent-text)',
-                      backgroundColor: 'var(--accent-wash)',
-                      border: '1px solid var(--accent-border)',
-                      borderRadius: '9999px',
-                      padding: '2px 8px',
-                      letterSpacing: '0.5px',
-                    }}>
-                      PR
-                    </span>
-                  )}
-                  <span style={{
-                    fontFamily: "'JetBrains Mono', monospace",
-                    fontSize: '14px',
-                    color: session.weight !== null ? 'var(--text-primary)' : 'var(--text-muted)',
-                  }}>
-                    {session.weight !== null && session.reps !== null
-                      ? `${session.weight === 0 ? 'BW' : session.weight} × ${session.reps}`
-                      : '—'}
-                  </span>
+            <div
+              role="tabpanel"
+              id="progress-metric-panel"
+              aria-labelledby={`progress-metric-${metric}`}
+              aria-busy={loadingChart || undefined}
+              tabIndex={0}
+            >
+              {loadingChart || !selectedId ? (
+                <div className="progress-chart-plot shimmer" aria-hidden="true" />
+              ) : chartData.length === 0 ? (
+                <div className="progress-chart-plot progress-chart-empty">
+                  <svg aria-hidden="true" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 20h18M6 16v-4m6 4V8m6 8V4" />
+                  </svg>
+                  <p>No sessions logged for this exercise.</p>
+                  <span>Log a workout with this exercise to start tracking progress.</span>
                 </div>
-              </div>
-            ))}
+              ) : (
+                <ProgressChart key={selectedId} data={chartData} metric={metric} />
+              )}
+            </div>
+            <dl className="progress-stats">
+              {summary.map(({ label, value }) => (
+                <div key={label}>
+                  <dt>{label}</dt>
+                  <dd>{loadingChart ? '—' : value}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+
+          <div className="progress-details">
+            {selectedId && body?.hasWatch && <FitterLine key={selectedId} exerciseId={selectedId} />}
+
+            {recentSessions.length > 0 && (
+              <section className="progress-history" aria-labelledby="progress-history-title">
+                <header>
+                  <h2 id="progress-history-title">Recent sessions</h2>
+                  <span>Best set</span>
+                </header>
+                <ul>
+                  {recentSessions.map((session, index) => (
+                    <li key={index}>
+                      <span>{session.date}</span>
+                      <div className="progress-history-result">
+                        {session.isPR && <span className="progress-history-pr">PR</span>}
+                        <span className="progress-history-set">
+                          {session.weight !== null && session.reps !== null
+                            ? `${formatWeight(session.weight)} × ${session.reps}`
+                            : '—'}
+                        </span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
           </div>
         </div>
-      )}
-      </div>
+
+        <aside className="progress-related" aria-label="Photos and recovery">
+          <PhotoEntryCard count={photoCount} latestDate={latestPhotoDate} thumb={latestPhotoThumb} />
+          <HealthEntry body={body} />
+          {body?.hasWatch && body.load && <LoadGauge load={body.load} />}
+        </aside>
       </div>
     </div>
   )
@@ -848,7 +693,7 @@ function PhotoEntryCard({
   return (
     <div data-onboard="progress-photos">
       <Link
-        href="/progress/photos" className="press-card" aria-label="Progress photos"
+        href="/progress/photos" className="press-card" aria-label="Progress photos" data-haptic="light"
         style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', textDecoration: 'none', backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--card-shadow)', padding: 'var(--card-sm)' }}
       >
       <span style={{
