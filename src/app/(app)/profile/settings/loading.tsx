@@ -1,7 +1,7 @@
-/** Mirrors SettingsView's shell: tab bar (rail on desktop) + a two-column panel. */
+/** Mirrors SettingsView's shell: tab bar (rail on desktop) + a panel of paired rows. */
 export default function SettingsLoading() {
-  const card = (h: number) => (
-    <div>
+  const card = (h: number, span = false) => (
+    <div className={span ? 'settings-section settings-span' : 'settings-section'}>
       <div className="shimmer" style={{ width: '100px', height: '12px', borderRadius: '4px', marginBottom: '10px' }} />
       <div className="shimmer" style={{ width: '100%', height: `${h}px`, borderRadius: '12px' }} />
     </div>
@@ -14,11 +14,12 @@ export default function SettingsLoading() {
       </div>
       <div className="settings-shell">
         <div className="settings-nav">
-          <div className="shimmer settings-nav-skeleton" style={{ height: '62px', borderRadius: '14px' }} />
+          <div className="shimmer settings-nav-skeleton" style={{ height: '66px', borderRadius: '16px' }} />
         </div>
         <div className="settings-panel">
-          <div className="settings-col">{card(120)}{card(64)}</div>
-          <div className="settings-col">{card(120)}</div>
+          {card(150)}
+          {card(150)}
+          {card(76, true)}
         </div>
       </div>
     </div>

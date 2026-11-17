@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback, useId, useMemo, useRef, type CSSProperties, type ReactNode } from 'react'
+import { Fragment, useState, useEffect, useCallback, useId, useMemo, useRef, type CSSProperties, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient, getClientUser } from '@/lib/supabase/client'
@@ -75,9 +75,6 @@ const cardStyle: CSSProperties = {
   border: '1px solid var(--border)',
   borderRadius: '12px',
   padding: '14px 16px',
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '14px',
 }
 
 const titleStyle: CSSProperties = {
@@ -215,11 +212,23 @@ function NavRow({
   )
 }
 
-function Section({ label, children }: { label: string; children: ReactNode }) {
+/**
+ * One labelled card. On tablet/desktop panels are a 2-column grid of rows:
+ * paired cards stretch to the same height; `span` takes a full row, and
+ * `grid` lays that wide card's settings out two-up so rows still line up.
+ */
+function Section({ label, children, span, grid }: {
+  label: string
+  children: ReactNode
+  span?: boolean
+  grid?: boolean
+}) {
   return (
-    <div>
+    <div className={span ? 'settings-section settings-span' : 'settings-section'}>
       <div style={sectionLabelStyle}>{label}</div>
-      <div className="settings-card" style={cardStyle}>{children}</div>
+      <div className={grid ? 'settings-card settings-card--grid' : 'settings-card'} style={cardStyle}>
+        {children}
+      </div>
     </div>
   )
 }
@@ -238,8 +247,8 @@ type SettingsTab = 'general' | 'training' | 'alerts' | 'watch' | 'account'
 /**
  * Settings grew past what one scrolling page can hold, so it is split into
  * categories: a 5-up segmented bar on phones, a sticky rail on desktop. Each
- * panel lays its cards out in two hand-balanced columns (`.settings-col`) —
- * the old CSS `column-count` masonry let one column run far past the other.
+ * panel is a grid of rows (see Section): cards are paired so partners match
+ * and stretch to equal height, instead of free-flowing columns that drift.
  */
 const SETTINGS_TABS: { id: SettingsTab; label: string; short: string; hint: string; icon: ReactNode }[] = [
   {
@@ -826,511 +835,495 @@ export default function SettingsView({
 
   const generalPanel = (
     <>
-      <div className="settings-col">
-        <Section label="Appearance">
-          <div style={rowStyle}>
-            <div>
-              <div style={titleStyle}>Theme</div>
-              <div style={hintStyle}>{theme === 'light' ? 'Light mode' : 'Dark mode'}</div>
-            </div>
-            <ThemeToggle size={32} />
+      <Section label="Appearance">
+        <div style={rowStyle}>
+          <div>
+            <div style={titleStyle}>Theme</div>
+            <div style={hintStyle}>{theme === 'light' ? 'Light mode' : 'Dark mode'}</div>
           </div>
-          <div style={dividerStyle} />
-          <div style={rowStyle}>
-            <div>
-              <div style={titleStyle}>Reduce Motion</div>
-              <div style={hintStyle}>Instant UI — charts and celebrations skip animation</div>
-            </div>
-            <Switch
-              checked={prefReduceMotion}
-              onClick={toggleReduceMotion}
-              ariaLabel="Reduce motion"
-            />
+          <ThemeToggle size={32} />
+        </div>
+        <div className="settings-divider" style={dividerStyle} />
+        <div style={rowStyle}>
+          <div>
+            <div style={titleStyle}>Reduce Motion</div>
+            <div style={hintStyle}>Instant UI — charts and celebrations skip animation</div>
           </div>
-        </Section>
-
-        <Section label="Units">
-          <div style={rowStyle}>
-            <div>
-              <div style={titleStyle}>Weight Unit</div>
-              <div style={hintStyle}>{unit === 'metric' ? 'Kilograms (kg)' : 'Pounds (lbs)'}</div>
-            </div>
-            <button
-              type="button"
-              data-onboard="profile-unit"
-              data-haptic="light"
-              onClick={toggleUnit}
-              aria-label={`Weight unit: ${unit === 'metric' ? 'kilograms' : 'pounds'}`}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0',
-                backgroundColor: 'var(--surface-elevated)',
-                border: '1px solid var(--border)',
-                borderRadius: '9999px',
-                padding: '3px',
-                cursor: 'pointer',
-                position: 'relative',
-                width: '80px',
-                height: '40px',
-                flexShrink: 0,
-              }}
-            >
-              <span style={{
-                flex: 1, textAlign: 'center', fontSize: '11px', fontWeight: 700,
-                fontFamily: "'DM Sans', sans-serif",
-                color: unit === 'metric' ? 'var(--on-accent)' : 'var(--text-muted)',
-                position: 'relative', zIndex: 1, letterSpacing: '0.5px',
-              }}>KG</span>
-              <span style={{
-                flex: 1, textAlign: 'center', fontSize: '11px', fontWeight: 700,
-                fontFamily: "'DM Sans', sans-serif",
-                color: unit === 'imperial' ? 'var(--on-accent)' : 'var(--text-muted)',
-                position: 'relative', zIndex: 1, letterSpacing: '0.5px',
-              }}>LBS</span>
-              <div style={{
-                position: 'absolute',
-                top: '3px',
-                left: unit === 'metric' ? '3px' : 'calc(50% + 1px)',
-                width: 'calc(50% - 4px)',
-                height: 'calc(100% - 6px)',
-                backgroundColor: 'var(--accent)',
-                borderRadius: '9999px',
-                transition: 'left 150ms ease',
-              }} />
-            </button>
-          </div>
-        </Section>
-      </div>
-
-      <div className="settings-col">
-        <Section label="Help">
-          <NavRow
-            title="Send Feedback"
-            hint="Report a bug or request a feature"
-            onClick={() => setFeedbackOpen(true)}
-            icon={feedbackIcon}
+          <Switch
+            checked={prefReduceMotion}
+            onClick={toggleReduceMotion}
+            ariaLabel="Reduce motion"
           />
-          <div style={dividerStyle} />
-          <NavRow
-            title="Replay Tutorial"
-            hint="Show the app walkthrough again from Home"
-            onClick={handleReplayTutorial}
-            icon={replayIcon}
-          />
-        </Section>
-      </div>
+        </div>
+      </Section>
+
+      <Section label="Units" span>
+        <div style={rowStyle}>
+          <div>
+            <div style={titleStyle}>Weight Unit</div>
+            <div style={hintStyle}>{unit === 'metric' ? 'Kilograms (kg)' : 'Pounds (lbs)'}</div>
+          </div>
+          <button
+            type="button"
+            data-onboard="profile-unit"
+            data-haptic="light"
+            onClick={toggleUnit}
+            aria-label={`Weight unit: ${unit === 'metric' ? 'kilograms' : 'pounds'}`}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0',
+              backgroundColor: 'var(--surface-elevated)',
+              border: '1px solid var(--border)',
+              borderRadius: '9999px',
+              padding: '3px',
+              cursor: 'pointer',
+              position: 'relative',
+              width: '80px',
+              height: '40px',
+              flexShrink: 0,
+            }}
+          >
+            <span style={{
+              flex: 1, textAlign: 'center', fontSize: '11px', fontWeight: 700,
+              fontFamily: "'DM Sans', sans-serif",
+              color: unit === 'metric' ? 'var(--on-accent)' : 'var(--text-muted)',
+              position: 'relative', zIndex: 1, letterSpacing: '0.5px',
+            }}>KG</span>
+            <span style={{
+              flex: 1, textAlign: 'center', fontSize: '11px', fontWeight: 700,
+              fontFamily: "'DM Sans', sans-serif",
+              color: unit === 'imperial' ? 'var(--on-accent)' : 'var(--text-muted)',
+              position: 'relative', zIndex: 1, letterSpacing: '0.5px',
+            }}>LBS</span>
+            <div style={{
+              position: 'absolute',
+              top: '3px',
+              left: unit === 'metric' ? '3px' : 'calc(50% + 1px)',
+              width: 'calc(50% - 4px)',
+              height: 'calc(100% - 6px)',
+              backgroundColor: 'var(--accent)',
+              borderRadius: '9999px',
+              transition: 'left 150ms ease',
+            }} />
+          </button>
+        </div>
+      </Section>
+
+      <Section label="Help">
+        <NavRow
+          title="Send Feedback"
+          hint="Report a bug or request a feature"
+          onClick={() => setFeedbackOpen(true)}
+          icon={feedbackIcon}
+        />
+        <div className="settings-divider" style={dividerStyle} />
+        <NavRow
+          title="Replay Tutorial"
+          hint="Show the app walkthrough again from Home"
+          onClick={handleReplayTutorial}
+          icon={replayIcon}
+        />
+      </Section>
     </>
   )
 
   const trainingPanel = (
     <>
-      <div className="settings-col">
-        <Section label="Rest timer">
-          <div data-onboard="profile-rest" style={rowStyle}>
-            <div>
-              <div style={titleStyle}>Default Rest Time</div>
-              <div style={hintStyle}>Between sets unless changed per exercise</div>
-            </div>
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0,
-              backgroundColor: 'var(--surface-elevated)',
-              border: '1px solid var(--border)',
-              borderRadius: '9999px',
-              padding: '3px 10px',
-              height: '32px',
-            }}>
-              <input
-                type="text"
-                inputMode="numeric"
-                value={restMin}
-                onChange={e => commitRest(Number(e.target.value), restSec)}
-                aria-label="Default rest minutes"
-                style={{
-                  width: '28px', background: 'transparent', border: 'none', outline: 'none',
-                  color: 'var(--text-primary)', fontFamily: "'JetBrains Mono', monospace",
-                  fontSize: '16px', textAlign: 'right',
-                }}
-              />
-              <span style={{ color: 'var(--text-muted)', fontFamily: "'JetBrains Mono', monospace", fontSize: '14px' }}>:</span>
-              <input
-                type="text"
-                inputMode="numeric"
-                value={String(restSec).padStart(2, '0')}
-                onChange={e => commitRest(restMin, Number(e.target.value))}
-                aria-label="Default rest seconds"
-                style={{
-                  width: '28px', background: 'transparent', border: 'none', outline: 'none',
-                  color: 'var(--text-primary)', fontFamily: "'JetBrains Mono', monospace",
-                  fontSize: '16px', textAlign: 'left',
-                }}
-              />
-            </div>
+      <Section label="Rest timer">
+        <div data-onboard="profile-rest" style={rowStyle}>
+          <div>
+            <div style={titleStyle}>Default Rest Time</div>
+            <div style={hintStyle}>Between sets unless changed per exercise</div>
           </div>
-
-          <div style={dividerStyle} />
-
-          <div style={rowStyle}>
-            <div>
-              <div style={titleStyle}>Pause Rest Timer on Exit</div>
-              <div style={hintStyle}>
-                {pauseRestOnExit
-                  ? 'Save & Exit freezes the timer'
-                  : 'Save & Exit keeps the timer running'}
-              </div>
-            </div>
-            <Switch
-              checked={pauseRestOnExit}
-              onClick={togglePauseRestOnExit}
-              ariaLabel="Pause rest timer on exit"
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0,
+            backgroundColor: 'var(--surface-elevated)',
+            border: '1px solid var(--border)',
+            borderRadius: '9999px',
+            padding: '3px 10px',
+            height: '32px',
+          }}>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={restMin}
+              onChange={e => commitRest(Number(e.target.value), restSec)}
+              aria-label="Default rest minutes"
+              style={{
+                width: '28px', background: 'transparent', border: 'none', outline: 'none',
+                color: 'var(--text-primary)', fontFamily: "'JetBrains Mono', monospace",
+                fontSize: '16px', textAlign: 'right',
+              }}
+            />
+            <span style={{ color: 'var(--text-muted)', fontFamily: "'JetBrains Mono', monospace", fontSize: '14px' }}>:</span>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={String(restSec).padStart(2, '0')}
+              onChange={e => commitRest(restMin, Number(e.target.value))}
+              aria-label="Default rest seconds"
+              style={{
+                width: '28px', background: 'transparent', border: 'none', outline: 'none',
+                color: 'var(--text-primary)', fontFamily: "'JetBrains Mono', monospace",
+                fontSize: '16px', textAlign: 'left',
+              }}
             />
           </div>
-        </Section>
+        </div>
 
-        <Section label="Rest days">
-          <div data-onboard="profile-rest-days">
-            <div style={{ marginBottom: '12px' }}>
-              <div style={titleStyle}>Weekly rest days</div>
-              <div style={hintStyle}>
-                Budget resets Sunday. A day turned on here starts the next time it comes
-                around — to skip today, use Rest today on Home.
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: '4px', justifyContent: 'space-between' }}>
-              {REST_DAY_LABELS.map((label, dayOfWeek) => {
-                const active = restDays.has(dayOfWeek)
-                return (
-                  <button
-                    key={dayOfWeek}
-                    type="button"
-                    onClick={() => toggleRestDay(dayOfWeek)}
-                    disabled={savingRestDay !== null}
-                    aria-pressed={active}
-                    aria-label={`${DAY_NAMES[dayOfWeek]} rest day`}
-                    data-haptic="light"
-                    style={{
-                      flex: '1 1 0', maxWidth: '44px', aspectRatio: '1', minHeight: '40px',
-                      borderRadius: '9999px',
-                      border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
-                      backgroundColor: active ? 'var(--accent)' : 'var(--surface-elevated)',
-                      color: active ? 'var(--on-accent)' : 'var(--text-muted)',
-                      fontFamily: "'DM Sans', sans-serif",
-                      fontSize: '12px',
-                      fontWeight: 700,
-                      cursor: savingRestDay !== null ? 'default' : 'pointer',
-                      opacity: savingRestDay !== null && savingRestDay !== dayOfWeek ? 0.6 : 1,
-                      transition: 'all 150ms ease',
-                      padding: 0,
-                    }}
-                  >
-                    {label}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        </Section>
-      </div>
+        <div className="settings-divider" style={dividerStyle} />
 
-      <div className="settings-col">
-        <Section label="Warm-ups">
+        <div style={rowStyle}>
           <div>
-            <div style={{ marginBottom: '12px' }}>
-              <div style={titleStyle}>Warm-up ramp</div>
-              <div style={hintStyle}>
-                {warmupPercents.length === 0
-                  ? 'Off — Warm-up % is hidden during a live workout'
-                  : `${warmupPercents.length} set${warmupPercents.length === 1 ? '' : 's'} at ${formatWarmupPercentsList(warmupPercents)} of working weight`}
-              </div>
+            <div style={titleStyle}>Pause Rest Timer on Exit</div>
+            <div style={hintStyle}>
+              {pauseRestOnExit
+                ? 'Save & Exit freezes the timer'
+                : 'Save & Exit keeps the timer running'}
             </div>
-            <div style={{ display: 'flex', gap: '6px', marginBottom: warmupPercents.length > 0 ? '12px' : 0 }}>
-              {Array.from({ length: MAX_WARMUP_SETS + 1 }, (_, n) => {
-                const active = warmupPercents.length === n
-                return (
-                  <button
-                    key={n}
-                    type="button"
-                    data-haptic="light"
-                    onClick={() => {
-                      const next: number[] = []
-                      for (let i = 0; i < n; i++) {
-                        next.push(
-                          warmupPercents[i]
-                            ?? DEFAULT_WARMUP_PERCENTS[i]
-                            ?? clampWarmupPercent((next[next.length - 1] ?? 40) + 10),
-                        )
-                      }
-                      setWarmupPercents(next)
-                      writeWarmupPercents(next)
-                    }}
-                    aria-pressed={active}
-                    aria-label={n === 0 ? 'No warm-up sets' : `${n} warm-up set${n === 1 ? '' : 's'}`}
-                    className="press"
-                    style={{
-                      flex: 1,
-                      height: '40px',
-                      borderRadius: 'var(--radius-sm)',
-                      border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
-                      backgroundColor: active ? 'var(--accent-wash)' : 'var(--surface-elevated)',
-                      color: active ? 'var(--accent-text)' : 'var(--text-secondary)',
-                      fontFamily: "'DM Sans', sans-serif",
-                      fontSize: '13px',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {n}
-                  </button>
-                )
-              })}
-            </div>
-            {warmupPercents.length > 0 && (
-              <div style={{ display: 'flex', gap: '8px' }}>
-                {warmupPercents.map((p, i) => (
-                  <label
-                    key={i}
-                    style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 0 }}
-                  >
-                    <span style={{
-                      fontSize: '10px',
-                      letterSpacing: 'var(--tracking-label)',
-                      color: 'var(--text-muted)',
-                      textTransform: 'uppercase',
-                      fontWeight: 500,
-                    }}>
-                      Set {i + 1}
-                    </span>
-                    <div style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      backgroundColor: 'var(--surface-elevated)',
-                      border: '1px solid var(--border)',
-                      borderRadius: 'var(--radius-sm)',
-                      height: '40px',
-                      padding: '0 8px',
-                    }}>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        value={p}
-                        aria-label={`Warm-up set ${i + 1} percent`}
-                        onChange={e => {
-                          const n = Number(e.target.value)
-                          if (!Number.isFinite(n)) return
-                          const next = [...warmupPercents]
-                          next[i] = n
-                          setWarmupPercents(next)
-                        }}
-                        onBlur={() => {
-                          const next = warmupPercents.map(clampWarmupPercent)
-                          setWarmupPercents(next)
-                          writeWarmupPercents(next)
-                        }}
-                        onFocus={e => e.target.select()}
-                        style={{
-                          width: '100%',
-                          background: 'transparent',
-                          border: 'none',
-                          outline: 'none',
-                          color: 'var(--text-primary)',
-                          fontFamily: "'JetBrains Mono', monospace",
-                          fontSize: '16px',
-                          textAlign: 'center',
-                        }}
-                      />
-                      <span style={{
-                        color: 'var(--text-muted)',
-                        fontFamily: "'JetBrains Mono', monospace",
-                        fontSize: '12px',
-                        flexShrink: 0,
-                      }}>%</span>
-                    </div>
-                  </label>
-                ))}
-              </div>
-            )}
           </div>
-        </Section>
-      </div>
+          <Switch
+            checked={pauseRestOnExit}
+            onClick={togglePauseRestOnExit}
+            ariaLabel="Pause rest timer on exit"
+          />
+        </div>
+      </Section>
+
+      <Section label="Rest days">
+        <div data-onboard="profile-rest-days">
+          <div style={{ marginBottom: '12px' }}>
+            <div style={titleStyle}>Weekly rest days</div>
+            <div style={hintStyle}>
+              Budget resets Sunday. A day turned on here starts the next time it comes
+              around — to skip today, use Rest today on Home.
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '4px', justifyContent: 'space-between' }}>
+            {REST_DAY_LABELS.map((label, dayOfWeek) => {
+              const active = restDays.has(dayOfWeek)
+              return (
+                <button
+                  key={dayOfWeek}
+                  type="button"
+                  onClick={() => toggleRestDay(dayOfWeek)}
+                  disabled={savingRestDay !== null}
+                  aria-pressed={active}
+                  aria-label={`${DAY_NAMES[dayOfWeek]} rest day`}
+                  data-haptic="light"
+                  style={{
+                    flex: '1 1 0', maxWidth: '44px', aspectRatio: '1', minHeight: '40px',
+                    borderRadius: '9999px',
+                    border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+                    backgroundColor: active ? 'var(--accent)' : 'var(--surface-elevated)',
+                    color: active ? 'var(--on-accent)' : 'var(--text-muted)',
+                    fontFamily: "'DM Sans', sans-serif",
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    cursor: savingRestDay !== null ? 'default' : 'pointer',
+                    opacity: savingRestDay !== null && savingRestDay !== dayOfWeek ? 0.6 : 1,
+                    transition: 'all 150ms ease',
+                    padding: 0,
+                  }}
+                >
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      </Section>
+
+      <Section label="Warm-ups" span>
+        <div>
+          <div style={{ marginBottom: '12px' }}>
+            <div style={titleStyle}>Warm-up ramp</div>
+            <div style={hintStyle}>
+              {warmupPercents.length === 0
+                ? 'Off — Warm-up % is hidden during a live workout'
+                : `${warmupPercents.length} set${warmupPercents.length === 1 ? '' : 's'} at ${formatWarmupPercentsList(warmupPercents)} of working weight`}
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '6px', marginBottom: warmupPercents.length > 0 ? '12px' : 0 }}>
+            {Array.from({ length: MAX_WARMUP_SETS + 1 }, (_, n) => {
+              const active = warmupPercents.length === n
+              return (
+                <button
+                  key={n}
+                  type="button"
+                  data-haptic="light"
+                  onClick={() => {
+                    const next: number[] = []
+                    for (let i = 0; i < n; i++) {
+                      next.push(
+                        warmupPercents[i]
+                          ?? DEFAULT_WARMUP_PERCENTS[i]
+                          ?? clampWarmupPercent((next[next.length - 1] ?? 40) + 10),
+                      )
+                    }
+                    setWarmupPercents(next)
+                    writeWarmupPercents(next)
+                  }}
+                  aria-pressed={active}
+                  aria-label={n === 0 ? 'No warm-up sets' : `${n} warm-up set${n === 1 ? '' : 's'}`}
+                  className="press"
+                  style={{
+                    flex: 1,
+                    height: '40px',
+                    borderRadius: 'var(--radius-sm)',
+                    border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+                    backgroundColor: active ? 'var(--accent-wash)' : 'var(--surface-elevated)',
+                    color: active ? 'var(--accent-text)' : 'var(--text-secondary)',
+                    fontFamily: "'DM Sans', sans-serif",
+                    fontSize: '13px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {n}
+                </button>
+              )
+            })}
+          </div>
+          {warmupPercents.length > 0 && (
+            <div style={{ display: 'flex', gap: '8px' }}>
+              {warmupPercents.map((p, i) => (
+                <label
+                  key={i}
+                  style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 0 }}
+                >
+                  <span style={{
+                    fontSize: '10px',
+                    letterSpacing: 'var(--tracking-label)',
+                    color: 'var(--text-muted)',
+                    textTransform: 'uppercase',
+                    fontWeight: 500,
+                  }}>
+                    Set {i + 1}
+                  </span>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    backgroundColor: 'var(--surface-elevated)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-sm)',
+                    height: '40px',
+                    padding: '0 8px',
+                  }}>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={p}
+                      aria-label={`Warm-up set ${i + 1} percent`}
+                      onChange={e => {
+                        const n = Number(e.target.value)
+                        if (!Number.isFinite(n)) return
+                        const next = [...warmupPercents]
+                        next[i] = n
+                        setWarmupPercents(next)
+                      }}
+                      onBlur={() => {
+                        const next = warmupPercents.map(clampWarmupPercent)
+                        setWarmupPercents(next)
+                        writeWarmupPercents(next)
+                      }}
+                      onFocus={e => e.target.select()}
+                      style={{
+                        width: '100%',
+                        background: 'transparent',
+                        border: 'none',
+                        outline: 'none',
+                        color: 'var(--text-primary)',
+                        fontFamily: "'JetBrains Mono', monospace",
+                        fontSize: '16px',
+                        textAlign: 'center',
+                      }}
+                    />
+                    <span style={{
+                      color: 'var(--text-muted)',
+                      fontFamily: "'JetBrains Mono', monospace",
+                      fontSize: '12px',
+                      flexShrink: 0,
+                    }}>%</span>
+                  </div>
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+      </Section>
     </>
   )
 
   const notifOn = !!notifPrefs?.enabled
   const alertsPanel = (
     <>
-      <div className="settings-col">
-        <Section label="Push">
-          <div data-onboard="profile-notifications" style={rowStyle}>
-            <div>
-              <div style={titleStyle}>Notifications</div>
-              <div style={hintStyle}>
-                {!standalone
-                  ? 'Add to Home Screen to enable alerts'
-                  : notifOn
-                    ? 'Streak reminders + in-page rest alerts'
-                    : 'Off — enable for streak & rest pings'}
-              </div>
+      <Section label="Push" span grid>
+        <div data-onboard="profile-notifications" style={rowStyle}>
+          <div>
+            <div style={titleStyle}>Notifications</div>
+            <div style={hintStyle}>
+              {!standalone
+                ? 'Add to Home Screen to enable alerts'
+                : notifOn
+                  ? 'Streak reminders + in-page rest alerts'
+                  : 'Off — enable for streak & rest pings'}
             </div>
-            <Switch
-              checked={notifOn}
-              onClick={() => void toggleNotificationsMaster()}
-              disabled={notifBusy || notifPrefs === null}
-              ariaLabel="Enable notifications"
-            />
           </div>
+          <Switch
+            checked={notifOn}
+            onClick={() => void toggleNotificationsMaster()}
+            disabled={notifBusy || notifPrefs === null}
+            ariaLabel="Enable notifications"
+          />
+        </div>
 
-          {notifOn && notifPrefs.streak_reminder && (
-            <>
-              <div style={dividerStyle} />
-              <div style={rowStyle}>
-                <div>
-                  <div style={titleStyle}>Reminder time</div>
-                  <div style={hintStyle}>Streak nudge, between 5 and 9 PM</div>
-                </div>
-                <select
-                  value={notifPrefs.streak_reminder_hour}
-                  onChange={e => void patchNotifPref('streak_reminder_hour', Number(e.target.value))}
-                  aria-label="Streak reminder hour"
-                  style={{
-                    backgroundColor: 'var(--surface-elevated)',
-                    border: '1px solid var(--border)',
-                    borderRadius: '9999px',
-                    color: 'var(--text-primary)',
-                    fontFamily: "'JetBrains Mono', monospace",
-                    fontSize: '16px',
-                    padding: '6px 12px',
-                    height: '32px',
-                  }}
-                >
-                  {[17, 18, 19, 20, 21].map(h => (
-                    <option key={h} value={h}>
-                      {h === 12 ? '12:00 PM' : h > 12 ? `${h - 12}:00 PM` : `${h}:00`}
-                    </option>
-                  ))}
-                </select>
+        {notifOn && notifPrefs.streak_reminder && (
+          <>
+            <div className="settings-divider" style={dividerStyle} />
+            <div style={rowStyle}>
+              <div>
+                <div style={titleStyle}>Reminder time</div>
+                <div style={hintStyle}>Streak nudge, between 5 and 9 PM</div>
               </div>
-            </>
-          )}
-
-          {!standalone && (
-            <>
-              <div style={dividerStyle} />
-              <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.4 }}>
-                On iPhone, alerts work after you add GRIND to your Home Screen.
-              </div>
-            </>
-          )}
-        </Section>
-      </div>
-
-      <div className="settings-col">
-        <Section label="Alerts">
-          {(
-            [
-              ['rest_complete', 'Rest ended', 'Pings when your rest hits zero. Most reliable while GRIND is open.'] as const,
-              ['rest_warning_10s', 'Rest warning (10s)', 'A heads-up 10 seconds before rest ends. Works while GRIND is open.'] as const,
-              ['workout_status', 'Workout status', 'One card while the app is in the background'] as const,
-              ['streak_reminder', 'Streak reminder', 'Evening nudge if you have not trained'] as const,
-            ] as const
-          ).map(([key, label, hint], i) => (
-            <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              {i > 0 && <div style={dividerStyle} />}
-              <div style={{ ...rowStyle, opacity: notifOn ? 1 : 0.55 }}>
-                <div>
-                  <div style={titleStyle}>{label}</div>
-                  <div style={hintStyle}>{hint}</div>
-                </div>
-                <Switch
-                  checked={notifOn && !!notifPrefs?.[key]}
-                  onClick={() => { if (notifPrefs) void patchNotifPref(key, !notifPrefs[key]) }}
-                  disabled={!notifOn}
-                  ariaLabel={label}
-                />
-              </div>
+              <select
+                value={notifPrefs.streak_reminder_hour}
+                onChange={e => void patchNotifPref('streak_reminder_hour', Number(e.target.value))}
+                aria-label="Streak reminder hour"
+                style={{
+                  backgroundColor: 'var(--surface-elevated)',
+                  border: '1px solid var(--border)',
+                  borderRadius: '9999px',
+                  color: 'var(--text-primary)',
+                  fontFamily: "'JetBrains Mono', monospace",
+                  fontSize: '16px',
+                  padding: '6px 12px',
+                  height: '32px',
+                }}
+              >
+                {[17, 18, 19, 20, 21].map(h => (
+                  <option key={h} value={h}>
+                    {h === 12 ? '12:00 PM' : h > 12 ? `${h - 12}:00 PM` : `${h}:00`}
+                  </option>
+                ))}
+              </select>
             </div>
-          ))}
-          {!notifOn && (
-            <div style={{ ...hintStyle, lineHeight: 1.4 }}>
-              Turn on notifications to choose which alerts you get.
+          </>
+        )}
+
+        {!standalone && (
+          <>
+            <div className="settings-divider" style={dividerStyle} />
+            <div className="settings-full" style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+              On iPhone, alerts work after you add GRIND to your Home Screen.
             </div>
-          )}
-        </Section>
-      </div>
+          </>
+        )}
+      </Section>
+
+      <Section label="Alerts" span grid>
+        {(
+          [
+            ['rest_complete', 'Rest ended', 'Pings when your rest hits zero. Most reliable while GRIND is open.'] as const,
+            ['rest_warning_10s', 'Rest warning (10s)', 'A heads-up 10 seconds before rest ends. Works while GRIND is open.'] as const,
+            ['workout_status', 'Workout status', 'One card while the app is in the background'] as const,
+            ['streak_reminder', 'Streak reminder', 'Evening nudge if you have not trained'] as const,
+          ] as const
+        ).map(([key, label, hint], i) => (
+          <Fragment key={key}>
+            {i > 0 && <div className="settings-divider" style={dividerStyle} />}
+            <div style={{ ...rowStyle, opacity: notifOn ? 1 : 0.55 }}>
+              <div>
+                <div style={titleStyle}>{label}</div>
+                <div style={hintStyle}>{hint}</div>
+              </div>
+              <Switch
+                checked={notifOn && !!notifPrefs?.[key]}
+                onClick={() => { if (notifPrefs) void patchNotifPref(key, !notifPrefs[key]) }}
+                disabled={!notifOn}
+                ariaLabel={label}
+              />
+            </div>
+          </Fragment>
+        ))}
+        {!notifOn && (
+          <div className="settings-full" style={{ ...hintStyle, lineHeight: 1.4 }}>
+            Turn on notifications to choose which alerts you get.
+          </div>
+        )}
+      </Section>
     </>
   )
 
-  // Columns are paired by measured height (devices list and health controls
-  // run tall; the on-watch switches and sleep sources run shorter).
+  // Devices and Privacy run about the same height, so they share a row; the
+  // two watch switches and the long sleep-import card each take a full row.
   const watchPanel = (
     <>
-      <div className="settings-col">
-        <Section label="Devices">
-          <WatchDevices supabase={supabase} />
-        </Section>
+      <Section label="Devices">
+        <WatchDevices supabase={supabase} />
+      </Section>
 
-        <Section label="Privacy">
-          <HealthSettings />
-          {bodyPrefs && (
-            <>
-              <div style={dividerStyle} />
-              <div style={rowStyle}>
-                <div>
-                  <div style={titleStyle}>Delete all watch health data</div>
-                  <div style={hintStyle}>Heart rate, Body Battery, stress and steps. Workouts stay.</div>
-                </div>
-                <Button size="sm" variant="danger" onClick={() => setBodyDeleteOpen(true)} style={{ flexShrink: 0 }}>
-                  Delete
-                </Button>
-              </div>
-              <ConfirmDialog
-                open={bodyDeleteOpen}
-                title="Delete watch health data?"
-                message="Every heart-rate trace, set peak and daily Body Battery, stress and step reading is removed for good. Your workouts, sets and XP stay."
-                confirmLabel="Delete"
-                busy={bodyDeleting}
-                onConfirm={() => void confirmDeleteBodyData()}
-                onCancel={() => setBodyDeleteOpen(false)}
-              />
-            </>
-          )}
-        </Section>
-      </div>
-
-      <div className="settings-col">
+      <Section label="Privacy">
+        <HealthSettings />
         {bodyPrefs && (
-          <Section label="On the watch">
+          <>
+            <div className="settings-divider" style={dividerStyle} />
             <div style={rowStyle}>
               <div>
-                <div style={titleStyle}>Use watch data in Coach</div>
-                <div style={hintStyle}>Coach can read your Charge, heart rate and recovery</div>
+                <div style={titleStyle}>Delete all watch health data</div>
+                <div style={hintStyle}>Heart rate, Body Battery, stress and steps. Workouts stay.</div>
               </div>
-              <Switch
-                checked={bodyPrefs.coach_uses_body}
-                onClick={() => void patchBodyPref('coach_uses_body')}
-                disabled={bodyPrefsBusy}
-                ariaLabel="Use watch data in Coach"
-              />
+              <Button size="sm" variant="danger" onClick={() => setBodyDeleteOpen(true)} style={{ flexShrink: 0 }}>
+                Delete
+              </Button>
             </div>
-            <div style={dividerStyle} />
-            <div style={rowStyle}>
-              <div>
-                <div style={titleStyle}>Smart rest on the watch</div>
-                <div style={hintStyle}>Buzzes when your heart rate has recovered. Off by default.</div>
-              </div>
-              <Switch
-                checked={bodyPrefs.smart_rest}
-                onClick={() => void patchBodyPref('smart_rest')}
-                disabled={bodyPrefsBusy}
-                ariaLabel="Smart rest on the watch"
-              />
-            </div>
-          </Section>
+            <ConfirmDialog
+              open={bodyDeleteOpen}
+              title="Delete watch health data?"
+              message="Every heart-rate trace, set peak and daily Body Battery, stress and step reading is removed for good. Your workouts, sets and XP stay."
+              confirmLabel="Delete"
+              busy={bodyDeleting}
+              onConfirm={() => void confirmDeleteBodyData()}
+              onCancel={() => setBodyDeleteOpen(false)}
+            />
+          </>
         )}
+      </Section>
 
-        <Section label="Sleep data">
-          <HealthImportSettings />
+      {bodyPrefs && (
+        <Section label="On the watch" span grid>
+          <div style={rowStyle}>
+            <div>
+              <div style={titleStyle}>Use watch data in Coach</div>
+              <div style={hintStyle}>Coach can read your Charge, heart rate and recovery</div>
+            </div>
+            <Switch
+              checked={bodyPrefs.coach_uses_body}
+              onClick={() => void patchBodyPref('coach_uses_body')}
+              disabled={bodyPrefsBusy}
+              ariaLabel="Use watch data in Coach"
+            />
+          </div>
+          <div className="settings-divider" style={dividerStyle} />
+          <div style={rowStyle}>
+            <div>
+              <div style={titleStyle}>Smart rest on the watch</div>
+              <div style={hintStyle}>Buzzes when your heart rate has recovered. Off by default.</div>
+            </div>
+            <Switch
+              checked={bodyPrefs.smart_rest}
+              onClick={() => void patchBodyPref('smart_rest')}
+              disabled={bodyPrefsBusy}
+              ariaLabel="Smart rest on the watch"
+            />
+          </div>
         </Section>
-      </div>
+      )}
+
+      <Section label="Sleep data" span>
+        <HealthImportSettings />
+      </Section>
     </>
   )
 
@@ -1343,7 +1336,7 @@ export default function SettingsView({
         disabled={exporting}
         icon={downloadIcon}
       />
-      <div style={dividerStyle} />
+      <div className="settings-divider" style={dividerStyle} />
       <NavRow
         title="Export Sets (CSV)"
         hint="Spreadsheet-friendly set history"
@@ -1364,6 +1357,9 @@ export default function SettingsView({
         data-haptic="medium"
         onClick={handleSignOut}
         style={{
+          // Sits on the card's bottom edge when the row stretches it to match
+          // Your data, instead of leaving a gap under the button.
+          marginTop: 'auto',
           position: 'relative',
           width: '100%', height: '48px',
           backgroundColor: 'rgba(239, 68, 68, 0.08)',
@@ -1384,8 +1380,8 @@ export default function SettingsView({
   /* Kept out of the Account card so a leftover iOS tap-offset cannot
      land a Delete tap on Sign Out (same-size stacked haptic buttons). */
   const dangerCard = (
-    <Section label="Danger zone">
-      <div style={hintStyle}>
+    <Section label="Danger zone" span grid>
+      <div style={{ ...hintStyle, lineHeight: 1.5 }}>
         Erases workouts, PRs, streak, badges and profile, then signs you out.
       </div>
       <button
@@ -1416,7 +1412,7 @@ export default function SettingsView({
   )
 
   const developerCard = isAdmin && (
-    <Section label="Developer">
+    <Section label="Developer" span grid>
       <div style={rowStyle}>
         <div>
           <div style={titleStyle}>Demo Mode</div>
@@ -1424,7 +1420,7 @@ export default function SettingsView({
         </div>
         <Switch checked={demoMode} onClick={toggleDemoMode} ariaLabel="Demo mode" />
       </div>
-      <div style={dividerStyle} />
+      <div className="settings-divider" style={dividerStyle} />
       <div style={rowStyle}>
         <div>
           <div style={titleStyle}>Unlimited Coach Messages</div>
@@ -1437,7 +1433,7 @@ export default function SettingsView({
           ariaLabel="Unlimited Coach messages"
         />
       </div>
-      <div style={dividerStyle} />
+      <div className="settings-divider" style={dividerStyle} />
       <NavRow
         title={replayingSetup ? 'Opening Setup…' : 'Replay Setup'}
         hint="Run the first-run setup wizard again"
@@ -1445,21 +1441,21 @@ export default function SettingsView({
         disabled={replayingSetup}
         icon={setupIcon}
       />
-      <div style={dividerStyle} />
+      <div className="settings-divider" style={dividerStyle} />
       <NavRow
         title="Feedback Inbox"
         hint="Everything users have sent in"
         href="/admin/feedback"
         icon={inboxIcon}
       />
-      <div style={dividerStyle} />
+      <div className="settings-divider" style={dividerStyle} />
       <NavRow
         title="Day Icon Gallery"
         hint="Preview every workout-day glyph"
         href="/admin/icons"
         icon={galleryIcon}
       />
-      <div style={dividerStyle} />
+      <div className="settings-divider" style={dividerStyle} />
       <NavRow
         title="UP NEXT Card Lab"
         hint="Try frosted glass, aurora, and other treatments"
@@ -1469,17 +1465,12 @@ export default function SettingsView({
     </Section>
   )
 
-  // Admins get a tall Developer card, so it takes a column of its own and the
-  // everyday cards share the other; everyone else splits data / account.
-  const accountPanel = developerCard ? (
+  const accountPanel = (
     <>
-      <div className="settings-col">{dataCard}{signOutCard}{dangerCard}</div>
-      <div className="settings-col">{developerCard}</div>
-    </>
-  ) : (
-    <>
-      <div className="settings-col">{dataCard}</div>
-      <div className="settings-col">{signOutCard}{dangerCard}</div>
+      {dataCard}
+      {signOutCard}
+      {dangerCard}
+      {developerCard}
     </>
   )
 
