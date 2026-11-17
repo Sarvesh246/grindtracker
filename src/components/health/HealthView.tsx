@@ -7,6 +7,7 @@ import {
   clockLabel,
   dailyBrief,
   dayAnnotations,
+  intradayEnvelope,
   dateLabel,
   duration,
   mainSleep,
@@ -136,7 +137,7 @@ export function HealthDateHeader({
           ›
         </button>
       </div>
-      <div className="health-strip" ref={stripRef} data-swipe-ignore>
+      <div className="health-strip scrollbar-hide" ref={stripRef}>
         {days.map((key) => {
           const when = new Date(`${key}T12:00:00`)
           const has = availableDates.includes(key)
@@ -652,6 +653,7 @@ export function HealthTrend({
   const [window, setWindow] = useState(7)
   const [requestedMetric, setMetric] = useState<HealthMetric>(initialMetric)
   const [picked, setPicked] = useState<{ key: string; index: number } | null>(null)
+  const chipsRef = useRef<HTMLDivElement>(null)
   const available = (Object.keys(METRICS) as HealthMetric[]).filter((key) =>
     data.history.some((d) => metricValue(d, key) != null)
   )
@@ -660,6 +662,15 @@ export function HealthTrend({
     : available.includes(requestedMetric)
       ? requestedMetric
       : (available[0] ?? initialMetric)
+  useEffect(() => {
+    const row = chipsRef.current
+    const on = row?.querySelector<HTMLElement>('[aria-pressed="true"]')
+    if (row && on)
+      row.scrollTo({
+        left: on.offsetLeft - (row.clientWidth - on.clientWidth) / 2,
+        behavior: 'smooth'
+      })
+  }, [metric])
   const rows = Array.from({ length: window }, (_, i) => {
     const key = shiftDate(date, i - window + 1)
     return {
@@ -685,10 +696,10 @@ export function HealthTrend({
     <div id="trends">
       {!fixed && (
         <div
-          className="health-chips-scroll"
+          className="health-chips-scroll scrollbar-hide"
+          ref={chipsRef}
           role="group"
           aria-label="Measurement"
-          data-swipe-ignore
         >
           {available.map((key) => (
             <button
@@ -745,7 +756,7 @@ export function HealthTrend({
       ) : (
         <p>No readings in this window.</p>
       )}
-      <div className="health-axis health-axis-3">
+      <div className="health-axis health-axis-3 health-axis-plot">
         <span>{dateLabel(rows[0].date)}</span>
         <span>{dateLabel(rows[Math.floor((rows.length - 1) / 2)].date)}</span>
         <span>{dateLabel(date)}</span>
@@ -950,6 +961,10 @@ export function HealthView({
                     stress={body.todayRow.stress_series ?? []}
                     date={date}
                     today={today}
+                    usual={{
+                      bb: intradayEnvelope(body.days, date, 'bb_series'),
+                      stress: intradayEnvelope(body.days, date, 'stress_series')
+                    }}
                     annotations={dayAnnotations(data.workouts, mainSleep(data.sleeps, date), date)}
                     summary={{
                       high: body.todayRow.bb_high,

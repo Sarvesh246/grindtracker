@@ -8,7 +8,7 @@ import {
   relativeTime,
   type SampleRow
 } from '../reconcile'
-import { dayAnnotations, mainSleep, type SleepSession } from '../model'
+import { dayAnnotations, intradayEnvelope, mainSleep, type SleepSession } from '../model'
 
 process.env.TZ = 'UTC'
 
@@ -206,5 +206,86 @@ describe('status wording', () => {
     assert.match(connectionErrorText('expired_credentials')!, /Reconnect/)
     assert.doesNotMatch(connectionErrorText('weird_internal_42')!, /weird_internal/)
     assert.equal(connectionErrorText(null), null)
+  })
+})
+
+describe('workout time honesty', () => {
+  it('labels a normal workout with its real start, end and length', () => {
+    const [w] = dayAnnotations(
+      [
+        {
+          day_type: 'Legs',
+          started_at: '2026-11-16T18:10:00Z',
+          completed_at: '2026-11-16T19:05:00Z'
+        }
+      ],
+      null,
+      '2026-11-16'
+    )
+    assert.equal(w.label, 'Workout · 6:10 PM – 7:05 PM · 55 min')
+  })
+  it('does not invent a time for past-dated logs stamped 13:00 UTC', () => {
+    assert.equal(
+      dayAnnotations(
+        [
+          {
+            day_type: 'Legs',
+            started_at: '2026-11-16T12:00:00Z',
+            completed_at: '2026-11-16T13:00:00+00:00'
+          }
+        ],
+        null,
+        '2026-11-16'
+      ).length,
+      0
+    )
+  })
+  it('shows only the start of a workout that was left open for hours', () => {
+    const [w] = dayAnnotations(
+      [
+        {
+          day_type: 'Legs',
+          started_at: '2026-11-16T10:00:00Z',
+          completed_at: '2026-11-16T20:30:00Z'
+        }
+      ],
+      null,
+      '2026-11-16'
+    )
+    assert.equal(w.from, w.to)
+    assert.match(w.label, /started 10:00 AM/)
+  })
+})
+
+describe('usual shape of the day', () => {
+  const series = (base: number) => Array.from({ length: 96 }, (_, i) => base + (i % 4))
+  const days = Array.from({ length: 8 }, (_, i) => ({
+    local_date: `2026-11-${String(8 + i).padStart(2, '0')}`,
+    bb_series: series(40 + i),
+    stress_series: null
+  }))
+  it('is the 25th–75th percentile of previous days and ignores the selected day', () => {
+    const env = intradayEnvelope(days, '2026-11-16', 'bb_series')!
+    assert.equal(env.days, 8)
+    assert.ok((env.low[10] ?? 0) < (env.high[10] ?? 0))
+    assert.ok((env.low[0] ?? 0) >= 40 && (env.high[0] ?? 0) <= 52)
+    const withToday = [
+      ...days,
+      { local_date: '2026-11-16', bb_series: series(99), stress_series: null }
+    ]
+    assert.deepEqual(intradayEnvelope(withToday, '2026-11-16', 'bb_series'), env)
+  })
+  it('refuses to claim a norm from fewer than five days', () => {
+    assert.equal(intradayEnvelope(days.slice(0, 4), '2026-11-16', 'bb_series'), null)
+    assert.equal(intradayEnvelope(days, '2026-11-16', 'stress_series'), null)
+  })
+  it('leaves buckets blank when too few days have a reading there', () => {
+    const sparse = days.map((d, i) => ({
+      ...d,
+      bb_series: d.bb_series.map((v, b) => (b === 20 && i > 1 ? null : v))
+    }))
+    const env = intradayEnvelope(sparse, '2026-11-16', 'bb_series')!
+    assert.equal(env.low[20], null)
+    assert.notEqual(env.low[21], null)
   })
 })

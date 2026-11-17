@@ -21,10 +21,10 @@ export const days: DailyBody[] = Array.from({ length: 90 }, (_, i) => ({
   vo2max: 48,
   synced_at: '2026-11-17T01:00:00Z',
   bb_series: Array.from({ length: 96 }, (_, n) =>
-    n > 80 || (n > 40 && n < 49) ? null : Math.round(55 + Math.sin(n / 18) * 30)
+    n > 80 || (n > 40 && n < 49) ? null : Math.round(55 + Math.sin(n / 18) * 30 + (i % 7) * 2 - 6)
   ),
   stress_series: Array.from({ length: 96 }, (_, n) =>
-    n > 80 || (n > 40 && n < 49) ? null : Math.round(20 + Math.abs(Math.sin(n / 6)) * 35)
+    n > 80 || (n > 40 && n < 49) ? null : Math.round(20 + Math.abs(Math.sin(n / 6)) * 35 + (i % 5) * 3 - 6)
   )
 }))
 export const sleep: SleepSession = {

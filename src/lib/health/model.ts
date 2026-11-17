@@ -382,20 +382,79 @@ export function dayAnnotations(
     })
   for (const w of workouts) {
     if (!w.started_at || !w.completed_at) continue
-    const start = Date.parse(w.started_at),
-      end = Date.parse(w.completed_at)
-    if (!(end > start) || end - start > 8 * 3600000) continue
+    const start = Date.parse(w.started_at)
+    let end = Date.parse(w.completed_at)
+    if (!(end > start)) continue
+    // Past-dated logs are stamped 13:00:00 UTC by the server, not a real time of day.
+    if (/T13:00:00(\.0+)?(Z|\+00:00)$/.test(w.completed_at)) continue
+    // A workout left open and finished much later has no trustworthy end: show
+    // only its start rather than a multi-hour block that never happened.
+    const open = end - start > 3 * 3600000
+    if (open) end = start
     const sameDay = (iso: string) =>
-      iso.length > 0 && new Date(iso).toDateString() === new Date(`${date}T12:00:00`).toDateString()
-    const from = sameDay(w.started_at) ? Math.floor(minuteOfDay(w.started_at) / 15) : 0
-    const to = sameDay(w.completed_at) ? Math.floor(minuteOfDay(w.completed_at) / 15) : 95
-    if (!sameDay(w.started_at) && !sameDay(w.completed_at)) continue
+      new Date(iso).toDateString() === new Date(`${date}T12:00:00`).toDateString()
+    const startsToday = sameDay(w.started_at)
+    if (!startsToday && !(open ? false : sameDay(new Date(end).toISOString()))) continue
+    const from = startsToday ? Math.floor(minuteOfDay(w.started_at) / 15) : 0
+    const to = open
+      ? from
+      : sameDay(new Date(end).toISOString())
+        ? Math.floor(minuteOfDay(new Date(end).toISOString()) / 15)
+        : 95
     out.push({
       kind: 'workout',
       from,
       to: Math.max(from, to),
-      label: `Workout · ${clockLabel(w.started_at)} – ${clockLabel(w.completed_at)}`
+      label: open
+        ? `Workout · started ${clockLabel(w.started_at)}`
+        : `Workout · ${clockLabel(w.started_at)} – ${clockLabel(new Date(end).toISOString())} · ${Math.max(1, Math.round((end - start) / 60000))} min`
     })
   }
   return out
+}
+
+export interface Envelope {
+  low: (number | null)[]
+  high: (number | null)[]
+  /** Previous days that contributed. */
+  days: number
+}
+/**
+ * The person's usual shape of the day: for each 15-minute bucket, the
+ * 25th–75th percentile of the previous `lookback` days. Needs `minDays` days
+ * with a reading in that bucket, otherwise the bucket stays blank rather than
+ * implying a norm from thin evidence.
+ */
+export function intradayEnvelope(
+  days: {
+    local_date: string
+    bb_series?: (number | null)[] | null
+    stress_series?: (number | null)[] | null
+  }[],
+  date: string,
+  field: 'bb_series' | 'stress_series',
+  lookback = 14,
+  minDays = 5
+): Envelope | null {
+  const prior = days.filter(
+    (d) =>
+      d.local_date < date && d.local_date >= shiftDate(date, -lookback) && Array.isArray(d[field])
+  )
+  if (prior.length < minDays) return null
+  const at = (sorted: number[], q: number) => {
+    const pos = (sorted.length - 1) * q
+    const lo = Math.floor(pos)
+    return sorted[lo] + (sorted[Math.ceil(pos)] - sorted[lo]) * (pos - lo)
+  }
+  const low: (number | null)[] = []
+  const high: (number | null)[] = []
+  for (let i = 0; i < 96; i++) {
+    const values = prior
+      .map((d) => d[field]?.[i])
+      .filter((v): v is number => typeof v === 'number' && Number.isFinite(v))
+      .sort((a, b) => a - b)
+    low.push(values.length >= minDays ? at(values, 0.25) : null)
+    high.push(values.length >= minDays ? at(values, 0.75) : null)
+  }
+  return low.some((v) => v != null) ? { low, high, days: prior.length } : null
 }

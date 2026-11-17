@@ -8,6 +8,7 @@ import {
   STAGE_NAMES,
   STAGE_ORDER,
   type DayAnnotation,
+  type Envelope,
   type SleepSession
 } from '@/lib/health/model'
 
@@ -27,6 +28,21 @@ function segments(values: (number | null)[]): Point[][] {
   })
   if (run.length) out.push(run)
   return out
+}
+type Ribbon = { i: number; low: number; high: number }
+/** Contiguous buckets where both ends of the usual range exist. */
+function ribbons(env: Envelope): Ribbon[][] {
+  const out: Ribbon[][] = []
+  let run: Ribbon[] = []
+  env.low.forEach((low, i) => {
+    const high = env.high[i]
+    if (low == null || high == null) {
+      if (run.length) out.push(run)
+      run = []
+    } else run.push({ i, low, high })
+  })
+  if (run.length) out.push(run)
+  return out.filter((r) => r.length > 1)
 }
 const cleanId = (id: string) => id.replace(/[^a-zA-Z0-9]/g, '')
 const pct = (n: number, total: number) => (total > 0 ? Math.round((n / total) * 100) : 0)
@@ -175,7 +191,7 @@ export function SleepStageChart({ sleep }: { sleep: SleepSession }) {
           ))}
         </div>
       </div>
-      <div className="health-axis health-axis-3">
+      <div className="health-axis health-axis-3 health-axis-stage">
         <span>{clockLabel(sleep.start_at, sleep.timezone)}</span>
         <span>{clockLabel(middle, sleep.timezone)}</span>
         <span>{clockLabel(sleep.end_at, sleep.timezone)}</span>
@@ -277,7 +293,8 @@ export function SeriesPlot({
   onSelect,
   band = null,
   tone = 'accent',
-  marks = []
+  marks = [],
+  envelope = null
 }: {
   values: (number | null)[]
   label: string
@@ -289,6 +306,8 @@ export function SeriesPlot({
   tone?: 'accent' | 'stress'
   /** Intervals of the day (bucket indices) drawn quietly behind the line. */
   marks?: { from: number; to: number; kind: 'workout' | 'sleep' }[]
+  /** The usual range at each point (same length as values), drawn as a soft ribbon. */
+  envelope?: Envelope | null
 }) {
   const id = cleanId(useId())
   const stats = seriesStats(values)
@@ -402,6 +421,19 @@ export function SeriesPlot({
             className="health-band"
           />
         )}
+        {envelope &&
+          ribbons(envelope).map((run, k) => (
+            <path
+              key={k}
+              className="health-envelope"
+              d={`${run.map((p, j) => `${j ? 'L' : 'M'}${x(p.i)},${y(p.high)}`).join(' ')} ${[
+                ...run
+              ]
+                .reverse()
+                .map((p) => `L${x(p.i)},${y(p.low)}`)
+                .join(' ')}Z`}
+            />
+          ))}
         {marks.map((m, k) => (
           <rect
             key={k}
@@ -458,7 +490,8 @@ export function DailyHealthTimeline({
   date,
   today,
   summary,
-  annotations = []
+  annotations = [],
+  usual
 }: {
   bb: (number | null)[]
   stress: (number | null)[]
@@ -471,6 +504,8 @@ export function DailyHealthTimeline({
     stress: number | null
   }
   annotations?: DayAnnotation[]
+  /** Previous days' usual shape, per metric. */
+  usual?: { bb: Envelope | null; stress: Envelope | null }
 }) {
   const [picked, setPicked] = useState<number | null>(null)
   const limit =
@@ -515,10 +550,21 @@ export function DailyHealthTimeline({
         <span>
           <i className="health-dot-energy" aria-hidden="true" />
           Energy <b>{energy[selected] ?? 'no reading'}</b>
+          {usual?.bb?.low[selected] != null && usual.bb.high[selected] != null && (
+            <em>
+              usual {Math.round(usual.bb.low[selected]!)}–{Math.round(usual.bb.high[selected]!)}
+            </em>
+          )}
         </span>
         <span>
           <i className="health-dot-stress" aria-hidden="true" />
           Stress <b>{strain[selected] ?? 'no reading'}</b>
+          {usual?.stress?.low[selected] != null && usual.stress.high[selected] != null && (
+            <em>
+              usual {Math.round(usual.stress.low[selected]!)}–
+              {Math.round(usual.stress.high[selected]!)}
+            </em>
+          )}
         </span>
       </div>
       <p className="health-eyebrow health-plot-title">Body Battery · energy estimate</p>
@@ -529,6 +575,7 @@ export function DailyHealthTimeline({
         selected={selected}
         onSelect={setSelected}
         marks={annotations}
+        envelope={usual?.bb}
       />
       <p className="health-eyebrow health-plot-title">Physiological stress</p>
       <SeriesPlot
@@ -539,9 +586,16 @@ export function DailyHealthTimeline({
         selected={selected}
         onSelect={setSelected}
         marks={annotations}
+        envelope={usual?.stress}
       />
-      {annotations.length > 0 && (
+      {(annotations.length > 0 || usual?.bb || usual?.stress) && (
         <ul className="health-annotations">
+          {(usual?.bb || usual?.stress) && (
+            <li>
+              <i className="health-mark-usual" aria-hidden="true" />
+              Your usual range at this time ({usual?.bb?.days ?? usual?.stress?.days} previous days)
+            </li>
+          )}
           {annotations.map((a, i) => (
             <li key={i}>
               <i className={`health-mark-${a.kind}`} aria-hidden="true" />
@@ -550,7 +604,7 @@ export function DailyHealthTimeline({
           ))}
         </ul>
       )}
-      <div className="health-axis health-axis-3">
+      <div className="health-axis health-axis-3 health-axis-plot">
         <span>00:00</span>
         <span>12:00</span>
         <span>23:45</span>

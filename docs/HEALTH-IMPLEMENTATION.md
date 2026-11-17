@@ -131,3 +131,18 @@ claimed beyond its evidence.
 | 7 | Interface details | **Partly.** Day timeline shows workout and sleep annotations; the status panel shows each connection's state, freshness and a per-measurement source table. Charts are read by dragging (mouse and touch tested in Chromium). Sleep-aware Progress summaries, pre-workout observations and iPhone PWA/VoiceOver validation are not done. |
 | 8 | Validate and enable | **Not done.** Needs real provider failure drills, the 72-hour watch/iPhone pilot and gradual enablement. |
 
+### Through-the-day data (November 17, 2026)
+
+The watch app already reads the whole day's Body Battery and stress history from
+Garmin's on-watch `SensorHistory` (about 24 hours at ~5-minute resolution) every
+time it uploads, so each `daily_body` row carries a full 96-bucket curve. Health
+now uses that: "Your day" draws your usual range for each time of day (25th–75th
+percentile of the previous 14 days, only when 5+ days have a reading in that
+bucket) behind today's curves, and the reading chip shows "usual a–b" for the
+touched moment.
+
+What it cannot fix: uploads still happen only when GRIND is opened on the watch,
+so "today so far" is as fresh as your last open. Automatic hourly uploads need the
+Connect IQ background service (work item 4), which can't be built or verified
+without the Connect IQ SDK and a watch, so it is not shipped.
+

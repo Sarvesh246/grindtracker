@@ -1425,3 +1425,39 @@ html.reduce-motion .health-skeleton > div {
 .health-provenance {
   margin-bottom: 12px;
 }
+
+/* Axis labels line up with the plot, not the y-label gutter. */
+.health-axis-plot {
+  padding-left: 30px;
+}
+.health-axis-stage {
+  padding-left: 54px;
+}
+.health-page .health-stage-grid {
+  grid-template-columns: 44px minmax(0, 1fr);
+}
+.health-envelope {
+  fill: currentColor;
+  fill-opacity: 0.14;
+  stroke: none;
+}
+.health-mark-usual {
+  background: color-mix(in srgb, var(--accent-text) 20%, transparent);
+}
+.health-plot-stress ~ .health-annotations .health-mark-usual {
+  background: color-mix(in srgb, var(--accent-text) 20%, transparent);
+}
+.health-chart-reading em {
+  font-style: normal;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-left: 6px;
+}
+.health-chips-scroll,
+.health-strip {
+  position: relative;
+}
+.health-chips-scroll {
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 16px), transparent);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 16px), transparent);
+}

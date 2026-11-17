@@ -159,3 +159,31 @@ test('touch drag scrubs a chart', async ({ browser }) => {
   expect(await reading.innerText()).not.toEqual(first)
   await context.close()
 })
+
+test('horizontal pill rows and the date strip can scroll and are not swipe-ignored', async ({
+  page
+}) => {
+  await render(page, { width: 360 })
+  for (const selector of ['.health-chips-scroll', '.health-strip']) {
+    const row = page.locator(selector).first()
+    await row.scrollIntoViewIfNeeded()
+    // The app's iOS haptic layer refuses to forward scrolls inside data-swipe-ignore.
+    expect(await row.evaluate((el) => !!el.closest('[data-swipe-ignore]'))).toBe(false)
+    expect(await row.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true)
+    const moved = await row.evaluate((el) => {
+      el.scrollLeft = 0
+      el.scrollLeft += 120
+      return el.scrollLeft
+    })
+    expect(moved).toBeGreaterThan(0)
+  }
+})
+test('chart axis labels line up with the plot, not the y-label gutter', async ({ page }) => {
+  await render(page, { width: 390 })
+  const plot = page.locator('.health-plot').first()
+  const axis = page.locator('.health-axis-plot').first()
+  const svg = plot.locator('svg').first()
+  await svg.scrollIntoViewIfNeeded()
+  const [s, a] = await Promise.all([svg.boundingBox(), axis.locator('span').first().boundingBox()])
+  expect(Math.abs(a!.x - s!.x)).toBeLessThan(10)
+})
