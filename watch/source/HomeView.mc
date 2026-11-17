@@ -213,18 +213,16 @@ class HomeDelegate extends WatchUi.BehaviorDelegate {
     function onSelect() { return go(); }
     function onTap(evt) { return true; }
 
-    // MENU refreshes. If the server has refused a session for good, it opens
-    // a menu instead so that state can be cleared.
+    // MENU: refresh, the watch's settings, and clearing sessions the
+    // server refused for good.
     function onMenu() {
         var dead = Store.dead().size();
-        if (dead == 0) {
-            gNet.refresh();
-            WatchUi.requestUpdate();
-            return true;
-        }
         var m = new WatchUi.Menu2({ :title => "GRIND" });
         m.addItem(new WatchUi.MenuItem("Refresh", null, :refresh, null));
-        m.addItem(new WatchUi.MenuItem("Clear failed (" + dead + ")", "Deletes unsynced workouts", :clear, null));
+        m.addItem(Menus.repToggle());
+        if (dead > 0) {
+            m.addItem(new WatchUi.MenuItem("Clear failed (" + dead + ")", "Deletes unsynced workouts", :clear, null));
+        }
         WatchUi.pushView(m, new HomeMenuDelegate(), WatchUi.SLIDE_UP);
         return true;
     }
@@ -253,6 +251,10 @@ class HomeMenuDelegate extends WatchUi.Menu2InputDelegate {
     function initialize() { Menu2InputDelegate.initialize(); }
 
     function onSelect(item) {
+        if (item.getId() == :reps) {
+            Reps.setEnabled(item.isEnabled());
+            return;
+        }
         WatchUi.popView(WatchUi.SLIDE_IMMEDIATE);
         if (item.getId() == :clear) {
             var d = Store.dead();

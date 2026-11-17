@@ -83,11 +83,13 @@ module Workout {
         saveCur();
         Recorder.start();
         Hr.begin(meta);
+        Reps.reset();
     }
 
     function resume() {
         saved = false;
         Recorder.start();
+        Reps.reset();
     }
 
     function ex() { return plan["ex"][cur["ei"]]; }
@@ -131,6 +133,7 @@ module Workout {
             cur["w"] = Logic.clamp(cur["w"] + dir * Config.WEIGHT_STEP, 0.0, 2000.0);
         } else {
             cur["r"] = Logic.clamp(cur["r"] + dir, 0, 1000);
+            Reps.manual = true; // your number wins for the rest of this set
         }
     }
 
@@ -142,13 +145,18 @@ module Workout {
     // Returns true when that was the last set of the workout.
     function logSet() {
         var e = ex();
+        // `ra`: what the rep counter made of this set (null: no confident
+        // count). Kept on the watch only, to measure the counter against
+        // what was logged; never uploaded.
         var s = {
             "id" => Logic.uuid4(), "e" => e["id"], "n" => cur["sn"], "r" => cur["r"], "w" => cur["w"],
-            "t" => now(), "rs" => cur["rs"], "y" => 0
+            "t" => now(), "rs" => cur["rs"], "y" => 0, "ra" => Reps.count
         };
+        System.println("reps auto=" + Reps.count + " logged=" + cur["r"] + " typed=" + Reps.manual + " " + e["name"]);
         Store.putSet(cur["sid"], sets.size(), s);
         sets.add(s);
         Hr.onSetLogged(sets.size() - 1, s["t"]);
+        Reps.reset();
         cur["rs"] = null;
         cur["dn"][cur["ei"]] += 1;
 
@@ -201,6 +209,7 @@ module Workout {
         Store.del("t_" + cur["sid"] + "_" + k);
         sets = sets.slice(0, k);
         Hr.onSetUndone(k);
+        Reps.reset();
         cur["dn"][i] -= 1;
         if (cur["dn"][i] < 0) { cur["dn"][i] = 0; }
         cur["sk"][i] = 0;
@@ -236,12 +245,14 @@ module Workout {
     // one). Ends any rest in progress, since you've moved on.
     function choose(i) {
         if (cur["re"] != null) { endRest(); }
+        Reps.reset();
         if (cur["sum"] == true) { cur["sum"] = false; }
         jumpTo(i);
         saveCur();
     }
 
     function skipExercise() {
+        Reps.reset();
         cur["sk"][cur["ei"]] = 1;
         cur["re"] = null;
         cur["rs"] = null;
@@ -355,6 +366,8 @@ module Workout {
             Recorder.stop(false);
             Store.dropSession(sid);
         }
+        Reps.stop();
+        Reps.reset();
         clear();
     }
 }

@@ -18,10 +18,17 @@ module Menus {
             m.addItem(new WatchUi.MenuItem("Switch exercise", hasSkipped() ? "Or undo a skip" : "Do another one now", :pick, null));
         }
         m.addItem(new WatchUi.MenuItem("Skip exercise", "Undo it from Switch exercise", :skip, null));
+        m.addItem(repToggle());
         m.addItem(new WatchUi.MenuItem("End workout", null, :end, null));
         m.addItem(new WatchUi.MenuItem("Discard workout", null, :discard, null));
         WatchUi.pushView(m, new PauseDelegate(), WatchUi.SLIDE_UP);
         return true;
+    }
+
+    // The rep counter's switch, in the Home menu and the workout menu.
+    function repToggle() {
+        return new WatchUi.ToggleMenuItem("Rep counting", { :enabled => "Counts from wrist motion", :disabled => "Off" },
+            :reps, Reps.enabled(), null);
     }
 
     function hasSkipped() {
@@ -85,6 +92,11 @@ class PauseDelegate extends WatchUi.Menu2InputDelegate {
 
     function onSelect(item) {
         var id = item.getId();
+        if (id == :reps) {
+            Reps.setEnabled(item.isEnabled());
+            if (item.isEnabled() && Workout.active() && !Workout.atSummary()) { Reps.start(); }
+            return;
+        }
         if (id == :discard) {
             Menus.confirmDiscard(false);
             return;

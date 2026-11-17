@@ -59,7 +59,7 @@ it as a different app and your stored data is gone.
 | START | Start the workout, confirm weight, log the set, skip rest |
 | UP / DOWN | Change the highlighted number, or add/remove 15 s of rest |
 | BACK, or hold UP | Workout menu: resume, undo last set, change weight, switch or skip exercise, end, discard |
-| MENU on Home | Refresh today's workout |
+| MENU on Home | Refresh, turn rep counting on or off, clear failed uploads |
 
 A short white arc beside the START button means START does something on that
 screen, the same cue Garmin's own apps use.
@@ -73,6 +73,22 @@ Reps prefill to the top of the target range (8-12 starts at 12), and the full
 target is always shown next to the set count. The ring on the set screen has
 one segment per planned set, so you can count what's left at a glance. A
 weight of 0 shows as BW (bodyweight).
+
+**Rep counting.** While a set or rest screen is up, the watch reads wrist
+motion and, once it is sure, puts the count in the reps slot with **AUTO**
+under it. Press START as usual. If it is wrong, UP/DOWN takes over and it
+stays out of that set. It only shows a number it trusts: if it can't tell
+(a lift your wrist barely moves in, like leg press, or a set it only saw in
+pieces) the reps stay at the target. Turn it off with Home MENU → Rep
+counting, or from the workout menu.
+
+It counts a rep only when the wrist goes away and comes back, in the set's
+own rhythm, size and direction. That is what keeps out picking the weight up,
+re-racking, a sip of water, walking (step counter), fidgeting with your phone,
+and raising your wrist to press START. Every logged set writes
+`reps auto=<count> logged=<what you saved>` to the log (below), which is how
+to check it on your own lifts. The method, and a simulator that scores it on
+18 lifts plus no-set sessions, are in `tools/` (`node tools/repsim.mjs`).
 
 **Logged the wrong thing?** BACK → Undo last set (it names the set) takes it
 back and puts you on it with its numbers filled in. Sets only upload after
@@ -139,9 +155,17 @@ which is the fastest way to see why something isn't syncing. Turn `PROBE` on in
 launch, every 15 minutes and every Save (`-` empty, `!` threw, `n/a` not on this
 firmware): useful on a new watch or firmware.
 
-## Not built yet
+## Background sync
 
-Background sync. Right now the queue and the day snapshot only go out while the
-app is open (on launch, right after Save, and every 30 s). A background service could flush it
-every 5 minutes with the app closed, at the cost of a second code path that has
-to fit in 64 KB.
+With the app closed, the watch wakes GRIND every 2 hours and sends the day
+snapshot (the same one as on open) so Charge stays fresh. It's skipped if a
+snapshot went out in the last 30 minutes or the phone isn't connected. The
+result lands in storage (`bg`: time and status code) and prints as
+`bg daily -> <code>` the next time the app is open.
+
+Logged workouts still upload only while the app is open: the upload path is
+too big for the 64 KB a background process gets, and a finished workout is
+saved on the watch until then anyway.
+
+> **Gotcha:** `source/Secrets.mc` must carry the `(:background)` annotation
+> (the example file has it), or the background service can't read the token.

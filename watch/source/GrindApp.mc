@@ -7,14 +7,33 @@ using Toybox.WatchUi;
 
 var gNet = null;
 
+// Marked (:background) because Connect IQ also loads the app class in the
+// background process (Bg.mc). onStart and onStop run there too, so all
+// foreground setup lives in boot(), reached only from getInitialView().
+(:background)
 class GrindApp extends Application.AppBase {
     var timer = null;
     var ticks = 0;
     var tour = null;
+    var fg = false;
 
     function initialize() { AppBase.initialize(); }
 
     function onStart(state) {
+    }
+
+    function getServiceDelegate() {
+        return [new GrindService()];
+    }
+
+    // A background run finished while the app was open (or since it last
+    // was): its result is already in storage, this just logs it.
+    function onBackgroundData(data) {
+        System.println("bg daily -> " + data);
+    }
+
+    function boot() {
+        fg = true;
         gNet = new Net();
         Workout.load();
         if (Config.DEMO_DATA && !Workout.active()) {
@@ -36,6 +55,7 @@ class GrindApp extends Application.AppBase {
             tour = new Timer.Timer();
             tour.start(method(:onTour), Config.TOUR_STEP_MS, true);
         }
+        if (Config.DEMO_DATA) { Bg.unregister(); } else { Bg.register(); }
     }
 
     // Every 5 s: heart rate while a workout is open. Every 30 s: sync.
@@ -54,14 +74,17 @@ class GrindApp extends Application.AppBase {
     }
 
     function onStop(state) {
+        if (!fg) { return; }
         if (timer != null) { timer.stop(); }
         // If the system closes us mid-workout, keep the activity recorded so
         // far. The sets are already in storage and resume on next launch.
         Hr.save();
+        Reps.stop();
         Recorder.stop(true);
     }
 
     function getInitialView() {
+        boot();
         return [new HomeView(), new HomeDelegate()];
     }
 }
@@ -69,6 +92,7 @@ class GrindApp extends Application.AppBase {
 module Nav {
     // Shows whichever screen the workout state calls for.
     function show() {
+        if (!Workout.active() || Workout.atSummary()) { Reps.stop(); }
         if (!Workout.active()) {
             WatchUi.switchToView(new HomeView(), new HomeDelegate(), WatchUi.SLIDE_IMMEDIATE);
         } else if (Workout.atSummary()) {

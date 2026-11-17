@@ -15,6 +15,9 @@ class TickView extends WatchUi.View {
     function onShow() {
         timer = new Timer.Timer();
         timer.start(method(:onSecond), 1000, true);
+        // Rep counting runs on the set and rest screens (a set started
+        // before the rest timer ran out still counts). Nav.show stops it.
+        Reps.start();
     }
 
     function onHide() {
@@ -39,6 +42,10 @@ class SetView extends TickView {
         if (c == null) { return; }
         var e = Workout.ex();
         var unit = Workout.meta["u"];
+        // The rep counter's number, once it is sure, unless you've set reps
+        // yourself this set. Not saved until the set is logged.
+        var auto = Reps.offer();
+        if (auto != null) { c["r"] = auto; }
         Draw.clear(dc);
         Draw.status(dc, hr);
         Draw.name(dc, e["name"], Config.FG);
@@ -76,7 +83,7 @@ class SetView extends TickView {
         dc.setColor(c["f"] == 0 ? Config.ACCENT : Config.DIM, Graphics.COLOR_TRANSPARENT);
         dc.drawText(left + ww / 2, ly, lf, c["w"].toFloat() == 0.0 ? "BODYWEIGHT" : unit.toUpper(), Draw.C);
         dc.setColor(c["f"] == 1 ? Config.ACCENT : Config.DIM, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(rx + rw / 2, ly, lf, "REPS", Draw.C);
+        dc.drawText(rx + rw / 2, ly, lf, auto != null ? "AUTO" : "REPS", Draw.C);
 
         // Tap columns.
         dc.setColor(Config.DIM, Graphics.COLOR_TRANSPARENT);

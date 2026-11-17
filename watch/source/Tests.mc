@@ -1,5 +1,7 @@
 using Toybox.Lang;
 using Toybox.Test;
+using Toybox.Math;
+using Toybox.System;
 
 // Run: build with --unit-test, then `monkeydo bin/grind-test.prg fr165m -t`.
 // (:test) code is stripped from normal builds.
@@ -471,4 +473,142 @@ function testKeepResult(logger) {
     ok = T.ck(logger, "garbage ignored", Store.get("lx")["sid"].equals("s1")) && ok;
     Store.del("lx");
     return ok;
+}
+
+// --- rep counter ------------------------------------------------------------
+// Same generators as tools/reps-fixtures.mjs; the expected counts are what
+// the reference implementation gives (`node watch/tools/reps-fixtures.mjs`).
+(:test)
+module RepFx {
+    var seed = 1;
+
+    function lcg() {
+        seed = (seed * 75 + 74) % 65537;
+        return seed / 65537.0 - 0.5;
+    }
+
+    function smooth(u) { return u * u * (3 - 2 * u); }
+
+    function curl(reps, glance) {
+        seed = 7;
+        var th = [];
+        var ph = [];
+        for (var i = 0; i < 37; i++) { th.add(0.0); ph.add(0.0); }
+        for (var r = 0; r < reps; r++) {
+            for (var i = 0; i < 4; i++) { th.add(0.0); ph.add(0.0); }
+            for (var i = 0; i < 12; i++) { th.add(2 * smooth((i + 1) / 12.0)); ph.add(0.0); }
+            for (var i = 0; i < 4; i++) { th.add(2.0); ph.add(0.0); }
+            for (var i = 0; i < 20; i++) { th.add(2 - 2 * smooth((i + 1) / 20.0)); ph.add(0.0); }
+        }
+        for (var i = 0; i < 37; i++) { th.add(0.0); ph.add(0.0); }
+        if (glance) {
+            for (var i = 0; i < 6; i++) { th.add(0.0); ph.add(1.3 * smooth((i + 1) / 6.0)); }
+            for (var i = 0; i < 15; i++) { th.add(0.0); ph.add(1.3); }
+        }
+        var x = []; var y = []; var z = []; var s = [];
+        for (var i = 0; i < th.size(); i++) {
+            var vy = -Math.sin(th[i]);
+            var vz = Math.cos(th[i]);
+            x.add(vz * Math.sin(ph[i]) + 0.03 * lcg());
+            y.add(vy + 0.03 * lcg());
+            z.add(vz * Math.cos(ph[i]) + 0.03 * lcg());
+            s.add(0);
+        }
+        return [x, y, z, s];
+    }
+
+    function press(reps) {
+        seed = 11;
+        var p = [];
+        for (var i = 0; i < 37; i++) { p.add(0.0); }
+        for (var r = 0; r < reps; r++) {
+            for (var i = 0; i < 6; i++) { p.add(0.0); }
+            for (var i = 0; i < 14; i++) { p.add(smooth((i + 1) / 14.0)); }
+            for (var i = 0; i < 6; i++) { p.add(1.0); }
+            for (var i = 0; i < 18; i++) { p.add(1 - smooth((i + 1) / 18.0)); }
+        }
+        for (var i = 0; i < 37; i++) { p.add(0.0); }
+        var dt = 0.08;
+        var n = p.size();
+        var x = []; var y = []; var z = []; var s = [];
+        for (var i = 0; i < n; i++) {
+            var a = p[i > 0 ? i - 1 : 0];
+            var b = p[i];
+            var c = p[i < n - 1 ? i + 1 : n - 1];
+            var acc = (a - 2 * b + c) / (dt * dt) * 0.4 / 9.81;
+            var tilt = 0.12 * p[i];
+            x.add(Math.sin(tilt) + 0.02 * lcg());
+            y.add(0.02 * lcg());
+            z.add(Math.cos(tilt) + acc + 0.02 * lcg());
+            s.add(0);
+        }
+        return [x, y, z, s];
+    }
+
+    function fidget() {
+        seed = 3;
+        var x = []; var y = []; var z = []; var s = [];
+        var a = 0.0;
+        var b = 0.0;
+        for (var i = 0; i < 600; i++) {
+            a += 0.15 * lcg(); b += 0.15 * lcg();
+            a *= 0.97; b *= 0.97;
+            x.add(Math.sin(a) + 0.03 * lcg());
+            y.add(Math.sin(b) + 0.03 * lcg());
+            z.add(Math.cos(a) * Math.cos(b) + 0.03 * lcg());
+            s.add(0);
+        }
+        return [x, y, z, s];
+    }
+
+    function run(d) { return Reps.analyze(d[0], d[1], d[2], d[3]); }
+}
+
+(:test)
+function testRepsCurl(logger) {
+    var r8 = RepFx.run(RepFx.curl(8, false));
+    var r12 = RepFx.run(RepFx.curl(12, false));
+    logger.debug("curl 8 -> " + r8 + ", curl 12 -> " + r12);
+    return T.ck(logger, "curl 8", r8[1] && r8[0] == 8) && T.ck(logger, "curl 12", r12[1] && r12[0] == 12);
+}
+
+(:test)
+function testRepsGlanceIsNotARep(logger) {
+    // Raising the wrist to press START after the set is half a motion.
+    var r = RepFx.run(RepFx.curl(8, true));
+    logger.debug("curl 8 + glance -> " + r);
+    return T.ck(logger, "still 8", r[1] && r[0] == 8);
+}
+
+(:test)
+function testRepsPress(logger) {
+    var r = RepFx.run(RepFx.press(6));
+    logger.debug("press 6 -> " + r);
+    return T.ck(logger, "press 6", r[1] && r[0] == 6);
+}
+
+(:test)
+function testRepsFidgetSaysNothing(logger) {
+    var r = RepFx.run(RepFx.fidget());
+    logger.debug("fidget -> " + r);
+    return T.ck(logger, "no count", !r[1]);
+}
+
+(:test)
+function testRepsTooLittleData(logger) {
+    return T.ck(logger, "empty", !Reps.analyze([], [], [], [])[1])
+        && T.ck(logger, "short", !RepFx.run([[1.0, 1.0], [0.0, 0.0], [0.0, 0.0], [0, 0]])[1]);
+}
+
+(:test)
+function testRepsFullBufferTime(logger) {
+    // The watch analyses a full 75 s buffer every 2 s: it must stay well
+    // under the watchdog. Logged so the cost on the device can be compared.
+    var d = RepFx.curl(20, false);
+    var n = d[0].size() > Reps.MAX_SAMPLES ? Reps.MAX_SAMPLES : d[0].size();
+    var x = d[0].slice(0, n); var y = d[1].slice(0, n); var z = d[2].slice(0, n); var s = d[3].slice(0, n);
+    var t0 = System.getTimer();
+    var r = Reps.analyze(x, y, z, s);
+    logger.debug("75 s buffer (" + n + " samples): " + (System.getTimer() - t0) + " ms -> " + r);
+    return true;
 }

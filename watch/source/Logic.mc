@@ -77,10 +77,7 @@ module Logic {
             + u.hour.format("%02d") + ":" + u.min.format("%02d") + ":" + u.sec.format("%02d") + "Z";
     }
 
-    function localDate() {
-        var i = Gregorian.info(Time.now(), Time.FORMAT_SHORT);
-        return i.year.format("%04d") + "-" + i.month.format("%02d") + "-" + i.day.format("%02d");
-    }
+    function localDate() { return Body.date(); }
 
     // Seconds to wait before the next upload after `fails` failures in a row.
     function backoffSecs(fails) {
@@ -382,12 +379,7 @@ module Logic {
         var out = new [96];
         var at = new [96];
         for (var i = 0; i < samples.size(); i++) {
-            var t = samples[i][0];
-            var v = samples[i][1];
-            if (v == null) { continue; }
-            var b = (t - midnight) / 900;
-            if (b < 0 || b > 95) { continue; }
-            if (at[b] == null || t > at[b]) { at[b] = t; out[b] = v.toNumber(); }
+            Body.bucket(out, at, samples[i][0], samples[i][1], midnight);
         }
         return out;
     }

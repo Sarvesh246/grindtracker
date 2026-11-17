@@ -18,6 +18,9 @@ using Toybox.Time;
 //   t_<sid>_<i> one logged set, i = 0,1,2...
 //   q           session ids waiting for the server to confirm them
 //   qd          session ids the server refused for good (kept, not retried)
+//   dl          epoch secs of the last /daily snapshot (foreground or background)
+//   bg          [epoch, status] of the last background run (Bg.mc)
+//   rc          rep counting on (true/null) or off (false)
 module Store {
     function get(k) { return Storage.getValue(k); }
     function put(k, v) { Storage.setValue(k, v); }
