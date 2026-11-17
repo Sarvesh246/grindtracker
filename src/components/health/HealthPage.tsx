@@ -7,6 +7,7 @@ import { getUiState, setUiState } from '@/lib/cache/appDataCache'
 import { validDate, type HealthMetric } from '@/lib/health/model'
 import { HealthDateHeader, HealthView } from './HealthView'
 import { useHealthSummary } from './useHealthSummary'
+import { ChevronLeft } from '@/components/ui/Icons'
 import './health.css'
 
 function subscribeDate(cb: () => void) {
@@ -30,8 +31,11 @@ export default function HealthPage(props: HealthPageProps) {
   if (process.env.NEXT_PUBLIC_HEALTH_PAGE_ENABLED === 'false')
     return (
       <section className="page health-page">
-        <h1>Health is temporarily unavailable</h1>
-        <Link href="/progress">‹ Back to Progress</Link>
+        <h1>Health unavailable</h1>
+        <Link href="/progress">
+          <ChevronLeft size={14} />
+          Progress
+        </Link>
       </section>
     )
   return <HealthPageContent {...props} />

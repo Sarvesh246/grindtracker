@@ -31,6 +31,12 @@ backgrounds use `--accent-wash`; cards read `--card-shadow` (none in dark). The
 leaderboard ShareCard and the favicon stay dark-branded (`.share-card-dark` pins
 the dark tokens regardless of theme).
 
+## Icons and copy
+No emoji and no text glyphs for UI chrome (‹ › ⌄ × ✕ ✓ • ↔): iOS can render
+them as color emoji. Use the SVG icons in `src/components/ui/Icons.tsx`
+(chevrons, close, check) or a component's own SVG. Keep on-screen copy short:
+labels and values, not explanations of how a chart or control works.
+
 ## Reduced motion
 Mirrors the theming pattern exactly: `MotionContext` persists an explicit
 in-app "Reduce Motion" preference via the `grind_motion_pref` cookie (+

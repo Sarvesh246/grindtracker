@@ -4,6 +4,7 @@ import type { BodySummary } from '@/lib/body/queries'
 import { dateLabel } from '@/lib/health/model'
 import { setUiState } from '@/lib/cache/appDataCache'
 import { Ring } from '@/components/body/ChargeRing'
+import { ChevronRight } from '@/components/ui/Icons'
 import './health-entry.css'
 
 export function HealthEntry({ body }: { body: BodySummary | null }) {
@@ -66,8 +67,8 @@ export function HealthEntry({ body }: { body: BodySummary | null }) {
           {charge
             ? `Charge ${charge.score} · ${charge.bandLabel}${latest ? ` · ${dateLabel(latest.local_date)}` : ''}`
             : latest
-              ? `Daily recovery & activity · ${dateLabel(latest.local_date)}`
-              : 'Sleep, recovery and your daily picture'}
+              ? dateLabel(latest.local_date)
+              : 'Sleep, recovery and activity'}
         </span>
         {glance.length > 0 && (
           <span className="health-entry-glance">
@@ -81,9 +82,7 @@ export function HealthEntry({ body }: { body: BodySummary | null }) {
           </span>
         )}
       </span>
-      <span className="health-arrow" aria-hidden="true">
-        ›
-      </span>
+      <ChevronRight size={20} className="health-arrow" />
     </Link>
   )
 }

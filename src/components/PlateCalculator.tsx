@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import Dialog from '@/components/ui/Dialog'
+import { CloseIcon } from '@/components/ui/Icons'
 
 // Plate / bar denominations differ by unit system. The calculator works entirely in the
 // active display unit and converts back to canonical lbs at the apply boundary.
@@ -108,6 +109,9 @@ export default function PlateCalculator({ initialTarget, onClose, onApply, closi
             onClick={onClose}
             aria-label="Close plate calculator"
             style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
               width: '40px',
               height: '40px',
               background: 'transparent',
@@ -117,7 +121,7 @@ export default function PlateCalculator({ initialTarget, onClose, onApply, closi
               fontSize: '20px',
             }}
           >
-            ✕
+            <CloseIcon size={20} />
           </button>
         </div>
 

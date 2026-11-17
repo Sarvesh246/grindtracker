@@ -15,6 +15,7 @@ import { useToast } from '@/lib/contexts/ToastContext'
 import { useTour, type TourStep } from '@/components/onboarding/Tour'
 import FlameIcon from '@/components/FlameIcon'
 import { readLastKnownStats } from '@/lib/cache/lastKnownStats'
+import { CloseIcon } from '@/components/ui/Icons'
 
 function BoltIcon({ size = 24, color = 'var(--accent-text)' }: { size?: number; color?: string }) {
   return (
@@ -446,8 +447,12 @@ export default function ProfileDashboard({
                   <button
                     data-haptic="light"
                     onClick={cancelUsernameEdit}
+                    aria-label="Cancel"
                     style={{
                       position: 'relative',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
                       padding: '7px 10px',
                       backgroundColor: 'transparent',
                       color: 'var(--text-muted)',
@@ -457,7 +462,7 @@ export default function ProfileDashboard({
                       fontSize: '12px',
                       cursor: 'pointer',
                     }}
-                  >✕</button>
+                  ><CloseIcon size={14} /></button>
                 </div>
                 {usernameStatusText() && (
                   <div style={{

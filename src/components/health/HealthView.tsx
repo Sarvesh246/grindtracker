@@ -30,6 +30,7 @@ import {
 } from '@/lib/health/reconcile'
 import { requestOpenCoach } from '@/lib/coach/openCoachBus'
 import Dialog from '@/components/ui/Dialog'
+import { ChevronDown, ChevronLeft, ChevronRight, CloseIcon } from '@/components/ui/Icons'
 import {
   DailyHealthTimeline,
   SeriesPlot,
@@ -109,7 +110,8 @@ export function HealthDateHeader({
           href={view === 'overview' ? '/progress' : `/progress/health?date=${date}`}
           data-haptic="light"
         >
-          ‹ {view === 'overview' ? 'Progress' : 'Health'}
+          <ChevronLeft size={14} />
+          {view === 'overview' ? 'Progress' : 'Health'}
         </Link>
         <span className="health-eyebrow">GRIND / DAILY HEALTH</span>
       </div>
@@ -122,7 +124,7 @@ export function HealthDateHeader({
           data-haptic="light"
           onClick={() => onDate(shiftDate(date, -1))}
         >
-          ‹
+          <ChevronLeft size={18} />
         </button>
         <button
           className="health-calendar-open"
@@ -134,7 +136,7 @@ export function HealthDateHeader({
             {date === today && <em>Today</em>}
             {dateLabel(date)}
           </span>
-          <span aria-hidden="true">⌄</span>
+          <ChevronDown size={14} />
         </button>
         <button
           aria-label="Next day"
@@ -142,7 +144,7 @@ export function HealthDateHeader({
           disabled={date >= today}
           onClick={() => onDate(shiftDate(date, 1))}
         >
-          ›
+          <ChevronRight size={18} />
         </button>
       </div>
       <div className="health-strip scrollbar-hide" ref={stripRef}>
@@ -178,7 +180,7 @@ export function HealthDateHeader({
           <div className="health-section-head">
             <h2 id="health-calendar-title">Choose a date</h2>
             <button aria-label="Close date picker" onClick={() => setCalendarOpen(false)}>
-              ×
+              <CloseIcon size={18} />
             </button>
           </div>
           <label>
@@ -193,7 +195,6 @@ export function HealthDateHeader({
               }}
             />
           </label>
-          <p>Recent dates · a dot means records are available</p>
           <div className="health-calendar-grid">
             {Array.from({ length: 28 }, (_, i) => shiftDate(today, i - 27)).map((key) => (
               <button
@@ -207,7 +208,7 @@ export function HealthDateHeader({
                 }}
               >
                 <span>{new Date(`${key}T12:00:00`).getDate()}</span>
-                <span aria-hidden="true">{availableDates.includes(key) ? '•' : ' '}</span>
+                <i aria-hidden="true" data-on={availableDates.includes(key)} />
               </button>
             ))}
           </div>
@@ -269,8 +270,8 @@ export function HealthSourceStatus({
               </header>
               <p>
                 {c.last_success_at
-                  ? `Last successful import ${relativeTime(c.last_success_at, now)}.`
-                  : 'No successful import yet.'}
+                  ? `Synced ${relativeTime(c.last_success_at, now)}`
+                  : 'Not synced yet'}
               </p>
               {connectionErrorText(c.last_error_code) && (
                 <p>{connectionErrorText(c.last_error_code)}</p>
@@ -310,19 +311,13 @@ export function HealthSourceStatus({
       )}
       <p>
         {row?.synced_at
-          ? `Received ${new Date(row.synced_at).toLocaleString()}. The legacy snapshot does not supply a precise observation timestamp.`
-          : 'No daily measurement received for this date.'}
+          ? `Received ${new Date(row.synced_at).toLocaleString()}`
+          : 'Nothing received for this date'}
       </p>
-      <p>
-        Watch uploads run while GRIND is open on the watch. Refreshing this page reads server data;
-        it cannot wake the watch or force Garmin Connect to sync.
-      </p>
-      <p>
-        When two sources report the same measurement, GRIND shows one: a current reading over a
-        partial one, an approved Garmin connection over a personal one over the watch app, then the
-        later measurement. Readings are never averaged together.
-      </p>
-      <Link href="/profile/settings#health">Manage connections & privacy ›</Link>
+      <Link href="/profile/settings#health">
+        Manage connections
+        <ChevronRight size={14} />
+      </Link>
     </div>
   )
 }
@@ -392,9 +387,9 @@ export function DailyHealthBrief({ data, date }: { data: HealthSummary; date: st
   ].filter((v): v is { label: string; value: string; unit: string } => !!v)
   return (
     <section className="health-brief" style={{ '--i': 0 } as CSSProperties}>
-      <p className="health-eyebrow">Your daily picture · {dateLabel(date)}</p>
+      <p className="health-eyebrow">{dateLabel(date)}</p>
       <h2>{brief.headline}</h2>
-      <p>{brief.text}</p>
+      {brief.text && <p>{brief.text}</p>}
       {stats.length > 0 && (
         <dl className="health-facts">
           {stats.map((f) => (
@@ -409,25 +404,6 @@ export function DailyHealthBrief({ data, date }: { data: HealthSummary; date: st
         </dl>
       )}
       <div className="health-brief-actions">
-        <details>
-          <summary>Why this summary</summary>
-          <p>
-            Deterministic observations from {dateLabel(date)}. No generated explanation or clinical
-            recovery assessment.
-          </p>
-          {sleep && (
-            <p>
-              {sleep.source} · sleep ending {clockLabel(sleep.end_at, sleep.timezone)} ·{' '}
-              {sleep.status} record.
-            </p>
-          )}
-          {row && (
-            <p>
-              Garmin watch daily snapshot · exact measurement time unavailable. No verdict is
-              inferred from missing data.
-            </p>
-          )}
-        </details>
         <button
           className="health-text-button"
           data-haptic="light"
@@ -487,7 +463,14 @@ export function SleepSummary({
       }
       id="sleep"
       index={2}
-      action={!detail && <Link href={`/progress/health/sleep?date=${date}`}>View sleep ›</Link>}
+      action={
+        !detail && (
+          <Link href={`/progress/health/sleep?date=${date}`}>
+            Details
+            <ChevronRight size={14} />
+          </Link>
+        )
+      }
     >
       {!sleep ? (
         <div className="health-empty">
@@ -505,15 +488,12 @@ export function SleepSummary({
               <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" />
             </svg>
           </span>
-          <h3>{naps.length ? 'Nap recorded' : 'No sleep record received'}</h3>
-          <p>
-            {data.sleepState === 'error'
-              ? 'Sleep is temporarily unavailable. Retry the health refresh above.'
-              : data.sleepState === 'not_enabled'
-                ? 'No sleep has been imported yet. Your watch snapshots don’t contain sleep, so add it from a Garmin export, Apple Health or the sync script in Settings.'
-                : 'No main sleep record is available for this date. Missing sleep is not zero sleep.'}
-          </p>
-          <Link href="/profile/settings#health-import">Add sleep data ›</Link>
+          <h3>{naps.length ? 'Nap only' : 'No sleep recorded'}</h3>
+          {data.sleepState === 'error' && <p>Couldn’t load sleep.</p>}
+          <Link href="/profile/settings#health-import">
+            Add sleep data
+            <ChevronRight size={14} />
+          </Link>
         </div>
       ) : (
         <>
@@ -535,17 +515,18 @@ export function SleepSummary({
           {sleep.fields_from && <p className="health-sources-note">{sleepSourcesNote(sleep)}</p>}
           <StageBreakdown sleep={sleep} />
           <SleepStageChart sleep={sleep} />
-          <p className="health-insight">{sleepComparison(sleep, data.sleeps)}</p>
+          {sleepComparison(sleep, data.sleeps) && (
+            <p className="health-insight">{sleepComparison(sleep, data.sleeps)}</p>
+          )}
           {detail && (
             <>
               <p className="health-muted">
-                Time in bed:{' '}
-                {duration((Date.parse(sleep.end_at) - Date.parse(sleep.start_at)) / 1000)}. Total
-                sleep excludes awake time as supplied by {sleep.source}.
+                Time in bed{' '}
+                {duration((Date.parse(sleep.end_at) - Date.parse(sleep.start_at)) / 1000)}
               </p>
               <h3 className="health-subhead">Overnight measurements</h3>
               {sleep.overnight_hrv == null && sleep.respiration == null && sleep.spo2 == null ? (
-                <p>No overnight measurements supplied for this night.</p>
+                <p className="health-muted">None for this night</p>
               ) : (
                 <div className="health-mini-stats">
                   {sleep.overnight_hrv != null && (
@@ -573,11 +554,7 @@ export function SleepSummary({
               )}
               <h3 className="health-subhead">Sleep timing</h3>
               <p>{sleepConsistency(data.sleeps, date)}</p>
-              <p className="health-muted">
-                Source: {sleepSourcesNote(sleep)} · {sleep.status}. Wearable sleep stages are
-                estimates. Recorded {sleep.provider_date}; revised{' '}
-                {new Date(sleep.revision_at).toLocaleString()}.
-              </p>
+              <p className="health-muted">{sleepSourcesNote(sleep)}</p>
             </>
           )}
         </>
@@ -608,21 +585,16 @@ export function RecoveryBreakdown({ body }: { body: BodySummary }) {
         <div>
           <p className="health-eyebrow">Daily Charge</p>
           <h3>
-            {charge ? `${charge.score} · ${charge.bandLabel}` : 'Still building your picture'}
+            {charge ? charge.bandLabel : 'Not enough data'}
           </h3>
-          <p>
-            {charge
-              ? `${charge.inputs.length} contributing signals. A training heuristic: use it as context alongside how you feel.`
-              : 'At least two contributing signals are needed. Available measurements still appear below.'}
-          </p>
         </div>
       </div>
       {body.todayRow?.bb_latest != null && (
         <p className="health-inline-stat">
-          Body Battery at the recorded snapshot <strong>{body.todayRow.bb_latest}/100</strong>
+          Body Battery <strong>{body.todayRow.bb_latest}/100</strong>
         </p>
       )}
-      {charge && <h3 className="health-subhead">What’s shaping it</h3>}
+      {charge && <h3 className="health-subhead">Inputs</h3>}
       <div className="health-drivers">
         {charge?.inputs.map((input) => (
           <div className="health-driver" key={input.key}>
@@ -637,25 +609,10 @@ export function RecoveryBreakdown({ body }: { body: BodySummary }) {
             >
               <span style={{ width: `${Math.max(3, Math.min(100, input.score))}%` }} />
             </div>
-            <small>
-              {input.phrase} · {Math.round(input.weight * 100)}% of Charge
-            </small>
+            <small>{Math.round(input.weight * 100)}%</small>
           </div>
         ))}
       </div>
-      <details>
-        <summary>How Charge works</summary>
-        <p>
-          Charge is GRIND’s unvalidated daily training heuristic. Body Battery is Garmin’s energy
-          estimate. The Charge input uses wake Body Battery when provided, otherwise the day’s high;
-          it is not always a morning measurement. Neither score establishes muscular recovery.
-        </p>
-        <p>
-          Existing weights: Body Battery 40%, recovery time 25%, resting HR deviation 20%, training
-          load 15%. Missing inputs are excluded and remaining weights rescaled. Signals can overlap.
-          Legacy timestamps do not support a current readiness claim.
-        </p>
-      </details>
     </Panel>
   )
 }
@@ -663,12 +620,12 @@ export function RecoveryBreakdown({ body }: { body: BodySummary }) {
 const VOLUME_METRICS: HealthMetric[] = ['steps', 'active_minutes', 'floors']
 
 function standing(value: number | null, base: Baseline | null, metric: HealthMetric) {
-  if (value == null) return { key: 'none', text: 'No reading on this date' }
-  if (VOLUME_METRICS.includes(metric)) return { key: 'none', text: 'Daily total · may be partial' }
-  if (!base) return { key: 'none', text: 'Building your baseline' }
+  if (value == null) return { key: 'none', text: 'No reading' }
+  if (VOLUME_METRICS.includes(metric)) return { key: 'none', text: 'Daily total' }
+  if (!base) return { key: 'none', text: 'Calibrating' }
   if (value < base.low) return { key: 'below', text: 'Below usual' }
   if (value > base.high) return { key: 'above', text: 'Above usual' }
-  return { key: 'in', text: 'In your usual range' }
+  return { key: 'in', text: 'Usual' }
 }
 
 export function MetricTile({
@@ -695,7 +652,7 @@ export function MetricTile({
     >
       <span className="health-tile-label">
         {METRICS[metric].short}
-        <i aria-hidden="true">›</i>
+        <ChevronRight size={14} className="health-tile-chevron" />
       </span>
       <span className="health-tile-value">
         <strong>{value == null ? '—' : value.toLocaleString()}</strong>
@@ -760,7 +717,7 @@ export function HealthTrend({
   if (!fixed && !available.length)
     return (
       <div id="trends">
-        <p>No recorded measurements yet. Trends appear when your source supplies history.</p>
+        <p className="health-muted">No data yet</p>
       </div>
     )
   return (
@@ -787,14 +744,7 @@ export function HealthTrend({
       <div className="health-trend-controls">
         <p className="health-trend-title" data-fixed={fixed}>
           <span className="health-trend-label">{METRICS[metric].label}</span>
-          <small>
-            {metric === 'overnight_hrv'
-              ? 'Provided overnight value'
-              : volume
-                ? 'Recorded daily total (may be partial)'
-                : 'Recorded daily snapshot'}{' '}
-            · {METRICS[metric].unit}
-          </small>
+          <small>{METRICS[metric].unit}</small>
         </p>
         <div className="health-segment" role="group" aria-label="Trend window">
           {[7, 28, 90].map((n) => (
@@ -825,7 +775,7 @@ export function HealthTrend({
           band={!volume && usual ? { low: usual.low, high: usual.high } : null}
         />
       ) : (
-        <p>No readings in this window.</p>
+        <p className="health-muted">No readings</p>
       )}
       <div className="health-axis health-axis-3 health-axis-plot">
         <span>{dateLabel(rows[0].date)}</span>
@@ -850,22 +800,14 @@ export function HealthTrend({
       )}
       {!volume && usual && count > 0 && (
         <p className="health-band-key">
-          <i aria-hidden="true" /> Shaded band is your usual range
+          <i aria-hidden="true" /> Usual {Math.round(usual.low)}–{Math.round(usual.high)}
         </p>
       )}
       <p className="health-coverage">
-        {count} of {window} days recorded.{' '}
-        {data.historyError ? 'History refresh failed; retry above.' : 'Blank days have no reading.'}
-      </p>
-      <p className="health-muted">
-        {volume
-          ? 'Compare complete days only; observation times are unavailable.'
-          : usual
-            ? `Recent personal ${metric === 'overnight_hrv' ? 'overnight' : 'snapshot'} range ${Math.round(usual.low)}–${Math.round(usual.high)} ${METRICS[metric].unit}, across ${usual.count} of the previous 28 days. ${metric === 'overnight_hrv' ? 'Compared within the same source and device.' : 'Legacy device identity is unavailable.'} This is not a clinical range.`
-            : 'Personal comparisons need at least 14 recorded days in the previous 28. Device changes may affect comparisons.'}
+        {count}/{window} days{data.historyError ? ' · couldn’t refresh' : ''}
       </p>
       <details>
-        <summary>Read trend data</summary>
+        <summary>Data</summary>
         <div className="health-table-wrap">
           <table>
             <thead>
@@ -939,24 +881,20 @@ export function HealthView({
             <i aria-hidden="true" />
             <span role="status">
               {updating
-                ? 'Updating server records…'
+                ? 'Updating…'
                 : error
-                  ? 'Health is temporarily unavailable'
+                  ? 'Health unavailable'
                   : sourceSummary(data, date, now)}
             </span>
             <b aria-hidden="true" data-open={sourceOpen}>
-              ›
+              <ChevronRight size={14} />
             </b>
           </button>
         ) : (
           <span className="health-refresh-main">
             <i aria-hidden="true" />
             <span role="status">
-              {updating
-                ? 'Updating server records…'
-                : error
-                  ? 'Health is temporarily unavailable'
-                  : 'Your records, in perspective'}
+              {updating ? 'Updating…' : error ? 'Health unavailable' : 'Health'}
             </span>
           </span>
         )}
@@ -989,10 +927,7 @@ export function HealthView({
       )}
       {error && (
         <p role="alert" className="health-error">
-          We couldn’t refresh health data.{' '}
-          {data
-            ? 'Previous readings are retained with their dates.'
-            : 'Try again when your connection is available.'}
+          Couldn’t refresh health data.
         </p>
       )}
       {!data ? (
@@ -1023,9 +958,7 @@ export function HealthView({
                       <span>{METRICS[metric].unit}</span>
                     </div>
                     <p className="health-hero-sub">
-                      {value == null
-                        ? 'No reading for this date.'
-                        : `${metric === 'overnight_hrv' ? 'Overnight reading' : 'Garmin watch snapshot'} · ${dateLabel(date)}`}
+                      {dateLabel(date)}
                     </p>
                     <span className="health-tile-state health-pill" data-standing={state.key}>
                       <i aria-hidden="true" />
@@ -1041,18 +974,11 @@ export function HealthView({
             <div className="stagger">
               <DailyHealthBrief data={data} date={date} />
               {!body?.hasWatch && !data.sleeps.length && (
-                <Panel title="Make room for the whole picture" index={1}>
-                  <p>Connect your Garmin watch to begin collecting available measurements.</p>
-                  <ul>
-                    <li>Daily energy and movement</li>
-                    <li>Workout heart-rate detail</li>
-                    <li>Sleep from a supported cloud connection, when available</li>
-                  </ul>
-                  <p className="health-muted">
-                    Your health records stay private. Choose whether Coach can use them in Settings.
-                  </p>
+                <Panel title="Connect a watch" index={1}>
+                  <p>Sleep, recovery and daily activity from your Garmin.</p>
                   <Link className="health-primary" href="/profile/settings#health">
-                    Connect Garmin ›
+                    Connect Garmin
+                    <ChevronRight size={16} />
                   </Link>
                 </Panel>
               )}
@@ -1066,22 +992,19 @@ export function HealthView({
                   </div>
                   {MORE_METRICS.some(hasMetric) && (
                     <details>
-                      <summary>More measurements</summary>
+                      <summary>More</summary>
                       <div className="health-tiles">
                         {MORE_METRICS.filter(hasMetric).map((m) => (
                           <MetricTile key={m} metric={m} data={data} date={date} />
                         ))}
                       </div>
-                      <p className="health-muted">
-                        Only measurements supplied by your device are shown.
-                      </p>
                     </details>
                   )}
                 </section>
               )}
               {!data.history.length && body?.hasWatch && (
                 <Panel title="Your metrics" index={1}>
-                  <p>No daily measurements received yet.</p>
+                  <p className="health-muted">No data yet</p>
                 </Panel>
               )}
               <div className="health-grid">
@@ -1111,22 +1034,15 @@ export function HealthView({
                     }}
                   />
                 ) : (
-                  <p>
-                    No intraday readings for this date. Measurements appear here when a source
-                    supplies them.
-                  </p>
+                  <p className="health-muted">No readings for this date</p>
                 )}
               </Panel>
-              <Panel title="Patterns over time" index={5}>
+              <Panel title="Trends" index={5}>
                 <HealthTrend data={data} date={date} />
               </Panel>
             </div>
           )}
-          <footer className="health-footer">
-            Understand the evidence. Listen to your body.
-            <br />
-            Wearable estimates and GRIND heuristics are not medical assessments.
-          </footer>
+          <footer className="health-footer">Not medical advice.</footer>
         </>
       )}
     </>

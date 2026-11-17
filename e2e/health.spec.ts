@@ -74,10 +74,10 @@ for (const state of ['disconnected', 'partial', 'delayed', 'error', 'loading']) 
       await expect(page.getByRole('alert')).toBeVisible()
       await page.getByRole('button', { name: 'Retry' }).click()
       expect(await page.evaluate(() => window.healthFixture.refreshes)).toBe(1)
-      await expect(page.getByText('Connect Garmin ›', { exact: true })).toHaveCount(0)
+      await expect(page.getByRole('link', { name: 'Connect Garmin', exact: true })).toHaveCount(0)
     }
     if (state === 'disconnected')
-      await expect(page.getByText('Connect Garmin ›', { exact: true })).toBeVisible()
+      await expect(page.getByRole('link', { name: 'Connect Garmin', exact: true })).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     await page.screenshot({ path: info.outputPath(`${state}.png`), fullPage: true })
   })
@@ -86,7 +86,7 @@ for (const view of ['sleep', 'metric'])
   test(`${view} detail and large text`, async ({ page }, info) => {
     await render(page, { view, large: true, width: 390, light: true })
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-    await expect(page.getByRole('link', { name: '‹ Health' })).toHaveAttribute(
+    await expect(page.locator('.health-topline').getByRole('link', { name: 'Health', exact: true })).toHaveAttribute(
       'href',
       '/progress/health?date=2026-11-16'
     )
@@ -108,10 +108,10 @@ test('date navigation, stage keyboard, table alternatives and editable Coach sug
   await stage.focus()
   await stage.press('ArrowRight')
   await expect(page.locator('.health-chart-reading').first()).toContainText('Light')
-  await page.getByText('Read stage intervals', { exact: true }).click()
+  await page.getByText('Stages', { exact: true }).click()
   await expect(page.getByRole('table').first()).toBeVisible()
   await page.getByRole('button', { name: '90 days', exact: true }).click()
-  await expect(page.getByText('90 of 90 days recorded.', { exact: false })).toBeVisible()
+  await expect(page.getByText('90/90 days', { exact: true })).toBeVisible()
 })
 test('charts are read by dragging, with no slider', async ({ page }) => {
   await render(page)

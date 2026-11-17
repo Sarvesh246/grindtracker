@@ -261,13 +261,13 @@ export function sleepComparison(sleep: SleepSession, sessions: SleepSession[]): 
   }
   if (recent.size < 14)
     return recent.size === 0
-      ? 'No earlier nights recorded yet. Comparisons appear as your history builds.'
-      : `${recent.size} earlier recorded night${recent.size === 1 ? '' : 's'}; more history will make comparisons useful.`
+      ? ''
+      : `${recent.size} night${recent.size === 1 ? '' : 's'} logged so far.`
   const average = [...recent.values()].reduce((n, s) => n + s.duration_seconds, 0) / recent.size
   const delta = Math.round((sleep.duration_seconds - average) / 60)
   return delta === 0
-    ? `Matches your average across ${recent.size} recent nights.`
-    : `${Math.abs(delta)} minutes ${delta > 0 ? 'longer' : 'shorter'} than your average across ${recent.size} recent nights.`
+    ? 'Right at your average.'
+    : `${Math.abs(delta)} min ${delta > 0 ? 'above' : 'below'} your average.`
 }
 export function dailyBrief(
   row: DailyBody | null,
@@ -276,28 +276,28 @@ export function dailyBrief(
 ) {
   if (sleep)
     return {
-      headline: 'Your night, in perspective',
-      text: `${duration(sleep.duration_seconds)} of sleep recorded. ${sleepComparison(sleep, sessions)}`
+      headline: `${duration(sleep.duration_seconds)} of sleep`,
+      text: sleepComparison(sleep, sessions)
     }
   if (row?.bb_latest != null)
     return {
-      headline: 'A snapshot of your day',
-      text: `Body Battery was ${row.bb_latest} at the recorded snapshot. Sleep and more history will help build a fuller picture.`
+      headline: `Body Battery ${row.bb_latest}`,
+      text: ''
     }
   if (row?.resting_hr != null)
     return {
-      headline: 'Start with what’s measured',
-      text: `Your resting heart rate was ${row.resting_hr} bpm on this date. There isn’t enough evidence for an overall recovery verdict.`
+      headline: `Resting HR ${row.resting_hr} bpm`,
+      text: ''
     }
   return {
-    headline: 'Your picture starts here',
-    text: 'Bring sleep, recovery and daily movement together, with the source and timing behind each reading.'
+    headline: 'Your health starts here',
+    text: 'Sleep, recovery and activity in one place.'
   }
 }
 
 export function sleepConsistency(sessions: SleepSession[], date: string): string {
   const latest = mainSleep(sessions, date)
-  if (!latest) return 'No main sleep record for this date.'
+  if (!latest) return 'No sleep recorded.'
   const nights = Array.from({ length: 7 }, (_, i) =>
     mainSleep(sessions, shiftDate(date, -i))
   ).filter(
@@ -308,7 +308,7 @@ export function sleepConsistency(sessions: SleepSession[], date: string): string
       s.timezone === latest.timezone
   )
   if (nights.length < 4)
-    return `${nights.length} recorded night${nights.length === 1 ? '' : 's'} in this 7-day window. More comparable nights are needed to describe timing consistency.`
+    return `${nights.length} of 7 nights logged.`
   const clock = (iso: string) => {
     const parts = new Intl.DateTimeFormat('en-GB', {
       timeZone: latest.timezone,
@@ -326,7 +326,7 @@ export function sleepConsistency(sessions: SleepSession[], date: string): string
     const offsets = nights.map((n) => ((clock(n[field]) - anchor + 2160) % 1440) - 720)
     return Math.max(...offsets) - Math.min(...offsets)
   }
-  return `Across ${nights.length} recorded nights in this 7-day window, bedtimes spanned ${span('start_at')} minutes and wake times spanned ${span('end_at')} minutes. Compared in ${latest.timezone} local time.`
+  return `Last ${nights.length} nights: bedtimes spanned ${span('start_at')} minutes, wake times ${span('end_at')} minutes.`
 }
 
 export const STAGE_ORDER: SleepStageName[] = ['awake', 'rem', 'light', 'deep']

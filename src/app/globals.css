@@ -3291,6 +3291,8 @@ html.reduce-motion .coach-history {
 }
 .coach-action__step-mark {
   width: 14px;
+  display: inline-flex;
+  justify-content: center;
   text-align: center;
   flex-shrink: 0;
   font-size: 11px;

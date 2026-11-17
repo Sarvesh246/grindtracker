@@ -1,6 +1,7 @@
 'use client'
 
 import type { CoachActionProgressStep } from '@/lib/coach'
+import { CheckIcon } from '@/components/ui/Icons'
 
 type Props = {
   steps: CoachActionProgressStep[]
@@ -27,7 +28,7 @@ export default function CoachActionProgress({ steps, phase, message }: Props) {
             >
               <span className="coach-action__step-mark" aria-hidden>
                 {step.state === 'done'
-                  ? '✓'
+                  ? <CheckIcon size={12} />
                   : step.state === 'error'
                     ? '!'
                     : step.state === 'active'

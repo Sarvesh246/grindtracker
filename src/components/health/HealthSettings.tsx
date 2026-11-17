@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { ChevronRight } from '@/components/ui/Icons'
 import { createClient, getClientUser } from '@/lib/supabase/client'
 import { useDemoMode } from '@/lib/contexts/DemoModeContext'
 
@@ -181,7 +182,8 @@ export default function HealthSettings() {
             fontSize: 13
           }}
         >
-          View health ›
+          View health
+          <ChevronRight size={14} />
         </Link>
       </div>
       <p

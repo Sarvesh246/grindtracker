@@ -1,5 +1,6 @@
 'use client'
 import Link from 'next/link'
+import { ChevronRight } from '@/components/ui/Icons'
 import { SWEET_SPOT, type LoadBalance } from '@/lib/body'
 
 /**
@@ -86,7 +87,7 @@ export default function LoadGauge({ load }: { load: LoadBalance }) {
             </span>
           </div>
         </div>
-        <Link href="/progress/health#trends" data-haptic="light" style={{ minHeight: 44, display: 'inline-flex', alignItems: 'center', color: 'var(--accent-text)', fontSize: 13 }}>Explore health trends ›</Link>
+        <Link href="/progress/health#trends" data-haptic="light" style={{ minHeight: 44, display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--accent-text)', fontSize: 13 }}>Health trends<ChevronRight size={14} /></Link>
       </div>
     </div>
   )

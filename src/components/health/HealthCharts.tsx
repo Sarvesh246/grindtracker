@@ -106,9 +106,7 @@ export function SleepStageChart({ sleep }: { sleep: SleepSession }) {
   if (!stages.length)
     return (
       <p className="health-muted">
-        {sleep.stage_totals
-          ? 'Stage totals were supplied by the wearable; interval timing is unavailable.'
-          : 'Stage intervals weren’t supplied for this sleep.'}
+        {sleep.stage_totals ? 'No stage timeline for this night' : 'No stage data for this night'}
       </p>
     )
   const middle = new Date(start + span / 2).toISOString()
@@ -126,7 +124,7 @@ export function SleepStageChart({ sleep }: { sleep: SleepSession }) {
             <b>{durationShort((Date.parse(interval.end) - Date.parse(interval.start)) / 1000)}</b>
           </>
         ) : (
-          <span className="health-muted">No stage reading here · drag across the night</span>
+          <span className="health-muted">No reading</span>
         )}
       </div>
       <div className="health-stage-grid">
@@ -215,9 +213,8 @@ export function SleepStageChart({ sleep }: { sleep: SleepSession }) {
         <span>{clockLabel(middle, sleep.timezone)}</span>
         <span>{clockLabel(sleep.end_at, sleep.timezone)}</span>
       </div>
-      <p className="health-muted">Wearable estimates · blank intervals mean missing data.</p>
       <details>
-        <summary>Read stage intervals</summary>
+        <summary>Stages</summary>
         <div className="health-table-wrap">
           <table>
             <caption>Recorded sleep stages ({sleep.timezone})</caption>
@@ -535,7 +532,6 @@ export function DailyHealthTimeline({
     strain = observed(stress)
   const time = (i: number) =>
     `${String(Math.floor(i / 4)).padStart(2, '0')}:${String((i % 4) * 15).padStart(2, '0')}`
-  const count = energy.filter((v) => v != null).length
   const latestIndex = Math.max(
     0,
     ...energy.flatMap((v, i) => (v != null || strain[i] != null ? [i] : []))
@@ -585,7 +581,7 @@ export function DailyHealthTimeline({
           )}
         </span>
       </div>
-      <p className="health-eyebrow health-plot-title">Body Battery · energy estimate</p>
+      <p className="health-eyebrow health-plot-title">Body Battery</p>
       <SeriesPlot
         values={energy}
         label="Body Battery"
@@ -596,7 +592,7 @@ export function DailyHealthTimeline({
         envelope={usual?.bb}
       />
       <p className="health-eyebrow health-plot-title">
-        Physiological stress{summary?.stress != null && <> · avg {summary.stress}</>}
+        Stress{summary?.stress != null && <> · avg {summary.stress}</>}
       </p>
       <SeriesPlot
         values={strain}
@@ -613,7 +609,7 @@ export function DailyHealthTimeline({
           {(usual?.bb || usual?.stress) && (
             <li>
               <i className="health-mark-usual" aria-hidden="true" />
-              Your usual range at this time ({usual?.bb?.days ?? usual?.stress?.days} previous days)
+              Usual range
             </li>
           )}
           {annotations.map((a, i) => (
@@ -629,13 +625,8 @@ export function DailyHealthTimeline({
         <span>12:00</span>
         <span>23:45</span>
       </div>
-      <p className="health-hint">Drag across either chart to read any moment.</p>
-      <p className="health-muted">
-        {count} of 96 energy buckets recorded. Legacy 15-minute local-time buckets; exact UTC timing
-        and DST coverage are unavailable. Gaps are not rest.
-      </p>
       <details>
-        <summary>Read daily measurements</summary>
+        <summary>Data</summary>
         <div className="health-table-wrap">
           <table>
             <thead>
