@@ -314,7 +314,9 @@ export function SeriesPlot({
       data-interactive={onSelect ? 'true' : undefined}
       tabIndex={onSelect ? 0 : undefined}
       role={onSelect ? 'group' : undefined}
-      aria-label={onSelect ? `${label} chart. Use left and right arrow keys to read values.` : undefined}
+      aria-label={
+        onSelect ? `${label} chart. Use left and right arrow keys to read values.` : undefined
+      }
       onKeyDown={onKey}
       onPointerDown={choose}
       onPointerMove={(e) => {
@@ -376,7 +378,13 @@ export function SeriesPlot({
           ) : null
         )}
         {selected != null && (
-          <line x1={x(selected)} x2={x(selected)} y1={PT - 4} y2={H - PB + 4} className="health-cursor" />
+          <line
+            x1={x(selected)}
+            x2={x(selected)}
+            y1={PT - 4}
+            y2={H - PB + 4}
+            className="health-cursor"
+          />
         )}
         {selected != null && selectedValue != null && (
           <>
@@ -400,7 +408,12 @@ export function DailyHealthTimeline({
   stress: (number | null)[]
   date: string
   today: string
-  summary?: { high: number | null; low: number | null; latest: number | null; stress: number | null }
+  summary?: {
+    high: number | null
+    low: number | null
+    latest: number | null
+    stress: number | null
+  }
 }) {
   const [selected, setSelected] = useState(0)
   const limit =
@@ -413,12 +426,14 @@ export function DailyHealthTimeline({
     `${String(Math.floor(i / 4)).padStart(2, '0')}:${String((i % 4) * 15).padStart(2, '0')}`
   const count = energy.filter((v) => v != null).length
   const chips = summary
-    ? ([
-        ['High', summary.high],
-        ['Low', summary.low],
-        ['Latest', summary.latest],
-        ['Avg stress', summary.stress]
-      ] as const).filter(([, v]) => v != null)
+    ? (
+        [
+          ['High', summary.high],
+          ['Low', summary.low],
+          ['Latest', summary.latest],
+          ['Avg stress', summary.stress]
+        ] as const
+      ).filter(([, v]) => v != null)
     : []
   return (
     <div data-swipe-ignore>

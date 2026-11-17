@@ -102,3 +102,14 @@ the stages independently of color. Health uses rem-based readable text,
 tabular values, 16px panels and static SVG charts. Plot gaps remain gaps;
 energy and stress use separate scales. No continuously animated charts or
 duplicate large score rings. The nested routes retain Progress navigation.
+
+Mobile reading patterns (Health redesign): a 21-day date strip (dots = records)
+sits under the prev/next/calendar controls; "Your metrics" are tappable tiles with
+a 14-day sparkline and a plain "In your usual range / Above / Below usual" line
+(from `metricBaseline`, never a good/bad verdict, and volume metrics like steps
+say "Daily total"); sleep shows a proportional stage bar plus a legend before the
+drag-to-read hypnogram; trend charts draw the personal usual range as a shaded
+band and show Low/Average/High. The overview keeps exactly one large ring
+(Recovery), so the brief uses numbers, not a second ring. Every chart still has
+its table alternative, and numbers use JetBrains Mono.
+

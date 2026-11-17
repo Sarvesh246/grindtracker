@@ -2,56 +2,66 @@ import type { DailyBody } from '@/lib/body/types'
 
 export const METRICS = {
   resting_hr: {
+    short: 'Resting HR',
     label: 'Resting heart rate',
     unit: 'bpm',
     meaning:
       'Your heart rate at rest. Compare readings from the same device and measurement period.'
   },
   overnight_hrv: {
+    short: 'HRV',
     label: 'Overnight heart-rate variability',
     unit: 'ms',
     meaning:
       'Variation in the time between heartbeats during sleep, as supplied by the source. Compare nights from the same device and method; it is not a diagnosis.'
   },
   steps: {
+    short: 'Steps',
     label: 'Daily movement',
     unit: 'steps',
     meaning:
       'Steps recorded so far on each date. Partial days are not comparable with completed daily totals.'
   },
   recovery_hours: {
+    short: 'Recovery',
     label: 'Recovery time',
     unit: 'h',
     meaning:
       'Garmin’s estimated recovery time remaining at the snapshot. It does not measure muscular recovery.'
   },
   bb_latest: {
+    short: 'Body Battery',
     label: 'Body Battery',
     unit: '/ 100',
     meaning: 'Garmin’s energy estimate at the latest recorded snapshot, distinct from GRIND Charge.'
   },
   stress_avg: {
+    short: 'Stress',
     label: 'Physiological stress',
     unit: '/ 100',
     meaning: 'Garmin’s average physiological stress estimate. It is not a measure of anxiety.'
   },
   active_minutes: {
+    short: 'Active min',
     label: 'Active minutes',
     unit: 'min',
     meaning: 'Activity minutes supplied by the watch for this date.'
   },
   floors: {
+    short: 'Floors',
     label: 'Floors climbed',
     unit: 'floors',
     meaning: 'Floors recorded by your watch for this date.'
   },
   spo2: {
+    short: 'SpO₂',
     label: 'Oxygen saturation',
     unit: '%',
     meaning:
       'A watch snapshot estimate. This is not an overnight average or a clinical measurement.'
   },
   vo2max: {
+    short: 'VO₂ max',
     label: 'VO₂ max estimate',
     unit: 'ml/kg/min',
     meaning: 'Garmin’s estimate of aerobic fitness, when supported by your device.'
@@ -249,4 +259,74 @@ export function sleepConsistency(sessions: SleepSession[], date: string): string
     return Math.max(...offsets) - Math.min(...offsets)
   }
   return `Across ${nights.length} recorded nights in this 7-day window, bedtimes spanned ${span('start_at')} minutes and wake times spanned ${span('end_at')} minutes. Compared in ${latest.timezone} local time.`
+}
+
+export const STAGE_ORDER: SleepStageName[] = ['awake', 'rem', 'light', 'deep']
+export const STAGE_NAMES: Record<SleepStageName, string> = {
+  awake: 'Awake',
+  rem: 'REM',
+  light: 'Light',
+  deep: 'Deep'
+}
+
+/** Seconds per stage: supplied totals first, else summed from intervals, else null. */
+export function stageSeconds(sleep: SleepSession): Record<SleepStageName, number | null> {
+  const out = {} as Record<SleepStageName, number | null>
+  for (const stage of STAGE_ORDER) {
+    const recorded = sleep.stages?.filter((s) => s.stage === stage)
+    out[stage] =
+      sleep.stage_totals?.[stage] ??
+      (recorded?.length
+        ? recorded.reduce((n, s) => n + (Date.parse(s.end) - Date.parse(s.start)) / 1000, 0)
+        : null)
+  }
+  return out
+}
+
+export function seriesStats(values: (number | null)[]) {
+  const present = values.filter((v): v is number => v != null && Number.isFinite(v))
+  if (!present.length) return null
+  return {
+    min: Math.min(...present),
+    max: Math.max(...present),
+    avg: present.reduce((n, v) => n + v, 0) / present.length,
+    count: present.length
+  }
+}
+
+const sleepSourceKey = (s: SleepSession) => `${s.source}:${s.device_id}`
+/** The personal range used everywhere a metric is compared with "usual". */
+export function metricBaseline(
+  history: HealthHistoryDay[],
+  sleeps: SleepSession[],
+  metric: HealthMetric,
+  date: string
+): Baseline | null {
+  if (metric === 'overnight_hrv') {
+    const selected = mainSleep(sleeps, date)
+    if (!selected) return null
+    return baseline(
+      sleeps.flatMap((s) =>
+        s.kind === 'main' && s.overnight_hrv != null
+          ? [
+              {
+                date: s.wake_date,
+                value: s.overnight_hrv,
+                source: sleepSourceKey(s)
+              }
+            ]
+          : []
+      ),
+      date,
+      sleepSourceKey(selected)
+    )
+  }
+  return baseline(
+    history.flatMap((row) => {
+      const value = metricValue(row, metric)
+      return value == null ? [] : [{ date: row.local_date, value, source: 'legacy-watch' }]
+    }),
+    date,
+    'legacy-watch'
+  )
 }

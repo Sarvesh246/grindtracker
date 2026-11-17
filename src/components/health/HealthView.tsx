@@ -1,43 +1,56 @@
 'use client'
-import { useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import Link from 'next/link'
 import type { BodySummary } from '@/lib/body/queries'
-import type { HealthHistoryDay } from '@/lib/health/model'
 import type { HealthSummary } from '@/lib/health/queries'
 import {
-  baseline,
   clockLabel,
   dailyBrief,
   dateLabel,
   duration,
   mainSleep,
   METRICS,
+  metricBaseline,
   metricValue,
+  seriesStats,
   shiftDate,
   sleepComparison,
   sleepConsistency,
+  type Baseline,
   type HealthMetric
 } from '@/lib/health/model'
 import { Ring } from '@/components/body/ChargeRing'
 import { requestOpenCoach } from '@/lib/coach/openCoachBus'
 import Dialog from '@/components/ui/Dialog'
-import { DailyHealthTimeline, SeriesPlot, SleepStageChart } from './HealthCharts'
+import {
+  DailyHealthTimeline,
+  SeriesPlot,
+  SleepStageChart,
+  Sparkline,
+  StageBreakdown
+} from './HealthCharts'
 
 function Panel({
   title,
   id,
   action,
   children,
-  className = ''
+  className = '',
+  index = 0
 }: {
   title: string
   id?: string
   action?: ReactNode
   children: ReactNode
   className?: string
+  index?: number
 }) {
   return (
-    <section id={id} className={`health-panel ${className}`}>
+    <section
+      id={id}
+      className={`health-panel ${className}`}
+      style={{ '--i': index } as CSSProperties}
+    >
       <div className="health-section-head">
         <h2>{title}</h2>
         {action}
@@ -46,6 +59,8 @@ function Panel({
     </section>
   )
 }
+
+const DAY_STRIP = 21
 
 export function HealthDateHeader({
   date,
@@ -61,6 +76,24 @@ export function HealthDateHeader({
   availableDates?: string[]
 }) {
   const [calendarOpen, setCalendarOpen] = useState(false)
+  const stripRef = useRef<HTMLDivElement>(null)
+  // Keep the strip's window stable while browsing; only slide it for far-back dates.
+  const end =
+    date >= shiftDate(today, -(DAY_STRIP - 1))
+      ? today
+      : shiftDate(date, 10) > today
+        ? today
+        : shiftDate(date, 10)
+  const days = Array.from({ length: DAY_STRIP }, (_, i) => shiftDate(end, i - (DAY_STRIP - 1)))
+  useEffect(() => {
+    const strip = stripRef.current
+    const current = strip?.querySelector<HTMLElement>('[aria-pressed="true"]')
+    if (!strip || !current) return
+    strip.scrollTo({
+      left: current.offsetLeft - (strip.clientWidth - current.clientWidth) / 2,
+      behavior: 'auto'
+    })
+  }, [date, end])
   return (
     <header className="health-header">
       <div className="health-topline">
@@ -101,6 +134,29 @@ export function HealthDateHeader({
           ›
         </button>
       </div>
+      <div className="health-strip" ref={stripRef} data-swipe-ignore>
+        {days.map((key) => {
+          const when = new Date(`${key}T12:00:00`)
+          const has = availableDates.includes(key)
+          return (
+            <button
+              key={key}
+              type="button"
+              data-haptic="light"
+              aria-pressed={date === key}
+              data-today={key === today}
+              aria-label={`${dateLabel(key)}${has ? ', records available' : ''}`}
+              onClick={() => onDate(key)}
+            >
+              <small aria-hidden="true">
+                {when.toLocaleDateString(undefined, { weekday: 'narrow' })}
+              </small>
+              <b aria-hidden="true">{when.getDate()}</b>
+              <i aria-hidden="true" data-on={has} />
+            </button>
+          )
+        })}
+      </div>
       <Dialog
         open={calendarOpen}
         onClose={() => setCalendarOpen(false)}
@@ -140,7 +196,7 @@ export function HealthDateHeader({
                 }}
               >
                 <span>{new Date(`${key}T12:00:00`).getDate()}</span>
-                <span aria-hidden="true">{availableDates.includes(key) ? '•' : ' '}</span>
+                <span aria-hidden="true">{availableDates.includes(key) ? '•' : ' '}</span>
               </button>
             ))}
           </div>
@@ -183,28 +239,41 @@ export function DailyHealthBrief({ data, date }: { data: HealthSummary; date: st
   const row = data.body.todayRow
   const sleep = mainSleep(data.sleeps, date)
   const brief = dailyBrief(row, sleep, data.sleeps)
+  const stats = [
+    sleep && {
+      label: 'Sleep',
+      value: duration(sleep.duration_seconds),
+      unit: ''
+    },
+    data.body.charge && {
+      label: 'Charge',
+      value: String(data.body.charge.score),
+      unit: '/100'
+    },
+    row?.resting_hr != null && {
+      label: 'Resting HR',
+      value: String(row.resting_hr),
+      unit: 'bpm'
+    }
+  ].filter((v): v is { label: string; value: string; unit: string } => !!v)
   return (
-    <section className="health-brief">
+    <section className="health-brief" style={{ '--i': 0 } as CSSProperties}>
       <p className="health-eyebrow">Your daily picture · {dateLabel(date)}</p>
       <h2>{brief.headline}</h2>
       <p>{brief.text}</p>
-      <div className="health-facts">
-        {sleep && (
-          <span>
-            Sleep <strong>{duration(sleep.duration_seconds)}</strong>
-          </span>
-        )}
-        {data.body.charge && (
-          <span>
-            Charge <strong>{data.body.charge.score}</strong>
-          </span>
-        )}
-        {row?.resting_hr != null && (
-          <span>
-            Resting HR <strong>{row.resting_hr} bpm</strong>
-          </span>
-        )}
-      </div>
+      {stats.length > 0 && (
+        <dl className="health-facts">
+          {stats.map((f) => (
+            <div key={f.label}>
+              <dt>{f.label}</dt>
+              <dd>
+                <strong>{f.value}</strong>
+                {f.unit && <small>{f.unit}</small>}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
       <div className="health-brief-actions">
         <details>
           <summary>Why this summary</summary>
@@ -264,6 +333,7 @@ export function SleepSummary({
             : `Sleep · ${dateLabel(date)}`
       }
       id="sleep"
+      index={2}
       action={!detail && <Link href={`/progress/health/sleep?date=${date}`}>View sleep ›</Link>}
     >
       {!sleep ? (
@@ -283,57 +353,56 @@ export function SleepSummary({
           <div className="health-measurement">
             <strong>{duration(sleep.duration_seconds)}</strong>
             {sleep.score != null && (
-              <span>
+              <span className="health-score">
                 Sleep score <b>{sleep.score}</b>
               </span>
             )}
           </div>
-          <p>
+          <p className="health-times">
             {clockLabel(sleep.start_at, sleep.timezone)} –{' '}
             {clockLabel(sleep.end_at, sleep.timezone)}{' '}
             <span className="health-muted">· {sleep.timezone}</span>
           </p>
+          <StageBreakdown sleep={sleep} />
           <SleepStageChart sleep={sleep} />
-          <p>{sleepComparison(sleep, data.sleeps)}</p>
+          <p className="health-insight">{sleepComparison(sleep, data.sleeps)}</p>
           {detail && (
             <>
-              <p>
+              <p className="health-muted">
                 Time in bed:{' '}
                 {duration((Date.parse(sleep.end_at) - Date.parse(sleep.start_at)) / 1000)}. Total
                 sleep excludes awake time as supplied by {sleep.source}.
               </p>
-              <div className="health-metric-list">
-                {(['awake', 'rem', 'light', 'deep'] as const).map((stage) => {
-                  const recorded = sleep.stages?.filter((s) => s.stage === stage)
-                  const seconds =
-                    sleep.stage_totals?.[stage] ??
-                    (recorded?.length
-                      ? recorded.reduce(
-                          (n, s) => n + (Date.parse(s.end) - Date.parse(s.start)) / 1000,
-                          0
-                        )
-                      : null)
-                  return (
-                    <div className="health-metric-row" key={stage}>
-                      <span>
-                        {stage === 'rem' ? 'REM' : stage.charAt(0).toUpperCase() + stage.slice(1)}
-                      </span>
-                      <strong>{seconds == null ? 'Not supplied' : duration(seconds)}</strong>
+              <h3 className="health-subhead">Overnight measurements</h3>
+              {sleep.overnight_hrv == null && sleep.respiration == null && sleep.spo2 == null ? (
+                <p>No overnight measurements supplied for this night.</p>
+              ) : (
+                <div className="health-mini-stats">
+                  {sleep.overnight_hrv != null && (
+                    <div>
+                      <span>HRV</span>
+                      <strong>{sleep.overnight_hrv}</strong>
+                      <small>ms</small>
                     </div>
-                  )
-                })}
-              </div>
-              <h3>Sleep timing</h3>
+                  )}
+                  {sleep.respiration != null && (
+                    <div>
+                      <span>Respiration</span>
+                      <strong>{sleep.respiration}</strong>
+                      <small>breaths/min</small>
+                    </div>
+                  )}
+                  {sleep.spo2 != null && (
+                    <div>
+                      <span>Oxygen</span>
+                      <strong>{sleep.spo2}</strong>
+                      <small>%</small>
+                    </div>
+                  )}
+                </div>
+              )}
+              <h3 className="health-subhead">Sleep timing</h3>
               <p>{sleepConsistency(data.sleeps, date)}</p>
-              <h3>Overnight measurements</h3>
-              <p>
-                {sleep.overnight_hrv != null ? `HRV ${sleep.overnight_hrv} ms. ` : ''}
-                {sleep.respiration != null ? `Respiration ${sleep.respiration} breaths/min. ` : ''}
-                {sleep.spo2 != null ? `Oxygen saturation ${sleep.spo2}%.` : ''}
-                {sleep.overnight_hrv == null && sleep.respiration == null && sleep.spo2 == null
-                  ? 'No overnight measurements supplied for this night.'
-                  : ''}
-              </p>
               <p className="health-muted">
                 Source: {sleep.source} · device {sleep.device_id} · {sleep.status}. Wearable sleep
                 stages are estimates. Recorded {sleep.provider_date}; revised{' '}
@@ -363,9 +432,9 @@ export function SleepSummary({
 export function RecoveryBreakdown({ body }: { body: BodySummary }) {
   const charge = body.charge
   return (
-    <Panel title="Recovery" id="recovery">
+    <Panel title="Recovery" id="recovery" index={3}>
       <div className="health-recovery">
-        {charge && <Ring score={charge.score} size={120} stroke={8} />}
+        {charge && <Ring score={charge.score} size={112} stroke={9} />}
         <div>
           <p className="health-eyebrow">Daily Charge · heuristic</p>
           <h3>
@@ -379,18 +448,28 @@ export function RecoveryBreakdown({ body }: { body: BodySummary }) {
         </div>
       </div>
       {body.todayRow?.bb_latest != null && (
-        <p>
-          Body Battery at the recorded snapshot: <strong>{body.todayRow.bb_latest}/100</strong>.
+        <p className="health-inline-stat">
+          Body Battery at the recorded snapshot <strong>{body.todayRow.bb_latest}/100</strong>
         </p>
       )}
-      <div className="health-metric-list">
+      {charge && <h3 className="health-subhead">What’s shaping it</h3>}
+      <div className="health-drivers">
         {charge?.inputs.map((input) => (
-          <div className="health-metric-row" key={input.key}>
-            <span>
-              {input.label}
-              <small>{input.phrase}</small>
-            </span>
-            <strong>{input.value}</strong>
+          <div className="health-driver" key={input.key}>
+            <div className="health-driver-head">
+              <span>{input.label}</span>
+              <strong>{input.value}</strong>
+            </div>
+            <div
+              className="health-meter"
+              role="img"
+              aria-label={`${input.label} scored ${Math.round(input.score)} of 100, ${Math.round(input.weight * 100)}% of Charge`}
+            >
+              <span style={{ width: `${Math.max(3, Math.min(100, input.score))}%` }} />
+            </div>
+            <small>
+              {input.phrase} · {Math.round(input.weight * 100)}% of Charge
+            </small>
           </div>
         ))}
       </div>
@@ -411,34 +490,52 @@ export function RecoveryBreakdown({ body }: { body: BodySummary }) {
   )
 }
 
-export function MetricRow({
+const VOLUME_METRICS: HealthMetric[] = ['steps', 'active_minutes', 'floors']
+
+function standing(value: number | null, base: Baseline | null, metric: HealthMetric) {
+  if (value == null) return { key: 'none', text: 'No reading on this date' }
+  if (VOLUME_METRICS.includes(metric)) return { key: 'none', text: 'Daily total · may be partial' }
+  if (!base) return { key: 'none', text: 'Building your baseline' }
+  if (value < base.low) return { key: 'below', text: 'Below usual' }
+  if (value > base.high) return { key: 'above', text: 'Above usual' }
+  return { key: 'in', text: 'In your usual range' }
+}
+
+export function MetricTile({
   metric,
-  row,
+  data,
   date
 }: {
   metric: HealthMetric
-  row: HealthHistoryDay | null
+  data: HealthSummary
   date: string
 }) {
+  const row = data.history.find((d) => d.local_date === date) ?? null
   const value = metricValue(row, metric)
+  const trail = Array.from({ length: 14 }, (_, i) =>
+    metricValue(data.history.find((d) => d.local_date === shiftDate(date, i - 13)) ?? null, metric)
+  )
+  const state = standing(value, metricBaseline(data.history, data.sleeps, metric, date), metric)
   return (
     <Link
       href={`/progress/health/metrics/${metric}?date=${date}`}
-      className="health-metric-row"
+      className="health-tile press-card"
       data-haptic="light"
+      aria-label={`${METRICS[metric].label}: ${value == null ? 'no reading' : `${value.toLocaleString()} ${METRICS[metric].unit}`}. ${state.text}. Open details.`}
     >
-      <span>
-        {METRICS[metric].label}
-        <small>
-          {metric === 'overnight_hrv' ? 'Overnight reading' : 'Garmin watch snapshot'} ·{' '}
-          {dateLabel(date)}
-        </small>
+      <span className="health-tile-label">
+        {METRICS[metric].short}
+        <i aria-hidden="true">›</i>
       </span>
-      <span>
-        <strong>{value == null ? 'No reading on this date' : value.toLocaleString()}</strong>
+      <span className="health-tile-value">
+        <strong>{value == null ? '—' : value.toLocaleString()}</strong>
         {value != null && <small>{METRICS[metric].unit}</small>}
       </span>
-      <span aria-hidden="true">›</span>
+      <Sparkline values={trail} />
+      <span className="health-tile-state" data-standing={state.key}>
+        <i aria-hidden="true" />
+        {state.text}
+      </span>
     </Link>
   )
 }
@@ -456,6 +553,7 @@ export function HealthTrend({
 }) {
   const [window, setWindow] = useState(7)
   const [requestedMetric, setMetric] = useState<HealthMetric>(initialMetric)
+  const [picked, setPicked] = useState<{ key: string; index: number } | null>(null)
   const available = (Object.keys(METRICS) as HealthMetric[]).filter((key) =>
     data.history.some((d) => metricValue(d, key) != null)
   )
@@ -472,28 +570,13 @@ export function HealthTrend({
     }
   })
   const count = rows.filter((r) => r.value != null).length
-  const sourceKey = (s: NonNullable<ReturnType<typeof mainSleep>>) => `${s.source}:${s.device_id}`
-  const selectedSleep = mainSleep(data.sleeps, date)
-  const usual =
-    metric === 'overnight_hrv'
-      ? selectedSleep &&
-        baseline(
-          data.sleeps.flatMap((s) =>
-            s.kind === 'main' && s.overnight_hrv != null
-              ? [{ date: s.wake_date, value: s.overnight_hrv, source: sourceKey(s) }]
-              : []
-          ),
-          date,
-          sourceKey(selectedSleep)
-        )
-      : baseline(
-          data.history.flatMap((row) => {
-            const value = metricValue(row, metric)
-            return value == null ? [] : [{ date: row.local_date, value, source: 'legacy-watch' }]
-          }),
-          date,
-          'legacy-watch'
-        )
+  const volume = VOLUME_METRICS.includes(metric)
+  const usual = metricBaseline(data.history, data.sleeps, metric, date)
+  const stats = seriesStats(rows.map((r) => r.value))
+  const pickKey = `${metric}:${window}`
+  const index = picked?.key === pickKey ? picked.index : rows.length - 1
+  const shown = rows[index]
+  const fmt = (n: number) => Math.round(n).toLocaleString()
   if (!fixed && !available.length)
     return (
       <div id="trends">
@@ -502,24 +585,38 @@ export function HealthTrend({
     )
   return (
     <div id="trends">
+      {!fixed && (
+        <div
+          className="health-chips-scroll"
+          role="group"
+          aria-label="Measurement"
+          data-swipe-ignore
+        >
+          {available.map((key) => (
+            <button
+              key={key}
+              data-haptic="light"
+              aria-pressed={metric === key}
+              onClick={() => setMetric(key)}
+            >
+              {METRICS[key].short}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="health-trend-controls">
-        {!fixed && (
-          <label>
-            Measurement
-            <select value={metric} onChange={(e) => setMetric(e.target.value as HealthMetric)}>
-              {Object.entries(METRICS)
-                .filter(([key]) =>
-                  data.history.some((d) => metricValue(d, key as HealthMetric) != null)
-                )
-                .map(([key, m]) => (
-                  <option value={key} key={key}>
-                    {m.label}
-                  </option>
-                ))}
-            </select>
-          </label>
-        )}
-        <div role="group" aria-label="Trend window">
+        <p className="health-trend-title">
+          {METRICS[metric].label}
+          <small>
+            {metric === 'overnight_hrv'
+              ? 'Provided overnight value'
+              : volume
+                ? 'Recorded daily total (may be partial)'
+                : 'Recorded daily snapshot'}{' '}
+            · {METRICS[metric].unit}
+          </small>
+        </p>
+        <div className="health-segment" role="group" aria-label="Trend window">
           {[7, 28, 90].map((n) => (
             <button
               key={n}
@@ -532,30 +629,56 @@ export function HealthTrend({
           ))}
         </div>
       </div>
-      <p>
-        {METRICS[metric].label} ·{' '}
-        {metric === 'overnight_hrv'
-          ? 'Provided overnight value'
-          : metric === 'steps' || metric === 'active_minutes' || metric === 'floors'
-            ? 'Recorded daily total (may be partial)'
-            : 'Recorded daily snapshot'}{' '}
-        · {METRICS[metric].unit}
-      </p>
+      <div className="health-trend-reading" aria-live="off">
+        <span>{dateLabel(shown.date)}</span>
+        <strong>
+          {shown.value == null ? 'No reading' : shown.value.toLocaleString()}
+          {shown.value != null && <small>{METRICS[metric].unit}</small>}
+        </strong>
+      </div>
       {count ? (
-        <SeriesPlot values={rows.map((r) => r.value)} label={METRICS[metric].label} />
+        <SeriesPlot
+          values={rows.map((r) => r.value)}
+          label={METRICS[metric].label}
+          selected={index}
+          onSelect={(i) => setPicked({ key: pickKey, index: i })}
+          band={!volume && usual ? { low: usual.low, high: usual.high } : null}
+        />
       ) : (
         <p>No readings in this window.</p>
       )}
-      <div className="health-axis">
+      <div className="health-axis health-axis-3">
         <span>{dateLabel(rows[0].date)}</span>
+        <span>{dateLabel(rows[Math.floor((rows.length - 1) / 2)].date)}</span>
         <span>{dateLabel(date)}</span>
       </div>
+      {stats && (
+        <dl className="health-range">
+          <div>
+            <dt>Low</dt>
+            <dd>{fmt(stats.min)}</dd>
+          </div>
+          <div>
+            <dt>Average</dt>
+            <dd>{fmt(stats.avg)}</dd>
+          </div>
+          <div>
+            <dt>High</dt>
+            <dd>{fmt(stats.max)}</dd>
+          </div>
+        </dl>
+      )}
+      {!volume && usual && count > 0 && (
+        <p className="health-band-key">
+          <i aria-hidden="true" /> Shaded band is your usual range
+        </p>
+      )}
       <p>
         {count} of {window} days recorded.{' '}
         {data.historyError ? 'History refresh failed; retry above.' : 'Blank days have no reading.'}
       </p>
       <p className="health-muted">
-        {metric === 'steps' || metric === 'active_minutes' || metric === 'floors'
+        {volume
           ? 'Compare complete days only; observation times are unavailable.'
           : usual
             ? `Recent personal ${metric === 'overnight_hrv' ? 'overnight' : 'snapshot'} range ${Math.round(usual.low)}–${Math.round(usual.high)} ${METRICS[metric].unit}, across ${usual.count} of the previous 28 days. ${metric === 'overnight_hrv' ? 'Compared within the same source and device.' : 'Legacy device identity is unavailable.'} This is not a clinical range.`
@@ -588,6 +711,15 @@ export function HealthTrend({
   )
 }
 
+const PRIMARY_METRICS = [
+  'resting_hr',
+  'overnight_hrv',
+  'bb_latest',
+  'recovery_hours',
+  'steps'
+] as const
+const MORE_METRICS = ['stress_avg', 'active_minutes', 'floors', 'spo2', 'vo2max'] as const
+
 export function HealthView({
   data,
   date,
@@ -609,10 +741,12 @@ export function HealthView({
 }) {
   const body = data?.body
   const selectedRow = data?.history.find((d) => d.local_date === date) ?? null
+  const hasMetric = (m: HealthMetric) => !!data?.history.some((d) => metricValue(d, m) != null)
   return (
     <>
-      <div className="health-refresh">
+      <div className="health-refresh" data-state={error ? 'error' : updating ? 'busy' : 'ok'}>
         <span role="status">
+          <i aria-hidden="true" />
           {updating
             ? 'Updating server records…'
             : error
@@ -655,14 +789,14 @@ export function HealthView({
                   ? 'No reading for this date.'
                   : `${metric === 'overnight_hrv' ? 'Overnight reading' : 'Garmin watch snapshot'} · ${dateLabel(date)}`}
               </p>
-              <p>{METRICS[metric].meaning}</p>
+              <p className="health-insight">{METRICS[metric].meaning}</p>
               <HealthTrend key={metric} data={data} date={date} initialMetric={metric} fixed />
             </Panel>
           ) : (
-            <>
+            <div className="stagger">
               <DailyHealthBrief data={data} date={date} />
               {!body?.hasWatch && !data.sleeps.length && (
-                <Panel title="Make room for the whole picture">
+                <Panel title="Make room for the whole picture" index={1}>
                   <p>Connect your Garmin watch to begin collecting available measurements.</p>
                   <ul>
                     <li>Daily energy and movement</li>
@@ -677,11 +811,38 @@ export function HealthView({
                   </Link>
                 </Panel>
               )}
+              {data.history.length > 0 && (
+                <Panel title="Your metrics" index={1}>
+                  <div className="health-tiles">
+                    {PRIMARY_METRICS.filter(hasMetric).map((m) => (
+                      <MetricTile key={m} metric={m} data={data} date={date} />
+                    ))}
+                  </div>
+                  {MORE_METRICS.some(hasMetric) && (
+                    <details>
+                      <summary>More measurements</summary>
+                      <div className="health-tiles">
+                        {MORE_METRICS.filter(hasMetric).map((m) => (
+                          <MetricTile key={m} metric={m} data={data} date={date} />
+                        ))}
+                      </div>
+                      <p className="health-muted">
+                        Only measurements supplied by your device are shown.
+                      </p>
+                    </details>
+                  )}
+                </Panel>
+              )}
+              {!data.history.length && body?.hasWatch && (
+                <Panel title="Your metrics" index={1}>
+                  <p>No daily measurements received yet.</p>
+                </Panel>
+              )}
               <div className="health-grid">
                 <SleepSummary data={data} date={date} today={today} />
                 <RecoveryBreakdown body={data.body} />
               </div>
-              <Panel title="Your day" id="day">
+              <Panel title="Your day" id="day" index={4}>
                 {body?.todayRow &&
                 [...(body.todayRow.bb_series ?? []), ...(body.todayRow.stress_series ?? [])].some(
                   (v) => v != null
@@ -691,6 +852,12 @@ export function HealthView({
                     stress={body.todayRow.stress_series ?? []}
                     date={date}
                     today={today}
+                    summary={{
+                      high: body.todayRow.bb_high,
+                      low: body.todayRow.bb_low,
+                      latest: body.todayRow.bb_latest,
+                      stress: body.todayRow.stress_avg
+                    }}
                   />
                 ) : (
                   <p>
@@ -699,41 +866,10 @@ export function HealthView({
                   </p>
                 )}
               </Panel>
-              <div className="health-grid">
-                <Panel title="Your metrics">
-                  <div className="health-metric-list">
-                    {(
-                      [
-                        'resting_hr',
-                        'overnight_hrv',
-                        'steps',
-                        'recovery_hours',
-                        'bb_latest'
-                      ] as const
-                    )
-                      .filter((m) => data.history.some((d) => metricValue(d, m) != null))
-                      .map((m) => (
-                        <MetricRow key={m} metric={m} row={selectedRow} date={date} />
-                      ))}
-                  </div>
-                  {!data.history.length && <p>No daily measurements received yet.</p>}
-                  <details>
-                    <summary>More measurements</summary>
-                    {(['stress_avg', 'active_minutes', 'floors', 'spo2', 'vo2max'] as const)
-                      .filter((m) => data.history.some((d) => metricValue(d, m) != null))
-                      .map((m) => (
-                        <MetricRow key={m} metric={m} row={selectedRow} date={date} />
-                      ))}
-                    <p className="health-muted">
-                      Only measurements supplied by your device are shown.
-                    </p>
-                  </details>
-                </Panel>
-                <Panel title="Patterns over time">
-                  <HealthTrend data={data} date={date} />
-                </Panel>
-              </div>
-            </>
+              <Panel title="Patterns over time" index={5}>
+                <HealthTrend data={data} date={date} />
+              </Panel>
+            </div>
           )}
           <footer className="health-footer">
             Understand the evidence. Listen to your body.

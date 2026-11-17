@@ -94,7 +94,7 @@ html.light {
   display: none;
 }
 .health-page summary::after {
-  content: '›';
+  content: '\203A';
   font-size: 1.25rem;
   line-height: 1;
   margin-left: auto;
@@ -199,7 +199,13 @@ html.light {
   scrollbar-width: none;
   position: relative;
   overscroll-behavior-x: contain;
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000 16px, #000 calc(100% - 16px), transparent);
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    transparent,
+    #000 16px,
+    #000 calc(100% - 16px),
+    transparent
+  );
   mask-image: linear-gradient(90deg, transparent, #000 16px, #000 calc(100% - 16px), transparent);
 }
 .health-strip::-webkit-scrollbar {
@@ -265,7 +271,8 @@ html.light {
   margin: 8px 0 4px;
 }
 .health-refresh > span {
-  display: inline-flex;
+  flex: 1 1 0;
+  display: flex;
   align-items: center;
   gap: 8px;
 }
@@ -283,6 +290,7 @@ html.light {
   background: var(--warning);
 }
 .health-page .health-refresh button {
+  flex: 0 0 auto;
   min-height: 44px;
   background: transparent;
   border: none;
@@ -1302,4 +1310,7 @@ html.reduce-motion .health-skeleton > div {
   .health-skeleton > div {
     animation: none;
   }
+}
+.health-brief-actions summary::after {
+  margin-left: 4px;
 }
