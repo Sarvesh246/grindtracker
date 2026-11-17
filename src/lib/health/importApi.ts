@@ -16,11 +16,8 @@ const bodySchema = z.discriminatedUnion('kind', [
     kind: z.literal('apple_health'),
     token: z.string().max(100).optional(),
     timezone: z.string().max(80).optional(),
-    samples: z
-      .array(
-        z.object({ start: z.string().max(40), end: z.string().max(40), value: z.string().max(40) })
-      )
-      .max(6000)
+    // Shortcuts often flattens a list of dictionaries into text; accept both shapes.
+    samples: z.union([z.array(z.unknown()).max(6000), z.string().max(900_000)])
   }),
   z.object({
     kind: z.literal('garmin_api'),
@@ -28,6 +25,58 @@ const bodySchema = z.discriminatedUnion('kind', [
     days: z.array(z.unknown()).max(120)
   })
 ])
+
+const sampleShape = z.object({
+  start: z.string().max(40),
+  end: z.string().max(40),
+  value: z.string().max(40)
+})
+
+/**
+ * Samples as a list, or as the text Shortcuts produces when it flattens a list of
+ * dictionaries: a JSON array, back-to-back JSON objects, or Apple-style
+ * `"key" : "value"` blocks. Anything unrecognisable yields null (a 422), never a guess.
+ */
+export function normalizeSamples(raw: unknown): z.infer<typeof sampleShape>[] | null {
+  let list: unknown[] | null = null
+  if (Array.isArray(raw)) list = raw
+  else if (typeof raw === 'string') {
+    const text = raw.trim()
+    const attempts = [text, `[${text.replace(/}\s*,?\s*{/g, '},{')}]`]
+    for (const attempt of attempts) {
+      try {
+        const parsed = JSON.parse(attempt)
+        if (Array.isArray(parsed)) {
+          list = parsed
+          break
+        }
+        if (parsed && typeof parsed === 'object') {
+          list = [parsed]
+          break
+        }
+      } catch {
+        /* try the next shape */
+      }
+    }
+    if (!list) {
+      const grab = (key: string) =>
+        [...text.matchAll(new RegExp(`"?${key}"?\\s*[:=]\\s*"?([^",}\\n]+)"?`, 'g'))].map((m) =>
+          m[1].trim()
+        )
+      const [starts, ends, values] = [grab('start'), grab('end'), grab('value')]
+      if (starts.length && starts.length === ends.length && ends.length === values.length)
+        list = starts.map((start, i) => ({ start, end: ends[i], value: values[i] }))
+    }
+  }
+  if (!list || list.length > 6000) return null
+  const out: z.infer<typeof sampleShape>[] = []
+  for (const item of list) {
+    const parsed = sampleShape.safeParse(item)
+    if (!parsed.success) return null
+    out.push(parsed.data)
+  }
+  return out.length ? out : null
+}
 
 async function readLimited(request: Request): Promise<unknown | Response> {
   const reader = request.body?.getReader()
@@ -93,7 +142,14 @@ export async function healthImportRequest(request: Request, deps: WatchDeps) {
     let nights: ImportedNight[]
     let skipped: { key: string; reason: string }[]
     if (body.kind === 'apple_health') {
-      ;({ nights, skipped } = parseAppleSamples(body.samples, { timezone: body.timezone, now }))
+      const samples = normalizeSamples(body.samples)
+      if (!samples)
+        return watchError(
+          422,
+          'validation_failed',
+          'samples must be a list of {start, end, value}. In Shortcuts, make the samples field a List.'
+        )
+      ;({ nights, skipped } = parseAppleSamples(samples, { timezone: body.timezone, now }))
     } else {
       nights = []
       skipped = []

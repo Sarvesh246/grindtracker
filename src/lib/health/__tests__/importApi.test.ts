@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { healthImportRequest } from '../importApi'
+import { healthImportRequest, normalizeSamples } from '../importApi'
 import type { RpcResult, WatchDeps } from '@/lib/watch/handlers'
 
 const TOKEN = `gwt_${'a'.repeat(64)}`
@@ -44,6 +44,39 @@ const apple = {
     { start: '2026-11-16T03:30:00-06:00', end: '2026-11-16T07:24:00-06:00', value: 'REM' }
   ]
 }
+
+describe('samples flattened to text by Shortcuts', () => {
+  const rows = apple.samples
+  it('accepts a JSON array string', () => {
+    assert.equal(normalizeSamples(JSON.stringify(rows))?.length, 2)
+  })
+  it('accepts back-to-back pretty-printed objects, with or without commas', () => {
+    const block = (r: (typeof rows)[number]) =>
+      `{\n  "start" : "${r.start}",\n  "end" : "${r.end}",\n  "value" : "${r.value}"\n}`
+    assert.equal(normalizeSamples(rows.map(block).join('\n'))?.length, 2)
+    assert.equal(normalizeSamples(rows.map(block).join(',\n'))?.length, 2)
+  })
+  it('accepts loose key: value text in order', () => {
+    const text = rows.map((r) => `start: ${r.start}\nend: ${r.end}\nvalue: ${r.value}`).join('\n\n')
+    assert.deepEqual(normalizeSamples(text), rows)
+  })
+  it('refuses text it cannot read instead of guessing', () => {
+    assert.equal(normalizeSamples('hello world'), null)
+    assert.equal(normalizeSamples([{ start: 'x' }]), null)
+    assert.equal(normalizeSamples(''), null)
+  })
+  it('the endpoint saves a night sent as text and 422s on unreadable text', async () => {
+    const { d, calls } = deps()
+    const ok = await healthImportRequest(
+      post({ ...apple, samples: JSON.stringify(apple.samples) }),
+      d
+    )
+    assert.equal(ok.status, 200)
+    assert.equal(calls.filter((c) => c.fn === 'token_import_health_batch').length, 1)
+    const bad = await healthImportRequest(post({ ...apple, samples: 'garbage' }), d)
+    assert.equal(bad.status, 422)
+  })
+})
 
 describe('POST /health-import token in the body', () => {
   it('accepts the token in the JSON body when the Authorization header is missing', async () => {
