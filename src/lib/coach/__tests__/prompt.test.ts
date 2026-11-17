@@ -147,7 +147,7 @@ const CONTRACTS: { id: string; part: string; mustMatch: RegExp[] }[] = [
       /at most three numbers/i,
       /"probably", "looks like"/i,
       /Never diagnose/i,
-      /days_in_a_row_5plus_over is 3 or more/,
+      /If body.alert is present, act on it/,
       /Wrist heart rate during lifts is approximate/i,
       /Mention only what body contains/i,
     ],

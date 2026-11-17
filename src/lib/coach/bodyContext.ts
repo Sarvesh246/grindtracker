@@ -18,6 +18,13 @@ import { LBS_PER_KG } from '@/lib/utils/units'
  */
 
 export interface CoachBodyBlock {
+  /**
+   * Set only for a sustained resting-HR rise (RISE_BPM+ over the 30-day usual
+   * for ALERT_DAYS+ days running). Spelled out as a sentence and placed first:
+   * as a bare streak number the model never connected it to the prompt rule
+   * (coach:eval E4 failed 0/3).
+   */
+  alert?: string
   source: string
   /** Today's readiness, with its working shown. */
   charge_today: {
@@ -61,6 +68,7 @@ export interface CoachWatchSession {
 const SOURCE = 'Garmin watch'
 
 const RISE_BPM = 5
+export const ALERT_DAYS = 3
 const CARDIO_LOOKBACK_DAYS = 120
 const MAX_CARDIO_LINES = 3
 
@@ -102,6 +110,17 @@ export function restingRiseStreak(summary: BodySummary): number {
   return streak
 }
 
+/** The instruction-shaped sentence the Coach gets for a sustained rise. */
+export function restingHrAlert(latest: number, baseline: number, days: number): string {
+  const over = Math.round(latest - baseline)
+  return (
+    `Resting heart rate is ${latest} bpm, ${over} over their usual ${Math.round(baseline)}, ` +
+    `and has been 5+ bpm over for ${days} days in a row. Bring this up in your reply whatever they asked: ` +
+    `say it probably means they are not fully recovered, suggest an easier day, and once, calmly, ` +
+    `suggest checking in with a doctor if it keeps up. Hedge; never name a condition.`
+  )
+}
+
 /** Pure: everything the Coach sees about the body, from rows already read. */
 export function summarizeCoachBody(input: {
   summary: BodySummary
@@ -121,8 +140,12 @@ export function summarizeCoachBody(input: {
 
   const baseline = restingBaseline(days, today)
   const latestRhr = [...days].reverse().find(d => d.resting_hr != null)?.resting_hr ?? null
+  const streak = restingRiseStreak(summary)
 
   const block: CoachBodyBlock = {
+    ...(streak >= ALERT_DAYS && latestRhr != null && baseline != null
+      ? { alert: restingHrAlert(latestRhr, baseline, streak) }
+      : {}),
     source: SOURCE,
     charge_today: summary.charge
       ? {
@@ -136,7 +159,7 @@ export function summarizeCoachBody(input: {
     resting_hr: {
       baseline_30d: baseline != null ? Math.round(baseline) : null,
       latest: latestRhr,
-      days_in_a_row_5plus_over: restingRiseStreak(summary),
+      days_in_a_row_5plus_over: streak,
     },
   }
 

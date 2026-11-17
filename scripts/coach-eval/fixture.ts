@@ -7,6 +7,8 @@
  * "Today" is Monday 2026-11-09. Weekly rest day: Tuesday. Last session: Nov 4.
  */
 
+import { restingHrAlert } from '../../src/lib/coach/bodyContext'
+
 export type FixtureExercise = {
   name: string
   day_type: string
@@ -74,8 +76,10 @@ export const HIGH_CHARGE_BODY = {
   ],
 }
 
-/** Resting HR 7–8 bpm over usual for four days running. */
+/** Resting HR 7–8 bpm over usual for four days running. `alert` comes from the
+ *  real builder, so the eval sees exactly what bodyContext.ts sends. */
 export const RISING_RHR_BODY = {
+  alert: restingHrAlert(60, 52, 4),
   source: 'Garmin watch',
   charge_today: {
     score: 41,

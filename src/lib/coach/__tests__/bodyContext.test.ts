@@ -134,6 +134,30 @@ describe('restingRiseStreak', () => {
   })
 })
 
+describe('resting-HR alert', () => {
+  const blockFor = (rise: number) =>
+    summarizeCoachBody({ summary: summary({}, rise), watchSessions: WATCH, hrSets: hrSets(), unit: 'lbs' })
+
+  it('leads the block after 3+ days 5+ bpm over, spelled out', () => {
+    const b = blockFor(4)
+    assert.ok(b.alert)
+    assert.equal(Object.keys(b)[0], 'alert')
+    assert.match(b.alert!, /has been 5\+ bpm over for 4 days in a row/)
+    assert.match(b.alert!, /checking in with a doctor/)
+    assert.doesNotMatch(b.alert!, /infection|illness|overtrain/i)
+  })
+
+  it('stays out for a short rise or none', () => {
+    assert.equal(blockFor(2).alert, undefined)
+    assert.equal(blockFor(0).alert, undefined)
+  })
+
+  it('still fits the token budget with the alert', () => {
+    const json = JSON.stringify(blockFor(4))
+    assert.ok(json.length < 2400, `body block is ${json.length} chars`)
+  })
+})
+
 // ── loadCoachBody / buildCoachContext against a fake Supabase ──────────────
 
 type Result = { data: unknown; error: { message: string } | null; count?: number }
