@@ -209,6 +209,7 @@ export function CoachProvider({
   )
   const [historyOpen, setHistoryOpen] = useState(false)
   const fabRef = useRef<HTMLButtonElement | null>(null)
+  const returnFocusRef = useRef<HTMLButtonElement | null>(null)
   const openedOnce = useRef(false)
   const streamingRef = useRef(false)
   const sendMessageRef = useRef<(text: string) => Promise<void>>(async () => {})
@@ -293,6 +294,7 @@ export function CoachProvider({
 
   const openCoach = useCallback(
     (detail: OpenCoachDetail = {}) => {
+      returnFocusRef.current = detail.returnFocusTo ?? null
       setOpen(true)
       if (detail.draft) setSuggestedDraft(previous => ({ text: detail.draft!.slice(0, COACH_MAX_MESSAGE_CHARS), request: (previous?.request ?? 0) + 1 }))
       // Mid-workout Ask Coach always lands compact; callers may still request page.
@@ -332,6 +334,8 @@ export function CoachProvider({
     // viewport panned after the focused field disappears (standalone PWA).
     const active = document.activeElement
     if (active instanceof HTMLElement) active.blur()
+    const returnFocusTo = returnFocusRef.current
+    returnFocusRef.current = null
 
     setOpen(false)
     setSize('compact')
@@ -349,7 +353,8 @@ export function CoachProvider({
       // Return focus for a11y, but never paint :focus-visible — that global
       // ring also forces --radius-sm, which turns the G orb into a rounded
       // square/hex until the next blur (e.g. switching tabs).
-      if (fabRef.current) focusWithoutRing(fabRef.current)
+      const trigger = returnFocusTo?.isConnected ? returnFocusTo : fabRef.current
+      if (trigger) focusWithoutRing(trigger)
     })
     window.setTimeout(reanchor, 250)
     window.setTimeout(reanchor, 520)

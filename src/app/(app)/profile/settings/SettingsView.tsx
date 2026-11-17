@@ -17,6 +17,9 @@ import {
 } from '@/lib/utils/warmupPrefs'
 import { useTheme } from '@/lib/contexts/ThemeContext'
 import ThemeToggle from '@/components/ThemeToggle'
+import CoachFabIcon from '@/components/coach/CoachFabIcon'
+import { requestOpenCoach } from '@/lib/coach/openCoachBus'
+import { isAppleMobileDevice, isIOSSafari } from '@/components/landing/installApp'
 import { useMotionPref } from '@/lib/contexts/MotionContext'
 import { useDemoMode } from '@/lib/contexts/DemoModeContext'
 import FeedbackModal from '@/components/FeedbackModal'
@@ -37,23 +40,25 @@ import Dialog from '@/components/ui/Dialog'
 import Input from '@/components/ui/Input'
 import Button from '@/components/ui/Button'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
+import { ChevronLeft } from '@/components/ui/Icons'
 import { DEFAULT_BODY_PREFS, type BodyPrefs } from '@/lib/body/queries'
 import HealthSettings from '@/components/health/HealthSettings'
 import HealthImportSettings from '@/components/health/HealthImportSettings'
 import { useTour, type TourStep } from '@/components/onboarding/Tour'
 import { useOnboarding } from '@/lib/contexts/OnboardingContext'
 import {
-  DEFAULT_NOTIFICATION_PREFS,
+  cancelLocalRestFallback,
+  closeGrindNotifications,
   fetchNotificationPrefs,
+  getPushDeviceStatus,
   isStandalonePwa,
-  pushSupported,
   saveNotificationPrefs,
   subscribeToPush,
-  unsubscribeFromPush,
   type NotificationPrefs,
+  type PushDeviceStatus,
 } from '@/lib/push'
 
-const REST_DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'] // 0=Sun..6=Sat
+const REST_DAY_LABELS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'] // 0=Sun..6=Sat
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 /** Typed confirmation for wiping the account — case-insensitive. */
 const DELETE_DATA_PHRASE = 'DELETE'
@@ -61,21 +66,6 @@ const DELETE_DATA_PHRASE = 'DELETE'
 /** Session ids per `.in()` batch when exporting — keeps each GET URL well under
  *  the request-line limit a few thousand workouts would otherwise blow past. */
 const EXPORT_ID_CHUNK = 200
-
-const sectionLabelStyle: CSSProperties = {
-  fontSize: '12px',
-  color: 'var(--text-muted)',
-  textTransform: 'uppercase',
-  letterSpacing: '1.5px',
-  marginBottom: '10px',
-}
-
-const cardStyle: CSSProperties = {
-  backgroundColor: 'var(--surface)',
-  border: '1px solid var(--border)',
-  borderRadius: '12px',
-  padding: '14px 16px',
-}
 
 const titleStyle: CSSProperties = {
   fontSize: '14px',
@@ -107,6 +97,7 @@ function Switch({
 }) {
   return (
     <button
+      type="button"
       className="hit-44"
       data-haptic="light"
       onClick={onClick}
@@ -212,11 +203,6 @@ function NavRow({
   )
 }
 
-/**
- * One labelled card. On tablet/desktop panels are a 2-column grid of rows:
- * paired cards stretch to the same height; `span` takes a full row, and
- * `grid` lays that wide card's settings out two-up so rows still line up.
- */
 function Section({ label, children, span, grid }: {
   label: string
   children: ReactNode
@@ -224,12 +210,12 @@ function Section({ label, children, span, grid }: {
   grid?: boolean
 }) {
   return (
-    <div className={span ? 'settings-section settings-span' : 'settings-section'}>
-      <div style={sectionLabelStyle}>{label}</div>
-      <div className={grid ? 'settings-card settings-card--grid' : 'settings-card'} style={cardStyle}>
+    <section className={span ? 'settings-section settings-span' : 'settings-section'}>
+      <h3 className="settings-section-title">{label}</h3>
+      <div className={grid ? 'settings-card settings-card--grid' : 'settings-card'}>
         {children}
       </div>
-    </div>
+    </section>
   )
 }
 
@@ -243,20 +229,26 @@ function TabIcon({ children }: { children: ReactNode }) {
 }
 
 type SettingsTab = 'general' | 'training' | 'alerts' | 'watch' | 'account'
+type DeviceStatus = PushDeviceStatus | 'loading' | 'install' | 'open-safari'
 
-/**
- * Settings grew past what one scrolling page can hold, so it is split into
- * categories: a 5-up segmented bar on phones, a sticky rail on desktop. Each
- * panel is a grid of rows (see Section): cards are paired so partners match
- * and stretch to equal height, instead of free-flowing columns that drift.
- */
+const DEVICE_STATUS_TEXT: Record<DeviceStatus, string> = {
+  loading: 'Checking this device…',
+  install: 'In Safari, tap Share, then Add to Home Screen. Open GRIND from its icon to set up alerts.',
+  'open-safari': 'Open GRIND in Safari, then use Share and Add to Home Screen to set up alerts.',
+  unsupported: 'This browser does not support push notifications.',
+  blocked: 'Notifications are blocked here. Allow them in your browser or device settings.',
+  setup: 'Set up push notifications to receive alerts here.',
+  subscribed: 'This browser has a push subscription.',
+  unavailable: 'Could not check this device’s push subscription.',
+}
+
 const SETTINGS_TABS: { id: SettingsTab; label: string; short: string; hint: string; icon: ReactNode }[] = [
   {
     id: 'general', label: 'General', short: 'General', hint: 'Theme, units and help',
     icon: <TabIcon><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></TabIcon>,
   },
   {
-    id: 'training', label: 'Training', short: 'Training', hint: 'Rest timer, warm-ups, rest days',
+    id: 'training', label: 'Training', short: 'Training', hint: 'Rest and warm-ups',
     icon: <TabIcon><path d="M6.5 6.5v11M17.5 6.5v11M3 9.5v5M21 9.5v5M6.5 12h11" /></TabIcon>,
   },
   {
@@ -264,7 +256,7 @@ const SETTINGS_TABS: { id: SettingsTab; label: string; short: string; hint: stri
     icon: <TabIcon><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></TabIcon>,
   },
   {
-    id: 'watch', label: 'Watch & Health', short: 'Watch', hint: 'Garmin, sleep and privacy',
+    id: 'watch', label: 'Watch & Health', short: 'Health', hint: 'Garmin, sleep and privacy',
     icon: <TabIcon><rect x="6" y="6" width="12" height="12" rx="3" /><path d="M9 6l.6-3h4.8l.6 3M9 18l.6 3h4.8l.6-3M12 9.5V12l1.5 1" /></TabIcon>,
   },
   {
@@ -348,7 +340,7 @@ export default function SettingsView({
     const sentinel = navSentinelRef.current
     const nav = navRef.current
     if (!sentinel || !nav) return
-    // Phones scroll `main.app-main`, desktop scrolls the window.
+    // The authenticated app scrolls in main, with window as a fallback.
     let scroller: HTMLElement | null = nav.parentElement
     while (scroller && !/(auto|scroll)/.test(getComputedStyle(scroller).overflowY)) {
       scroller = scroller.parentElement
@@ -389,8 +381,9 @@ export default function SettingsView({
   const [warmupPercents, setWarmupPercents] = useState(DEFAULT_WARMUP_PERCENTS)
 
   const [notifPrefs, setNotifPrefs] = useState<NotificationPrefs | null>(null)
+  const [notifLoadFailed, setNotifLoadFailed] = useState(false)
   const [notifBusy, setNotifBusy] = useState(false)
-  const [standalone, setStandalone] = useState(true)
+  const [deviceStatus, setDeviceStatus] = useState<DeviceStatus>('loading')
 
   const [restDays, setRestDays] = useState<Set<number>>(new Set(recurringRestDays))
   const [savingRestDay, setSavingRestDay] = useState<number | null>(null)
@@ -463,59 +456,82 @@ export default function SettingsView({
     setRestSec(total % 60)
     setPauseRestOnExitState(getPauseRestOnExit())
     setWarmupPercents(readWarmupPercents())
-    setStandalone(isStandalonePwa())
-    void fetchNotificationPrefs().then(prefs => {
-      if (prefs) setNotifPrefs(prefs)
-      else setNotifPrefs({ user_id: '', ...DEFAULT_NOTIFICATION_PREFS })
+  }, [])
+
+  const loadNotificationPrefs = useCallback(() => {
+    return fetchNotificationPrefs().catch(() => null).then(prefs => {
+      setNotifPrefs(prefs)
+      setNotifLoadFailed(!prefs)
     })
   }, [])
 
-  async function toggleNotificationsMaster() {
+  const refreshDeviceStatus = useCallback(async () => {
+    const needsInstall = isAppleMobileDevice() && !isStandalonePwa()
+    const status = needsInstall
+      ? (isIOSSafari() ? 'install' : 'open-safari')
+      : await getPushDeviceStatus()
+    setDeviceStatus(status)
+  }, [])
+
+  useEffect(() => {
+    void loadNotificationPrefs()
+  }, [loadNotificationPrefs])
+
+  useEffect(() => {
+    if (tab !== 'alerts') return
+    const refresh = () => {
+      if (document.visibilityState === 'visible') void refreshDeviceStatus()
+    }
+    refresh()
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    navigator.serviceWorker?.addEventListener('controllerchange', refresh)
+    return () => {
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+      navigator.serviceWorker?.removeEventListener('controllerchange', refresh)
+    }
+  }, [tab, refreshDeviceStatus])
+
+  async function enableNotificationsHere() {
     if (notifBusy) return
     setNotifBusy(true)
     try {
-      if (notifPrefs?.enabled) {
-        await unsubscribeFromPush()
-        const prefs = await fetchNotificationPrefs()
-        setNotifPrefs(prefs ?? { user_id: '', ...DEFAULT_NOTIFICATION_PREFS, enabled: false })
-        toast.show('Notifications off')
-      } else {
-        if (!pushSupported()) {
-          toast.show(
-            standalone
-              ? 'Notifications are not supported here'
-              : 'Add GRIND to your Home Screen to enable alerts',
-            'error',
-          )
-          return
-        }
-        const result = await subscribeToPush()
-        if (!result.ok) {
-          toast.show(result.error || 'Could not enable notifications', 'error')
-          return
-        }
-        const prefs = await fetchNotificationPrefs()
-        setNotifPrefs(prefs ?? { user_id: '', ...DEFAULT_NOTIFICATION_PREFS, enabled: true })
-        toast.show('Notifications on')
+      const result = await subscribeToPush({ enableAccount: false })
+      if (!result.ok) {
+        toast.show(result.error || 'Could not set up notifications here', 'error')
+        return
       }
+      toast.show('Notifications set up on this device')
+    } catch {
+      toast.show('Could not set up notifications here', 'error')
     } finally {
+      await refreshDeviceStatus()
       setNotifBusy(false)
     }
   }
 
-  async function patchNotifPref<K extends keyof NotificationPrefs>(
+  async function patchNotifPref<K extends Exclude<keyof NotificationPrefs, 'user_id' | 'updated_at'>>(
     key: K,
     value: NotificationPrefs[K],
   ) {
     if (!notifPrefs || notifBusy) return
     const prev = notifPrefs
     setNotifPrefs({ ...notifPrefs, [key]: value })
-    const saved = await saveNotificationPrefs({ [key]: value } as Partial<NotificationPrefs>)
-    if (!saved) {
+    setNotifBusy(true)
+    try {
+      const saved = await saveNotificationPrefs({ [key]: value })
+      if (!saved) throw new Error('Notification preferences were not saved')
+      setNotifPrefs(saved)
+      if (key === 'enabled' && value === false) {
+        cancelLocalRestFallback()
+        void closeGrindNotifications()
+      }
+    } catch {
       setNotifPrefs(prev)
       toast.show("Couldn't save notification setting", 'error')
-    } else {
-      setNotifPrefs(saved)
+    } finally {
+      setNotifBusy(false)
     }
   }
 
@@ -835,13 +851,13 @@ export default function SettingsView({
 
   const generalPanel = (
     <>
-      <Section label="Appearance">
+      <Section label="Preferences">
         <div style={rowStyle}>
           <div>
             <div style={titleStyle}>Theme</div>
             <div style={hintStyle}>{theme === 'light' ? 'Light mode' : 'Dark mode'}</div>
           </div>
-          <ThemeToggle size={32} />
+          <ThemeToggle />
         </div>
         <div className="settings-divider" style={dividerStyle} />
         <div style={rowStyle}>
@@ -855,10 +871,8 @@ export default function SettingsView({
             ariaLabel="Reduce motion"
           />
         </div>
-      </Section>
-
-      <Section label="Units" span>
-        <div style={rowStyle}>
+        <div className="settings-divider" style={dividerStyle} />
+        <div id="profile-unit" style={rowStyle}>
           <div>
             <div style={titleStyle}>Weight Unit</div>
             <div style={hintStyle}>{unit === 'metric' ? 'Kilograms (kg)' : 'Pounds (lbs)'}</div>
@@ -880,7 +894,7 @@ export default function SettingsView({
               cursor: 'pointer',
               position: 'relative',
               width: '80px',
-              height: '40px',
+              height: '44px',
               flexShrink: 0,
             }}
           >
@@ -931,18 +945,18 @@ export default function SettingsView({
   const trainingPanel = (
     <>
       <Section label="Rest timer">
-        <div data-onboard="profile-rest" style={rowStyle}>
+        <div id="profile-rest" data-onboard="profile-rest" className="settings-rest-row" style={rowStyle}>
           <div>
             <div style={titleStyle}>Default Rest Time</div>
             <div style={hintStyle}>Between sets unless changed per exercise</div>
           </div>
-          <div style={{
+          <div className="settings-field" style={{
             display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0,
             backgroundColor: 'var(--surface-elevated)',
             border: '1px solid var(--border)',
             borderRadius: '9999px',
             padding: '3px 10px',
-            height: '32px',
+            minHeight: '44px',
           }}>
             <input
               type="text"
@@ -992,15 +1006,15 @@ export default function SettingsView({
       </Section>
 
       <Section label="Rest days">
-        <div data-onboard="profile-rest-days">
+        <div id="profile-rest-days" data-onboard="profile-rest-days">
           <div style={{ marginBottom: '12px' }}>
             <div style={titleStyle}>Weekly rest days</div>
             <div style={hintStyle}>
-              Budget resets Sunday. A day turned on here starts the next time it comes
-              around — to skip today, use Rest today on Home.
+              Your rest-day budget resets Sunday. Changes start the next time each day comes around.
+              To rest today, use Rest today on Home.
             </div>
           </div>
-          <div style={{ display: 'flex', gap: '4px', justifyContent: 'space-between' }}>
+          <div className="settings-weekdays" role="group" aria-label="Weekly rest days">
             {REST_DAY_LABELS.map((label, dayOfWeek) => {
               const active = restDays.has(dayOfWeek)
               return (
@@ -1013,7 +1027,6 @@ export default function SettingsView({
                   aria-label={`${DAY_NAMES[dayOfWeek]} rest day`}
                   data-haptic="light"
                   style={{
-                    flex: '1 1 0', maxWidth: '44px', aspectRatio: '1', minHeight: '40px',
                     borderRadius: '9999px',
                     border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
                     backgroundColor: active ? 'var(--accent)' : 'var(--surface-elevated)',
@@ -1023,7 +1036,7 @@ export default function SettingsView({
                     fontWeight: 700,
                     cursor: savingRestDay !== null ? 'default' : 'pointer',
                     opacity: savingRestDay !== null && savingRestDay !== dayOfWeek ? 0.6 : 1,
-                    transition: 'all 150ms ease',
+                    transition: 'background-color 150ms ease, border-color 150ms ease, color 150ms ease',
                     padding: 0,
                   }}
                 >
@@ -1045,112 +1058,120 @@ export default function SettingsView({
                 : `${warmupPercents.length} set${warmupPercents.length === 1 ? '' : 's'} at ${formatWarmupPercentsList(warmupPercents)} of working weight`}
             </div>
           </div>
-          <div style={{ display: 'flex', gap: '6px', marginBottom: warmupPercents.length > 0 ? '12px' : 0 }}>
-            {Array.from({ length: MAX_WARMUP_SETS + 1 }, (_, n) => {
-              const active = warmupPercents.length === n
-              return (
-                <button
-                  key={n}
-                  type="button"
-                  data-haptic="light"
-                  onClick={() => {
-                    const next: number[] = []
-                    for (let i = 0; i < n; i++) {
-                      next.push(
-                        warmupPercents[i]
-                          ?? DEFAULT_WARMUP_PERCENTS[i]
-                          ?? clampWarmupPercent((next[next.length - 1] ?? 40) + 10),
-                      )
-                    }
-                    setWarmupPercents(next)
-                    writeWarmupPercents(next)
-                  }}
-                  aria-pressed={active}
-                  aria-label={n === 0 ? 'No warm-up sets' : `${n} warm-up set${n === 1 ? '' : 's'}`}
-                  className="press"
-                  style={{
-                    flex: 1,
-                    height: '40px',
-                    borderRadius: 'var(--radius-sm)',
-                    border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
-                    backgroundColor: active ? 'var(--accent-wash)' : 'var(--surface-elevated)',
-                    color: active ? 'var(--accent-text)' : 'var(--text-secondary)',
-                    fontFamily: "'DM Sans', sans-serif",
-                    fontSize: '13px',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                  }}
-                >
-                  {n}
-                </button>
-              )
-            })}
-          </div>
-          {warmupPercents.length > 0 && (
-            <div style={{ display: 'flex', gap: '8px' }}>
-              {warmupPercents.map((p, i) => (
-                <label
-                  key={i}
-                  style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 0 }}
-                >
-                  <span style={{
-                    fontSize: '10px',
-                    letterSpacing: 'var(--tracking-label)',
-                    color: 'var(--text-muted)',
-                    textTransform: 'uppercase',
-                    fontWeight: 500,
-                  }}>
-                    Set {i + 1}
-                  </span>
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    backgroundColor: 'var(--surface-elevated)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 'var(--radius-sm)',
-                    height: '40px',
-                    padding: '0 8px',
-                  }}>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      value={p}
-                      aria-label={`Warm-up set ${i + 1} percent`}
-                      onChange={e => {
-                        const n = Number(e.target.value)
-                        if (!Number.isFinite(n)) return
-                        const next = [...warmupPercents]
-                        next[i] = n
-                        setWarmupPercents(next)
-                      }}
-                      onBlur={() => {
-                        const next = warmupPercents.map(clampWarmupPercent)
+          <div className="settings-warmups">
+            <div>
+              <div className="settings-input-label" id="settings-warmup-count">Number of sets</div>
+              <div className="settings-warmup-count" role="group" aria-labelledby="settings-warmup-count">
+                {Array.from({ length: MAX_WARMUP_SETS + 1 }, (_, n) => {
+                  const active = warmupPercents.length === n
+                  return (
+                    <button
+                      key={n}
+                      type="button"
+                      data-haptic="light"
+                      onClick={() => {
+                        const next: number[] = []
+                        for (let i = 0; i < n; i++) {
+                          next.push(
+                            warmupPercents[i]
+                              ?? DEFAULT_WARMUP_PERCENTS[i]
+                              ?? clampWarmupPercent((next[next.length - 1] ?? 40) + 10),
+                          )
+                        }
                         setWarmupPercents(next)
                         writeWarmupPercents(next)
                       }}
-                      onFocus={e => e.target.select()}
+                      aria-pressed={active}
+                      aria-label={n === 0 ? 'No warm-up sets' : `${n} warm-up set${n === 1 ? '' : 's'}`}
+                      className="press"
                       style={{
-                        width: '100%',
-                        background: 'transparent',
-                        border: 'none',
-                        outline: 'none',
-                        color: 'var(--text-primary)',
-                        fontFamily: "'JetBrains Mono', monospace",
-                        fontSize: '16px',
-                        textAlign: 'center',
+                        minHeight: '44px',
+                        padding: 0,
+                        borderRadius: 'var(--radius-sm)',
+                        border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+                        backgroundColor: active ? 'var(--accent-wash)' : 'var(--surface-elevated)',
+                        color: active ? 'var(--accent-text)' : 'var(--text-secondary)',
+                        fontFamily: "'DM Sans', sans-serif",
+                        fontSize: '13px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
                       }}
-                    />
-                    <span style={{
-                      color: 'var(--text-muted)',
-                      fontFamily: "'JetBrains Mono', monospace",
-                      fontSize: '12px',
-                      flexShrink: 0,
-                    }}>%</span>
-                  </div>
-                </label>
-              ))}
+                    >
+                      {n}
+                    </button>
+                  )
+                })}
+              </div>
             </div>
-          )}
+            {warmupPercents.length > 0 && (
+              <div>
+                <div className="settings-input-label" id="settings-warmup-weights">% of working weight</div>
+                <div className="settings-warmup-values" role="group" aria-labelledby="settings-warmup-weights">
+                  {warmupPercents.map((p, i) => (
+                    <label
+                      key={i}
+                      style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 0 }}
+                    >
+                      <span style={{
+                        fontSize: '10px',
+                        letterSpacing: 'var(--tracking-label)',
+                        color: 'var(--text-muted)',
+                        textTransform: 'uppercase',
+                        fontWeight: 500,
+                      }}>
+                        Set {i + 1}
+                      </span>
+                      <div className="settings-field" style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        backgroundColor: 'var(--surface-elevated)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 'var(--radius-sm)',
+                        minHeight: '44px',
+                        padding: '0 8px',
+                      }}>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={p}
+                          aria-label={`Warm-up set ${i + 1} percent`}
+                          onChange={e => {
+                            const n = Number(e.target.value)
+                            if (!Number.isFinite(n)) return
+                            const next = [...warmupPercents]
+                            next[i] = n
+                            setWarmupPercents(next)
+                          }}
+                          onBlur={() => {
+                            const next = warmupPercents.map(clampWarmupPercent)
+                            setWarmupPercents(next)
+                            writeWarmupPercents(next)
+                          }}
+                          onFocus={e => e.target.select()}
+                          style={{
+                            width: '100%', minWidth: 0,
+                            background: 'transparent',
+                            border: 'none',
+                            outline: 'none',
+                            color: 'var(--text-primary)',
+                            fontFamily: "'JetBrains Mono', monospace",
+                            fontSize: '16px',
+                            textAlign: 'center',
+                          }}
+                        />
+                        <span style={{
+                          color: 'var(--text-muted)',
+                          fontFamily: "'JetBrains Mono', monospace",
+                          fontSize: '12px',
+                          flexShrink: 0,
+                        }}>%</span>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </Section>
     </>
@@ -1159,67 +1180,53 @@ export default function SettingsView({
   const notifOn = !!notifPrefs?.enabled
   const alertsPanel = (
     <>
-      <Section label="Push" span grid>
-        <div data-onboard="profile-notifications" style={rowStyle}>
+      <Section label="Push notifications" span grid>
+        <div id="profile-notifications" data-onboard="profile-notifications" style={rowStyle}>
           <div>
-            <div style={titleStyle}>Notifications</div>
+            <div style={titleStyle}>Account notifications</div>
             <div style={hintStyle}>
-              {!standalone
-                ? 'Add to Home Screen to enable alerts'
-                : notifOn
-                  ? 'Streak reminders + in-page rest alerts'
-                  : 'Off — enable for streak & rest pings'}
+              {notifLoadFailed
+                ? 'Could not load your preferences.'
+                : notifPrefs
+                  ? (notifOn ? 'On for registered devices.' : 'Paused on all devices.')
+                  : 'Loading preferences…'}
             </div>
           </div>
-          <Switch
-            checked={notifOn}
-            onClick={() => void toggleNotificationsMaster()}
-            disabled={notifBusy || notifPrefs === null}
-            ariaLabel="Enable notifications"
-          />
+          {notifLoadFailed ? (
+            <Button type="button" size="sm" variant="secondary" onClick={() => {
+              setNotifLoadFailed(false)
+              void loadNotificationPrefs()
+            }}>
+              Retry
+            </Button>
+          ) : notifPrefs && (
+            <Switch
+              checked={notifOn}
+              onClick={() => void patchNotifPref('enabled', !notifOn)}
+              disabled={notifBusy}
+              ariaLabel="Account notifications"
+            />
+          )}
         </div>
-
-        {notifOn && notifPrefs.streak_reminder && (
-          <>
-            <div className="settings-divider" style={dividerStyle} />
-            <div style={rowStyle}>
-              <div>
-                <div style={titleStyle}>Reminder time</div>
-                <div style={hintStyle}>Streak nudge, between 5 and 9 PM</div>
-              </div>
-              <select
-                value={notifPrefs.streak_reminder_hour}
-                onChange={e => void patchNotifPref('streak_reminder_hour', Number(e.target.value))}
-                aria-label="Streak reminder hour"
-                style={{
-                  backgroundColor: 'var(--surface-elevated)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '9999px',
-                  color: 'var(--text-primary)',
-                  fontFamily: "'JetBrains Mono', monospace",
-                  fontSize: '16px',
-                  padding: '6px 12px',
-                  height: '32px',
-                }}
-              >
-                {[17, 18, 19, 20, 21].map(h => (
-                  <option key={h} value={h}>
-                    {h === 12 ? '12:00 PM' : h > 12 ? `${h - 12}:00 PM` : `${h}:00`}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </>
-        )}
-
-        {!standalone && (
-          <>
-            <div className="settings-divider" style={dividerStyle} />
-            <div className="settings-full" style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.4 }}>
-              On iPhone, alerts work after you add GRIND to your Home Screen.
-            </div>
-          </>
-        )}
+        <div className="settings-divider" style={dividerStyle} />
+        <div className="settings-device-status">
+          <div>
+            <div style={titleStyle}>This device</div>
+            <div style={hintStyle} role="status">{DEVICE_STATUS_TEXT[deviceStatus]}</div>
+          </div>
+          {(deviceStatus === 'setup' || deviceStatus === 'subscribed') && notifOn && (
+            <Button
+              type="button"
+              size="sm"
+              variant={deviceStatus === 'setup' ? 'primary' : 'secondary'}
+              haptic="light"
+              disabled={notifBusy}
+              onClick={() => void enableNotificationsHere()}
+            >
+              {deviceStatus === 'setup' ? 'Set up here' : 'Set up again'}
+            </Button>
+          )}
+        </div>
       </Section>
 
       <Section label="Alerts" span grid>
@@ -1233,97 +1240,129 @@ export default function SettingsView({
         ).map(([key, label, hint], i) => (
           <Fragment key={key}>
             {i > 0 && <div className="settings-divider" style={dividerStyle} />}
-            <div style={{ ...rowStyle, opacity: notifOn ? 1 : 0.55 }}>
+            <div style={rowStyle}>
               <div>
                 <div style={titleStyle}>{label}</div>
                 <div style={hintStyle}>{hint}</div>
               </div>
               <Switch
-                checked={notifOn && !!notifPrefs?.[key]}
+                checked={!!notifPrefs?.[key]}
                 onClick={() => { if (notifPrefs) void patchNotifPref(key, !notifPrefs[key]) }}
-                disabled={!notifOn}
+                disabled={!notifOn || notifBusy}
                 ariaLabel={label}
               />
             </div>
           </Fragment>
         ))}
-        {!notifOn && (
+        {notifOn && notifPrefs.streak_reminder && (
+          <>
+            <div className="settings-divider" style={dividerStyle} />
+            <div className="settings-full" style={rowStyle}>
+              <div>
+                <div style={titleStyle}>Reminder time</div>
+                <div style={hintStyle}>Streak nudge, between 5 and 9 PM</div>
+              </div>
+              <select
+                value={notifPrefs.streak_reminder_hour}
+                onChange={e => void patchNotifPref('streak_reminder_hour', Number(e.target.value))}
+                aria-label="Streak reminder hour"
+                disabled={notifBusy}
+                style={{
+                  backgroundColor: 'var(--surface-elevated)',
+                  border: '1px solid var(--border)',
+                  borderRadius: '9999px',
+                  color: 'var(--text-primary)',
+                  fontFamily: "'JetBrains Mono', monospace",
+                  fontSize: '16px',
+                  padding: '6px 12px',
+                  minHeight: '44px',
+                }}
+              >
+                {[17, 18, 19, 20, 21].map(h => (
+                  <option key={h} value={h}>
+                    {h - 12}:00 PM
+                  </option>
+                ))}
+              </select>
+            </div>
+          </>
+        )}
+        {notifPrefs && !notifOn && (
           <div className="settings-full" style={{ ...hintStyle, lineHeight: 1.4 }}>
-            Turn on notifications to choose which alerts you get.
+            Turn on account notifications to edit your alerts.
           </div>
         )}
       </Section>
     </>
   )
 
-  // Devices and Privacy run about the same height, so they share a row; the
-  // two watch switches and the long sleep-import card each take a full row.
   const watchPanel = (
     <>
-      <Section label="Devices">
-        <WatchDevices supabase={supabase} />
-      </Section>
-
-      <Section label="Privacy">
-        <HealthSettings />
+      <div className="settings-stack">
+        <Section label="Devices">
+          <WatchDevices supabase={supabase} />
+        </Section>
+        <Section label="Sleep & health sources">
+          <HealthImportSettings />
+        </Section>
+      </div>
+      <div className="settings-stack">
         {bodyPrefs && (
-          <>
+          <Section label="Watch preferences">
+            <div style={rowStyle}>
+              <div>
+                <div style={titleStyle}>Use watch data in Coach</div>
+                <div style={hintStyle}>Coach can read your Charge, heart rate and recovery</div>
+              </div>
+              <Switch
+                checked={bodyPrefs.coach_uses_body}
+                onClick={() => void patchBodyPref('coach_uses_body')}
+                disabled={bodyPrefsBusy}
+                ariaLabel="Use watch data in Coach"
+              />
+            </div>
             <div className="settings-divider" style={dividerStyle} />
             <div style={rowStyle}>
               <div>
-                <div style={titleStyle}>Delete all watch health data</div>
-                <div style={hintStyle}>Heart rate, Body Battery, stress and steps. Workouts stay.</div>
+                <div style={titleStyle}>Smart rest on the watch</div>
+                <div style={hintStyle}>Buzzes when your heart rate has recovered. Off by default.</div>
               </div>
-              <Button size="sm" variant="danger" onClick={() => setBodyDeleteOpen(true)} style={{ flexShrink: 0 }}>
-                Delete
-              </Button>
+              <Switch
+                checked={bodyPrefs.smart_rest}
+                onClick={() => void patchBodyPref('smart_rest')}
+                disabled={bodyPrefsBusy}
+                ariaLabel="Smart rest on the watch"
+              />
             </div>
-            <ConfirmDialog
-              open={bodyDeleteOpen}
-              title="Delete watch health data?"
-              message="Every heart-rate trace, set peak and daily Body Battery, stress and step reading is removed for good. Your workouts, sets and XP stay."
-              confirmLabel="Delete"
-              busy={bodyDeleting}
-              onConfirm={() => void confirmDeleteBodyData()}
-              onCancel={() => setBodyDeleteOpen(false)}
-            />
-          </>
+          </Section>
         )}
-      </Section>
-
-      {bodyPrefs && (
-        <Section label="On the watch" span grid>
-          <div style={rowStyle}>
-            <div>
-              <div style={titleStyle}>Use watch data in Coach</div>
-              <div style={hintStyle}>Coach can read your Charge, heart rate and recovery</div>
-            </div>
-            <Switch
-              checked={bodyPrefs.coach_uses_body}
-              onClick={() => void patchBodyPref('coach_uses_body')}
-              disabled={bodyPrefsBusy}
-              ariaLabel="Use watch data in Coach"
-            />
-          </div>
-          <div className="settings-divider" style={dividerStyle} />
-          <div style={rowStyle}>
-            <div>
-              <div style={titleStyle}>Smart rest on the watch</div>
-              <div style={hintStyle}>Buzzes when your heart rate has recovered. Off by default.</div>
-            </div>
-            <Switch
-              checked={bodyPrefs.smart_rest}
-              onClick={() => void patchBodyPref('smart_rest')}
-              disabled={bodyPrefsBusy}
-              ariaLabel="Smart rest on the watch"
-            />
-          </div>
+        <Section label="Privacy">
+          <HealthSettings />
+          {bodyPrefs && (
+            <>
+              <div className="settings-divider" style={dividerStyle} />
+              <div style={rowStyle}>
+                <div>
+                  <div style={titleStyle}>Delete all watch health data</div>
+                  <div style={hintStyle}>Heart rate, Body Battery, stress and steps. Workouts stay.</div>
+                </div>
+                <Button size="sm" variant="danger" onClick={() => setBodyDeleteOpen(true)} style={{ flexShrink: 0 }}>
+                  Delete
+                </Button>
+              </div>
+              <ConfirmDialog
+                open={bodyDeleteOpen}
+                title="Delete watch health data?"
+                message="Every heart-rate trace, set peak and daily Body Battery, stress and step reading is removed for good. Your workouts, sets and XP stay."
+                confirmLabel="Delete"
+                busy={bodyDeleting}
+                onConfirm={() => void confirmDeleteBodyData()}
+                onCancel={() => setBodyDeleteOpen(false)}
+              />
+            </>
+          )}
         </Section>
-      )}
-
-      <Section label="Sleep data" span>
-        <HealthImportSettings />
-      </Section>
+      </div>
     </>
   )
 
@@ -1352,28 +1391,9 @@ export default function SettingsView({
       <div style={hintStyle}>
         Signed in as {username ? `@${username}` : displayName}
       </div>
-      <button
-        type="button"
-        data-haptic="medium"
-        onClick={handleSignOut}
-        style={{
-          // Sits on the card's bottom edge when the row stretches it to match
-          // Your data, instead of leaving a gap under the button.
-          marginTop: 'auto',
-          position: 'relative',
-          width: '100%', height: '48px',
-          backgroundColor: 'rgba(239, 68, 68, 0.08)',
-          border: '1px solid rgba(239, 68, 68, 0.25)',
-          borderRadius: '12px',
-          color: 'var(--danger)',
-          fontFamily: "'DM Sans', sans-serif",
-          fontSize: '14px', fontWeight: 600,
-          cursor: 'pointer',
-          letterSpacing: '0.3px',
-        }}
-      >
-        SIGN OUT
-      </button>
+      <Button type="button" variant="secondary" size="sm" haptic="medium" onClick={handleSignOut} style={{ alignSelf: 'flex-start' }}>
+        Sign out
+      </Button>
     </Section>
   )
 
@@ -1384,30 +1404,20 @@ export default function SettingsView({
       <div style={{ ...hintStyle, lineHeight: 1.5 }}>
         Erases workouts, PRs, streak, badges and profile, then signs you out.
       </div>
-      <button
+      <Button
         type="button"
-        data-haptic="light"
+        variant="danger"
+        size="sm"
+        haptic="light"
+        className="settings-delete-action"
         onClick={() => {
           setDeleteTyped('')
           setDeleteOpen(true)
         }}
         disabled={deletingData}
-        style={{
-          position: 'relative',
-          width: '100%', height: '48px',
-          backgroundColor: 'transparent',
-          border: '1px solid var(--border)',
-          borderRadius: '12px',
-          color: 'var(--text-muted)',
-          fontFamily: "'DM Sans', sans-serif",
-          fontSize: '13px', fontWeight: 600,
-          cursor: deletingData ? 'default' : 'pointer',
-          letterSpacing: '0.3px',
-          opacity: deletingData ? 0.7 : 1,
-        }}
       >
-        DELETE MY DATA
-      </button>
+        Delete my data
+      </Button>
     </Section>
   )
 
@@ -1483,39 +1493,25 @@ export default function SettingsView({
   }
 
   return (
-    <div className="page page--settings" style={{
-      fontFamily: "'DM Sans', sans-serif",
-      padding: '0 16px 48px',
-    }}>
+    <div className="page page--settings">
       {settingsTour}
 
-      <div style={{
-        paddingTop: '24px', marginBottom: '16px',
-        display: 'flex', alignItems: 'center', gap: '12px',
-      }}>
+      <header className="settings-header">
+        <Link href="/profile" className="settings-back" aria-label="Back to profile" title="Back to profile" data-haptic="light">
+          <ChevronLeft size={22} />
+        </Link>
+        <h1>Settings</h1>
         <button
           type="button"
-          onClick={() => router.push('/profile')}
-          aria-label="Back to profile"
-          data-haptic="light"
-          style={{
-            background: 'none', border: 'none', cursor: 'pointer',
-            padding: '4px', margin: '-4px',
-            display: 'flex', alignItems: 'center', flexShrink: 0,
-          }}
+          aria-label="Open Coach"
+          title="Open Coach"
+          data-haptic="medium"
+          className="settings-coach press"
+          onClick={e => requestOpenCoach({ returnFocusTo: e.currentTarget })}
         >
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-secondary)' }}>
-            <polyline points="15 18 9 12 15 6" />
-          </svg>
+          <CoachFabIcon size={36} />
         </button>
-        <h1 style={{
-          fontFamily: "'Bebas Neue', sans-serif",
-          fontSize: '32px', color: 'var(--text-primary)', letterSpacing: '1px',
-          fontWeight: 'normal', margin: 0,
-        }}>
-          SETTINGS
-        </h1>
-      </div>
+      </header>
 
       <div ref={navSentinelRef} aria-hidden="true" />
       <div className="settings-shell">
@@ -1535,6 +1531,7 @@ export default function SettingsView({
                   role="tab"
                   id={`settings-tab-${t.id}`}
                   aria-selected={selected}
+                  aria-label={t.label}
                   aria-controls={`settings-panel-${t.id}`}
                   tabIndex={selected ? 0 : -1}
                   data-haptic="light"
@@ -1561,11 +1558,10 @@ export default function SettingsView({
               id={`settings-panel-${t.id}`}
               aria-labelledby={`settings-tab-${t.id}`}
               hidden={tab !== t.id}
-              className="settings-panel"
+              className={`settings-panel settings-panel--${t.id}`}
             >
               <header className="settings-panel-head">
                 <h2>{t.label}</h2>
-                <p>{t.hint}</p>
               </header>
               {panels[t.id]}
             </section>

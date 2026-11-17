@@ -9,11 +9,6 @@
 .hi * {
   min-width: 0;
 }
-.hi-title {
-  font-size: 16px;
-  font-weight: 500;
-  margin-bottom: 8px;
-}
 .hi p,
 .hi li {
   font-size: 13px;

@@ -297,7 +297,26 @@ async function currentSubscription(): Promise<PushSubscription | null> {
   return reg.pushManager.getSubscription()
 }
 
-export async function subscribeToPush(): Promise<{ ok: boolean; error?: string }> {
+export type PushDeviceStatus = 'unsupported' | 'blocked' | 'setup' | 'subscribed' | 'unavailable'
+
+export async function getPushDeviceStatus(): Promise<PushDeviceStatus> {
+  if (!pushSupported()) return 'unsupported'
+  if (Notification.permission === 'denied') return 'blocked'
+  if (Notification.permission !== 'granted') return 'setup'
+  try {
+    const registration = await navigator.serviceWorker.getRegistration()
+    const subscription = await registration?.pushManager.getSubscription()
+    return subscription && (subscription.expirationTime === null || subscription.expirationTime > Date.now())
+      ? 'subscribed'
+      : 'setup'
+  } catch {
+    return 'unavailable'
+  }
+}
+
+export async function subscribeToPush(
+  { enableAccount = true }: { enableAccount?: boolean } = {},
+): Promise<{ ok: boolean; error?: string }> {
   if (!pushSupported()) {
     return { ok: false, error: 'Push is not supported in this browser' }
   }
@@ -311,8 +330,8 @@ export async function subscribeToPush(): Promise<{ ok: boolean; error?: string }
     return { ok: false, error: 'Notification permission denied' }
   }
 
-  const reg = await getRegistration()
-  if (!reg) return { ok: false, error: 'Service worker not ready' }
+  const reg = await navigator.serviceWorker.getRegistration()
+  if (!reg?.active) return { ok: false, error: 'GRIND is still preparing notifications. Try again shortly.' }
 
   let sub = await reg.pushManager.getSubscription()
   if (!sub) {
@@ -338,10 +357,10 @@ export async function subscribeToPush(): Promise<{ ok: boolean; error?: string }
     return { ok: false, error: (body as { error?: string }).error || 'Subscribe failed' }
   }
 
-  await saveNotificationPrefs({
-    enabled: true,
-    timezone: getBrowserTimezone(),
-  })
+  if (enableAccount) {
+    const saved = await saveNotificationPrefs({ enabled: true })
+    if (!saved) return { ok: false, error: 'Could not enable account notifications' }
+  }
 
   return { ok: true }
 }

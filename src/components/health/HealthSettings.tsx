@@ -121,21 +121,12 @@ export default function HealthSettings() {
     }
   }
   return (
-    <div
-      id="health"
-      style={{
-        scrollMarginTop: 96,
-        paddingBottom: 20,
-        marginBottom: 20,
-        borderBottom: '1px solid var(--border)'
-      }}
-    >
+    <div id="health">
       <div style={{ fontSize: 16, fontWeight: 500, marginBottom: 8 }}>
-        Health connections & privacy
+        Health collection
       </div>
       <p style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text-secondary)' }}>
-        Watch snapshots and workout readings come from your paired Garmin. Sleep arrives from the
-        sources below. Opening GRIND on your phone cannot wake the watch.
+        Manage collection from your Garmin and connected health sources.
       </p>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 12 }}>
         <button

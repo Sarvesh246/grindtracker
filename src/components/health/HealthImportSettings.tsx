@@ -285,11 +285,9 @@ python3 garmin-sleep-sync.py --days 14`
 
   return (
     <div id="health-import" className="hi">
-      <div className="hi-title">Sleep & health sources</div>
       <p className="hi-lead">
-        GRIND can’t reach Garmin’s cloud directly, so sleep arrives through any of these. Use more
-        than one: each night is combined field by field, taking the richest source first and filling
-        gaps (for example a stage timeline) from the others.
+        Import sleep from one or more sources. GRIND combines them for each night, using the
+        most detailed source first and filling gaps from the others.
       </p>
 
       {sources.length > 0 && (

@@ -1,5 +1,5 @@
 'use client'
-import { useCallback, useEffect, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { useToast } from '@/lib/contexts/ToastContext'
 import { reportError } from '@/lib/utils/reportError'
@@ -53,6 +53,8 @@ export default function WatchDevices({ supabase }: { supabase: SupabaseClient })
   const toast = useToast()
   const [devices, setDevices] = useState<WatchDevice[] | null>(null)
   const [loadFailed, setLoadFailed] = useState(false)
+  const [pairing, setPairing] = useState(false)
+  const pairButtonRef = useRef<HTMLButtonElement>(null)
   const [name, setName] = useState('')
   const [creating, setCreating] = useState(false)
   const [newToken, setNewToken] = useState<{ name: string; token: string } | null>(null)
@@ -97,6 +99,7 @@ export default function WatchDevices({ supabase }: { supabase: SupabaseClient })
       toast.show(limit ? 'Revoke a watch first (10 max)' : "Couldn't create a token", 'error')
       return
     }
+    setPairing(false)
     setNewToken({ name: created.name ?? deviceName, token: created.token })
     setName('')
     void load()
@@ -130,11 +133,30 @@ export default function WatchDevices({ supabase }: { supabase: SupabaseClient })
 
   return (
     <>
-      <div>
-        <div style={titleStyle}>Garmin watch</div>
-        <div style={hintStyle}>
-          Log sets on your watch and sync them here. Each watch gets its own token.
+      <div className="settings-device-status">
+        <div>
+          <div style={titleStyle}>Garmin watches</div>
+          <div style={hintStyle}>
+            {loadFailed ? 'Could not load your watches.'
+              : !devices ? 'Loading watches…'
+                : devices.length === 0 ? 'No watches paired yet.'
+                  : `${devices.length} paired ${devices.length === 1 ? 'watch' : 'watches'}`}
+          </div>
         </div>
+        {!newToken && (
+          <Button
+            ref={pairButtonRef}
+            type="button"
+            size="sm"
+            variant={pairing ? 'secondary' : 'primary'}
+            aria-expanded={pairing}
+            disabled={!devices || loadFailed || creating}
+            haptic="light"
+            onClick={() => setPairing(!pairing)}
+          >
+            Pair a watch
+          </Button>
+        )}
       </div>
 
       {newToken ? (
@@ -165,31 +187,34 @@ export default function WatchDevices({ supabase }: { supabase: SupabaseClient })
             <Button size="sm" variant="secondary" onClick={() => setNewToken(null)}>Done</Button>
           </div>
         </div>
-      ) : (
+      ) : pairing && (
         <form
+          className="settings-pair-form"
           onSubmit={e => {
             e.preventDefault()
             if (!creating) void handleCreate()
           }}
-          style={{ display: 'flex', gap: '8px', alignItems: 'center' }}
         >
-          <Input
-            value={name}
-            onChange={e => setName(e.target.value)}
-            placeholder="Name, e.g. Fenix 7"
-            maxLength={40}
-            aria-label="Watch name"
-            style={{ flex: 1, minWidth: 0 }}
-          />
-          <Button type="submit" size="md" disabled={creating || loadFailed} haptic="light" style={{ flexShrink: 0 }}>
-            {creating ? 'Creating…' : 'Generate token'}
-          </Button>
+          <label className="settings-pair-name">
+            <span style={titleStyle}>Watch name</span>
+            <Input value={name} onChange={e => setName(e.target.value)} placeholder="Garmin watch" maxLength={40} />
+          </label>
+          <p style={hintStyle}>Generate a one-time token to enter in the GRIND app on your watch.</p>
+          <div className="settings-pair-actions">
+            <Button type="submit" size="sm" disabled={creating || loadFailed} haptic="medium">
+              {creating ? 'Creating…' : 'Generate token'}
+            </Button>
+            <Button type="button" size="sm" variant="secondary" disabled={creating} haptic="light" onClick={() => {
+              setPairing(false)
+              pairButtonRef.current?.focus({ preventScroll: true })
+            }}>
+              Cancel
+            </Button>
+          </div>
         </form>
       )}
 
-      {loadFailed ? (
-        <div style={hintStyle}>Couldn&apos;t load your watches. Try again later.</div>
-      ) : devices && devices.length > 0 ? (
+      {!loadFailed && devices && (
         devices.map(device => (
           <div key={device.id}>
             <div style={dividerStyle} />
@@ -213,9 +238,7 @@ export default function WatchDevices({ supabase }: { supabase: SupabaseClient })
             </div>
           </div>
         ))
-      ) : devices ? (
-        <div style={hintStyle}>No watches paired yet.</div>
-      ) : null}
+      )}
 
       <ConfirmDialog
         open={revokeTarget !== null}

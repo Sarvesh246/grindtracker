@@ -25,6 +25,8 @@ export type OpenCoachDetail = {
   message?: string
   /** Default compact — mid-workout / Ask Coach entry uses compact. */
   size?: 'compact' | 'page'
+  /** In-page launcher to restore focus to when the sheet closes. */
+  returnFocusTo?: HTMLButtonElement
 }
 
 type Listener = (detail: OpenCoachDetail) => void
