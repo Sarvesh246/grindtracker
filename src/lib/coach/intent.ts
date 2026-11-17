@@ -22,6 +22,7 @@ export type CoachIntent =
   | 'comparison'
   | 'definition'
   | 'short_contextual'
+  | 'body_readout'
   | 'general'
 
 export interface CoachIntentProfile {
@@ -95,6 +96,14 @@ const OWN_DATA_RE = /\b(my|mine)\b|\b(am|did|do|have|was) i\b/i
 const ANALYSIS_RE =
   /\b(analy[sz]e|progress|getting stronger|what stands out|what changed|biggest weakness|holding me back|three biggest|last (month|3 months|week)|improving|explain everything|how has my training)\b/i
 
+/**
+ * A request to read their health numbers as a whole ("Ask Coach" on the daily
+ * overview, "break down my recovery"). Short questions like "Am I recovered?"
+ * stay with their usual intents; this is the full interpreted readout.
+ */
+const BODY_READOUT_RE =
+  /\b(health|body|recovery|sleep|hrv|readiness|charge)\b[^.?!]{0,40}\b(readings?|readout|overview|insights?|break ?down|numbers mean)\b|\b(readout|break ?down|insights?|make sense of|understand)\b[^.?!]{0,30}\b(my )?(health|body|recovery|sleep|hrv|readings)\b/i
+
 const RECOMMENDATION_RE =
   /\b(what weight|should i (increase|add|train|rest|skip|go heavier|deload|start)|which exercise|what should i (do|use|change)|increase\?|worth it\?|enough\?|go heavier|add another set)\b/i
 
@@ -149,6 +158,7 @@ const TOKEN_BUDGET: Record<CoachIntent, number> = {
   plan_install: 8000,
   workout: 1400,
   program: 1500,
+  body_readout: 1000,
   general: 1000,
 }
 
@@ -165,6 +175,8 @@ const THINKING: Record<CoachIntent, 'none' | 'low'> = {
   plan_install: 'none',
   workout: 'none',
   program: 'low',
+  // Several signals have to add up to one call for today without contradicting it.
+  body_readout: 'low',
   general: 'none',
 }
 
@@ -213,6 +225,8 @@ const REMINDER: Record<CoachIntent, string> = {
     'Intent: workout request. Lead with an executable workout using bold exercise stacks (sets×reps, Target, Rest). No essay intro. If they ask to save it as a day, resolve flex vs which program day from context or ask; unspecified → flex. Call propose_create_day only — do not also propose_start_workout unless they ask to train now. Never mention auto-start.',
   program:
     'Intent: program design. Give a structured plan with explicit assumptions. More detail than a simple Q is OK here.',
+  body_readout:
+    "Intent: body readout. Interpret, never recite: they can already see the numbers. Open with a one-line verdict on how recovered they look today. Then 2–4 short bullets, each tying one signal to what it means against THEIR usual (body.trends: latest vs avg_30d, and the recent week vs the usual), e.g. HRV well under their 30-day usual means the body is still catching up. Connect the signals into one story (short sleep + low HRV + higher stress) and name the most likely reason for what changed, hedged (a hard session, rising training load, a short night). Skip metrics that are missing or near their usual; cite at most one number per bullet. If a reading is older than yesterday, say when it is from. End with one specific call for today: train hard, train moderately, or recover, and what that means for their next workout. If USER_DATA has no body block, say there is no watch or health data yet in one or two sentences. Under ~170 words.",
   general: `Intent: general. Choose depth and format from THIS ask only — minimum structure, personalize only if Required or Useful. If part of it is a change request: ${CHANGE_RULES}`,
 }
 
@@ -227,6 +241,7 @@ function personalizationFor(intent: CoachIntent): CoachIntentProfile['personaliz
     case 'short_contextual':
     case 'actionable':
     case 'plan_install':
+    case 'body_readout':
       return 'required'
     case 'workout':
     case 'program':
@@ -263,6 +278,9 @@ export function inferCoachIntent(
   if (symptom && (text.length <= 400 || FIRST_PERSON_SYMPTOM_RE.test(text))) {
     return profile('safety', text)
   }
+  // Ahead of change requests: "how hard I should train today" in a readout is
+  // a question, not "train today" (start a workout).
+  if (BODY_READOUT_RE.test(text)) return profile('body_readout', text)
   if (ACTIONABLE_RE.test(text) && !ADVISORY_PREFIX_RE.test(text)) {
     return profile('actionable', text)
   }

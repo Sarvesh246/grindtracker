@@ -95,6 +95,55 @@ export const RISING_RHR_BODY = {
   resting_hr: { baseline_30d: 52, latest: 60, days_in_a_row_5plus_over: 4 },
 }
 
+const trend = (latest: number, avg_7d: number, avg_30d: number, latest_date = '2026-11-09', source?: string) => ({
+  latest,
+  latest_date,
+  avg_7d,
+  avg_30d,
+  vs_30d: Math.round((latest - avg_30d) * 10) / 10,
+  week_vs_30d_pct: Math.round(((avg_7d - avg_30d) / avg_30d) * 100),
+  days_in_30d: 28,
+  ...(source ? { source } : {}),
+})
+
+/**
+ * The daily-overview readout case: a short night after two hard sessions. HRV
+ * sits under its usual, resting HR and stress are up, Body Battery is low; the
+ * history goes back 80 days through the Garmin export.
+ */
+export const READOUT_BODY = {
+  ...LOW_CHARGE_BODY,
+  source: 'Garmin watch, Garmin data export, Apple Health',
+  sleep: {
+    last_night: {
+      wake_date: '2026-11-09', woke_at_local: '6:10 AM', timezone: 'America/Chicago', duration_min: 352, score: null,
+      stage_minutes: null, overnight_hrv_ms: null, respiration: null, spo2: null, source: 'apple_health', status: 'final',
+    },
+    nights_recorded_14d: 14,
+    avg_duration_min_14d: 438,
+    hrv_usual_range_ms: null,
+    coverage: '14 of the last 14 nights recorded. Sleep stages are wearable estimates.',
+  },
+  trends: {
+    span: { first_date: '2026-08-21', last_date: '2026-11-09', days_with_data: 81 },
+    sources: ['Garmin watch', 'Garmin data export', 'Apple Health'],
+    metrics: {
+      resting_hr: trend(56, 54, 52),
+      overnight_hrv: trend(41, 44, 52, '2026-11-08', 'Garmin data export'),
+      sleep_min: trend(352, 401, 446),
+      body_battery: trend(31, 45, 62),
+      stress: trend(41, 36, 28),
+      steps: trend(11800, 10400, 9100, '2026-11-08'),
+      recovery_h: trend(28, 20, 9),
+    },
+    recent_nights: [
+      { date: '2026-11-09', sleep_min: 352, score: null, hrv_ms: null, source: 'Apple Health' },
+      { date: '2026-11-08', sleep_min: 371, score: 64, hrv_ms: 41, source: 'Garmin data export' },
+      { date: '2026-11-07', sleep_min: 405, score: 70, hrv_ms: 43, source: 'Garmin data export' },
+    ],
+  },
+}
+
 const ex = (
   day_type: string,
   name: string,

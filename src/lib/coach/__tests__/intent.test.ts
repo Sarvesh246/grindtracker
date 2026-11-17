@@ -20,6 +20,13 @@ const DIVERGENT_CASES: { prompt: string; intent: CoachIntent }[] = [
   { prompt: 'Why am I not feeling my lats?', intent: 'troubleshooting' },
   { prompt: 'Am I getting stronger?', intent: 'analysis' },
   {
+    // The daily overview's Ask Coach draft (HealthView): interpret, don't recite.
+    prompt:
+      'Give me my body readout for 2026-11-09: what my recovery, sleep, HRV, resting HR, stress and Body Battery mean together compared with my usual, what changed and why, and how hard I should train today.',
+    intent: 'body_readout',
+  },
+  { prompt: 'Break down my recovery numbers', intent: 'body_readout' },
+  {
     prompt: 'What are the three biggest things holding me back?',
     intent: 'analysis',
   },

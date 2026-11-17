@@ -2,15 +2,18 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { computeCharge, restingBaseline } from '@/lib/body/charge'
 import { fitterLine, type DatedHrSet } from '@/lib/body/cardioCost'
 import { heartSentence } from '@/lib/body/workout'
-import { getBodySummary, type BodySummary } from '@/lib/body/queries'
+import type { BodySummary } from '@/lib/body/queries'
 import type { HrSet } from '@/lib/body/types'
 import { LBS_PER_KG } from '@/lib/utils/units'
+import { getHealthSummary } from '@/lib/health/queries'
+import { sourceLabel } from '@/lib/health/reconcile'
 import {
   baseline,
   clockLabel,
   mainSleep,
   shiftDate,
   stageSeconds,
+  type HealthHistoryDay,
   type SleepSession
 } from '@/lib/health/model'
 
@@ -63,6 +66,167 @@ export interface CoachBodyBlock {
   sleep?: CoachSleepBlock
   /** Same weight and reps, peak HR now vs 3+ weeks ago. Positive delta = easier now. */
   cardio_cost?: { exercise: string; at: string; delta_bpm: number; line: string }[]
+  /** Every metric against their own 7- and 30-day usual, from the merged history the Health screen shows. */
+  trends?: CoachTrendsBlock
+}
+
+export type CoachTrendMetric =
+  | 'resting_hr'
+  | 'overnight_hrv'
+  | 'sleep_min'
+  | 'sleep_score'
+  | 'body_battery'
+  | 'stress'
+  | 'steps'
+  | 'active_min'
+  | 'recovery_h'
+  | 'spo2'
+  | 'vo2max'
+
+export interface CoachMetricTrend {
+  latest: number
+  latest_date: string
+  /** Mean of the 7 days ending at latest_date (the recent week). */
+  avg_7d: number | null
+  /** Mean of the 30 days before latest_date: their usual. */
+  avg_30d: number | null
+  /** latest − avg_30d, in the metric's own unit. */
+  vs_30d: number | null
+  /** How far the recent week sits from the usual, in percent. */
+  week_vs_30d_pct: number | null
+  days_in_30d: number
+  /** Set where a reading depends on the source's method (HRV): the baseline uses only that source. */
+  source?: string
+}
+
+export interface CoachTrendsBlock {
+  span: { first_date: string; last_date: string; days_with_data: number }
+  sources: string[]
+  metrics: Partial<Record<CoachTrendMetric, CoachMetricTrend>>
+  /** Newest first, up to 7 main nights. */
+  recent_nights: { date: string; sleep_min: number; score: number | null; hrv_ms: number | null; source: string }[]
+}
+
+/** `key` (source+device) set = only compare with points carrying the same key. */
+type Point = { date: string; value: number; source?: string; key?: string }
+
+/** Steps and active minutes are running totals: today's partial day is not comparable. */
+const PARTIAL_DAY = new Set<CoachTrendMetric>(['steps', 'active_min'])
+const ONE_DECIMAL = new Set<CoachTrendMetric>(['spo2', 'vo2max'])
+
+function mean(values: number[]): number | null {
+  return values.length ? values.reduce((n, v) => n + v, 0) / values.length : null
+}
+
+/** Pure: one metric's latest reading against its own recent week and 30-day usual. */
+export function metricTrend(
+  points: Point[],
+  today: string,
+  metric: CoachTrendMetric,
+): CoachMetricTrend | null {
+  const usable = points
+    .filter(p => Number.isFinite(p.value) && p.date <= today && !(PARTIAL_DAY.has(metric) && p.date === today))
+    .sort((a, b) => a.date.localeCompare(b.date))
+  const last = usable.at(-1)
+  if (!last) return null
+  // A method-dependent reading (HRV) is only ever compared with its own source.
+  const same = last.key ? usable.filter(p => p.key === last.key) : usable
+  const ref = last.date
+  const week = same.filter(p => p.date > shiftDate(ref, -7) && p.date <= ref).map(p => p.value)
+  const prior = same.filter(p => p.date >= shiftDate(ref, -30) && p.date < ref).map(p => p.value)
+  const r = (n: number | null) =>
+    n == null ? null : ONE_DECIMAL.has(metric) ? Math.round(n * 10) / 10 : Math.round(n)
+  const avg7 = mean(week)
+  const avg30 = mean(prior)
+  return {
+    latest: r(last.value)!,
+    latest_date: ref,
+    avg_7d: r(avg7),
+    avg_30d: r(avg30),
+    vs_30d: avg30 == null ? null : r(last.value - avg30),
+    week_vs_30d_pct: avg7 != null && avg30 ? Math.round(((avg7 - avg30) / avg30) * 100) : null,
+    days_in_30d: prior.length,
+    ...(last.source ? { source: sourceLabel(last.source) } : {}),
+  }
+}
+
+/** Main night per wake date, merged across sources exactly as the Health screen shows it. */
+function nightsByDate(sleeps: SleepSession[]): SleepSession[] {
+  const dates = [...new Set(sleeps.filter(s => s.kind === 'main').map(s => s.wake_date))].sort()
+  return dates.map(d => mainSleep(sleeps, d)).filter((s): s is SleepSession => !!s)
+}
+
+/**
+ * The source+device an HRV number actually came from. A merged night may have
+ * borrowed it, and HRV is only comparable within one device's method.
+ */
+function hrvOrigin(n: SleepSession, sleeps: SleepSession[]): { source: string; key: string } {
+  const borrowed = n.fields_from?.overnight_hrv
+  if (!borrowed) return { source: n.source, key: `${n.source}:${n.device_id}` }
+  const donor = sleeps.find(
+    s => s.wake_date === n.wake_date && s.kind === 'main' && s.source === borrowed && s.overnight_hrv === n.overnight_hrv,
+  )
+  return { source: borrowed, key: `${borrowed}:${donor?.device_id ?? ''}` }
+}
+
+/**
+ * Pure: baselines and trends across every metric, from the same merged history
+ * getHealthSummary() gives the Health screen (watch days, raw samples and every
+ * imported night, whichever source sent them).
+ */
+export function summarizeCoachTrends(input: {
+  history: HealthHistoryDay[]
+  sleeps: SleepSession[]
+  today: string
+  sources?: string[]
+}): CoachTrendsBlock | null {
+  const { history, today } = input
+  const nights = nightsByDate(input.sleeps)
+  const series = (pick: (d: HealthHistoryDay) => number | null | undefined): Point[] =>
+    history.flatMap(d => {
+      const v = pick(d)
+      return typeof v === 'number' && Number.isFinite(v) ? [{ date: d.local_date, value: v }] : []
+    })
+  const points: Record<CoachTrendMetric, Point[]> = {
+    resting_hr: series(d => d.resting_hr),
+    overnight_hrv: nights.flatMap(n =>
+      n.overnight_hrv != null ? [{ date: n.wake_date, value: n.overnight_hrv, ...hrvOrigin(n, input.sleeps) }] : [],
+    ),
+    sleep_min: nights.map(n => ({ date: n.wake_date, value: n.duration_seconds / 60 })),
+    sleep_score: nights.flatMap(n => (n.score != null ? [{ date: n.wake_date, value: n.score }] : [])),
+    body_battery: series(d => d.bb_latest),
+    stress: series(d => d.stress_avg),
+    steps: series(d => d.steps),
+    active_min: series(d => d.active_minutes),
+    recovery_h: series(d => d.recovery_hours),
+    spo2: series(d => d.spo2),
+    vo2max: series(d => d.vo2max),
+  }
+  const metrics: CoachTrendsBlock['metrics'] = {}
+  for (const key of Object.keys(points) as CoachTrendMetric[]) {
+    const t = metricTrend(points[key], today, key)
+    if (t) metrics[key] = t
+  }
+  const dates = [
+    ...new Set([...Object.values(points).flatMap(p => p.map(x => x.date))]),
+  ].filter(d => d <= today).sort()
+  if (!dates.length) return null
+  return {
+    span: { first_date: dates[0]!, last_date: dates.at(-1)!, days_with_data: dates.length },
+    sources: input.sources ?? [],
+    metrics,
+    recent_nights: nights
+      .filter(n => n.wake_date <= today)
+      .slice(-7)
+      .reverse()
+      .map(n => ({
+        date: n.wake_date,
+        sleep_min: Math.round(n.duration_seconds / 60),
+        score: n.score == null ? null : Math.round(n.score),
+        hrv_ms: n.overnight_hrv == null ? null : Math.round(n.overnight_hrv),
+        source: sourceLabel(n.source),
+      })),
+  }
 }
 
 export interface CoachSleepBlock {
@@ -98,15 +262,16 @@ export function summarizeCoachSleep(sleeps: SleepSession[], today: string): Coac
   )
   const round = (n: number | null | undefined) => (n == null ? null : Math.round(n))
   const mins = (n: number | null) => (n == null ? null : Math.round(n / 60))
+  // Compare against the merged nights, by the source the HRV number really came
+  // from: a Shortcut night that borrowed its HRV from the Garmin export is
+  // compared with the export's history, not with the Shortcut's three nights.
   const hrv = night?.overnight_hrv != null
     ? baseline(
-        mains.flatMap(s =>
-          s.overnight_hrv != null && s.source === night.source && s.device_id === night.device_id
-            ? [{ date: s.wake_date, value: s.overnight_hrv, source: 'same' }]
-            : [],
+        nightsByDate(sleeps).flatMap(s =>
+          s.overnight_hrv != null ? [{ date: s.wake_date, value: s.overnight_hrv, source: hrvOrigin(s, sleeps).key }] : [],
         ),
         night.wake_date,
-        'same',
+        hrvOrigin(night, sleeps).key,
       )
     : null
   const stages = night ? stageSeconds(night) : null
@@ -386,46 +551,49 @@ async function loadHrSets(supabase: SupabaseClient, userId: string, today: strin
   return out
 }
 
-/** Imported sleep, read soft: migration 61 may not be applied and a failed read just omits the block. */
-async function loadCoachSleep(supabase: SupabaseClient, userId: string, today: string): Promise<CoachSleepBlock | null> {
-  try {
-    const { data, error } = await supabase
-      .from('sleep_sessions')
-      .select(
-        'provider_id,source,device_id,wake_date,provider_date,timezone,start_at,end_at,kind,duration_seconds,score,stages,stage_totals,overnight_hrv,respiration,spo2,revision_at,received_at,status',
-      )
-      .eq('user_id', userId)
-      .gte('wake_date', shiftDate(today, -35))
-      .lte('wake_date', today)
-      .order('wake_date')
-      .limit(120)
-    if (error || !data?.length) return null
-    return summarizeCoachSleep(data as SleepSession[], today)
-  } catch {
-    return null
-  }
-}
-
 /**
- * The block for buildCoachContext, or null (no watch, prefs off, migration not
- * applied, or any read failed outright). Never throws.
+ * The block for buildCoachContext, or null (no health data, prefs off,
+ * migration not applied, or any read failed outright). Never throws.
+ *
+ * Reads through getHealthSummary(), the same merged read the Health screen
+ * uses, so the Coach sees every source the screen shows (watch days, raw
+ * samples, Garmin export and Shortcut nights) over the same 90-day window.
+ * It used to read sleep on its own with a 35-day window and only summarise
+ * the last 14 nights, so an imported history was invisible to it.
  */
 export async function loadCoachBody(
   supabase: SupabaseClient,
   userId: string,
   today: string,
   unit: 'lbs' | 'kg',
+  timeZone?: string | null,
 ): Promise<CoachBodyBlock | null> {
   try {
-    const summary = await getBodySummary(supabase, userId, today)
-    if (!coachBodyEnabled(summary)) return null
+    const health = await getHealthSummary(supabase, userId, today, timeZone ?? undefined)
+    const summary = health.body
+    const imported = health.sleeps.length > 0 || health.history.length > 0
+    if (!summary.available || summary.prefs.coach_uses_body === false) return null
+    if (!summary.hasWatch && !imported) return null
     const [watchSessions, hrSets] = await Promise.all([
       loadWatchSessions(supabase, userId).catch(() => []),
       loadHrSets(supabase, userId, today).catch(() => []),
     ])
     const block = summarizeCoachBody({ summary, watchSessions, hrSets, unit })
-    const sleep = await loadCoachSleep(supabase, userId, today)
-    return sleep ? { ...block, sleep } : block
+    const sources = [
+      ...new Set([
+        ...(summary.hasWatch ? [SOURCE] : []),
+        ...health.connections.filter(c => c.status !== 'revoked').map(c => sourceLabel(c.source)),
+        ...health.sleeps.map(s => sourceLabel(s.source)),
+      ]),
+    ]
+    const sleep = health.sleeps.length ? summarizeCoachSleep(health.sleeps, today) : null
+    const trends = summarizeCoachTrends({ history: health.history, sleeps: health.sleeps, today, sources })
+    return {
+      ...block,
+      source: sources.join(', ') || SOURCE,
+      ...(sleep ? { sleep } : {}),
+      ...(trends ? { trends } : {}),
+    }
   } catch (err) {
     console.error('[grind] coach body context', err)
     return null

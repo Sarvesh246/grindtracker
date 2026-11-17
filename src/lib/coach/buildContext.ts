@@ -274,7 +274,7 @@ export async function buildCoachContext(
   const timeZone = opts?.timeZone ?? null
 
   // Best-effort and never throws: watch data must not be able to fail a turn.
-  const bodyPromise = loadCoachBody(supabase, userId, today, unitPreference)
+  const bodyPromise = loadCoachBody(supabase, userId, today, unitPreference, timeZone)
 
   const [
     { data: profile },

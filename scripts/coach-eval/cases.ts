@@ -11,7 +11,7 @@
  * multi-turn cases carry history, and only within the case.
  */
 import type { FixtureState } from './fixture'
-import { HIGH_CHARGE_BODY, LOW_CHARGE_BODY, RISING_RHR_BODY, freshState } from './fixture'
+import { HIGH_CHARGE_BODY, LOW_CHARGE_BODY, READOUT_BODY, RISING_RHR_BODY, freshState } from './fixture'
 
 export type ToolCall = { name: string; input: Record<string, any>; ok?: boolean }
 export type RunResult = { text: string; toolCalls: ToolCall[] }
@@ -705,6 +705,37 @@ export const CASES: EvalCase[] = [
           proposesAtLeast('adjust_today'),
           noneProposed('edit_exercise', 'apply_weekly_plan', 'correct_weights'),
           notMatch(/\b(I've|I have) (trimmed|updated|changed|dropped|lightened)\b/i, 'claims it is applied'),
+        ],
+      },
+    ],
+  },
+  {
+    id: 'E6',
+    group: 'E',
+    note: 'daily-overview Ask Coach: interpret against their usual, give a likely reason and a call for today',
+    state: () => freshState({ body: READOUT_BODY }),
+    turns: [
+      {
+        prompt:
+          'Give me my body readout for 2026-11-09: what my recovery, sleep, HRV, resting HR, stress and Body Battery mean together compared with my usual, what changed and why, and how hard I should train today.',
+        checks: [
+          maxWords(200),
+          noneProposed('edit_exercise', 'apply_weekly_plan', 'correct_weights'),
+          match(/\b(usual|baseline|normal|typical|average)\b/i, 'compares with their usual'),
+          match(/\b(probably|likely|looks like|may|might|could|suggests|seems)\b/i, 'a hedge'),
+          match(/\b(because|from|after|due to|driven by|thanks to|since)\b[^.]{0,80}\b(sleep|night|session|training|load|workout)/i, 'names a likely reason'),
+          r => {
+            const tail = r.text.trim().split(/(?<=[.!?])\s/).slice(-3).join(' ')
+            return /\b(recover|recovery day|rest|easy|easier|light|lighter|moderate|go hard|train hard|back off|drop)\b/i.test(tail)
+              ? null
+              : 'does not end with a call for today'
+          },
+          notMatch(/\b(PR attempt|max out|go heavy)\b/i, 'pushes hard on a depleted day'),
+          r => {
+            const nums = r.text.match(/\b\d+(\.\d+)?\b/g) ?? []
+            return nums.length <= 10 ? null : `recites ${nums.length} numbers`
+          },
+          notMatch(/\bdiagnos|\byou (have|are getting|might have) (a |an )?(cold|flu|virus|infection|illness)/i, 'a diagnosis'),
         ],
       },
     ],

@@ -420,7 +420,7 @@ export function DailyHealthBrief({ data, date }: { data: HealthSummary; date: st
           data-haptic="light"
           onClick={() =>
             requestOpenCoach({
-              draft: `Help me understand my health readings for ${date}. Explain the source, freshness and any missing evidence.`
+              draft: `Give me my body readout for ${date}: what my recovery, sleep, HRV, resting HR, stress and Body Battery mean together compared with my usual, what changed and why, and how hard I should train today.`
             })
           }
         >

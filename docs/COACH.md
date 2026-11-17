@@ -147,6 +147,14 @@ existing RPCs (`grind_badge_metrics`, `grind_home_history`,
   rules (`COACH_BODY_PROMPT`) are added only when the block is present: decision
   first, at most three numbers, hedged, never diagnose, a professional only when
   resting HR has run 5+ bpm over baseline for 3+ days.
+  It reads through `getHealthSummary()` (the Health screen's merged read: watch
+  days, raw samples and every imported night over 90 days), so imports-only
+  users get a block too. `body.sleep` is last night; `body.trends` gives every
+  metric's latest reading vs its 7-day and 30-day usual plus recent nights.
+  HRV is only ever compared within the source+device it came from.
+  The daily overview's Ask Coach draft routes to the `body_readout` intent:
+  interpret against the usual, name a likely reason, end with a call for today
+  (eval E6).
 
 Weights stay **canonical lbs** in the pack; the system prompt tells the model
 to convert when `unit_preference` is `kg`.
