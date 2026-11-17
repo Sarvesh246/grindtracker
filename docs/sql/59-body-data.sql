@@ -424,6 +424,52 @@ $$;
 revoke all on function public.delete_my_grind_data() from public;
 grant execute on function public.delete_my_grind_data() to authenticated;
 
+-- ════════════════════════════════════════════════════════════════════════════
+-- 6. Coach: propose_adjust_today ("a lighter version of today")
+-- ════════════════════════════════════════════════════════════════════════════
+-- Restates 56's full kind list plus adjust_today, dropping whatever kind check
+-- exists first, so it's correct whichever migration last touched it.
+
+do $$
+declare
+  r record;
+begin
+  for r in
+    select c.conname
+      from pg_constraint c
+      join pg_class t on t.oid = c.conrelid
+      join pg_namespace n on n.oid = t.relnamespace
+     where n.nspname = 'public'
+       and t.relname = 'coach_action_proposals'
+       and c.contype = 'c'
+       and pg_get_constraintdef(c.oid) ilike '%kind%'
+  loop
+    execute format('alter table public.coach_action_proposals drop constraint if exists %I', r.conname);
+  end loop;
+end $$;
+
+alter table public.coach_action_proposals
+  add constraint coach_action_proposals_kind_check
+  check (kind in (
+    'correct_weights',
+    'start_workout',
+    'create_day',
+    'log_body_weight',
+    'delete_body_weight',
+    'finish_workout',
+    'undo_finish_workout',
+    'skip_sets',
+    'toggle_rest_today',
+    'set_rest_weekday',
+    'edit_exercise',
+    'update_rotation',
+    'edit_session_log',
+    'update_notification_prefs',
+    'apply_weekly_plan',
+    'set_day_enabled',
+    'adjust_today'
+  ));
+
 commit;
 
 -- Record that this migration ran (needs 00-migration-tracking.sql).
