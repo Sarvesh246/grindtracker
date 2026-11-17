@@ -17,7 +17,8 @@ html.light {
 /* ───────── Page shell ───────── */
 .health-page {
   max-width: 1040px;
-  padding: 20px 16px calc(100px + env(safe-area-inset-bottom));
+  /* .app-main already clears the nav bar and home indicator. */
+  padding: 20px 16px 24px;
   font: 1rem/1.5 var(--font-sans);
   color: var(--text-primary);
 }
@@ -1233,7 +1234,7 @@ html.reduce-motion .health-skeleton > div {
 /* ───────── Larger screens ───────── */
 @media (min-width: 768px) {
   .health-page {
-    padding: 32px 24px 100px;
+    padding: 32px 24px 40px;
   }
   .health-grid {
     display: grid;
@@ -1313,4 +1314,114 @@ html.reduce-motion .health-skeleton > div {
 }
 .health-brief-actions summary::after {
   margin-left: 4px;
+}
+
+.health-page .health-text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+}
+.health-plot,
+.health-stage-plot {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.health-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin: 4px 0 12px;
+}
+.health-trend-reading {
+  justify-content: flex-start;
+  gap: 16px;
+}
+
+.health-mark {
+  opacity: 0.55;
+}
+.health-mark-workout {
+  fill: var(--accent-wash);
+  stroke: var(--accent-border-strong);
+  stroke-width: 1;
+  background: var(--accent-wash);
+}
+.health-mark-sleep {
+  fill: var(--sleep-deep);
+  fill-opacity: 0.22;
+  stroke: none;
+  background: var(--sleep-deep);
+}
+.health-annotations {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  padding: 0 !important;
+  margin: 10px 0 0;
+  font-size: 0.75rem !important;
+  color: var(--text-secondary) !important;
+}
+.health-annotations li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+.health-annotations i {
+  width: 14px;
+  height: 10px;
+  border-radius: 3px;
+  display: inline-block;
+  opacity: 0.8;
+}
+.health-mark-workout:is(i) {
+  border: 1px solid var(--accent-border-strong);
+}
+.health-source-grid {
+  display: grid;
+  gap: 10px;
+  margin: 8px 0 12px;
+}
+.health-source-card {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--surface-elevated);
+  font-size: 0.8125rem;
+}
+.health-source-card header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.health-source-card header span {
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  color: var(--text-secondary);
+}
+.health-source-card[data-status='active'] header span {
+  color: var(--accent-text);
+  border-color: var(--accent-border);
+}
+.health-source-card[data-status='error'] header span,
+.health-source-card[data-status='revoked'] header span {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.health-source-card p {
+  margin-top: 6px !important;
+  font-size: 0.8125rem !important;
+}
+.health-provenance {
+  width: 100%;
+}
+.health-provenance {
+  margin-bottom: 12px;
 }

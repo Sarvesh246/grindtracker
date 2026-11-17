@@ -81,5 +81,24 @@ export const data: HealthSummary = {
   sleeps: [sleep],
   sleepState: 'ready',
   history: days as HealthSummary['history'],
-  historyError: false
+  historyError: false,
+  connections: [
+    {
+      id: 'fixture-connection',
+      source: 'connect_iq',
+      device_id: 'fixture-fr165m',
+      status: 'active',
+      last_success_at: '2026-11-17T01:00:00Z',
+      last_error_code: null
+    }
+  ],
+  provenance: {
+    [date]: {
+      resting_hr: { source: 'legacy_snapshot', observed_at: null, quality: 'legacy' },
+      steps: { source: 'legacy_snapshot', observed_at: null, quality: 'legacy' }
+    }
+  },
+  workouts: [
+    { day_type: 'Legs', started_at: '2026-11-16T18:10:00Z', completed_at: '2026-11-16T19:05:00Z' }
+  ]
 }

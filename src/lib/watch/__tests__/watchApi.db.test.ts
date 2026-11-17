@@ -148,6 +148,19 @@ describe('watch API against the real schema', { skip: !baseUrl && 'set PARITY_DA
       assert.equal(db(`select duration_seconds from sleep_sessions where connection_id='${connection}'`), '28000')
       assert.equal(asUser(BOB, `select count(*) from sleep_sessions where connection_id='${connection}'`), '0')
     })
+    it('scheduled retention trims only expired raw rows and is service-role only', async () => {
+      const old = new Date(Date.now() - 200 * 86400000).toISOString()
+      const fresh = new Date(Date.now() - 60_000).toISOString()
+      const sample = (id: string, at: string) => `insert into health_samples(user_id,connection_id,provider_id,metric,start_at,end_at,observed_at,revision_at,value,unit,kind,quality) values('${healthUser}','${connection}','${id}','steps','${at}','${at}','${at}','${at}',5,'steps','total','current');`
+      db(sample('retention-old', old) + sample('retention-fresh', fresh))
+      assert.throws(() => asUser(healthUser, 'select health_retention_cleanup();'), /permission denied/)
+      const run = await serviceRpc('health_retention_cleanup', {})
+      assert.equal(run.error, null)
+      assert.ok((run.data as { samples: number }).samples >= 1)
+      assert.equal(db(`select count(*) from health_samples where user_id='${healthUser}' and provider_id='retention-old'`), '0')
+      assert.equal(db(`select count(*) from health_samples where user_id='${healthUser}' and provider_id='retention-fresh'`), '1')
+      assert.equal(db(`select count(*) from sleep_sessions where user_id='${healthUser}'`), '1')
+    })
     it('deletion pauses ingestion and rejects stale generations after explicit resume', async () => {
       asUser(healthUser, 'select delete_body_data();')
       assert.equal(db(`select count(*) from health_samples where user_id='${healthUser}'`), '0')

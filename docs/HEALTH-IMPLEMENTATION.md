@@ -113,3 +113,21 @@ entry and stop Health page reads while keeping history and privacy controls.
 Roll back web code without dropping historical tables. Do not rerun migration
 59 alone over the health privacy wrappers; rerun 61 afterwards if repairing old
 migrations.
+
+## Program status by work item (updated November 17, 2026)
+
+What is built and tested versus what still needs things only a real account,
+a signed Garmin approval or physical devices can provide. Nothing below is
+claimed beyond its evidence.
+
+| # | Item | State |
+| --- | --- | --- |
+| 1 | Garmin cloud connector, credential storage, token refresh, catch-up/backfill, business consent flow | **Not built.** Needs Garmin partner approval and real credentials. The schema (`health_connections`, `sync_cursor`, generation checks) is ready; no connector, credential store or poller is shipped, deliberately, rather than guessing provider payloads or storing someone's Garmin password. |
+| 2 | Import real sleep, HRV, respiration; confirm against Garmin Connect | **Partly.** Validation, revision-aware storage, naps, timezone/wake-date checks and DST-safe day assignment are implemented and tested (`reconcile.test.ts`, real-Postgres suite). Mapping real Garmin responses and matching Garmin Connect with the watch app closed needs a live connector and device. |
+| 3 | Reconcile sources, canonical summaries, UTC samples in the UI, retention | **Mostly.** Source precedence (current over partial, approved cloud over personal over watch, later measurement, later revision; never averaged) lives in `src/lib/health/reconcile.ts`. The web now reads `health_samples` and overlays them on the legacy `daily_body` snapshot with per-value provenance. Migration 63 + `/api/cron/health-retention` (daily) add scheduled retention. `health_daily_summaries` is still not populated by a background job. |
+| 4 | Connect IQ background service, durable upload queue | **Not built.** Needs the Connect IQ SDK, a watch and battery testing. The batch endpoint stays behind `HEALTH_WATCH_BATCHES_ENABLED` (off). |
+| 5 | Recovery interpretation, unified baselines and coverage | **Partly.** `metricBaseline` now backs every "usual range" shown on Health (tiles, trends, band) and the Coach's HRV range. Charge's own 30-day resting-HR baseline and weights are unchanged and still unvalidated; unifying them would change users' scores and needs a decision plus real data. |
+| 6 | Coach integration | **Partly.** The Coach's body block now carries imported sleep and overnight HRV with wake time, status, source, nights recorded and an HRV range, only when the user allowed body data (existing opt-out). Generated explanations, grounding checks, caching and a separate summary budget are not built, and the live `coach:eval` was not run (needs provider quota). |
+| 7 | Interface details | **Partly.** Day timeline shows workout and sleep annotations; the status panel shows each connection's state, freshness and a per-measurement source table. Charts are read by dragging (mouse and touch tested in Chromium). Sleep-aware Progress summaries, pre-workout observations and iPhone PWA/VoiceOver validation are not done. |
+| 8 | Validate and enable | **Not done.** Needs real provider failure drills, the 72-hour watch/iPhone pilot and gradual enablement. |
+

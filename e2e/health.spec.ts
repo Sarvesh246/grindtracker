@@ -112,3 +112,50 @@ test('date navigation, stage keyboard, table alternatives and editable Coach sug
   await page.getByRole('button', { name: '90 days', exact: true }).click()
   await expect(page.getByText('90 of 90 days recorded.', { exact: false })).toBeVisible()
 })
+test('charts are read by dragging, with no slider', async ({ page }) => {
+  await render(page)
+  await expect(page.getByRole('slider')).toHaveCount(0)
+  const plot = page.getByRole('group', {
+    name: 'Body Battery chart. Use left and right arrow keys to read values.'
+  })
+  await plot.scrollIntoViewIfNeeded()
+  const box = (await plot.boundingBox())!
+  const reading = page.locator('.health-page .health-chart-reading').last()
+  const y = box.y + box.height / 2
+  await page.mouse.move(box.x + box.width * 0.2, y)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width * 0.3, y, { steps: 5 })
+  const early = await reading.innerText()
+  await page.mouse.move(box.x + box.width * 0.7, y, { steps: 10 })
+  await page.mouse.up()
+  expect(await reading.innerText()).not.toEqual(early)
+  // The shared cursor follows on the stress chart too.
+  await expect(reading).toContainText('Energy')
+})
+test('touch drag scrubs a chart', async ({ browser }) => {
+  const context = await browser.newContext({
+    hasTouch: true,
+    viewport: { width: 390, height: 844 }
+  })
+  const page = await context.newPage()
+  await render(page)
+  const plot = page.getByRole('group', {
+    name: 'Body Battery chart. Use left and right arrow keys to read values.'
+  })
+  await plot.scrollIntoViewIfNeeded()
+  const box = (await plot.boundingBox())!
+  const reading = page.locator('.health-page .health-chart-reading').last()
+  const client = await context.newCDPSession(page)
+  const touch = (type: 'touchStart' | 'touchMove' | 'touchEnd', x: number, y: number) =>
+    client.send('Input.dispatchTouchEvent', {
+      type,
+      touchPoints: type === 'touchEnd' ? [] : [{ x, y }]
+    })
+  const y = box.y + box.height / 2
+  await touch('touchStart', box.x + box.width * 0.15, y)
+  const first = await reading.innerText()
+  for (let i = 1; i <= 12; i++) await touch('touchMove', box.x + box.width * (0.15 + i * 0.05), y)
+  await touch('touchEnd', 0, 0)
+  expect(await reading.innerText()).not.toEqual(first)
+  await context.close()
+})

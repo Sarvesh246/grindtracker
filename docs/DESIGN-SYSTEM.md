@@ -113,3 +113,9 @@ band and show Low/Average/High. The overview keeps exactly one large ring
 (Recovery), so the brief uses numbers, not a second ring. Every chart still has
 its table alternative, and numbers use JetBrains Mono.
 
+Charts on Health are read by dragging, never with a slider: a tap reads that
+point, a horizontal drag scrubs (pointer capture), and a vertical drag is left to
+the page so scrolling over a chart still works. Plots carry `data-swipe-ignore`
+so the tab swipe navigator never steals the gesture. The page's bottom padding is
+small on purpose: `.app-main` already clears the nav and home indicator.
+

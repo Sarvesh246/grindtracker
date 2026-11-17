@@ -34,7 +34,12 @@ export function useHealthSummary(date: string | null) {
           setError(true)
           return
         }
-        const data = await getHealthSummary(client, user.id, date)
+        const data = await getHealthSummary(
+          client,
+          user.id,
+          date,
+          Intl.DateTimeFormat().resolvedOptions().timeZone
+        )
         if (!disposed && request === generation.current) {
           if (data.body.available) setState({ date, data })
           setError(!data.body.available)

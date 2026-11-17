@@ -5,6 +5,14 @@ import { heartSentence } from '@/lib/body/workout'
 import { getBodySummary, type BodySummary } from '@/lib/body/queries'
 import type { HrSet } from '@/lib/body/types'
 import { LBS_PER_KG } from '@/lib/utils/units'
+import {
+  baseline,
+  clockLabel,
+  mainSleep,
+  shiftDate,
+  stageSeconds,
+  type SleepSession
+} from '@/lib/health/model'
 
 /**
  * The Coach's `body` block: the watch data, already read for people, in about
@@ -51,8 +59,85 @@ export interface CoachBodyBlock {
     minutes_z3_plus: number | null
     hardest: string | null
   }[]
+  /** Imported sleep and overnight HRV, with when it was measured and how complete the record is. */
+  sleep?: CoachSleepBlock
   /** Same weight and reps, peak HR now vs 3+ weeks ago. Positive delta = easier now. */
   cardio_cost?: { exercise: string; at: string; delta_bpm: number; line: string }[]
+}
+
+export interface CoachSleepBlock {
+  /** Null when the newest recorded night is older than yesterday. */
+  last_night: {
+    wake_date: string
+    woke_at_local: string
+    timezone: string
+    duration_min: number
+    score: number | null
+    stage_minutes: { awake: number | null; rem: number | null; light: number | null; deep: number | null } | null
+    overnight_hrv_ms: number | null
+    respiration: number | null
+    spo2: number | null
+    source: string
+    status: 'final' | 'provisional' | 'unknown'
+  } | null
+  nights_recorded_14d: number
+  avg_duration_min_14d: number | null
+  /** Personal overnight-HRV range from the same source; null until 14 comparable nights exist. */
+  hrv_usual_range_ms: { low: number; high: number; nights: number } | null
+  coverage: string
+}
+
+/** Pure: the sleep evidence the Coach may cite, from rows already read. */
+export function summarizeCoachSleep(sleeps: SleepSession[], today: string): CoachSleepBlock | null {
+  const mains = sleeps.filter(s => s.kind === 'main')
+  if (!mains.length) return null
+  const newestDate = mains.map(s => s.wake_date).sort().at(-1)!
+  const night = newestDate >= shiftDate(today, -1) ? mainSleep(sleeps, newestDate) : null
+  const recent = Array.from({ length: 14 }, (_, i) => mainSleep(sleeps, shiftDate(today, -i))).filter(
+    (s): s is SleepSession => !!s,
+  )
+  const round = (n: number | null | undefined) => (n == null ? null : Math.round(n))
+  const mins = (n: number | null) => (n == null ? null : Math.round(n / 60))
+  const hrv = night?.overnight_hrv != null
+    ? baseline(
+        mains.flatMap(s =>
+          s.overnight_hrv != null && s.source === night.source && s.device_id === night.device_id
+            ? [{ date: s.wake_date, value: s.overnight_hrv, source: 'same' }]
+            : [],
+        ),
+        night.wake_date,
+        'same',
+      )
+    : null
+  const stages = night ? stageSeconds(night) : null
+  return {
+    last_night: night
+      ? {
+          wake_date: night.wake_date,
+          woke_at_local: clockLabel(night.end_at, night.timezone),
+          timezone: night.timezone,
+          duration_min: Math.round(night.duration_seconds / 60),
+          score: round(night.score),
+          stage_minutes:
+            stages && Object.values(stages).some(v => v != null)
+              ? { awake: mins(stages.awake), rem: mins(stages.rem), light: mins(stages.light), deep: mins(stages.deep) }
+              : null,
+          overnight_hrv_ms: round(night.overnight_hrv),
+          respiration: round(night.respiration),
+          spo2: round(night.spo2),
+          source: night.source,
+          status: night.status,
+        }
+      : null,
+    nights_recorded_14d: recent.length,
+    avg_duration_min_14d: recent.length
+      ? Math.round(recent.reduce((n, s) => n + s.duration_seconds, 0) / recent.length / 60)
+      : null,
+    hrv_usual_range_ms: hrv ? { low: Math.round(hrv.low), high: Math.round(hrv.high), nights: hrv.count } : null,
+    coverage: night
+      ? `${recent.length} of the last 14 nights recorded. Sleep stages are wearable estimates${night.status === 'final' ? '' : '; this night is not final and may still change'}.`
+      : `Newest recorded night ended ${newestDate}, which is too old to describe how they slept last night. ${recent.length} of the last 14 nights recorded.`,
+  }
 }
 
 export interface CoachWatchSession {
@@ -301,6 +386,26 @@ async function loadHrSets(supabase: SupabaseClient, userId: string, today: strin
   return out
 }
 
+/** Imported sleep, read soft: migration 61 may not be applied and a failed read just omits the block. */
+async function loadCoachSleep(supabase: SupabaseClient, userId: string, today: string): Promise<CoachSleepBlock | null> {
+  try {
+    const { data, error } = await supabase
+      .from('sleep_sessions')
+      .select(
+        'provider_id,source,device_id,wake_date,provider_date,timezone,start_at,end_at,kind,duration_seconds,score,stages,stage_totals,overnight_hrv,respiration,spo2,revision_at,received_at,status',
+      )
+      .eq('user_id', userId)
+      .gte('wake_date', shiftDate(today, -35))
+      .lte('wake_date', today)
+      .order('wake_date')
+      .limit(120)
+    if (error || !data?.length) return null
+    return summarizeCoachSleep(data as SleepSession[], today)
+  } catch {
+    return null
+  }
+}
+
 /**
  * The block for buildCoachContext, or null (no watch, prefs off, migration not
  * applied, or any read failed outright). Never throws.
@@ -318,7 +423,9 @@ export async function loadCoachBody(
       loadWatchSessions(supabase, userId).catch(() => []),
       loadHrSets(supabase, userId, today).catch(() => []),
     ])
-    return summarizeCoachBody({ summary, watchSessions, hrSets, unit })
+    const block = summarizeCoachBody({ summary, watchSessions, hrSets, unit })
+    const sleep = await loadCoachSleep(supabase, userId, today)
+    return sleep ? { ...block, sleep } : block
   } catch (err) {
     console.error('[grind] coach body context', err)
     return null

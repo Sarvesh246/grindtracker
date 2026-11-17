@@ -6,6 +6,7 @@ import type { HealthSummary } from '@/lib/health/queries'
 import {
   clockLabel,
   dailyBrief,
+  dayAnnotations,
   dateLabel,
   duration,
   mainSleep,
@@ -20,6 +21,7 @@ import {
   type HealthMetric
 } from '@/lib/health/model'
 import { Ring } from '@/components/body/ChargeRing'
+import { connectionErrorText, relativeTime, SOURCE_LABEL } from '@/lib/health/reconcile'
 import { requestOpenCoach } from '@/lib/coach/openCoachBus'
 import Dialog from '@/components/ui/Dialog'
 import {
@@ -207,16 +209,87 @@ export function HealthDateHeader({
   )
 }
 
-export function HealthSourceStatus({ body, date }: { body: BodySummary; date: string }) {
+const STATUS_TEXT = {
+  active: 'Connected',
+  paused: 'Paused',
+  revoked: 'Revoked',
+  error: 'Needs attention'
+} as const
+
+export function HealthSourceStatus({ data, date }: { data: HealthSummary; date: string }) {
+  const [now] = useState(() => Date.now())
+  const { body, connections } = data
   const row = body.days.find((d) => d.local_date === date)
   const latest = body.days.at(-1)
+  const lastSync =
+    connections
+      .map((c) => c.last_success_at)
+      .filter((t): t is string => !!t)
+      .sort()
+      .at(-1) ??
+    row?.synced_at ??
+    null
+  const synced = relativeTime(lastSync, now)
+  const provenance = Object.entries(data.provenance[date] ?? {}) as [
+    HealthMetric,
+    NonNullable<HealthSummary['provenance'][string][HealthMetric]>
+  ][]
   return (
     <details className="health-source">
       <summary>
-        {body.hasWatch
-          ? `Garmin watch · ${row ? `Snapshot dated ${dateLabel(date)}` : latest ? `Last record ${dateLabel(latest.local_date)}` : 'No daily snapshot'}`
+        {body.hasWatch || connections.length
+          ? `Garmin${body.hasWatch ? ' watch' : ''} · ${row ? `Snapshot dated ${dateLabel(date)}` : latest ? `Last record ${dateLabel(latest.local_date)}` : 'No daily snapshot'}${synced ? ` · synced ${synced}` : ''}`
           : 'Connection & data sources'}
       </summary>
+      {connections.length > 0 && (
+        <div className="health-source-grid">
+          {connections.map((c) => (
+            <div className="health-source-card" key={c.id} data-status={c.status}>
+              <header>
+                {SOURCE_LABEL[c.source]}
+                <span>{STATUS_TEXT[c.status]}</span>
+              </header>
+              <p>
+                {c.last_success_at
+                  ? `Last successful import ${relativeTime(c.last_success_at, now)}.`
+                  : 'No successful import yet.'}
+              </p>
+              {connectionErrorText(c.last_error_code) && (
+                <p>{connectionErrorText(c.last_error_code)}</p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      {provenance.length > 0 && (
+        <div className="health-table-wrap health-provenance">
+          <table>
+            <caption>Where {dateLabel(date)}’s values came from</caption>
+            <thead>
+              <tr>
+                <th>Measurement</th>
+                <th>Source</th>
+                <th>Observed</th>
+              </tr>
+            </thead>
+            <tbody>
+              {provenance.map(([field, p]) => (
+                <tr key={field}>
+                  <th>{METRICS[field].short}</th>
+                  <td>
+                    {p.source === 'legacy_snapshot'
+                      ? 'Watch daily snapshot'
+                      : p.source === 'sleep_record'
+                        ? 'Sleep record'
+                        : SOURCE_LABEL[p.source]}
+                  </td>
+                  <td>{p.observed_at ? clockLabel(p.observed_at) : 'Time unavailable'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
       <p>
         {row?.synced_at
           ? `Received ${new Date(row.synced_at).toLocaleString()}. The legacy snapshot does not supply a precise observation timestamp.`
@@ -227,11 +300,35 @@ export function HealthSourceStatus({ body, date }: { body: BodySummary; date: st
         it cannot wake the watch or force Garmin Connect to sync.
       </p>
       <p>
-        Cloud sleep imports require an approved Garmin connection. Device capabilities and missing
-        fields vary.
+        When two sources report the same measurement, GRIND shows one: a current reading over a
+        partial one, an approved Garmin connection over a personal one over the watch app, then the
+        later measurement. Readings are never averaged together.
       </p>
       <Link href="/profile/settings#health">Manage connections & privacy ›</Link>
     </details>
+  )
+}
+
+function CoachIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M20.5 12.2a8 8 0 0 1-11.6 7.1L4 20.5l1.3-4.4A8 8 0 1 1 20.5 12.2Z" />
+      <path
+        d="m12.2 8.2.9 2.3 2.3.9-2.3.9-.9 2.3-.9-2.3-2.3-.9 2.3-.9Z"
+        fill="currentColor"
+        stroke="none"
+      />
+    </svg>
   )
 }
 
@@ -303,7 +400,8 @@ export function DailyHealthBrief({ data, date }: { data: HealthSummary; date: st
             })
           }
         >
-          Ask Coach ↗
+          <CoachIcon />
+          Ask Coach
         </button>
       </div>
     </section>
@@ -757,7 +855,7 @@ export function HealthView({
           {error ? 'Retry' : 'Refresh'}
         </button>
       </div>
-      {body && <HealthSourceStatus body={body} date={date} />}
+      {data && <HealthSourceStatus data={data} date={date} />}
       {error && (
         <p role="alert" className="health-error">
           We couldn’t refresh health data.{' '}
@@ -852,6 +950,7 @@ export function HealthView({
                     stress={body.todayRow.stress_series ?? []}
                     date={date}
                     today={today}
+                    annotations={dayAnnotations(data.workouts, mainSleep(data.sleeps, date), date)}
                     summary={{
                       high: body.todayRow.bb_high,
                       low: body.todayRow.bb_low,

@@ -7,6 +7,7 @@ import {
   stageSeconds,
   STAGE_NAMES,
   STAGE_ORDER,
+  type DayAnnotation,
   type SleepSession
 } from '@/lib/health/model'
 
@@ -259,6 +260,14 @@ const W = 360,
   PT = 12,
   PB = 12
 
+function capture(e: PointerEvent<HTMLElement>) {
+  try {
+    e.currentTarget.setPointerCapture(e.pointerId)
+  } catch {
+    /* capture is an enhancement only */
+  }
+}
+
 /** Straight segments; nulls break the path rather than bridge missing readings. */
 export function SeriesPlot({
   values,
@@ -267,7 +276,8 @@ export function SeriesPlot({
   selected = null,
   onSelect,
   band = null,
-  tone = 'accent'
+  tone = 'accent',
+  marks = []
 }: {
   values: (number | null)[]
   label: string
@@ -277,6 +287,8 @@ export function SeriesPlot({
   /** A personal "usual" range, drawn as a quiet band behind the line. */
   band?: { low: number; high: number } | null
   tone?: 'accent' | 'stress'
+  /** Intervals of the day (bucket indices) drawn quietly behind the line. */
+  marks?: { from: number; to: number; kind: 'workout' | 'sleep' }[]
 }) {
   const id = cleanId(useId())
   const stats = seriesStats(values)
@@ -296,6 +308,7 @@ export function SeriesPlot({
   const segs = segments(values)
   const small = n <= 32
   const ticks = [lo, (lo + hi) / 2, hi]
+  const gesture = useRef<{ x: number; y: number; dragging: boolean } | null>(null)
   const choose = (e: PointerEvent<HTMLDivElement>) => {
     if (!onSelect) return
     const rect = e.currentTarget.getBoundingClientRect()
@@ -318,9 +331,40 @@ export function SeriesPlot({
         onSelect ? `${label} chart. Use left and right arrow keys to read values.` : undefined
       }
       onKeyDown={onKey}
-      onPointerDown={choose}
+      data-swipe-ignore
+      onPointerDown={(e) => {
+        if (!onSelect) return
+        // A tap reads that point at once; a horizontal drag keeps scrubbing; a
+        // vertical drag is left to the page so scrolling over a chart still works.
+        gesture.current = { x: e.clientX, y: e.clientY, dragging: e.pointerType === 'mouse' }
+        if (e.pointerType === 'mouse') capture(e)
+        choose(e)
+      }}
       onPointerMove={(e) => {
-        if (e.buttons || e.pointerType === 'mouse') choose(e)
+        const g = gesture.current
+        if (!onSelect) return
+        if (!g) {
+          if (e.pointerType === 'mouse') choose(e)
+          return
+        }
+        const dx = Math.abs(e.clientX - g.x),
+          dy = Math.abs(e.clientY - g.y)
+        if (!g.dragging) {
+          if (dy > 8 && dy > dx) {
+            gesture.current = null
+            return
+          }
+          if (dx <= 4) return
+          g.dragging = true
+          capture(e)
+        }
+        choose(e)
+      }}
+      onPointerUp={() => {
+        gesture.current = null
+      }}
+      onPointerCancel={() => {
+        gesture.current = null
       }}
     >
       {ticks.map((t, k) => (
@@ -358,6 +402,17 @@ export function SeriesPlot({
             className="health-band"
           />
         )}
+        {marks.map((m, k) => (
+          <rect
+            key={k}
+            x={x(m.from)}
+            width={Math.max(3, x(m.to + 1) - x(m.from))}
+            y={PT}
+            height={H - PT - PB}
+            rx={3}
+            className={`health-mark health-mark-${m.kind}`}
+          />
+        ))}
         {segs.map((seg, k) =>
           seg.length > 1 ? (
             <g key={k}>
@@ -402,7 +457,8 @@ export function DailyHealthTimeline({
   stress,
   date,
   today,
-  summary
+  summary,
+  annotations = []
 }: {
   bb: (number | null)[]
   stress: (number | null)[]
@@ -414,8 +470,9 @@ export function DailyHealthTimeline({
     latest: number | null
     stress: number | null
   }
+  annotations?: DayAnnotation[]
 }) {
-  const [selected, setSelected] = useState(0)
+  const [picked, setPicked] = useState<number | null>(null)
   const limit =
     date === today ? Math.floor((new Date().getHours() * 60 + new Date().getMinutes()) / 15) : 95
   const observed = (values: (number | null)[]) =>
@@ -425,6 +482,12 @@ export function DailyHealthTimeline({
   const time = (i: number) =>
     `${String(Math.floor(i / 4)).padStart(2, '0')}:${String((i % 4) * 15).padStart(2, '0')}`
   const count = energy.filter((v) => v != null).length
+  const latestIndex = Math.max(
+    0,
+    ...energy.flatMap((v, i) => (v != null || strain[i] != null ? [i] : []))
+  )
+  const selected = Math.min(picked ?? latestIndex, limit)
+  const setSelected = (i: number) => setPicked(i)
   const chips = summary
     ? (
         [
@@ -465,6 +528,7 @@ export function DailyHealthTimeline({
         maximum={100}
         selected={selected}
         onSelect={setSelected}
+        marks={annotations}
       />
       <p className="health-eyebrow health-plot-title">Physiological stress</p>
       <SeriesPlot
@@ -474,22 +538,24 @@ export function DailyHealthTimeline({
         tone="stress"
         selected={selected}
         onSelect={setSelected}
+        marks={annotations}
       />
+      {annotations.length > 0 && (
+        <ul className="health-annotations">
+          {annotations.map((a, i) => (
+            <li key={i}>
+              <i className={`health-mark-${a.kind}`} aria-hidden="true" />
+              {a.label}
+            </li>
+          ))}
+        </ul>
+      )}
       <div className="health-axis health-axis-3">
         <span>00:00</span>
         <span>12:00</span>
         <span>23:45</span>
       </div>
-      <label className="health-scrubber">
-        <span>Read a time interval</span>
-        <input
-          type="range"
-          min={0}
-          max={limit}
-          value={Math.min(selected, limit)}
-          onChange={(e) => setSelected(Number(e.target.value))}
-        />
-      </label>
+      <p className="health-hint">Drag across either chart to read any moment.</p>
       <p className="health-muted">
         {count} of 96 energy buckets recorded. Legacy 15-minute local-time buckets; exact UTC timing
         and DST coverage are unavailable. Gaps are not rest.

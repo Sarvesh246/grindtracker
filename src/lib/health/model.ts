@@ -140,13 +140,27 @@ export function metricValue(
   const value = row?.[metric]
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
+/** Approved cloud > personal cloud > watch; unknown source names rank lowest. */
+function sourceRank(source: string): number {
+  return source === 'garmin_business'
+    ? 3
+    : source === 'garmin_personal'
+      ? 2
+      : source === 'connect_iq'
+        ? 1
+        : 0
+}
 export function mainSleep(sessions: SleepSession[], date: string): SleepSession | null {
   // Provider revisions replace identities on ingestion; choose one main sleep,
   // never sum overlapping nights or silently fold naps into the main duration.
   return (
     sessions
       .filter((s) => s.wake_date === date && s.kind === 'main')
-      .sort((a, b) => Date.parse(b.revision_at) - Date.parse(a.revision_at))[0] ?? null
+      .sort(
+        (a, b) =>
+          sourceRank(b.source) - sourceRank(a.source) ||
+          Date.parse(b.revision_at) - Date.parse(a.revision_at)
+      )[0] ?? null
   )
 }
 export interface Baseline {
@@ -329,4 +343,59 @@ export function metricBaseline(
     date,
     'legacy-watch'
   )
+}
+
+export interface DayAnnotation {
+  kind: 'workout' | 'sleep'
+  /** 15-minute bucket indices from local midnight, inclusive. */
+  from: number
+  to: number
+  label: string
+}
+function minuteOfDay(iso: string, timeZone?: string): number {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+    ...(timeZone ? { timeZone } : {})
+  }).formatToParts(new Date(iso))
+  const n = (t: string) => Number(parts.find((p) => p.type === t)?.value)
+  return n('hour') * 60 + n('minute')
+}
+/**
+ * Workouts and the night's sleep as intervals on the day's 96-bucket timeline.
+ * A workout that crosses midnight is clipped to the selected day; sleep is only
+ * drawn up to the morning it ended on, in the sleep's own timezone.
+ */
+export function dayAnnotations(
+  workouts: { day_type: string; started_at: string | null; completed_at: string | null }[],
+  sleep: SleepSession | null,
+  date: string
+): DayAnnotation[] {
+  const out: DayAnnotation[] = []
+  if (sleep && sleep.wake_date === date)
+    out.push({
+      kind: 'sleep',
+      from: 0,
+      to: Math.min(95, Math.floor(minuteOfDay(sleep.end_at, sleep.timezone) / 15)),
+      label: `Sleep until ${clockLabel(sleep.end_at, sleep.timezone)}`
+    })
+  for (const w of workouts) {
+    if (!w.started_at || !w.completed_at) continue
+    const start = Date.parse(w.started_at),
+      end = Date.parse(w.completed_at)
+    if (!(end > start) || end - start > 8 * 3600000) continue
+    const sameDay = (iso: string) =>
+      iso.length > 0 && new Date(iso).toDateString() === new Date(`${date}T12:00:00`).toDateString()
+    const from = sameDay(w.started_at) ? Math.floor(minuteOfDay(w.started_at) / 15) : 0
+    const to = sameDay(w.completed_at) ? Math.floor(minuteOfDay(w.completed_at) / 15) : 95
+    if (!sameDay(w.started_at) && !sameDay(w.completed_at)) continue
+    out.push({
+      kind: 'workout',
+      from,
+      to: Math.max(from, to),
+      label: `Workout · ${clockLabel(w.started_at)} – ${clockLabel(w.completed_at)}`
+    })
+  }
+  return out
 }

@@ -97,6 +97,7 @@ so pasting a migration records it. Copy that line into every new migration —
 | [60-today-weight-overrides.sql](sql/60-today-weight-overrides.sql) | 60 | `sessions.weight_overrides` (exercise id → lbs, today only) and `set_session_weight_overrides(session_id, overrides)`: the Coach's "lighter weights today" prefills the open workout without touching `exercises.weight_target` |
 | [61-health-foundation.sql](sql/61-health-foundation.sql) | 61 | Owner-private health connections, interval samples, revision-aware sleep, transactional batch acknowledgments, collection generations, retention and expanded health deletion. Apply before the Health release; watch batch uploads remain separately disabled. |
 | [62-account-storage-cleanup.sql](sql/62-account-storage-cleanup.sql) | 62 | Account deletion requires private files to be removed through the Storage API first; replaces the obsolete direct storage-table deletion. |
+| [63-health-retention.sql](sql/63-health-retention.sql) | 63 | Service-role-only `health_retention_cleanup()` for the daily retention cron: raw samples older than 180 days, batch receipts older than 30 days and expired insights. Sleep and daily history are kept. |
 
 See also [PUSH.md](PUSH.md) for VAPID keys, Vercel env, and cron setup.
 See [COACH.md](COACH.md) for Gemini env, rate limits, `/api/coach/chat`, and
