@@ -21,6 +21,13 @@ export interface UseTourOptions {
   active: boolean
   /** Settle delay after `active` first becomes true, so nothing shifts under a finger. */
   settleMs?: number
+  /**
+   * Called with each step's target as it becomes current, so a page whose
+   * targets live behind tabs (Settings) can reveal the right panel first. The
+   * coach mark finds its target by polling every frame, so it lands once the
+   * panel renders.
+   */
+  onStep?: (target: string) => void
 }
 
 /**
@@ -86,6 +93,12 @@ export function useTour(tourId: string, steps: TourStep[], opts: UseTourOptions)
   }, [skipAllTours])
 
   const step = steps[index]
+  const { onStep } = opts
+  const stepTarget = started && active ? step?.target : undefined
+  useEffect(() => {
+    if (stepTarget) onStep?.(stepTarget)
+  }, [stepTarget, onStep])
+
   const getEl = useCallback(() => (step ? onboardTarget(step.target) : null), [step])
 
   // Render only while genuinely running and the gate is open (pause on modal/toast).
