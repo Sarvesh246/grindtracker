@@ -5,6 +5,8 @@ module Config {
     // Seeds a fake workout when nothing is cached, to walk the screens
     // in the simulator without a token. Never ship with this on.
     const DEMO_DATA = false;
+    // With DEMO_DATA: walk the screens on a timer instead of by hand.
+    const TOUR = false;
     const TOUR_STEP_MS = 3000;
     // Phase 0 of the GRIND Body plan: log every sensor value to
     // GARMIN/APPS/LOGS/GRIND.TXT on open, every 15 min, and on Save.
@@ -40,6 +42,7 @@ module Config {
     const FG = 0xFFFFFF;
     const DIM = 0x8A8A8A;
     const TRACK = 0x2A2A2A;
+    const SEG = 0x555555; // sets still to do, on the set screen's ring
     const ACCENT = 0xC8F135; // GRIND lime
     const WARN = 0xFF5A4F;
     // Heart-rate zones 1-5, as on the web: greys, dim lime, lime, and coral

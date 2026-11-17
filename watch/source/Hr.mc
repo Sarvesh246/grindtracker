@@ -94,6 +94,12 @@ module Hr {
         buzzed = false;
     }
 
+    // The set at index i was taken back: stop tracking its peak and drop.
+    function onSetUndone(i) {
+        if (pend != null && pend["i"] >= i) { pend = null; }
+        buzzed = false;
+    }
+
     function patchSet(i, k, v) {
         var sets = Workout.sets;
         if (sets == null || i >= sets.size()) { return; }

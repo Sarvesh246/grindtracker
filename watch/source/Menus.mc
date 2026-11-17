@@ -4,8 +4,13 @@ using Toybox.WatchUi;
 // with buttons or touch, and they cost almost no app memory.
 module Menus {
     function pause(onSetScreen) {
-        var m = new WatchUi.Menu2({ :title => "Paused" });
+        // Not "Paused": the rest timer and the recording keep running.
+        var m = new WatchUi.Menu2({ :title => "Workout" });
         m.addItem(new WatchUi.MenuItem("Resume", null, :resume, null));
+        var last = Workout.lastSetLabel();
+        if (last != null) {
+            m.addItem(new WatchUi.MenuItem("Undo last set", last, :undo, null));
+        }
         if (onSetScreen) {
             m.addItem(new WatchUi.MenuItem("Change weight", null, :weight, null));
         }
@@ -47,6 +52,10 @@ module Menus {
     function finish() {
         var m = new WatchUi.Menu2({ :title => "Workout done" });
         m.addItem(new WatchUi.MenuItem("Save workout", null, :save, null));
+        var last = Workout.lastSetLabel();
+        if (last != null) {
+            m.addItem(new WatchUi.MenuItem("Undo last set", last, :undo, null));
+        }
         if (hasSkipped()) {
             m.addItem(new WatchUi.MenuItem("Back to workout", "Undo a skipped exercise", :pick, null));
         }
@@ -87,6 +96,10 @@ class PauseDelegate extends WatchUi.Menu2InputDelegate {
         WatchUi.popView(WatchUi.SLIDE_IMMEDIATE);
         if (id == :weight) {
             Workout.setFocus(0);
+        } else if (id == :undo) {
+            Workout.undoSet();
+            Nav.buzz(60);
+            Nav.show();
         } else if (id == :skip) {
             Workout.skipExercise();
             Nav.show();
@@ -122,6 +135,12 @@ class FinishDelegate extends WatchUi.Menu2InputDelegate {
             return;
         }
         WatchUi.popView(WatchUi.SLIDE_IMMEDIATE);
+        if (item.getId() == :undo) {
+            Workout.undoSet();
+            Nav.buzz(60);
+            Nav.show();
+            return;
+        }
         // 0 = Save, 1 = Discard (which still asks to confirm).
         new SummaryDelegate().act(item.getId() == :save ? 0 : 1);
     }

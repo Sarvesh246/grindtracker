@@ -230,12 +230,29 @@ module Logic {
         return "synced " + (secs / 86400) + "d ago";
     }
 
+    // 12450 -> "12,450". Every group but the first is padded to 3 digits.
+    function fmtThousands(n) {
+        var neg = n < 0;
+        if (neg) { n = -n; }
+        var out = "";
+        while (n >= 1000) {
+            out = "," + (n % 1000).format("%03d") + out;
+            n = n / 1000;
+        }
+        return (neg ? "-" : "") + n.toString() + out;
+    }
+
     // 135.0 -> "135", 62.5 -> "62.5"
     function fmtWeight(w) {
         var f = w.toFloat();
         var n = f.toNumber();
         if (f == n) { return n.toString(); }
         return f.format("%.1f");
+    }
+
+    // A weight as the lifter reads it: 0 is bodyweight.
+    function fmtLoad(w) {
+        return w.toFloat() == 0.0 ? "BW" : fmtWeight(w);
     }
 
     function clamp(v, lo, hi) {
@@ -279,6 +296,13 @@ module Logic {
         if (e["reps"] == null) { return "AMRAP"; }
         if (e["reps_max"] != null) { return e["reps"] + "-" + e["reps_max"] + " reps"; }
         return e["reps"] + " reps";
+    }
+
+    // The target with no words: "10-12", "8", "AMRAP".
+    function bareTarget(e) {
+        if (e["reps"] == null) { return "AMRAP"; }
+        if (e["reps_max"] != null) { return e["reps"] + "-" + e["reps_max"]; }
+        return e["reps"].toString();
     }
 
     // Sets the workout will have: everything planned, minus what is left on

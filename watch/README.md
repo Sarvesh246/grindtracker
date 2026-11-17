@@ -58,8 +58,11 @@ it as a different app and your stored data is gone.
 | --- | --- |
 | START | Start the workout, confirm weight, log the set, skip rest |
 | UP / DOWN | Change the highlighted number, or add/remove 15 s of rest |
-| BACK, or hold UP | Pause menu: resume, change weight, skip exercise, end, discard |
+| BACK, or hold UP | Workout menu: resume, undo last set, change weight, switch or skip exercise, end, discard |
 | MENU on Home | Refresh today's workout |
+
+A short white arc beside the START button means START does something on that
+screen, the same cue Garmin's own apps use.
 
 A new exercise starts with the weight highlighted: START moves to reps, START
 again logs it. Later sets of the same exercise start on reps, so they're one
@@ -67,12 +70,25 @@ press. Touch works too: tap the left or right edge to step the number, tap the
 numbers to switch between weight and reps, swipe up or down to adjust.
 
 Reps prefill to the top of the target range (8-12 starts at 12), and the full
-target is always shown under the set count.
+target is always shown next to the set count. The ring on the set screen has
+one segment per planned set, so you can count what's left at a glance. A
+weight of 0 shows as BW (bodyweight).
 
-**Doing exercises in another order:** pause (BACK) → Switch exercise lists
-every exercise with sets left. Pick one and you're on it. A skipped exercise
-stays in that list marked "Skipped", so choosing it undoes the skip; the
-summary's BACK menu offers the same when something was skipped.
+**Logged the wrong thing?** BACK → Undo last set (it names the set) takes it
+back and puts you on it with its numbers filled in. Sets only upload after
+Save, so there's nothing to un-sync.
+
+**Rest** shows the time left, the weight x reps you're about to do and which
+exercise, so you can load the bar while you wait. It taps once at 10 s left
+and buzzes long at zero.
+
+**Doing exercises in another order:** BACK → Switch exercise lists every
+exercise with sets left. Pick one and you're on it. A skipped exercise stays
+in that list marked "Skipped", so choosing it undoes the skip; the summary's
+BACK menu offers the same when something was skipped.
+
+After Save, the summary shows the XP the workout earned (and your streak) as
+soon as GRIND confirms the upload.
 
 ## Heart rate and Charge (GRIND Body)
 
@@ -107,9 +123,9 @@ upload payload, the summary math, and a whole workout with a crash in the middle
 Two switches in `source/Config.mc`:
 
 - `DEBUG_OVERLAY` draws the screen circle, the layout zones and the tap columns.
-- `DEMO_DATA` seeds a fake workout and walks every screen on a timer, so you can
-  watch the whole flow in the simulator without a token. Turn it off before
-  building for the watch.
+- `DEMO_DATA` seeds a fake workout so you can click through every screen in the
+  simulator. A demo build never talks to the server. `TOUR` also walks the
+  screens on a timer. Turn both off before building for the watch.
 
 `UNIT`, the weight step and the default rest are in the same file.
 

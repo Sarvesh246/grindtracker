@@ -1,3 +1,4 @@
+using Toybox.Lang;
 using Toybox.Attention;
 using Toybox.Graphics;
 using Toybox.System;
@@ -42,70 +43,62 @@ class SetView extends TickView {
         Draw.status(dc, hr);
         Draw.name(dc, e["name"], Config.FG);
 
-        // Hero: weight x reps. Biggest number font that leaves room for the
-        // -/+ tap columns on either side.
-        var w = Logic.fmtWeight(c["w"]);
+        // Hero: weight and reps, each with its label underneath. The value
+        // UP/DOWN changes is lime, number and label both.
+        var w = Logic.fmtLoad(c["w"]);
         var r = c["r"].toString();
-        var cy = Draw.yAt(dc, 0.54);
+        var cy = Draw.yAt(dc, 0.50);
         var cx = dc.getWidth() / 2;
+        var xw = dc.getTextWidthInPixels("x", Graphics.FONT_SMALL);
+        var gap = 14;
+        // Between the -/+ tap columns.
+        var room = Draw.usableW(dc, cy, 0) - 2 * (dc.getWidth() * 0.16).toNumber();
         var fonts = [Graphics.FONT_NUMBER_MEDIUM, Graphics.FONT_NUMBER_MILD, Graphics.FONT_LARGE];
-        var room = dc.getWidth() / 2 - 2 * Draw.MARGIN; // the middle half, between the tap columns
         var font = fonts[fonts.size() - 1];
-        var gap = 0;
-        var xw = 0;
         for (var i = 0; i < fonts.size(); i++) {
-            xw = dc.getTextWidthInPixels("x", Graphics.FONT_SMALL);
-            gap = 10;
             var total = dc.getTextWidthInPixels(w, fonts[i]) + dc.getTextWidthInPixels(r, fonts[i]) + xw + 2 * gap;
-            if (total <= room + 40) { font = fonts[i]; break; }
+            if (total <= room) { font = fonts[i]; break; }
         }
         var ww = dc.getTextWidthInPixels(w, font);
         var rw = dc.getTextWidthInPixels(r, font);
         var left = cx - (ww + rw + xw + 2 * gap) / 2;
+        var rx = left + ww + xw + 2 * gap;
         var vc = Graphics.TEXT_JUSTIFY_LEFT | Graphics.TEXT_JUSTIFY_VCENTER;
         dc.setColor(c["f"] == 0 ? Config.ACCENT : Config.FG, Graphics.COLOR_TRANSPARENT);
         dc.drawText(left, cy, font, w, vc);
         dc.setColor(Config.DIM, Graphics.COLOR_TRANSPARENT);
         dc.drawText(left + ww + gap, cy, Graphics.FONT_SMALL, "x", vc);
         dc.setColor(c["f"] == 1 ? Config.ACCENT : Config.FG, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(left + ww + xw + 2 * gap, cy, font, r, vc);
+        dc.drawText(rx, cy, font, r, vc);
 
-        // Underline marks the value UP/DOWN will change.
-        var uy = cy + dc.getFontHeight(font) / 2 - 4;
-        var ux = c["f"] == 0 ? left : left + ww + xw + 2 * gap;
-        dc.setColor(Config.ACCENT, Graphics.COLOR_TRANSPARENT);
-        dc.setPenWidth(3);
-        dc.drawLine(ux, uy, ux + (c["f"] == 0 ? ww : rw), uy);
-        dc.setPenWidth(1);
+        var ly = cy + dc.getFontHeight(font) / 2 + 2;
+        var lf = Graphics.FONT_XTINY;
+        dc.setColor(c["f"] == 0 ? Config.ACCENT : Config.DIM, Graphics.COLOR_TRANSPARENT);
+        dc.drawText(left + ww / 2, ly, lf, c["w"].toFloat() == 0.0 ? "BODYWEIGHT" : unit.toUpper(), Draw.C);
+        dc.setColor(c["f"] == 1 ? Config.ACCENT : Config.DIM, Graphics.COLOR_TRANSPARENT);
+        dc.drawText(rx + rw / 2, ly, lf, "REPS", Draw.C);
 
         // Tap columns.
         dc.setColor(Config.DIM, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(dc.getWidth() * 0.09, cy, Graphics.FONT_MEDIUM, "-", Draw.C);
-        dc.drawText(dc.getWidth() * 0.91, cy, Graphics.FONT_MEDIUM, "+", Draw.C);
+        dc.drawText(dc.getWidth() * 0.12, cy, Graphics.FONT_MEDIUM, "-", Draw.C);
+        dc.drawText(dc.getWidth() * 0.88, cy, Graphics.FONT_MEDIUM, "+", Draw.C);
 
-        Draw.line(dc, 0.715, [Graphics.FONT_SMALL], "Set " + c["sn"] + "/" + e["sets"], Config.FG);
-        // The rep target is never cut off: shorter forms drop the weight and
-        // the "Goal" label, never the numbers.
-        Draw.fit(dc, 0.808, [Graphics.FONT_TINY, Graphics.FONT_XTINY], targets(e, unit, c["w"]), Config.DIM);
-        Draw.hint(dc, c["f"] == 0 ? "START: reps" : "START: log");
-        Draw.ring(dc, Workout.progress(), Config.ACCENT);
-        Draw.debug(dc);
-    }
-
-    // Longest first. The weight only shows when it differs from what's
-    // already on screen.
-    function targets(e, unit, w) {
-        var reps = Logic.repsText(e);
-        var bare = e["reps_max"] != null ? e["reps"] + "-" + e["reps_max"] : (e["reps"] == null ? "AMRAP" : e["reps"].toString());
-        var out = [];
-        if (e["weight"] != null && e["weight"].toFloat() != w.toFloat()) {
-            out.add("Goal " + Logic.fmtWeight(e["weight"]) + " " + unit + " x " + reps);
-            out.add("Goal " + Logic.fmtWeight(e["weight"]) + " x " + bare);
+        // Set count and the whole rep target on one line; the target is
+        // never cut off (shorter forms drop words, never numbers).
+        var sn = "Set " + c["sn"] + "/" + e["sets"];
+        var bare = Logic.bareTarget(e);
+        Draw.fit(dc, 0.755, [Graphics.FONT_SMALL, Graphics.FONT_TINY],
+            [sn + "  ·  " + Logic.repsText(e), sn + "  ·  " + bare, sn], Config.FG);
+        // Below it: the planned weight when you're off it, else what START does
+        // while that's not obvious.
+        if (e["weight"] != null && e["weight"].toFloat() != c["w"].toFloat()) {
+            Draw.line(dc, 0.845, [Graphics.FONT_XTINY], "Goal " + Logic.fmtLoad(e["weight"]) + " " + unit, Config.DIM);
+        } else if (c["f"] == 0) {
+            Draw.line(dc, 0.845, [Graphics.FONT_XTINY], "START for reps", Config.DIM);
         }
-        out.add("Goal " + reps);
-        out.add(reps);
-        out.add(bare);
-        return out;
+        Draw.segments(dc, Workout.sets.size(), Workout.totalSets(), Config.ACCENT);
+        Draw.startCue(dc, Config.FG);
+        Draw.debug(dc);
     }
 }
 
@@ -169,6 +162,10 @@ class RestView extends TickView {
     function initialize() { TickView.initialize(); }
 
     function onSecond() {
+        // A short tap 10 s out, so the bar is in your hands when rest ends.
+        if (Workout.cur != null && Workout.inRest() && Workout.restLeft() == 10 && Workout.cur["rd"] > 20) {
+            Nav.buzz(40);
+        }
         if (Workout.cur != null && Workout.inRest() && Workout.restLeft() <= 0) {
             Workout.endRest();
             Nav.buzz(600);
@@ -194,17 +191,20 @@ class RestView extends TickView {
         Draw.clear(dc);
         Draw.status(dc, hr);
         var rec = Store.smartRest() && Hr.recoveredNow(Workout.restElapsed());
-        Draw.line(dc, 0.30, [Graphics.FONT_TINY], rec ? "RECOVERED" : "REST", rec ? Config.ACCENT : Config.DIM);
-        Draw.line(dc, 0.52, [Graphics.FONT_NUMBER_HOT, Graphics.FONT_NUMBER_MEDIUM], Logic.fmtDuration(left), Config.FG);
-        Draw.line(dc, 0.725, [Graphics.FONT_TINY, Graphics.FONT_XTINY], "Next: " + e["name"], Config.FG);
-        var setTxt = "set " + c["sn"] + "/" + e["sets"];
+        Draw.line(dc, 0.265, [Graphics.FONT_TINY], rec ? "RECOVERED" : "REST", rec ? Config.ACCENT : Config.DIM);
+        Draw.line(dc, 0.455, [Graphics.FONT_NUMBER_HOT, Graphics.FONT_NUMBER_MEDIUM], Logic.fmtDuration(left), Config.FG);
+        // What's next, so you can load the bar while you wait.
+        var load = Logic.fmtLoad(c["w"]) + (c["w"].toFloat() == 0.0 ? "" : " " + Workout.meta["u"]) + "  x  " + c["r"];
+        Draw.line(dc, 0.655, [Graphics.FONT_MEDIUM, Graphics.FONT_SMALL], load, Config.FG);
+        Draw.line(dc, 0.745, [Graphics.FONT_TINY, Graphics.FONT_XTINY], e["name"], Config.DIM);
+        var setTxt = "Set " + c["sn"] + "/" + e["sets"];
         if (hr != null && Hr.lastPeak != null && Hr.lastPeak > hr) {
-            Draw.fit(dc, 0.81, [Graphics.FONT_XTINY], [setTxt + "  HR down " + (Hr.lastPeak - hr), setTxt], Config.DIM);
+            Draw.fit(dc, 0.825, [Graphics.FONT_XTINY], [setTxt + "   HR down " + (Hr.lastPeak - hr), setTxt], Config.DIM);
         } else {
-            Draw.line(dc, 0.81, [Graphics.FONT_XTINY], setTxt, Config.DIM);
+            Draw.line(dc, 0.825, [Graphics.FONT_XTINY], setTxt, Config.DIM);
         }
-        Draw.hint(dc, "START: skip");
-        Draw.ring(dc, Workout.restFrac(), Config.ACCENT);
+        Draw.ring(dc, Workout.restFrac(), rec ? Config.ACCENT : Config.FG);
+        Draw.startCue(dc, Config.FG);
         Draw.debug(dc);
     }
 }
@@ -255,27 +255,46 @@ class SummaryView extends WatchUi.View {
         var s = Workout.summary();
         if (s == null) { return; }
         Draw.clear(dc);
-        // Once saved, the sync state gets its own line, so the top row is just the clock.
-        if (Workout.saved) { Draw.line(dc, 0.15, [Graphics.FONT_XTINY], Draw.clock(), Config.DIM); } else { Draw.status(dc, null); }
-        Draw.line(dc, 0.27, [Graphics.FONT_TINY], Workout.saved ? "SAVED" : "WORKOUT DONE", Workout.saved ? Config.ACCENT : Config.DIM);
-        Draw.line(dc, 0.42, [Graphics.FONT_NUMBER_MILD, Graphics.FONT_LARGE], Logic.fmtDuration(s["dur"]), Config.FG);
-        Draw.line(dc, 0.565, [Graphics.FONT_SMALL, Graphics.FONT_TINY],
-            s["sets"] + " sets  " + s["vol"].toNumber().toString() + " " + s["unit"], Config.FG);
-        Draw.line(dc, 0.655, [Graphics.FONT_XTINY], s["hr"] == null ? "avg HR --" : "avg HR " + s["hr"], Config.DIM);
+        if (Workout.saved) { Draw.line(dc, 0.13, [Graphics.FONT_XTINY], Draw.clock(), Config.DIM); } else { Draw.status(dc, null); }
+        Draw.line(dc, 0.265, [Graphics.FONT_TINY], Workout.saved ? "SAVED" : "WORKOUT DONE", Workout.saved ? Config.ACCENT : Config.DIM);
+        Draw.line(dc, 0.41, [Graphics.FONT_NUMBER_MILD, Graphics.FONT_LARGE], Logic.fmtDuration(s["dur"]), Config.FG);
+
+        // Three columns: sets, volume, average heart rate.
+        var w = dc.getWidth();
+        var vy = Draw.yAt(dc, 0.555);
+        var ly = Draw.yAt(dc, 0.64);
+        var xs = [w * 0.25, w * 0.50, w * 0.75];
+        var vals = [s["sets"].toString(), Logic.fmtThousands(s["vol"].toNumber()), s["hr"] == null ? "--" : s["hr"].toString()];
+        var labs = ["SETS", s["unit"].toUpper(), "AVG HR"];
+        for (var i = 0; i < 3; i++) {
+            dc.setColor(Config.FG, Graphics.COLOR_TRANSPARENT);
+            dc.drawText(xs[i], vy, dc.getTextWidthInPixels(vals[i], Graphics.FONT_SMALL) > w * 0.22 ? Graphics.FONT_TINY : Graphics.FONT_SMALL, vals[i], Draw.C);
+            dc.setColor(Config.DIM, Graphics.COLOR_TRANSPARENT);
+            dc.drawText(xs[i], ly, Graphics.FONT_XTINY, labs[i], Draw.C);
+        }
 
         if (Workout.saved) {
-            Draw.line(dc, 0.775, [Graphics.FONT_XTINY], gNet.status(), gNet.statusColor());
-            Draw.hint(dc, "START: done");
+            // The server's answer once it lands: the XP this earned.
+            var res = Store.get("lx");
+            if (res instanceof Lang.Dictionary && s["sid"] != null && s["sid"].equals(res["sid"]) && res["xp"] != null) {
+                var line = "+" + res["xp"] + " XP";
+                if (res["st"] != null && res["st"] > 1) { line += "  ·  " + res["st"] + "-day streak"; }
+                Draw.fit(dc, 0.785, [Graphics.FONT_SMALL, Graphics.FONT_TINY], [line, "+" + res["xp"] + " XP"], Config.ACCENT);
+            } else {
+                Draw.line(dc, 0.785, [Graphics.FONT_XTINY], gNet.status(), gNet.statusColor());
+            }
         } else {
-            var y = Draw.yAt(dc, 0.775);
-            var w = dc.getWidth();
+            var y = Draw.yAt(dc, 0.785);
             dc.setColor(sel == 0 ? Config.ACCENT : Config.DIM, Graphics.COLOR_TRANSPARENT);
             dc.drawText(w * 0.34, y, Graphics.FONT_SMALL, "Save", Draw.C);
             dc.setColor(sel == 1 ? Config.WARN : Config.DIM, Graphics.COLOR_TRANSPARENT);
             dc.drawText(w * 0.66, y, Graphics.FONT_SMALL, "Discard", Draw.C);
-            Draw.hint(dc, "START");
+            // A dot under the choice START will act on.
+            dc.setColor(sel == 0 ? Config.ACCENT : Config.WARN, Graphics.COLOR_TRANSPARENT);
+            dc.fillCircle(sel == 0 ? w * 0.34 : w * 0.66, y + dc.getFontHeight(Graphics.FONT_SMALL) / 2 + 6, 3);
         }
         Draw.ring(dc, 1.0, Config.ACCENT);
+        Draw.startCue(dc, Config.FG);
         Draw.debug(dc);
     }
 }

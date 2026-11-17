@@ -13,7 +13,7 @@ using Toybox.System;
 //                              bottom .84-.95 hint
 module Draw {
     const C = Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER;
-    const MARGIN = 10;
+    const MARGIN = 22; // keeps text clear of the bezel ring
 
     function clear(dc) {
         dc.setColor(Config.BG, Config.BG);
@@ -101,11 +101,14 @@ module Draw {
     }
 
     // Bezel ring: a thin dim track plus an accent arc that starts at
-    // 12 o'clock and runs clockwise for `frac` of the circle.
+    // 12 o'clock and runs clockwise for `frac` of the circle. It sits a
+    // little inside the edge so the START cue can live outside it.
+    function ringR(dc) { return dc.getWidth() / 2 - 14; }
+
     function ring(dc, frac, color) {
         var cx = dc.getWidth() / 2;
         var cy = dc.getHeight() / 2;
-        var r = cx - 6 - 3;
+        var r = ringR(dc);
         dc.setPenWidth(2);
         dc.setColor(Config.TRACK, Graphics.COLOR_TRANSPARENT);
         dc.drawCircle(cx, cy, r);
@@ -119,6 +122,42 @@ module Draw {
                 dc.drawArc(cx, cy, r, Graphics.ARC_CLOCKWISE, 90, (90 - deg + 360) % 360);
             }
         }
+        dc.setPenWidth(1);
+    }
+
+    // Workout progress as one segment per planned set, so the ring reads as
+    // a count at a glance (3 of 12 lit), not a vague fraction. Past 36 sets
+    // the gaps would vanish, so it falls back to the plain ring.
+    function segments(dc, done, total, color) {
+        if (total <= 0 || total > 36) {
+            ring(dc, total <= 0 ? 1.0 : done.toFloat() / total, color);
+            return;
+        }
+        var cx = dc.getWidth() / 2;
+        var cy = dc.getHeight() / 2;
+        var r = ringR(dc);
+        var gap = total > 18 ? 2 : 4;
+        var span = 360.0 / total;
+        for (var i = 0; i < total; i++) {
+            var a0 = 90 - (i * span).toNumber() - gap / 2;
+            var a1 = 90 - ((i + 1) * span).toNumber() + gap / 2;
+            var lit = i < done;
+            dc.setPenWidth(lit ? 6 : 3);
+            dc.setColor(lit ? color : Config.SEG, Graphics.COLOR_TRANSPARENT);
+            dc.drawArc(cx, cy, r, Graphics.ARC_CLOCKWISE, (a0 + 360) % 360, (a1 + 360) % 360);
+        }
+        dc.setPenWidth(1);
+    }
+
+    // The Garmin cue for "START does something here": a short bright arc
+    // right beside the START button (about 2 o'clock on the FR165), outside
+    // the ring. Replaces spelling "START" at the bottom of the screen.
+    function startCue(dc, color) {
+        var cx = dc.getWidth() / 2;
+        var cy = dc.getHeight() / 2;
+        dc.setPenWidth(7);
+        dc.setColor(color, Graphics.COLOR_TRANSPARENT);
+        dc.drawArc(cx, cy, cx - 4, Graphics.ARC_COUNTER_CLOCKWISE, 24, 46);
         dc.setPenWidth(1);
     }
 
@@ -157,15 +196,20 @@ module Draw {
         line(dc, 0.895, [Graphics.FONT_XTINY], s, Config.DIM);
     }
 
-    // Small up/down triangles beside the left-hand UP and DOWN buttons: Home
-    // uses them to scroll the workout days.
+    // Small up/down triangles just inside the bezel, level with the UP and
+    // DOWN buttons on the left: Home uses them to scroll the workout days.
     function scrollArrows(dc) {
-        var x = yAt(dc, 0.16) + 8;
-        var yu = yAt(dc, 0.40);
-        var yd = yAt(dc, 0.60);
+        var cx = dc.getWidth() / 2;
+        var r = cx - 27;
+        var u = Math.toRadians(188);
+        var d = Math.toRadians(214);
+        var xu = cx + (r * Math.cos(u)).toNumber();
+        var yu = cx - (r * Math.sin(u)).toNumber();
+        var xd = cx + (r * Math.cos(d)).toNumber();
+        var yd = cx - (r * Math.sin(d)).toNumber();
         dc.setColor(Config.DIM, Graphics.COLOR_TRANSPARENT);
-        dc.fillPolygon([[x, yu - 7], [x - 8, yu + 5], [x + 8, yu + 5]]);
-        dc.fillPolygon([[x, yd + 7], [x - 8, yd - 5], [x + 8, yd - 5]]);
+        dc.fillPolygon([[xu, yu - 6], [xu - 7, yu + 5], [xu + 7, yu + 5]]);
+        dc.fillPolygon([[xd, yd + 6], [xd - 7, yd - 5], [xd + 7, yd - 5]]);
     }
 
     // DEBUG: screen circle, zone boundaries drawn at their usable width,

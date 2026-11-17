@@ -404,3 +404,71 @@ function testHrMath(logger) {
         && Logic.nextPending(0, [1, 1, 0], [0, 0, 1], one) == -1) && ok;
     return ok;
 }
+
+(:test)
+function testUndoSet(logger) {
+    // Undo takes back exactly the last set and puts you on it to re-log.
+    var plan = { "date" => "2026-11-16", "unit" => "lbs", "id" => "push", "name" => "Push", "ex" => [
+        { "id" => "e1", "name" => "Bench Press", "sets" => 2, "reps" => 8, "reps_max" => null, "weight" => 135, "rest" => 60 },
+        { "id" => "e2", "name" => "Dips", "sets" => 1, "reps" => null, "reps_max" => null, "weight" => null, "rest" => 60 }
+    ] };
+    Workout.start(plan);
+    var sid = Workout.cur["sid"];
+    var ok = T.ck(logger, "nothing to undo", !Workout.undoSet() && Workout.lastSetLabel() == null);
+    Workout.setFocus(1);
+    Workout.logSet();
+    Workout.endRest();
+    Workout.cur["r"] = 6;
+    Workout.logSet(); // bench done -> resting before dips
+    ok = T.ck(logger, "label", Workout.lastSetLabel().equals("135 x 6  Bench Press")) && ok;
+    ok = T.ck(logger, "undo", Workout.undoSet()) && ok;
+    ok = T.ck(logger, "back on bench set 2", Workout.cur["ei"] == 0 && Workout.cur["sn"] == 2 && Workout.cur["dn"][0] == 1
+        && Workout.cur["r"] == 6 && Workout.cur["f"] == 1 && !Workout.inRest()) && ok;
+    ok = T.ck(logger, "stored set gone", Workout.sets.size() == 1 && Store.sets(sid).size() == 1) && ok;
+    // Survives a crash.
+    Workout.cur = null; Workout.plan = null; Workout.meta = null; Workout.sets = null;
+    Workout.load();
+    ok = T.ck(logger, "reloaded", Workout.sets.size() == 1 && Workout.cur["sn"] == 2 && Workout.cur["dn"][0] == 1) && ok;
+    Workout.cur["r"] = 7;
+    Workout.logSet();
+    ok = T.ck(logger, "re-logged with same number", Workout.sets.size() == 2 && Workout.sets[1]["n"] == 2 && Workout.sets[1]["r"] == 7) && ok;
+    Workout.endRest();
+    // Undo from the summary reopens the workout.
+    Workout.cur["r"] = 10;
+    ok = T.ck(logger, "dips ends it", Workout.logSet() && Workout.atSummary()) && ok;
+    ok = T.ck(logger, "bodyweight label", Workout.lastSetLabel().equals("BW x 10  Dips")) && ok;
+    Workout.undoSet();
+    ok = T.ck(logger, "summary undone", !Workout.atSummary() && Workout.cur["ei"] == 1 && Workout.totalSets() == 3) && ok;
+    Workout.finish(false);
+    Store.dropSession(sid);
+    Workout.saved = false;
+    return ok;
+}
+
+(:test)
+function testFormatting(logger) {
+    var ok = T.ck(logger, "thousands", Logic.fmtThousands(0).equals("0") && Logic.fmtThousands(999).equals("999")
+        && Logic.fmtThousands(2310).equals("2,310") && Logic.fmtThousands(1002345).equals("1,002,345")
+        && Logic.fmtThousands(1000).equals("1,000"));
+    ok = T.ck(logger, "load", Logic.fmtLoad(0.0).equals("BW") && Logic.fmtLoad(62.5).equals("62.5") && Logic.fmtLoad(135).equals("135")) && ok;
+    ok = T.ck(logger, "bare target", Logic.bareTarget({ "reps" => 8, "reps_max" => 12 }).equals("8-12")
+        && Logic.bareTarget({ "reps" => 5, "reps_max" => null }).equals("5")
+        && Logic.bareTarget({ "reps" => null, "reps_max" => null }).equals("AMRAP")) && ok;
+    return ok;
+}
+
+(:test)
+function testKeepResult(logger) {
+    // The summary's "+XP" comes from a completed upload only.
+    Store.del("lx");
+    var n = new Net();
+    n.keepResult("s1", { "session" => { "status" => "open", "xp_earned" => null }, "stats" => null });
+    var ok = T.ck(logger, "open ignored", Store.get("lx") == null);
+    n.keepResult("s1", { "session" => { "status" => "completed", "xp_earned" => 140 }, "stats" => { "current_streak" => 9 } });
+    var r = Store.get("lx");
+    ok = T.ck(logger, "kept", r != null && r["sid"].equals("s1") && r["xp"] == 140 && r["st"] == 9) && ok;
+    n.keepResult("s2", "not json");
+    ok = T.ck(logger, "garbage ignored", Store.get("lx")["sid"].equals("s1")) && ok;
+    Store.del("lx");
+    return ok;
+}

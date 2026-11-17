@@ -21,7 +21,9 @@ class Net {
 
     function now() { return Time.now().value(); }
 
+    // Demo data must never reach the server, so a demo build is offline.
     function connected() {
+        if (Config.DEMO_DATA) { return false; }
         return System.getDeviceSettings().phoneConnected;
     }
 
@@ -187,6 +189,7 @@ class Net {
             fails = 0;
             nextAt = 0;
             var changed = Logic.applyResult(sets, data);
+            keepResult(sid, data);
             for (var i = 0; i < changed.size(); i++) {
                 Store.putSet(sid, changed[i], sets[changed[i]]);
             }
@@ -221,13 +224,22 @@ class Net {
         WatchUi.requestUpdate();
     }
 
+    // The XP and streak a finished upload earned, for the summary screen.
+    function keepResult(sid, data) {
+        if (!(data instanceof Lang.Dictionary) || !(data["session"] instanceof Lang.Dictionary)) { return; }
+        var se = data["session"];
+        if (!"completed".equals(se["status"]) || se["xp_earned"] == null) { return; }
+        var st = data["stats"] instanceof Lang.Dictionary ? data["stats"]["current_streak"] : null;
+        Store.put("lx", { "sid" => sid, "xp" => se["xp_earned"], "st" => st });
+    }
+
     // --- what the UI shows ----------------------------------------------
 
     // Short form for the status row.
     function status() {
         if (authError) { return "Auth error"; }
         var n = Store.queue().size();
-        if (n > 0) { return "pending " + n; }
+        if (n > 0) { return n + " to sync"; }
         if (Store.dead().size() > 0) { return "sync failed"; }
         if (!connected()) { return "offline"; }
         return "synced";
@@ -242,7 +254,7 @@ class Net {
     function homeStatus() {
         if (authError) { return "Auth error"; }
         var n = Store.queue().size();
-        if (n > 0) { return "pending " + n; }
+        if (n > 0) { return n + " to sync"; }
         if (Store.dead().size() > 0) { return "sync failed"; }
         var ls = Store.get("ls");
         if (!connected()) { return "offline"; }

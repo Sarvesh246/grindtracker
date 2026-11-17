@@ -171,6 +171,51 @@ module Workout {
         return done;
     }
 
+    // The most recent set as "135 x 12  Bench Press", for the undo item.
+    // Numbers first: the menu cuts the end off, and they're what you check.
+    function lastSetLabel() {
+        if (sets == null || sets.size() == 0) { return null; }
+        var s = sets[sets.size() - 1];
+        var i = indexOfEx(s["e"]);
+        return Logic.fmtLoad(s["w"]) + " x " + s["r"] + (i < 0 ? "" : "  " + plan["ex"][i]["name"]);
+    }
+
+    function indexOfEx(id) {
+        for (var i = 0; i < exCount(); i++) {
+            if (plan["ex"][i]["id"].equals(id)) { return i; }
+        }
+        return -1;
+    }
+
+    // Takes back the last logged set (a double-pressed START, the wrong
+    // reps) and puts you back on it with its numbers filled in, ready to
+    // fix and log again. Sets only reach the server after Save, so nothing
+    // needs un-syncing. The set is deleted before `cur` is saved: a crash in
+    // between leaves one set fewer to do, never two sets with one number.
+    function undoSet() {
+        if (sets == null || sets.size() == 0) { return false; }
+        var k = sets.size() - 1;
+        var s = sets[k];
+        var i = indexOfEx(s["e"]);
+        if (i < 0) { return false; }
+        Store.del("t_" + cur["sid"] + "_" + k);
+        sets = sets.slice(0, k);
+        Hr.onSetUndone(k);
+        cur["dn"][i] -= 1;
+        if (cur["dn"][i] < 0) { cur["dn"][i] = 0; }
+        cur["sk"][i] = 0;
+        cur["ei"] = i;
+        cur["sn"] = s["n"];
+        cur["w"] = s["w"];
+        cur["r"] = s["r"];
+        cur["f"] = 1;
+        cur["re"] = null;
+        cur["rs"] = s["rs"];
+        cur["sum"] = false;
+        saveCur();
+        return true;
+    }
+
     // Moves to the next exercise with sets left, wrapping around. False when
     // there is none.
     function nextExercise() {
@@ -280,7 +325,8 @@ module Workout {
             "sets" => sets.size(),
             "vol" => Logic.volume(sets),
             "hr" => st["ha"],
-            "unit" => meta["u"]
+            "unit" => meta["u"],
+            "sid" => cur["sid"]
         };
         return last;
     }

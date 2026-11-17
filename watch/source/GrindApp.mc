@@ -17,11 +17,13 @@ class GrindApp extends Application.AppBase {
     function onStart(state) {
         gNet = new Net();
         Workout.load();
-        if (Config.DEMO_DATA && Store.today() == null) {
+        if (Config.DEMO_DATA && !Workout.active()) {
             Store.cacheToday({ "date" => Logic.localDate(), "unit" => Config.UNIT, "workout" => { "id" => "demo", "name" => "Push Day", "exercises" => [
                 { "id" => "d1", "name" => "Incline Dumbbell Bench Press", "sets" => 2, "reps" => 8, "reps_max" => 12, "weight" => 62.5, "rest" => 20 },
-                { "id" => "d2", "name" => "Overhead Press", "sets" => 1, "reps" => 6, "reps_max" => null, "weight" => 135, "rest" => null }
-            ] }, "body" => { "charge" => { "score" => 72, "band" => "steady", "label" => "Steady", "advice" => "Train as planned" }, "smart_rest" => true } });
+                { "id" => "d2", "name" => "Overhead Press", "sets" => 1, "reps" => 6, "reps_max" => null, "weight" => 135, "rest" => null },
+                { "id" => "d3", "name" => "Dips", "sets" => 2, "reps" => null, "reps_max" => null, "weight" => null, "rest" => 60 }
+            ] }, "days" => [{ "id" => "demo", "name" => "Push Day" }, { "id" => "pull", "name" => "Pull Day" }, { "id" => "legs", "name" => "Legs" }],
+            "body" => { "charge" => { "score" => 72, "band" => "steady", "label" => "Steady", "advice" => "Train as planned" }, "smart_rest" => true } });
         }
         System.println("GRIND start, active=" + Workout.active() + " queue=" + Store.queue().size());
         Probe.log("open");
@@ -30,7 +32,7 @@ class GrindApp extends Application.AppBase {
         gNet.flush();
         timer = new Timer.Timer();
         timer.start(method(:onTick), Config.TICK_MS, true);
-        if (Config.DEMO_DATA) {
+        if (Config.DEMO_DATA && Config.TOUR) {
             tour = new Timer.Timer();
             tour.start(method(:onTour), Config.TOUR_STEP_MS, true);
         }
