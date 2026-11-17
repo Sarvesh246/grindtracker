@@ -59,6 +59,7 @@ export type CoachQuotaState = {
 }
 
 type CoachContextValue = {
+  suggestedDraft: { text: string; request: number } | null
   open: boolean
   size: CoachSheetSize
   dock: CoachDockId
@@ -186,6 +187,7 @@ export function CoachProvider({
   const { unitLabel } = useUnit()
   const router = useRouter()
   const [open, setOpen] = useState(false)
+  const [suggestedDraft, setSuggestedDraft] = useState<{ text: string; request: number } | null>(null)
   const [size, setSize] = useState<CoachSheetSize>('compact')
   const dock = useSyncExternalStore(
     subscribeDock,
@@ -292,6 +294,7 @@ export function CoachProvider({
   const openCoach = useCallback(
     (detail: OpenCoachDetail = {}) => {
       setOpen(true)
+      if (detail.draft) setSuggestedDraft(previous => ({ text: detail.draft!.slice(0, COACH_MAX_MESSAGE_CHARS), request: (previous?.request ?? 0) + 1 }))
       // Mid-workout Ask Coach always lands compact; callers may still request page.
       setSize(
         detail.size === 'page' && !workoutSlim ? 'page' : 'compact',
@@ -1026,6 +1029,7 @@ export function CoachProvider({
 
   const value = useMemo<CoachContextValue>(
     () => ({
+      suggestedDraft,
       open,
       size,
       dock,
@@ -1061,6 +1065,7 @@ export function CoachProvider({
       servedBy,
     }),
     [
+      suggestedDraft,
       model,
       setModel,
       servedBy,

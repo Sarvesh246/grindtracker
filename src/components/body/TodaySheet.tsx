@@ -1,4 +1,5 @@
 'use client'
+import Link from 'next/link'
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import Dialog from '@/components/ui/Dialog'
 import { createClient, getClientUser } from '@/lib/supabase/client'
@@ -181,6 +182,7 @@ export default function TodaySheet({
           </button>
         </div>
 
+        <div style={{ padding: '12px 20px 0' }}><Link href="/progress/health#recovery" onClick={onClose} data-haptic="light" style={{ display: 'inline-flex', alignItems: 'center', minHeight: 44, fontSize: 14, color: 'var(--accent-text)' }}>View all health ›</Link></div>
         {/* Segmented control */}
         <div style={{ padding: '16px 20px 0' }}>
           <div

@@ -38,6 +38,7 @@ import Input from '@/components/ui/Input'
 import Button from '@/components/ui/Button'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import { DEFAULT_BODY_PREFS, type BodyPrefs } from '@/lib/body/queries'
+import HealthSettings from '@/components/health/HealthSettings'
 import { useTour, type TourStep } from '@/components/onboarding/Tour'
 import { useOnboarding } from '@/lib/contexts/OnboardingContext'
 import {
@@ -326,6 +327,7 @@ export default function SettingsView({
       return
     }
     setBodyDeleteOpen(false)
+    window.dispatchEvent(new Event('grind:health-updated'))
     toast.show('Watch health data deleted')
   }
 
@@ -578,8 +580,8 @@ export default function SettingsView({
       // Never go through demoSafeClient: a no-op "success" used to sign out
       // without touching the database.
       const live = createClient()
-      const { error } = await live.rpc('delete_my_grind_data')
-      if (error) throw error
+      const response = await fetch('/api/profile/delete-data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirmation: 'DELETE' }) })
+      if (!response.ok) throw new Error('Could not complete data deletion')
       await live.auth.signOut()
       resetAppDataCache()
       clearLastKnownStats()
@@ -1121,6 +1123,7 @@ export default function SettingsView({
 
       {/* Data */}
       <Section label="Watch">
+        <HealthSettings />
         <WatchDevices supabase={supabase} />
         {bodyPrefs && (
           <>

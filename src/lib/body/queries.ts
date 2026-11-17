@@ -81,7 +81,8 @@ export async function getBodySummary(supabase: SupabaseClient, userId: string, t
       // Load balance only means something for watch users; web-only users
       // would otherwise get a gauge they never asked for.
       load: hasWatch ? loadBalance(sessions, today) : null,
-      prefs: (prefsRes.data as BodyPrefs | null) ?? DEFAULT_BODY_PREFS,
+      // A failed consent read must never silently re-enable Coach health access.
+      prefs: prefsRes.error ? { ...DEFAULT_BODY_PREFS, coach_uses_body: false } : (prefsRes.data as BodyPrefs | null) ?? DEFAULT_BODY_PREFS,
     }
   } catch {
     return emptyBodySummary(today)

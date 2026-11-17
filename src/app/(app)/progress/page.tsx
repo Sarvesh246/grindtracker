@@ -15,6 +15,7 @@ import ProgressLoading from './loading'
 import FitterLine from '@/components/body/FitterLine'
 import LoadGauge from '@/components/body/LoadGauge'
 import { useBodySummary } from '@/components/body/useBodySummary'
+import { HealthEntry } from '@/components/health/HealthEntry'
 import { CACHE_KEYS, getUiState, setUiState } from '@/lib/cache/appDataCache'
 import { useCachedQuery } from '@/lib/cache/useCachedQuery'
 
@@ -250,6 +251,11 @@ export default function ProgressPage() {
     // day is what the top row is for.
     const saved = getUiState<ProgressSelection>(CACHE_KEYS.progressSelection)
     if (saved?.metric) setMetric(saved.metric)
+    if (getUiState<{ ready: boolean }>('progress:health-return')?.ready && saved?.selectedId && exercises.some(e => e.id === saved.selectedId)) {
+      setSelectedId(saved.selectedId)
+      setSelectedDay(exercises.find(e => e.id === saved.selectedId)?.day_type ?? null)
+      return
+    }
     const firstDay = orderedDayTypes(exercises)[0] ?? exercises[0].day_type
     const firstEx = exercises.find(e => e.day_type === firstDay) ?? exercises[0]
     setSelectedId(firstEx.id)
@@ -264,6 +270,17 @@ export default function ProgressPage() {
       metric,
     })
   }, [selectedId, selectedDay, metric])
+
+  useEffect(() => {
+    const restore = getUiState<{ scroll: number; ready: boolean }>('progress:health-return')
+    if (!restore?.ready || loadingExercises || loadingChart || (exercises.length > 0 && !selectedId)) return
+    const frame = requestAnimationFrame(() => {
+      const main = document.querySelector('.app-main')
+      if (main) main.scrollTop = restore.scroll
+      setUiState('progress:health-return', null)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [loadingExercises, loadingChart, selectedId, exercises.length])
 
   const recomputeForMetric = useCallback((logs: RawLog[], m: Metric, ul: string) => {
     interface SessionAgg {
@@ -444,6 +461,7 @@ export default function ProgressPage() {
           />
         </div>
 
+        <div style={{ padding: '8px 16px' }}><HealthEntry body={body} /></div>
         <div style={{
           display: 'flex', flexDirection: 'column', alignItems: 'center',
           textAlign: 'center', gap: '16px', padding: '48px 24px 40px',
@@ -515,6 +533,7 @@ export default function ProgressPage() {
         />
       </div>
 
+      <div style={{ padding: '0 16px 16px' }}><HealthEntry body={body} /></div>
       {/* Selector cluster — day picker, exercise picker, and metric toggle. Wrapped
           so the onboarding coach mark can spotlight the whole "what to chart" area. */}
       <div data-onboard="progress-selector">
@@ -574,7 +593,7 @@ export default function ProgressPage() {
               aria-pressed={active}
               style={{
                 position: 'relative',
-                height: '40px',
+                minHeight: '44px', height: 'auto', maxWidth: '100%',
                 padding: '0 12px',
                 borderRadius: 'var(--radius-pill, 9999px)',
                 border: active ? 'none' : '1px solid var(--border)',
@@ -584,7 +603,7 @@ export default function ProgressPage() {
                 fontFamily: 'var(--font-sans)',
                 fontWeight: active ? 700 : 500,
                 cursor: 'pointer',
-                whiteSpace: 'nowrap',
+                whiteSpace: 'normal', overflowWrap: 'anywhere', textAlign: 'left',
               }}
             >
               {ex.name}

@@ -19,6 +19,8 @@
  */
 
 export type OpenCoachDetail = {
+  /** Editable composer suggestion. Opening it never sends a turn or uses quota. */
+  draft?: string
   /** Prefill+send as a normal user turn (burns quota). */
   message?: string
   /** Default compact — mid-workout / Ask Coach entry uses compact. */
@@ -60,6 +62,7 @@ export function bindOpenCoachWindowEvent(): () => void {
     const detail =
       ce.detail && typeof ce.detail === 'object' ? ce.detail : {}
     requestOpenCoach({
+      draft: typeof detail.draft === 'string' ? detail.draft : undefined,
       message:
         typeof detail.message === 'string' ? detail.message : undefined,
       size:

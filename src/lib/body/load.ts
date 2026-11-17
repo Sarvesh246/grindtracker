@@ -34,7 +34,7 @@ export interface LoadBalance {
   acute: number
   /** Average weekly load over the last 28 days. */
   chronicWeekly: number
-  /** acute / chronicWeekly; 0.8–1.3 is the sweet spot. */
+  /** acute / chronicWeekly; descriptive comparison, not an injury predictor. */
   ratio: number
   band: LoadBand
   /** acute vs chronic as a signed percentage, e.g. +12. */
@@ -68,13 +68,8 @@ export function loadBalance(sessions: LoadSession[], today: string): LoadBalance
   const percent = Math.round((ratio - 1) * 100)
   const band: LoadBand = ratio < SWEET_SPOT[0] ? 'low' : ratio > SWEET_SPOT[1] ? 'high' : 'building'
   const more = `${Math.abs(percent)}% ${percent >= 0 ? 'more' : 'less'} than your monthly average`
-  const headline = band === 'low' ? 'Easing off' : band === 'high' ? 'Running hot' : 'Building well'
-  const sentence =
-    band === 'low'
-      ? `You're doing ${more}. Fine for a deload; stay here too long and strength stalls.`
-      : band === 'high'
-        ? `You're doing ${more}. Ramping this fast is when people get hurt or stall. Ease off for a few days.`
-        : `You're doing ${more}. That's the range where strength builds without wearing you down.`
+  const headline = band === 'low' ? 'Lighter week' : band === 'high' ? 'Higher load this week' : 'Near your recent load'
+  const sentence = `Recorded training load is ${more}. Heart-rate load and duration estimates describe cardiovascular effort, not injury risk or muscular recovery.`
   return { acute, chronicWeekly, ratio, band, percent, headline, sentence }
 }
 

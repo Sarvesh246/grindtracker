@@ -20,13 +20,52 @@ export function useBodySummary(): BodySummary | null {
   useEffect(() => {
     if (demoMode) return
     let cancelled = false
-    void (async () => {
+    let generation = 0
+    let owner: string | null = null
+    let running = false
+    let day = localDateKey()
+    async function load() {
+      if (running || cancelled) return
+      running = true
+      const request = ++generation
+      try {
       const user = await getClientUser(supabase)
-      if (!user || cancelled) return
+      if (cancelled || request !== generation) return
+      if (owner !== user?.id) { owner = user?.id ?? null; setSummary(null) }
+      if (!user) return
+      day = localDateKey()
       const s = await getBodySummary(supabase, user.id, localDateKey())
-      if (!cancelled && s.available) setSummary(s)
-    })()
-    return () => { cancelled = true }
+      if (!cancelled && request === generation && s.available) setSummary(s)
+      } finally {
+        running = false
+        if (!cancelled && request !== generation) setTimeout(() => { if (!cancelled) void load() }, 0)
+      }
+    }
+    const visible = () => { if (document.visibilityState === 'visible') void load() }
+    const auth = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user.id !== owner) {
+        ++generation
+        owner = session?.user.id ?? null
+        setSummary(null)
+        setTimeout(() => { if (!cancelled) void load() }, 0)
+      }
+    })
+    void load()
+    const timer = setInterval(() => { if (localDateKey() !== day) visible() }, 60_000)
+    window.addEventListener('focus', visible)
+    window.addEventListener('online', visible)
+    window.addEventListener('grind:health-updated', visible)
+    document.addEventListener('visibilitychange', visible)
+    return () => {
+      cancelled = true
+      ++generation
+      clearInterval(timer)
+      auth.data.subscription.unsubscribe()
+      window.removeEventListener('focus', visible)
+      window.removeEventListener('online', visible)
+      window.removeEventListener('grind:health-updated', visible)
+      document.removeEventListener('visibilitychange', visible)
+    }
   }, [supabase, demoMode])
 
   return demoMode ? null : summary

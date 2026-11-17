@@ -100,3 +100,17 @@ see Friend profiles in [SOCIAL-AND-PROFILE.md](SOCIAL-AND-PROFILE.md) and migrat
 
 Schema migrations live in `docs/sql/` (idempotent; apply in order via the
 Supabase SQL editor). See `docs/SQL.md`.
+
+Health migration 61 adds owner-only `health_collection`, `health_connections`,
+`health_ingest_batches`, `health_samples`, `sleep_sessions`,
+`health_daily_summaries`, and `health_insights`. Clients have SELECT only;
+`set_health_collection` is the caller-scoped collection control. Ingestion RPCs
+are service-role only. `sleep_sessions` retains provider/wake dates, timezone,
+revision and optional supplied intervals/totals. Detail samples use UTC
+intervals, never invented timestamps from legacy 96-slot arrays.
+
+`delete_body_data` and `delete_my_grind_data` preserve the previous implementations
+through revoked internal wrappers, delete imported health records and pause
+collection. Legacy physiology write guards prevent late uploads from restoring
+deleted history. Explicit resume increments the generation; versioned batches
+from older generations are rejected. No credentials are stored in exposed tables.

@@ -35,7 +35,8 @@ const dbUrl = (() => {
 })()
 
 function psql(url: string, sql: string): string {
-  return execFileSync('psql', [url, '-v', 'ON_ERROR_STOP=1', '-qAt', '-X'], {
+  const container = process.env.PARITY_DOCKER_CONTAINER
+  return execFileSync(container ? 'docker' : 'psql', [...(container ? ['exec', '-i', container, 'psql'] : []), url, '-v', 'ON_ERROR_STOP=1', '-qAt', '-X'], {
     input: sql,
     encoding: 'utf8',
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -108,6 +109,67 @@ const iso = (minutesAgo: number) => new Date(clock.getTime() - minutesAgo * 60_0
 const codeOf = async (res: Response) => ((await res.json()) as { error: { code: string } }).error.code
 
 describe('watch API against the real schema', { skip: !baseUrl && 'set PARITY_DATABASE_URL to run' }, () => {
+  describe('health foundation isolation and ingestion', () => {
+    const healthUser = randomUUID(), healthDevice = randomUUID(), connection = randomUUID()
+    const batchId = randomUUID()
+    let payload: Record<string, unknown>
+    before(() => {
+      db(`insert into auth.users(id,email) values('${healthUser}','health-test@test'); insert into public.watch_devices(id,user_id,name,token_hash,token_hint) values('${healthDevice}','${healthUser}','Health fixture','${randomUUID().replaceAll('-', '').repeat(2)}','test');`)
+      const at = new Date(Date.now() - 60_000).toISOString()
+      payload = { version: 1, batch_id: batchId, generation: 0, source: 'connect_iq', captured_at: at, samples: [{ provider_id: 'steps', metric: 'steps', start_at: at, end_at: at, observed_at: at, revision_at: at, value: 0, unit: 'steps', kind: 'total', quality: 'partial' }], sleeps: [] }
+    })
+    it('deduplicates replay, preserves zero and rejects conflicting batch identities', async () => {
+      const args = { p_user: healthUser, p_device: healthDevice, p_batch: payload }
+      const first = await serviceRpc('watch_ingest_health_batch', args)
+      assert.equal(first.error, null)
+      assert.equal((first.data as { duplicate: boolean }).duplicate, false)
+      const replay = await serviceRpc('watch_ingest_health_batch', args)
+      assert.equal((replay.data as { duplicate: boolean }).duplicate, true)
+      assert.equal(db(`select count(*) from health_samples where user_id='${healthUser}' and value=0`), '1')
+      const conflict = await serviceRpc('watch_ingest_health_batch', { ...args, p_batch: { ...payload, captured_at: new Date().toISOString() } })
+      assert.match(conflict.error?.message ?? '', /HEALTH_BATCH_CONFLICT/)
+    })
+    it('never allows client writes, cross-owner reads, or service connection substitution', async () => {
+      assert.equal(asUser(healthUser, `select count(*) from health_samples where user_id='${healthUser}'`), '1')
+      assert.equal(asUser(BOB, `select count(*) from health_samples where user_id='${healthUser}'`), '0')
+      assert.throws(() => asUser(healthUser, `delete from health_samples where user_id='${healthUser}'`), /permission denied/)
+      assert.throws(() => asUser(healthUser, `select health_ingest_batch('${healthUser}','${connection}','{}')`), /permission denied/)
+      const wrong = await serviceRpc('watch_ingest_health_batch', { p_user: BOB, p_device: healthDevice, p_batch: payload })
+      assert.match(wrong.error?.message ?? '', /HEALTH_DEVICE_UNAVAILABLE/)
+    })
+    it('stores cloud sleep revisions by provider identity and ignores older revisions', async () => {
+      db(`insert into health_connections(id,user_id,source,device_id) values('${connection}','${healthUser}','garmin_personal','fixture');`)
+      const end = new Date(Date.now() - 60_000), start = new Date(end.getTime() - 8 * 3600000)
+      const night = { provider_id: 'night', wake_date: end.toISOString().slice(0,10), provider_date: end.toISOString().slice(0,10), timezone: 'UTC', start_at: start.toISOString(), end_at: end.toISOString(), kind: 'main', duration_seconds: 27000, score: null, stages: null, stage_totals: null, overnight_hrv: 45, respiration: null, spo2: null, revision_at: end.toISOString(), status: 'unknown' }
+      const ingest = (record: unknown) => serviceRpc('health_ingest_batch', { p_user: healthUser, p_connection: connection, p_batch: { ...payload, source: 'garmin_personal', batch_id: randomUUID(), samples: [], sleeps: [record] } })
+      assert.equal((await ingest(night)).error, null)
+      assert.equal((await ingest({ ...night, duration_seconds: 28000, revision_at: new Date().toISOString() })).error, null)
+      assert.equal((await ingest(night)).error, null)
+      assert.equal(db(`select duration_seconds from sleep_sessions where connection_id='${connection}'`), '28000')
+      assert.equal(asUser(BOB, `select count(*) from sleep_sessions where connection_id='${connection}'`), '0')
+    })
+    it('deletion pauses ingestion and rejects stale generations after explicit resume', async () => {
+      asUser(healthUser, 'select delete_body_data();')
+      assert.equal(db(`select count(*) from health_samples where user_id='${healthUser}'`), '0')
+      assert.equal(db(`select count(*) from sleep_sessions where user_id='${healthUser}'`), '0')
+      assert.equal(asUser(healthUser, 'select enabled from health_collection'), 'f')
+      const stale = await serviceRpc('watch_ingest_health_batch', { p_user: healthUser, p_device: healthDevice, p_batch: { ...payload, batch_id: randomUUID() } })
+      assert.ok(stale.error)
+      db(`insert into daily_body(user_id,local_date,steps) values('${healthUser}',current_date,12);`)
+      assert.equal(db(`select count(*) from daily_body where user_id='${healthUser}'`), '0')
+      asUser(healthUser, 'select set_health_collection(true);')
+      const delayed = await serviceRpc('watch_ingest_health_batch', { p_user: healthUser, p_device: healthDevice, p_batch: { ...payload, batch_id: randomUUID() } })
+      assert.match(delayed.error?.message ?? '', /HEALTH_COLLECTION_CHANGED/)
+    })
+    it('requires Storage API cleanup before account deletion and leaves other owners alone', () => {
+      db(`insert into storage.objects(bucket_id,name) values('progress-photos','${healthUser}/fixture.jpg');`)
+      assert.throws(() => asUser(healthUser, 'select delete_my_grind_data();'), /STORAGE_CLEANUP_REQUIRED/)
+      db(`delete from storage.objects where name='${healthUser}/fixture.jpg';`)
+      asUser(healthUser, 'select delete_my_grind_data();')
+      assert.equal(db(`select count(*) from health_connections where user_id='${healthUser}'`), '0')
+      assert.equal(db(`select count(*) from user_profiles where id='${BOB}'`), '1')
+    })
+  })
   before(() => {
     if (psql(baseUrl!, `select 1 from pg_database where datname = '${DB_NAME}'`) !== '1') {
       psql(baseUrl!, `create database ${DB_NAME};`)
@@ -205,7 +267,9 @@ describe('watch API against the real schema', { skip: !baseUrl && 'set PARITY_DA
           values ('${BOB}', extract(dow from '${today}'::date)::int, '1970-01-01', '2999-01-01')`)
       const res = await watchToday(request(`/today?date=${today}`, bobToken), deps)
       assert.equal(res.status, 200)
-      assert.deepEqual(await res.json(), { date: today, unit: 'lbs', workout: null, reason: 'rest_day' })
+      const payload = await res.json()
+      assert.deepEqual({ date: payload.date, unit: payload.unit, workout: payload.workout, reason: payload.reason }, { date: today, unit: 'lbs', workout: null, reason: 'rest_day' })
+      assert.ok(Array.isArray(payload.days), 'available days remain in the rest-day response')
       db(`delete from user_rest_days where user_id = '${BOB}'`)
     })
   })

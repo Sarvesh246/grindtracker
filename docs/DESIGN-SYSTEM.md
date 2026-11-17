@@ -92,3 +92,13 @@ Three rules that are easy to get wrong:
 `TopNav` (desktop) and `BottomNav` (mobile) both render in `(app)/layout.tsx`;
 CSS at the 768px breakpoint shows exactly one — there is no JS width detection.
 Both share `UnitContext`, so the kg/lbs toggle stays in sync across them.
+
+## Health
+
+`src/components/health/health.css` extends the existing theme with sleep-stage
+mark tokens (`--sleep-awake`, `--sleep-rem`, `--sleep-light`, `--sleep-deep`),
+with separate light-theme values. Named lanes and interval tables communicate
+the stages independently of color. Health uses rem-based readable text,
+tabular values, 16px panels and static SVG charts. Plot gaps remain gaps;
+energy and stress use separate scales. No continuously animated charts or
+duplicate large score rings. The nested routes retain Progress navigation.

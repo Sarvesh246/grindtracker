@@ -1,0 +1,252 @@
+import type { DailyBody } from '@/lib/body/types'
+
+export const METRICS = {
+  resting_hr: {
+    label: 'Resting heart rate',
+    unit: 'bpm',
+    meaning:
+      'Your heart rate at rest. Compare readings from the same device and measurement period.'
+  },
+  overnight_hrv: {
+    label: 'Overnight heart-rate variability',
+    unit: 'ms',
+    meaning:
+      'Variation in the time between heartbeats during sleep, as supplied by the source. Compare nights from the same device and method; it is not a diagnosis.'
+  },
+  steps: {
+    label: 'Daily movement',
+    unit: 'steps',
+    meaning:
+      'Steps recorded so far on each date. Partial days are not comparable with completed daily totals.'
+  },
+  recovery_hours: {
+    label: 'Recovery time',
+    unit: 'h',
+    meaning:
+      'Garmin’s estimated recovery time remaining at the snapshot. It does not measure muscular recovery.'
+  },
+  bb_latest: {
+    label: 'Body Battery',
+    unit: '/ 100',
+    meaning: 'Garmin’s energy estimate at the latest recorded snapshot, distinct from GRIND Charge.'
+  },
+  stress_avg: {
+    label: 'Physiological stress',
+    unit: '/ 100',
+    meaning: 'Garmin’s average physiological stress estimate. It is not a measure of anxiety.'
+  },
+  active_minutes: {
+    label: 'Active minutes',
+    unit: 'min',
+    meaning: 'Activity minutes supplied by the watch for this date.'
+  },
+  floors: {
+    label: 'Floors climbed',
+    unit: 'floors',
+    meaning: 'Floors recorded by your watch for this date.'
+  },
+  spo2: {
+    label: 'Oxygen saturation',
+    unit: '%',
+    meaning:
+      'A watch snapshot estimate. This is not an overnight average or a clinical measurement.'
+  },
+  vo2max: {
+    label: 'VO₂ max estimate',
+    unit: 'ml/kg/min',
+    meaning: 'Garmin’s estimate of aerobic fitness, when supported by your device.'
+  }
+} as const
+export type HealthMetric = keyof typeof METRICS
+export type HealthHistoryDay = Partial<DailyBody> & {
+  local_date: string
+  overnight_hrv?: number | null
+}
+export function isHealthMetric(value: string): value is HealthMetric {
+  return Object.hasOwn(METRICS, value)
+}
+
+export type SleepStageName = 'awake' | 'rem' | 'light' | 'deep'
+export interface SleepStage {
+  stage: SleepStageName
+  start: string
+  end: string
+}
+export interface SleepSession {
+  provider_id: string
+  source: string
+  device_id: string
+  wake_date: string
+  provider_date: string
+  timezone: string
+  start_at: string
+  end_at: string
+  kind: 'main' | 'nap'
+  duration_seconds: number
+  score: number | null
+  stages: SleepStage[] | null
+  stage_totals: Partial<Record<SleepStageName, number>> | null
+  overnight_hrv: number | null
+  respiration: number | null
+  spo2: number | null
+  revision_at: string
+  received_at: string
+  status: 'final' | 'provisional' | 'unknown'
+}
+export type SleepReadState = 'ready' | 'not_enabled' | 'error'
+
+export function validDate(value: string | null | undefined): value is string {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const date = new Date(`${value}T12:00:00Z`)
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value
+}
+export function shiftDate(date: string, amount: number): string {
+  const d = new Date(`${date}T12:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + amount)
+  return d.toISOString().slice(0, 10)
+}
+export function duration(seconds: number): string {
+  const minutes = Math.round(seconds / 60)
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`
+}
+export function dateLabel(date: string): string {
+  return new Date(`${date}T12:00:00`).toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric'
+  })
+}
+export function clockLabel(iso: string, timezone?: string): string {
+  return new Date(iso).toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+    ...(timezone ? { timeZone: timezone } : {})
+  })
+}
+export function metricValue(
+  row: (Partial<DailyBody> & { overnight_hrv?: number | null }) | null,
+  metric: HealthMetric
+): number | null {
+  const value = row?.[metric]
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+export function mainSleep(sessions: SleepSession[], date: string): SleepSession | null {
+  // Provider revisions replace identities on ingestion; choose one main sleep,
+  // never sum overlapping nights or silently fold naps into the main duration.
+  return (
+    sessions
+      .filter((s) => s.wake_date === date && s.kind === 'main')
+      .sort((a, b) => Date.parse(b.revision_at) - Date.parse(a.revision_at))[0] ?? null
+  )
+}
+export interface Baseline {
+  median: number
+  low: number
+  high: number
+  count: number
+}
+export function baseline(
+  values: { date: string; value: number; source: string }[],
+  date: string,
+  source: string
+): Baseline | null {
+  const byDate = new Map<string, number>()
+  for (const v of values)
+    if (
+      v.date >= shiftDate(date, -28) &&
+      v.date < date &&
+      v.source === source &&
+      Number.isFinite(v.value)
+    )
+      byDate.set(v.date, v.value)
+  const sorted = [...byDate.values()].sort((a, b) => a - b)
+  if (sorted.length < 14) return null
+  const middle = (sorted.length - 1) / 2
+  return {
+    median: (sorted[Math.floor(middle)] + sorted[Math.ceil(middle)]) / 2,
+    low: sorted[Math.floor((sorted.length - 1) * 0.1)],
+    high: sorted[Math.ceil((sorted.length - 1) * 0.9)],
+    count: sorted.length
+  }
+}
+export function sleepComparison(sleep: SleepSession, sessions: SleepSession[]): string {
+  const recent = new Map<string, SleepSession>()
+  for (const s of sessions) {
+    if (
+      s.kind !== 'main' ||
+      s.source !== sleep.source ||
+      s.device_id !== sleep.device_id ||
+      s.wake_date >= sleep.wake_date ||
+      s.wake_date < shiftDate(sleep.wake_date, -28)
+    )
+      continue
+    const old = recent.get(s.wake_date)
+    if (!old || s.revision_at > old.revision_at) recent.set(s.wake_date, s)
+  }
+  if (recent.size < 14)
+    return `${recent.size} recent recorded nights; more history will make comparisons useful.`
+  const average = [...recent.values()].reduce((n, s) => n + s.duration_seconds, 0) / recent.size
+  const delta = Math.round((sleep.duration_seconds - average) / 60)
+  return delta === 0
+    ? `Matches your average across ${recent.size} recent nights.`
+    : `${Math.abs(delta)} minutes ${delta > 0 ? 'longer' : 'shorter'} than your average across ${recent.size} recent nights.`
+}
+export function dailyBrief(
+  row: DailyBody | null,
+  sleep: SleepSession | null,
+  sessions: SleepSession[]
+) {
+  if (sleep)
+    return {
+      headline: 'Your night, in perspective',
+      text: `${duration(sleep.duration_seconds)} of sleep recorded. ${sleepComparison(sleep, sessions)}`
+    }
+  if (row?.bb_latest != null)
+    return {
+      headline: 'A snapshot of your day',
+      text: `Body Battery was ${row.bb_latest} at the recorded snapshot. Sleep and more history will help build a fuller picture.`
+    }
+  if (row?.resting_hr != null)
+    return {
+      headline: 'Start with what’s measured',
+      text: `Your resting heart rate was ${row.resting_hr} bpm on this date. There isn’t enough evidence for an overall recovery verdict.`
+    }
+  return {
+    headline: 'Your picture starts here',
+    text: 'Bring sleep, recovery and daily movement together, with the source and timing behind each reading.'
+  }
+}
+
+export function sleepConsistency(sessions: SleepSession[], date: string): string {
+  const latest = mainSleep(sessions, date)
+  if (!latest) return 'No main sleep record for this date.'
+  const nights = Array.from({ length: 7 }, (_, i) =>
+    mainSleep(sessions, shiftDate(date, -i))
+  ).filter(
+    (s): s is SleepSession =>
+      !!s &&
+      s.source === latest.source &&
+      s.device_id === latest.device_id &&
+      s.timezone === latest.timezone
+  )
+  if (nights.length < 4)
+    return `${nights.length} recorded night${nights.length === 1 ? '' : 's'} in this 7-day window. More comparable nights are needed to describe timing consistency.`
+  const clock = (iso: string) => {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: latest.timezone,
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23'
+    }).formatToParts(new Date(iso))
+    return (
+      Number(parts.find((p) => p.type === 'hour')?.value) * 60 +
+      Number(parts.find((p) => p.type === 'minute')?.value)
+    )
+  }
+  const span = (field: 'start_at' | 'end_at') => {
+    const anchor = clock(latest[field])
+    const offsets = nights.map((n) => ((clock(n[field]) - anchor + 2160) % 1440) - 720)
+    return Math.max(...offsets) - Math.min(...offsets)
+  }
+  return `Across ${nights.length} recorded nights in this 7-day window, bedtimes spanned ${span('start_at')} minutes and wake times spanned ${span('end_at')} minutes. Compared in ${latest.timezone} local time.`
+}

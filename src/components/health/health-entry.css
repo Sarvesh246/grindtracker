@@ -1,0 +1,46 @@
+.health-entry * {
+  min-width: 0;
+}
+.health-entry {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 90px;
+  border-radius: 16px;
+  padding: 18px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  text-decoration: none;
+  box-shadow: var(--card-shadow);
+  font-family: var(--font-sans);
+}
+.health-entry-icon {
+  width: 42px;
+  height: 42px;
+  background: var(--accent-wash);
+  color: var(--accent-text);
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.health-entry > span:nth-child(2) {
+  flex: 1;
+}
+.health-entry strong {
+  display: block;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+.health-entry > span > span {
+  display: block;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.health-arrow {
+  font-size: 1.5rem;
+  color: var(--text-muted);
+}

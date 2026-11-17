@@ -250,6 +250,7 @@ function rubberY(y: number, canExpand: boolean, expandLimit: number): number {
 
 export default function CoachSheet() {
   const {
+    suggestedDraft,
     open,
     size,
     dock,
@@ -301,6 +302,11 @@ export default function CoachSheet() {
   const stickBottom = useRef(true)
   const sendingRef = useRef(false)
   const [draft, setDraft] = useState('')
+  useEffect(() => {
+    // A caller's editable suggestion is an external composer event, never a send.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (suggestedDraft) setDraft(suggestedDraft.text)
+  }, [suggestedDraft])
   /** Composer focus — used to re-stick the list when the keyboard animates in. */
   const [composerFocused, setComposerFocused] = useState(false)
 

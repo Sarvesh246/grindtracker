@@ -1,4 +1,5 @@
 'use client'
+import Link from 'next/link'
 import { SWEET_SPOT, type LoadBalance } from '@/lib/body'
 
 /**
@@ -50,7 +51,7 @@ export default function LoadGauge({ load }: { load: LoadBalance }) {
 
         <div
           role="img"
-          aria-label={`${load.headline}. This week is ${Math.abs(load.percent)}% ${load.percent >= 0 ? 'above' : 'below'} your monthly average; the sweet spot is 80 to 130%.`}
+          aria-label={`${load.headline}. This week is ${Math.abs(load.percent)}% ${load.percent >= 0 ? 'above' : 'below'} your monthly average; the comparison band is 80 to 130%, not a safety threshold.`}
         >
           <div style={{ position: 'relative', height: '18px' }}>
             <div style={{
@@ -78,13 +79,14 @@ export default function LoadGauge({ load }: { load: LoadBalance }) {
               position: 'absolute', left: `${(pos(a) + pos(b)) / 2}%`, transform: 'translateX(-50%)',
               fontSize: '10px', letterSpacing: '1px', textTransform: 'uppercase', color: 'var(--accent-text)', whiteSpace: 'nowrap',
             }}>
-              Sweet spot
+              Recent range
             </span>
             <span style={{ position: 'absolute', right: 0, fontSize: '10px', letterSpacing: '1px', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
-              Hot
+              Higher
             </span>
           </div>
         </div>
+        <Link href="/progress/health#trends" data-haptic="light" style={{ minHeight: 44, display: 'inline-flex', alignItems: 'center', color: 'var(--accent-text)', fontSize: 13 }}>Explore health trends ›</Link>
       </div>
     </div>
   )
