@@ -26,6 +26,24 @@ export const watchSetSchema = z.strictObject({
   completed_at: isoUtc,
   rest_seconds: z.int().min(0).max(3600).nullish(),
   is_warmup: z.boolean().optional(),
+  // GRIND Body (migration 59). Heart rate the watch saw for this set: its peak,
+  // the reading when it was logged, and how far it fell 60 s into the rest.
+  hr_peak: z.int().min(20).max(250).nullish(),
+  hr_end: z.int().min(20).max(250).nullish(),
+  hr_rest_drop_60: z.int().min(-100).max(200).nullish(),
+})
+
+/** 2 hours at one sample per 5 s is 1,440; this allows a 12-hour session. */
+export const MAX_HR_TRACE = 8640
+
+export const watchHrSchema = z.strictObject({
+  /** One reading every `step` seconds from started_at; 0 = no reading. */
+  trace: z.array(z.int().min(0).max(250)).max(MAX_HR_TRACE).optional(),
+  step: z.int().min(1).max(60).optional(),
+  /** Zone floors z1..z5 and max, from the user's watch profile. */
+  zones: z.array(z.int().min(20).max(250)).min(5).max(6).optional(),
+  zone_seconds: z.array(z.int().min(0).max(86_400)).length(5).optional(),
+  training_effect: z.number().min(0).max(5).optional(),
 })
 
 export const watchSessionSchema = z
@@ -43,7 +61,8 @@ export const watchSessionSchema = z
       })
       .nullish(),
     calories: z.int().min(0).max(20000).nullish(),
-    sets: z.array(watchSetSchema).max(MAX_SETS_PER_REQUEST).default([]),
+    hr: watchHrSchema.nullish(),
+    sets:z.array(watchSetSchema).max(MAX_SETS_PER_REQUEST).default([]),
   })
   .superRefine((s, ctx) => {
     const ids = new Set<string>()
@@ -93,6 +112,27 @@ export const todayQuerySchema = z.strictObject({
   /** A day id from `days`, to get that day's exercises instead of the up-next one. */
   day: z.string().min(1).max(64).optional(),
 })
+
+const bucketSeries = z.array(z.int().min(0).max(100).nullable()).length(96)
+
+/** POST /daily: the watch's snapshot of the day so far. Series are 96 buckets
+ *  of 15 minutes from local midnight, null where the watch had no reading. */
+export const watchDailySchema = z.strictObject({
+  date: z.iso.date({ message: 'must be YYYY-MM-DD' }),
+  body_battery: bucketSeries.optional(),
+  stress: bucketSeries.optional(),
+  /** The current Body Battery, when it is newer than the last bucket. */
+  body_battery_now: z.int().min(0).max(100).nullish(),
+  resting_hr: z.int().min(20).max(150).nullish(),
+  recovery_hours: z.int().min(0).max(200).nullish(),
+  steps: z.int().min(0).max(200_000).nullish(),
+  active_minutes: z.int().min(0).max(1440).nullish(),
+  floors: z.int().min(0).max(2000).nullish(),
+  spo2: z.int().min(50).max(100).nullish(),
+  vo2max: z.int().min(10).max(100).nullish(),
+})
+
+export type WatchDailyInput = z.infer<typeof watchDailySchema>
 
 /** Zod issues as `{ path, message }`, path dotted (`sets.2.reps`). */
 export function formatIssues(error: z.ZodError): { path: string; message: string }[] {

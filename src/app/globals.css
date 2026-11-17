@@ -94,6 +94,16 @@
   --medal-2: #c0c0c0;
   --medal-3: #cd7f32;
 
+  /* GRIND Body heart-rate zones (HeartbeatRibbon beads, zone legend). Grey
+     for easy work, lime as it gets hard; coral is reserved for zone 5 and is
+     used nowhere else in the app. Zone 4 is the lime FILL, so these are marks,
+     never text colours. */
+  --zone-1: #3f3f3f;
+  --zone-2: #6e6e6e;
+  --zone-3: #7d9620;
+  --zone-4: #c8f135;
+  --zone-5: #ff7a45;
+
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 16px;
@@ -160,6 +170,13 @@ html.light {
   --medal-1: #a16207;
   --medal-2: #57534e;
   --medal-3: #9a3412;
+  /* Zones on paper: greys a step darker, lime follows the softened fill,
+     coral deepened so it still reads against the warm surface. */
+  --zone-1: #c9c3b6;
+  --zone-2: #9a9486;
+  --zone-3: #c6d67c;
+  --zone-4: #a8c428;
+  --zone-5: #e5612b;
 }
 
 *,
@@ -6917,3 +6934,36 @@ html.reduce-motion .landing-how-wo__finish {
 @media (max-width: 767px) {
   .page--progress, .page--profile, .page--narrow { padding-bottom: 88px !important; }
 }
+
+/* ---------------------------------------------------------------------------
+   GRIND Body (src/components/body). The "now" dot on the Today sheet's tide
+   breathes slowly; the keyframe ends where it starts, so the reduce-motion
+   rules above (1 iteration at 0.01ms) leave it still and fully visible.
+   --------------------------------------------------------------------------- */
+@keyframes body-breathe {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.55; transform: scale(1.35); }
+}
+.body-breathe {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: body-breathe 4.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .body-breathe { animation: none !important; }
+}
+html.reduce-motion .body-breathe { animation: none !important; }
+
+/* Ring arcs fill to their score once on mount. */
+@keyframes body-ring-fill {
+  from { stroke-dashoffset: var(--ring-len); }
+}
+.body-ring-arc { animation: body-ring-fill 700ms cubic-bezier(0.32, 0.72, 0, 1) backwards; }
+
+/* Today sheet: two panes (today / last 7 days) side by side; the track slides. */
+.body-panes {
+  display: flex;
+  transition: transform 300ms cubic-bezier(0.32, 0.72, 0, 1);
+  touch-action: pan-y;
+}
+.body-panes > * { flex: 0 0 100%; min-width: 0; }

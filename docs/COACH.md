@@ -136,6 +136,17 @@ existing RPCs (`grind_badge_metrics`, `grind_home_history`,
 - Last ~14 completed sessions: newest 3 keep full set rows (incl. notes);
   older ones are per-exercise rollups (top weight, volume, avg RPE, PR flag)
 - Recent PR sets
+- **`body`** (watch users only, `src/lib/coach/bodyContext.ts`): today's Charge
+  with its inputs, 7 days of Charge + resting HR, the resting-HR baseline and
+  `days_in_a_row_5plus_over`, load balance, the last 3 watch sessions (avg/max
+  HR, minutes in Z3+, hardest set) and up to 3 per-lift cardio-cost lines
+  (`fitterLine` over 120 days). About 400 tokens. Left out **entirely** when the
+  user has no watch data, turned "Coach uses body data" off
+  (`body_prefs.coach_uses_body`, default on), or migration 59 isn't applied —
+  every body read fails soft and never fails the turn. The `<body_data>` prompt
+  rules (`COACH_BODY_PROMPT`) are added only when the block is present: decision
+  first, at most three numbers, hedged, never diagnose, a professional only when
+  resting HR has run 5+ bpm over baseline for 3+ days.
 
 Weights stay **canonical lbs** in the pack; the system prompt tells the model
 to convert when `unit_preference` is `kg`.
@@ -182,6 +193,7 @@ relying on this.
 | Workout order | `propose_update_rotation` | `user_rotation` upsert (preserves `current_index`) |
 | Edit one logged set | `propose_edit_session_log` | `upsert_past_session` full-replace with reconstructed logs |
 | Notification prefs | `propose_update_notification_prefs` | `notification_prefs` upsert (same validation as `/api/push/prefs`) |
+| Lighter today | `propose_adjust_today` | `drop_last_set`: skip markers (`is_skipped`) for the last set of each lift on today's open session, starting the day first if none is open; `ignoreDuplicates`, so a set logged meanwhile is kept. `scale_weights`: **guidance only** — the card lists the lighter weights and Confirm writes nothing (ActiveWorkout has no today-only prefill override yet). Never writes `exercises`. Needs `adjust_today` added to the `coach_action_proposals` kind check (not migrated yet). |
 | Whole training week | `propose_apply_weekly_plan` | Upserts each day's exercises (sets/reps/`rest_seconds`), manual rotation in Mon→Sun order with the pointer on the next planned weekday, weekly rest weekdays, and hides every other enabled day (`active=false`, never deleted). `keepDays` leaves named days alone. |
 
 Not in scope: friend management, account/data deletion, theme/motion/unit toggles, username/display-name.
@@ -258,7 +270,12 @@ The Coach (Gemini via the AI SDK) is tuned against a measured golden set, not by
 feel. **Before changing the prompt, router, tools or model settings, run
 `npm run coach:eval`** (needs `GEMINI_API_KEY` in `.env.local`; 45 cases × 3
 runs, synthetic account, stubbed tools, deterministic scoring) and compare per
-group (A short chat · B long · C compound actions · D messy agentic).
+group (A short chat · B long · C compound actions · D messy agentic · E watch
+body data: low/high Charge, no watch, rising resting HR, the lighter-today chip).
+- **Starter chips** (`starterChips.ts`): Charge under 50 leads with "Lighter
+  version of today?", over 80 with "Go for a PR today?"; otherwise unchanged.
+  `loadCoachChipHints(…, { localDate })` returns `chargeScore` only when given
+  the user's local day.
 - **One planner.** `planCoachTurn` (`turn.ts`) decides intent, token ceiling,
   thinking level, whether tools are offered and which prompt sections apply; the
   chat route and the eval both call it, so they cannot drift.

@@ -1,3 +1,4 @@
+using Toybox.Attention;
 using Toybox.Graphics;
 using Toybox.System;
 using Toybox.Timer;
@@ -83,17 +84,28 @@ class SetView extends TickView {
         dc.drawText(dc.getWidth() * 0.91, cy, Graphics.FONT_MEDIUM, "+", Draw.C);
 
         Draw.line(dc, 0.715, [Graphics.FONT_SMALL], "Set " + c["sn"] + "/" + e["sets"], Config.FG);
-        Draw.line(dc, 0.808, [Graphics.FONT_XTINY], target(e, unit), Config.DIM);
+        // The rep target is never cut off: shorter forms drop the weight and
+        // the "Goal" label, never the numbers.
+        Draw.fit(dc, 0.808, [Graphics.FONT_TINY, Graphics.FONT_XTINY], targets(e, unit, c["w"]), Config.DIM);
         Draw.hint(dc, c["f"] == 0 ? "START: reps" : "START: log");
         Draw.ring(dc, Workout.progress(), Config.ACCENT);
         Draw.debug(dc);
     }
 
-    function target(e, unit) {
-        var reps = e["reps"] == null ? "AMRAP" : e["reps"].toString();
-        if (e["reps"] != null && e["reps_max"] != null) { reps += "-" + e["reps_max"]; }
-        if (e["weight"] == null) { return "Target " + reps + " reps"; }
-        return "Target " + Logic.fmtWeight(e["weight"]) + " " + unit + " x " + reps;
+    // Longest first. The weight only shows when it differs from what's
+    // already on screen.
+    function targets(e, unit, w) {
+        var reps = Logic.repsText(e);
+        var bare = e["reps_max"] != null ? e["reps"] + "-" + e["reps_max"] : (e["reps"] == null ? "AMRAP" : e["reps"].toString());
+        var out = [];
+        if (e["weight"] != null && e["weight"].toFloat() != w.toFloat()) {
+            out.add("Goal " + Logic.fmtWeight(e["weight"]) + " " + unit + " x " + reps);
+            out.add("Goal " + Logic.fmtWeight(e["weight"]) + " x " + bare);
+        }
+        out.add("Goal " + reps);
+        out.add(reps);
+        out.add(bare);
+        return out;
     }
 }
 
@@ -164,6 +176,13 @@ class RestView extends TickView {
             return;
         }
         TickView.onSecond();
+        // Smart rest (Settings -> Watch in GRIND): a short double buzz the
+        // moment HR has come back down. The timer keeps running; START goes.
+        if (Workout.cur != null && Workout.inRest() && Store.smartRest() && Hr.justRecovered(Workout.restElapsed())) {
+            if (Attention has :vibrate) {
+                Attention.vibrate([new Attention.VibeProfile(60, 150), new Attention.VibeProfile(0, 120), new Attention.VibeProfile(60, 150)]);
+            }
+        }
     }
 
     function onUpdate(dc) {
@@ -174,10 +193,16 @@ class RestView extends TickView {
         if (left < 0) { left = 0; }
         Draw.clear(dc);
         Draw.status(dc, hr);
-        Draw.line(dc, 0.30, [Graphics.FONT_TINY], "REST", Config.DIM);
+        var rec = Store.smartRest() && Hr.recoveredNow(Workout.restElapsed());
+        Draw.line(dc, 0.30, [Graphics.FONT_TINY], rec ? "RECOVERED" : "REST", rec ? Config.ACCENT : Config.DIM);
         Draw.line(dc, 0.52, [Graphics.FONT_NUMBER_HOT, Graphics.FONT_NUMBER_MEDIUM], Logic.fmtDuration(left), Config.FG);
         Draw.line(dc, 0.725, [Graphics.FONT_TINY, Graphics.FONT_XTINY], "Next: " + e["name"], Config.FG);
-        Draw.line(dc, 0.81, [Graphics.FONT_XTINY], "set " + c["sn"] + "/" + e["sets"], Config.DIM);
+        var setTxt = "set " + c["sn"] + "/" + e["sets"];
+        if (hr != null && Hr.lastPeak != null && Hr.lastPeak > hr) {
+            Draw.fit(dc, 0.81, [Graphics.FONT_XTINY], [setTxt + "  HR down " + (Hr.lastPeak - hr), setTxt], Config.DIM);
+        } else {
+            Draw.line(dc, 0.81, [Graphics.FONT_XTINY], setTxt, Config.DIM);
+        }
         Draw.hint(dc, "START: skip");
         Draw.ring(dc, Workout.restFrac(), Config.ACCENT);
         Draw.debug(dc);

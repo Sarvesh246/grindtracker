@@ -1,6 +1,7 @@
 using Toybox.Application;
 using Toybox.Attention;
 using Toybox.System;
+using Toybox.Time;
 using Toybox.Timer;
 using Toybox.WatchUi;
 
@@ -20,7 +21,7 @@ class GrindApp extends Application.AppBase {
             Store.cacheToday({ "date" => Logic.localDate(), "unit" => Config.UNIT, "workout" => { "id" => "demo", "name" => "Push Day", "exercises" => [
                 { "id" => "d1", "name" => "Incline Dumbbell Bench Press", "sets" => 2, "reps" => 8, "reps_max" => 12, "weight" => 62.5, "rest" => 20 },
                 { "id" => "d2", "name" => "Overhead Press", "sets" => 1, "reps" => 6, "reps_max" => null, "weight" => 135, "rest" => null }
-            ] } });
+            ] }, "body" => { "charge" => { "score" => 72, "band" => "steady", "label" => "Steady", "advice" => "Train as planned" }, "smart_rest" => true } });
         }
         System.println("GRIND start, active=" + Workout.active() + " queue=" + Store.queue().size());
         Probe.log("open");
@@ -28,16 +29,19 @@ class GrindApp extends Application.AppBase {
         gNet.refresh();
         gNet.flush();
         timer = new Timer.Timer();
-        timer.start(method(:onTick), Config.SYNC_TICK_MS, true);
+        timer.start(method(:onTick), Config.TICK_MS, true);
         if (Config.DEMO_DATA) {
             tour = new Timer.Timer();
             tour.start(method(:onTour), Config.TOUR_STEP_MS, true);
         }
     }
 
+    // Every 5 s: heart rate while a workout is open. Every 30 s: sync.
     function onTick() {
         ticks += 1;
-        if (ticks % 30 == 0) { Probe.log("tick"); } // every 15 min while open
+        if (Workout.active() && !Workout.atSummary()) { Hr.sample(Time.now().value()); }
+        if (ticks % Config.SYNC_EVERY_TICKS != 0) { return; }
+        if (ticks % 180 == 0) { Probe.log("tick"); } // every 15 min while open
         gNet.tick();
         WatchUi.requestUpdate();
     }
@@ -51,6 +55,7 @@ class GrindApp extends Application.AppBase {
         if (timer != null) { timer.stop(); }
         // If the system closes us mid-workout, keep the activity recorded so
         // far. The sets are already in storage and resume on next launch.
+        Hr.save();
         Recorder.stop(true);
     }
 

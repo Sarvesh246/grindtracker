@@ -42,10 +42,32 @@ module Pick {
         return true;
     }
 
-    function begin(plan) {
+    function reset() {
         id = null;
         want = false;
+    }
+
+    // On a low-Charge day, one prompt before the first set offers one set
+    // fewer per exercise. One press either way, and only once a day.
+    function begin(plan) {
+        reset();
+        var c = Store.charge();
+        var today = Logic.localDate();
+        var asked = Store.get("lp");
+        if (c != null && "easy".equals(c["b"]) && !today.equals(asked)) {
+            Store.put("lp", today);
+            var m = new WatchUi.Menu2({ :title => "Charge " + c["s"] + " Easy" });
+            m.addItem(new WatchUi.MenuItem("Lighter today", "1 set less per lift", :lighter, null));
+            m.addItem(new WatchUi.MenuItem("As planned", null, :planned, null));
+            WatchUi.pushView(m, new LighterDelegate(plan), WatchUi.SLIDE_UP);
+            return;
+        }
+        go(plan, false);
+    }
+
+    function go(plan, lighter) {
         Workout.start(plan);
+        if (lighter) { Workout.trimSets(); }
         Nav.buzz(80);
         Nav.show();
     }
@@ -70,6 +92,7 @@ class HomeView extends WatchUi.View {
         Draw.line(dc, 0.15, [Graphics.FONT_XTINY], Draw.clock(), Config.DIM);
         var title = [Graphics.FONT_LARGE, Graphics.FONT_MEDIUM, Graphics.FONT_SMALL];
         var small = [Graphics.FONT_XTINY];
+        var charge = Store.charge();
 
         if (Workout.active()) {
             Draw.line(dc, 0.31, small, "UNFINISHED WORKOUT", Config.DIM);
@@ -97,20 +120,34 @@ class HomeView extends WatchUi.View {
                     pos = "  " + (Pick.indexOf(days, did) + 1) + "/" + days.size();
                 }
                 Draw.line(dc, 0.31, small, (isDefault ? "TODAY" : "CHOSEN") + pos, Config.DIM);
-                Draw.line(dc, 0.50, title, Pick.nameOf(did), Config.FG);
+                Draw.line(dc, 0.47, title, Pick.nameOf(did), Config.FG);
                 var sub;
                 if (plan != null) { sub = plan["ex"].size() + " exercises"; }
                 else if (Pick.want || gNet.busy) { sub = "loading..."; }
                 else if (!gNet.connected()) { sub = "Connect phone to load"; }
                 else { sub = "START to load"; }
-                Draw.line(dc, 0.65, [Graphics.FONT_TINY, Graphics.FONT_XTINY], sub, Config.DIM);
+                if (charge != null && plan != null) {
+                    // Charge replaces the exercise count: it's the line that
+                    // changes what you do today.
+                    Draw.line(dc, 0.615, [Graphics.FONT_TINY, Graphics.FONT_XTINY],
+                        "Charge " + charge["s"] + " · " + charge["l"], chargeColor(charge));
+                    Draw.line(dc, 0.705, [Graphics.FONT_XTINY], charge["a"], Config.DIM);
+                } else {
+                    Draw.line(dc, 0.63, [Graphics.FONT_TINY, Graphics.FONT_XTINY], sub, Config.DIM);
+                }
                 Draw.hint(dc, "START");
             }
             if (days != null && (days.size() > 1 || did == null)) { Draw.scrollArrows(dc); }
         }
-        Draw.line(dc, 0.78, small, gNet.homeStatus(), gNet.statusColor());
-        Draw.ring(dc, 0.0, Config.ACCENT);
+        Draw.line(dc, 0.795, small, gNet.homeStatus(), gNet.statusColor());
+        // The bezel shows Charge when GRIND has today's score.
+        Draw.ring(dc, charge == null || Workout.active() ? 0.0 : charge["s"].toFloat() / 100, chargeColor(charge));
         Draw.debug(dc);
+    }
+
+    function chargeColor(c) {
+        if (c == null) { return Config.ACCENT; }
+        return "easy".equals(c["b"]) ? Config.DIM : Config.ACCENT;
     }
 }
 
@@ -182,6 +219,25 @@ class HomeDelegate extends WatchUi.BehaviorDelegate {
         m.addItem(new WatchUi.MenuItem("Clear failed (" + dead + ")", "Deletes unsynced workouts", :clear, null));
         WatchUi.pushView(m, new HomeMenuDelegate(), WatchUi.SLIDE_UP);
         return true;
+    }
+}
+
+class LighterDelegate extends WatchUi.Menu2InputDelegate {
+    var plan;
+
+    function initialize(p) {
+        Menu2InputDelegate.initialize();
+        plan = p;
+    }
+
+    function onSelect(item) {
+        WatchUi.popView(WatchUi.SLIDE_IMMEDIATE);
+        Pick.go(plan, item.getId() == :lighter);
+    }
+
+    // BACK means "never mind": stay on Home, nothing started.
+    function onBack() {
+        WatchUi.popView(WatchUi.SLIDE_IMMEDIATE);
     }
 }
 

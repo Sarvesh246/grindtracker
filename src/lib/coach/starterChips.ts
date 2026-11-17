@@ -4,6 +4,21 @@ export type CoachChipHints = {
   hasActiveSession: boolean
   nextDay: string | null
   lastPrExercise: string | null
+  /** Today's Charge (0–100) for watch users with Coach body data on, else null. */
+  chargeScore?: number | null
+}
+
+/** Charge below this offers a lighter day; above CHARGE_PR_ABOVE offers a PR. */
+export const CHARGE_LIGHTER_BELOW = 50
+export const CHARGE_PR_ABOVE = 80
+export const LIGHTER_TODAY_CHIP = 'Lighter version of today?'
+export const PR_TODAY_CHIP = 'Go for a PR today?'
+
+function chargeChip(score: number | null | undefined): string | null {
+  if (score == null || !Number.isFinite(score)) return null
+  if (score < CHARGE_LIGHTER_BELOW) return LIGHTER_TODAY_CHIP
+  if (score > CHARGE_PR_ABOVE) return PR_TODAY_CHIP
+  return null
 }
 
 const WORKOUT_CHIPS = [
@@ -36,6 +51,9 @@ export function coachStarterChips(
   }
 
   const out: string[] = []
+  // Watch readiness leads only at the extremes; a middling Charge changes nothing.
+  const charge = chargeChip(opts.chargeScore)
+  if (charge) out.push(charge)
   const next = opts.nextDay?.trim()
   if (next) {
     out.push(`Ready for ${formatDayType(next)}?`)

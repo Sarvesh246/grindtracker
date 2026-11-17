@@ -11,9 +11,13 @@ using Toybox.Cryptography;
 //   meta: { id, wid, nm, st, en, off, u, ha, hm, cal }
 //         session id, workout id, name, start/end epoch secs, utc offset,
 //         unit, avg/max heart rate, calories
-//   set:  { id, e, n, r, w, t, rs, y }
+//         te: training effect at Save
+//   set:  { id, e, n, r, w, t, rs, y, hp, he, hd }
 //         set id, exercise id, set number, reps, weight, completed epoch,
-//         rest taken before it, sync state (0 pending, 1 synced, 2 rejected)
+//         rest taken before it, sync state (0 pending, 1 synced, 2 rejected),
+//         peak HR, HR when logged, HR drop 60 s into the following rest
+//   h_<sid>: { tr, zs, hz } heart-rate trace (one reading per HR_STEP s,
+//         0 = none), seconds per zone, the zone floors used
 module Logic {
     const R_OK = 0;
     const R_RETRY = 1;
@@ -118,7 +122,8 @@ module Logic {
     // POST /sessions body: session fields plus up to `max` unsynced sets.
     // Optional fields are left out rather than sent as null (the server
     // rejects unknown shapes).
-    function buildPayload(meta, sets, max) {
+    // `body` is the stored heart-rate record { tr, zs, hz } or null.
+    function buildPayload(meta, sets, max, body) {
         var out = [];
         for (var i = 0; i < sets.size() && out.size() < max; i++) {
             var s = sets[i];
@@ -133,6 +138,9 @@ module Logic {
                 "completed_at" => isoUtc(s["t"])
             };
             if (s["rs"] != null) { d["rest_seconds"] = s["rs"]; }
+            if (validHr(s["hp"])) { d["hr_peak"] = s["hp"]; }
+            if (validHr(s["he"])) { d["hr_end"] = s["he"]; }
+            if (s["hd"] != null && s["hd"] >= -100 && s["hd"] <= 200) { d["hr_rest_drop_60"] = s["hd"]; }
             out.add(d);
         }
         var p = {
@@ -148,6 +156,19 @@ module Logic {
         if (validHr(meta["hm"])) { hr["max"] = meta["hm"]; }
         if (hr.size() > 0) { p["heart_rate"] = hr; }
         if (meta["cal"] != null && meta["cal"] >= 0 && meta["cal"] <= 20000) { p["calories"] = meta["cal"]; }
+        // The trace goes with every request of a finished workout; the server
+        // overwrites it, so a retried or split upload stays correct.
+        if (meta["en"] != null && body != null) {
+            var b = {};
+            var tr = body["tr"];
+            if (tr instanceof Lang.Array && tr.size() > 1) { b["trace"] = tr; b["step"] = Config.HR_STEP; }
+            var hz = body["hz"];
+            if (hz instanceof Lang.Array && hz.size() >= 5 && hz.size() <= 6 && validHr(hz[0])) { b["zones"] = hz; }
+            var zs = body["zs"];
+            if (zs instanceof Lang.Array && zs.size() == 5) { b["zone_seconds"] = zs; }
+            if (meta["te"] != null && meta["te"] >= 0 && meta["te"] <= 5) { b["training_effect"] = meta["te"].toFloat(); }
+            if (b.size() > 0) { p["hr"] = b; }
+        }
         return p;
     }
 
@@ -221,5 +242,129 @@ module Logic {
         if (v < lo) { return lo; }
         if (v > hi) { return hi; }
         return v;
+    }
+
+    // --- exercise order ---------------------------------------------------
+
+    // Sets logged per exercise, in plan order.
+    function doneCounts(ex, sets) {
+        var dn = new [ex.size()];
+        for (var i = 0; i < ex.size(); i++) {
+            dn[i] = 0;
+            for (var j = 0; j < sets.size(); j++) {
+                if (sets[j]["e"].equals(ex[i]["id"])) { dn[i] += 1; }
+            }
+        }
+        return dn;
+    }
+
+    // The most recent logged set of an exercise, or null.
+    function lastSetFor(sets, exId) {
+        if (sets == null) { return null; }
+        for (var i = sets.size() - 1; i >= 0; i--) {
+            if (sets[i]["e"].equals(exId)) { return sets[i]; }
+        }
+        return null;
+    }
+
+    // Reps to prefill: the top of a range, else the target, else 8.
+    function targetReps(e) {
+        if (e["reps_max"] != null) { return e["reps_max"]; }
+        if (e["reps"] != null) { return e["reps"]; }
+        return 8;
+    }
+
+    // "10-12 reps", "8 reps", "AMRAP": the whole target, never shortened.
+    function repsText(e) {
+        if (e["reps"] == null) { return "AMRAP"; }
+        if (e["reps_max"] != null) { return e["reps"] + "-" + e["reps_max"] + " reps"; }
+        return e["reps"] + " reps";
+    }
+
+    // Sets the workout will have: everything planned, minus what is left on
+    // skipped exercises.
+    function plannedSets(ex, dn, sk) {
+        var t = 0;
+        for (var i = 0; i < ex.size(); i++) {
+            t += sk[i] == 1 ? dn[i] : ex[i]["sets"];
+        }
+        return t;
+    }
+
+    // Next exercise after `from` (wrapping) that is neither finished nor
+    // skipped, or -1.
+    function nextPending(from, dn, sk, ex) {
+        var n = ex.size();
+        for (var k = 1; k <= n; k++) {
+            var i = (from + k) % n;
+            if (sk[i] != 1 && dn[i] < ex[i]["sets"]) { return i; }
+        }
+        return -1;
+    }
+
+    // Lighter day: one set fewer wherever there is more than one.
+    function trimPlanSets(ex) {
+        for (var i = 0; i < ex.size(); i++) {
+            if (ex[i]["sets"] > 1) { ex[i]["sets"] -= 1; }
+        }
+        return ex;
+    }
+
+    // --- heart rate -------------------------------------------------------
+
+    // Zone 1-5 for `hr` given floors [z1, z2, z3, z4, z5, max]; 0 below zone 1.
+    function zoneOf(hr, zones) {
+        if (hr == null || zones == null || zones.size() < 5) { return 0; }
+        var z = 0;
+        for (var i = 0; i < 5; i++) {
+            if (hr >= zones[i]) { z = i + 1; }
+        }
+        return z;
+    }
+
+    // Writes `hr` at sample `idx`, padding any gap with 0. Indexes past
+    // MAX_TRACE are dropped (a session left running for half a day).
+    function traceSet(trace, idx, hr) {
+        if (idx < 0 || idx >= Config.MAX_TRACE) { return trace; }
+        while (trace.size() <= idx) { trace.add(0); }
+        trace[idx] = hr;
+        return trace;
+    }
+
+    // Highest reading in trace[from..to], or null.
+    function peakIn(trace, from, to) {
+        var p = null;
+        if (from < 0) { from = 0; }
+        for (var i = from; i <= to && i < trace.size(); i++) {
+            var v = trace[i];
+            if (v != null && v > 0 && (p == null || v > p)) { p = v; }
+        }
+        return p;
+    }
+
+    // Smart rest: recovered once HR has fallen SMART_REST_DROP below the
+    // set's peak (or under the bottom of zone 2), after at least 30 s.
+    function recovered(peak, hr, elapsed, zones) {
+        if (peak == null || hr == null || elapsed < 30) { return false; }
+        if (hr <= peak - Config.SMART_REST_DROP) { return true; }
+        return zones != null && zones.size() >= 2 && hr < zones[1];
+    }
+
+    // --- daily snapshot ---------------------------------------------------
+
+    // [[epochSecs, value], ...] -> 96 buckets of 15 minutes from `midnight`,
+    // each the newest value that fell in it, null where none did.
+    function buckets(samples, midnight) {
+        var out = new [96];
+        var at = new [96];
+        for (var i = 0; i < samples.size(); i++) {
+            var t = samples[i][0];
+            var v = samples[i][1];
+            if (v == null) { continue; }
+            var b = (t - midnight) / 900;
+            if (b < 0 || b > 95) { continue; }
+            if (at[b] == null || t > at[b]) { at[b] = t; out[b] = v.toNumber(); }
+        }
+        return out;
     }
 }

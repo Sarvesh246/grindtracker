@@ -85,7 +85,7 @@ class Net {
             authError = true;
         }
         WatchUi.requestUpdate();
-        flush();
+        if (Store.queue().size() > 0) { flush(); } else if (!Workout.active()) { daily(); }
     }
 
     // --- a day the user chose on Home ----------------------------------
@@ -124,7 +124,29 @@ class Net {
             flush();
         } else if (Store.today() == null && now() >= todayAt) {
             refresh();
+        } else if (!Workout.active()) {
+            daily();
         }
+    }
+
+    // --- POST /daily ------------------------------------------------------
+
+    // The day's body snapshot, at most every DAILY_EVERY seconds. Never
+    // mid-workout: reading a day of sensor history is slow. Fire and forget:
+    // a failure just waits for the next one.
+    function daily() {
+        if (busy || authError || !connected()) { return; }
+        var last = Store.get("dl");
+        if (last != null && now() - last < Config.DAILY_EVERY) { return; }
+        Store.put("dl", now());
+        request("/daily", Body.snapshot(), true, method(:onDaily));
+    }
+
+    function onDaily(code, data) {
+        System.println("daily -> " + code + " " + errCode(data));
+        busy = false;
+        if (code == 401) { authError = true; }
+        flush();
     }
 
     // Right after Save: don't wait out a backoff from an earlier failure.
@@ -149,7 +171,7 @@ class Net {
         }
         upSid = sid;
         upSets = sets;
-        request("/sessions", Logic.buildPayload(meta, sets, Config.SYNC_BATCH), true, method(:onUpload));
+        request("/sessions", Logic.buildPayload(meta, sets, Config.SYNC_BATCH, Store.get("h_" + sid)), true, method(:onUpload));
     }
 
     function onUpload(code, data) {
@@ -176,6 +198,13 @@ class Net {
             } else if (Logic.pendingCount(sets) == 0) {
                 Store.dropSession(sid);
                 Store.dequeue(sid);
+                // The finished workout moved GRIND's "up next": fetch it, so
+                // Home stops offering the day that was just done.
+                if (Store.queue().size() == 0) {
+                    Pick.reset();
+                    refresh();
+                    return;
+                }
             }
             flush();
         } else if (r == Logic.R_AUTH) {

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   COACH_ACTIONS_PROMPT,
   COACH_BASE_PROMPT,
+  COACH_BODY_PROMPT,
   COACH_MECHANICS_PROMPT,
   COACH_SYSTEM_PROMPT,
   buildCoachSystemPrompt,
@@ -139,6 +140,24 @@ const CONTRACTS: { id: string; part: string; mustMatch: RegExp[] }[] = [
     mustMatch: [/Never say a change is applied/i, /Never mention auto-start/i],
   },
   {
+    id: 'body-data-rules',
+    part: COACH_BODY_PROMPT,
+    mustMatch: [
+      /Lead with the decision/i,
+      /at most three numbers/i,
+      /"probably", "looks like"/i,
+      /Never diagnose/i,
+      /days_in_a_row_5plus_over is 3 or more/,
+      /Wrist heart rate during lifts is approximate/i,
+      /Mention only what body contains/i,
+    ],
+  },
+  {
+    id: 'no-watch-data-is-said-not-guessed',
+    part: COACH_BASE_PROMPT,
+    mustMatch: [/No body block in USER_DATA means no watch data/i],
+  },
+  {
     id: 'grind-rules',
     part: COACH_MECHANICS_PROMPT,
     mustMatch: [
@@ -168,6 +187,7 @@ const ALL_TOOLS = [
   'propose_set_day_enabled',
   'propose_update_rotation',
   'propose_update_notification_prefs',
+  'propose_adjust_today',
 ]
 
 describe('Coach prompt contracts', () => {

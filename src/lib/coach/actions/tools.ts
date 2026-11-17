@@ -18,6 +18,7 @@ import { displayWeightToLbs, previewEditSessionLog } from './editSessionLog'
 import { previewUpdateNotificationPrefs } from './updateNotificationPrefs'
 import { previewApplyWeeklyPlan } from './applyWeeklyPlan'
 import { previewSetDayEnabled } from './setDayEnabled'
+import { previewAdjustToday, ADJUST_TODAY_MAX_PERCENT, ADJUST_TODAY_MIN_PERCENT } from './adjustToday'
 import { groundingReasonFor } from './grounding'
 import type { CoachProposalView } from './types'
 
@@ -541,6 +542,43 @@ export function buildCoachProposalTools(ctx: CoachToolContext) {
           conversationId: ctx.conversationId,
           dayType: input.dayType,
           enabled: input.enabled,
+        })
+        if (!result.ok) return { ok: false as const, reason: result.reason }
+        ctx.proposals.push(result.proposal)
+        return {
+          ok: true as const,
+          proposalId: result.proposal.id,
+          summary: result.proposal.card.summaryLines.join(' · '),
+          note: CONFIRM_NOTE,
+        }
+      },
+    }),
+
+    propose_adjust_today: tool({
+      description:
+        'Propose a lighter version of TODAY’s workout only — the saved plan and exercise targets never change. mode=drop_last_set skips the last set of every lift (on the open workout, or starts today’s day with those sets skipped). mode=scale_weights takes a percent off each working weight and shows the lighter numbers. Use when they ask for a lighter, easier or shorter session today, or agree to go lighter after you suggested it. For a lasting change use propose_edit_exercise; to skip specific sets use propose_skip_sets. Preview only — user must Confirm.',
+      inputSchema: z.object({
+        mode: z.enum(['drop_last_set', 'scale_weights']),
+        percent: z
+          .number()
+          .int()
+          .min(ADJUST_TODAY_MIN_PERCENT)
+          .max(ADJUST_TODAY_MAX_PERCENT)
+          .optional()
+          .describe('Required for scale_weights: how much lighter, in percent'),
+        dayType: z
+          .string()
+          .optional()
+          .describe('Day to lighten. Omit to use the open workout, else the suggested next day.'),
+      }),
+      execute: async input => {
+        const result = await previewAdjustToday(ctx.supabase, {
+          userId: ctx.userId,
+          conversationId: ctx.conversationId,
+          mode: input.mode,
+          percent: input.percent,
+          dayType: input.dayType ?? null,
+          unit: ctx.unit,
         })
         if (!result.ok) return { ok: false as const, reason: result.reason }
         ctx.proposals.push(result.proposal)

@@ -35,6 +35,9 @@ import {
 import { reportError } from '@/lib/utils/reportError'
 import Dialog from '@/components/ui/Dialog'
 import Input from '@/components/ui/Input'
+import Button from '@/components/ui/Button'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
+import { DEFAULT_BODY_PREFS, type BodyPrefs } from '@/lib/body/queries'
 import { useTour, type TourStep } from '@/components/onboarding/Tour'
 import { useOnboarding } from '@/lib/contexts/OnboardingContext'
 import {
@@ -269,6 +272,62 @@ export default function SettingsView({
 
   const [devUnlimited, setDevUnlimited] = useState(coachDevUnlimited)
   const [savingDevUnlimited, setSavingDevUnlimited] = useState(false)
+
+  // GRIND Body switches. Null keeps the rows hidden: migration 59 not applied,
+  // a failed read, or a user with no watch at all (their Settings is unchanged).
+  const [bodyPrefs, setBodyPrefs] = useState<BodyPrefs | null>(null)
+  const [bodyPrefsBusy, setBodyPrefsBusy] = useState(false)
+  const [bodyDeleteOpen, setBodyDeleteOpen] = useState(false)
+  const [bodyDeleting, setBodyDeleting] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const user = await getClientUser(supabase)
+      if (!user || cancelled) return
+      const [prefsRes, devicesRes, daysRes] = await Promise.all([
+        supabase.from('body_prefs').select('coach_uses_body, smart_rest').eq('user_id', user.id).maybeSingle(),
+        supabase.from('watch_devices').select('id').limit(1),
+        supabase.from('daily_body').select('local_date').eq('user_id', user.id).limit(1),
+      ])
+      if (cancelled || prefsRes.error) return
+      const hasWatch = !!prefsRes.data || (devicesRes.data?.length ?? 0) > 0 || (daysRes.data?.length ?? 0) > 0
+      if (hasWatch) setBodyPrefs((prefsRes.data as BodyPrefs | null) ?? DEFAULT_BODY_PREFS)
+    })()
+    return () => { cancelled = true }
+  }, [supabase])
+
+  async function patchBodyPref(key: keyof BodyPrefs) {
+    if (!bodyPrefs || bodyPrefsBusy) return
+    const next = { ...bodyPrefs, [key]: !bodyPrefs[key] }
+    setBodyPrefs(next)
+    setBodyPrefsBusy(true)
+    const user = await getClientUser(supabase)
+    const { error } = user
+      ? await supabase
+          .from('body_prefs')
+          .upsert({ user_id: user.id, ...next, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
+      : { error: new Error('Not signed in') }
+    setBodyPrefsBusy(false)
+    if (error) {
+      setBodyPrefs(bodyPrefs)
+      reportError(error, { operation: 'body_prefs_upsert' })
+      toast.show("Couldn't save that setting", 'error')
+    }
+  }
+
+  async function confirmDeleteBodyData() {
+    setBodyDeleting(true)
+    const { error } = await supabase.rpc('delete_body_data')
+    setBodyDeleting(false)
+    if (error) {
+      reportError(error, { operation: 'delete_body_data' })
+      toast.show("Couldn't delete watch health data", 'error')
+      return
+    }
+    setBodyDeleteOpen(false)
+    toast.show('Watch health data deleted')
+  }
 
   useEffect(() => {
     const total = getDefaultRest()
@@ -1063,6 +1122,55 @@ export default function SettingsView({
       {/* Data */}
       <Section label="Watch">
         <WatchDevices supabase={supabase} />
+        {bodyPrefs && (
+          <>
+            <div style={dividerStyle} />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+              <div>
+                <div style={titleStyle}>Use watch data in Coach</div>
+                <div style={hintStyle}>Coach can read your Charge, heart rate and recovery</div>
+              </div>
+              <Switch
+                checked={bodyPrefs.coach_uses_body}
+                onClick={() => void patchBodyPref('coach_uses_body')}
+                disabled={bodyPrefsBusy}
+                ariaLabel="Use watch data in Coach"
+              />
+            </div>
+            <div style={dividerStyle} />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+              <div>
+                <div style={titleStyle}>Smart rest on the watch</div>
+                <div style={hintStyle}>Buzzes when your heart rate has recovered. Off by default.</div>
+              </div>
+              <Switch
+                checked={bodyPrefs.smart_rest}
+                onClick={() => void patchBodyPref('smart_rest')}
+                disabled={bodyPrefsBusy}
+                ariaLabel="Smart rest on the watch"
+              />
+            </div>
+            <div style={dividerStyle} />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+              <div>
+                <div style={titleStyle}>Delete all watch health data</div>
+                <div style={hintStyle}>Heart rate, Body Battery, stress and steps. Workouts stay.</div>
+              </div>
+              <Button size="sm" variant="danger" onClick={() => setBodyDeleteOpen(true)} style={{ flexShrink: 0 }}>
+                Delete
+              </Button>
+            </div>
+            <ConfirmDialog
+              open={bodyDeleteOpen}
+              title="Delete watch health data?"
+              message="Every heart-rate trace, set peak and daily Body Battery, stress and step reading is removed for good. Your workouts, sets and XP stay."
+              confirmLabel="Delete"
+              busy={bodyDeleting}
+              onConfirm={() => void confirmDeleteBodyData()}
+              onCancel={() => setBodyDeleteOpen(false)}
+            />
+          </>
+        )}
       </Section>
 
       <Section label="Data">

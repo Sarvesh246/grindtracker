@@ -23,6 +23,7 @@ export type CoachActionKind =
   | 'update_notification_prefs'
   | 'apply_weekly_plan'
   | 'set_day_enabled'
+  | 'adjust_today'
 
 export type CoachActionStatus =
   | 'pending'
@@ -216,7 +217,28 @@ export type SetDayEnabledExecutePayload = {
   exerciseCount: number
 }
 
+export type AdjustTodayMode = 'drop_last_set' | 'scale_weights'
+
+export type AdjustTodayExecutePayload = {
+  mode: AdjustTodayMode
+  /** Real stored day key (resolved at preview time). */
+  dayType: string
+  /** No session was open at preview: Confirm starts this day first. */
+  startsSession: boolean
+  /** drop_last_set: the one set per lift that becomes a skip marker. */
+  drops: { exerciseId: string; exerciseName: string; setNumber: number }[]
+  /** scale_weights: guidance only (see adjustToday.ts), canonical lbs. */
+  percent: number | null
+  weights: { exerciseName: string; fromLbs: number; toLbs: number }[]
+  unitLabel: 'lb' | 'kg'
+}
+
 export type CoachActionPayload =
+  | {
+      kind: 'adjust_today'
+      card: CoachActionCardModel
+      execute: AdjustTodayExecutePayload
+    }
   | {
       kind: 'set_day_enabled'
       card: CoachActionCardModel

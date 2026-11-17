@@ -15,6 +15,7 @@ import { executeEditSessionLog } from './editSessionLog'
 import { executeUpdateNotificationPrefs } from './updateNotificationPrefs'
 import { executeApplyWeeklyPlan } from './applyWeeklyPlan'
 import { executeSetDayEnabled } from './setDayEnabled'
+import { executeAdjustToday, formatAdjustTodayMessage } from './adjustToday'
 import { DOW_LABELS } from './dates'
 import type { CoachActionPayload } from './types'
 
@@ -266,6 +267,22 @@ export async function executeConfirmedPayload(
         details: {
           days: payload.execute.days.map(d => d.dayKey),
           hidden: payload.execute.hideDays,
+        },
+      }
+    }
+    case 'adjust_today': {
+      const result = await executeAdjustToday(supabase, { userId, execute: payload.execute })
+      if (!result.ok) return { ok: false, message: result.message }
+      return {
+        ok: true,
+        message: formatAdjustTodayMessage(payload.execute, result.count),
+        ...(result.href ? { href: result.href } : {}),
+        details: {
+          mode: payload.execute.mode,
+          dayType: payload.execute.dayType,
+          count: result.count,
+          // scale_weights is guidance only; nothing was written.
+          applied: payload.execute.mode === 'drop_last_set',
         },
       }
     }

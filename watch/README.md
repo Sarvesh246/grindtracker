@@ -66,6 +66,29 @@ again logs it. Later sets of the same exercise start on reps, so they're one
 press. Touch works too: tap the left or right edge to step the number, tap the
 numbers to switch between weight and reps, swipe up or down to adjust.
 
+Reps prefill to the top of the target range (8-12 starts at 12), and the full
+target is always shown under the set count.
+
+**Doing exercises in another order:** pause (BACK) → Switch exercise lists
+every exercise with sets left. Pick one and you're on it. A skipped exercise
+stays in that list marked "Skipped", so choosing it undoes the skip; the
+summary's BACK menu offers the same when something was skipped.
+
+## Heart rate and Charge (GRIND Body)
+
+While a workout is open the watch samples heart rate every 5 s and keeps the
+trace, time in each of your zones, and per set the peak, the reading when you
+logged it, and how far it fell 60 s into the rest. All of it uploads with the
+workout. The set screen's status row shows your HR and zone (coral for zone 5).
+
+On open (and every 15 min while open, never mid-workout) it sends the day's
+snapshot to `POST /daily`: Body Battery and stress for the day, resting HR,
+recovery time, steps, active minutes, floors, SpO2 and VO2 max. GRIND turns
+that into **Charge**, which Home shows in the bezel ring with one line of
+advice. On a low-Charge day, starting a workout asks once whether you want one
+set fewer per lift. With Smart rest on (GRIND → Settings → Watch) the rest
+screen buzzes twice and says RECOVERED once your HR has come back down.
+
 Every set is written to storage the moment you log it. If the app dies
 mid-workout, the next launch offers to resume or discard.
 
@@ -94,14 +117,15 @@ Two switches in `source/Config.mc`:
 
 `System.println` only reaches the watch's disk if
 `GARMIN/APPS/LOGS/GRIND.TXT` already exists, so copy an empty file there once.
-With `PROBE` on in `Config.mc`, every launch, every 15 minutes while open, and
-every Save writes one line listing each sensor value the watch gives the app
-(`-` empty, `!` threw, `n/a` not on this firmware). Plug in and copy the file
-back to read it.
+Every request logs its status code there (`upload <id> -> 500 internal_error`),
+which is the fastest way to see why something isn't syncing. Turn `PROBE` on in
+`Config.mc` to also log every sensor value the watch gives the app on each
+launch, every 15 minutes and every Save (`-` empty, `!` threw, `n/a` not on this
+firmware): useful on a new watch or firmware.
 
 ## Not built yet
 
-Background sync. Right now the queue only flushes while the app is open (on
-launch, right after Save, and every 30 s). A background service could flush it
+Background sync. Right now the queue and the day snapshot only go out while the
+app is open (on launch, right after Save, and every 30 s). A background service could flush it
 every 5 minutes with the app closed, at the cost of a second code path that has
 to fit in 64 KB.

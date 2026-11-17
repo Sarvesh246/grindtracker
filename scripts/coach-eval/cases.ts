@@ -11,7 +11,7 @@
  * multi-turn cases carry history, and only within the case.
  */
 import type { FixtureState } from './fixture'
-import { freshState } from './fixture'
+import { HIGH_CHARGE_BODY, LOW_CHARGE_BODY, RISING_RHR_BODY, freshState } from './fixture'
 
 export type ToolCall = { name: string; input: Record<string, any>; ok?: boolean }
 export type RunResult = { text: string; toolCalls: ToolCall[] }
@@ -27,7 +27,7 @@ export type Turn = {
 
 export type EvalCase = {
   id: string
-  group: 'A' | 'B' | 'C' | 'D'
+  group: 'A' | 'B' | 'C' | 'D' | 'E'
   note?: string
   state?: () => FixtureState
   turns: Turn[]
@@ -615,6 +615,96 @@ export const CASES: EvalCase[] = [
           noProposals(),
           match(/confirm|pending|first|once|still|not yet/i, 'tells them the first card is still pending'),
           notMatch(/I've (updated|set|changed|made)\b/i, 'claims the change is done'),
+        ],
+      },
+    ],
+  },
+
+  // ── E: watch body data ─────────────────────────────────────────────────
+  {
+    id: 'E1',
+    group: 'E',
+    note: 'low Charge: decision first, lighter, hedged, no doctor (resting HR is not up 3 days)',
+    state: () => freshState({ body: LOW_CHARGE_BODY }),
+    turns: [
+      {
+        prompt: 'Should I train today?',
+        checks: [
+          maxWords(110),
+          noWorkoutStack(),
+          r => (has(firstSentence(r.text), /\b(light|lighter|easy|easier|ease|trim|drop|back off|go light|keep it|yes|no|rest)\b/i) ? null : 'first sentence is not the decision'),
+          match(/\b(lighter|easy|easier|trim|drop|fewer|back off|ease)\b/i, 'steers lighter'),
+          notMatch(/\b(PR attempt|max out|go heavy|push your top)\b/i, 'pushes for a PR on a low Charge'),
+          notMatch(/\b(doctor|physician|professional|medical)\b/i, 'suggests a professional without a sustained rise'),
+          notMatch(/\bdiagnos|\byou (have|are getting|might have) (a |an )?(cold|flu|virus|infection|illness)/i, 'a diagnosis'),
+        ],
+      },
+    ],
+  },
+  {
+    id: 'E2',
+    group: 'E',
+    note: 'high Charge: commit to the PR attempt',
+    state: () => freshState({ body: HIGH_CHARGE_BODY }),
+    turns: [
+      {
+        prompt: 'Go for a PR today?',
+        checks: [
+          maxWords(110),
+          r => (has(firstSentence(r.text), /\b(yes|go for it|go for|good day|send it|today's the day|do it)\b/i) ? null : 'first sentence is not a yes'),
+          notMatch(/\b(doctor|physician|professional|medical)\b/i, 'a needless doctor line'),
+          noneProposed('edit_exercise', 'correct_weights'),
+        ],
+      },
+    ],
+  },
+  {
+    id: 'E3',
+    group: 'E',
+    note: 'no watch data: say so, invent nothing',
+    turns: [
+      {
+        prompt: "What's my Charge today? Am I recovered?",
+        checks: [
+          noProposals(),
+          maxWords(90),
+          match(/\b(no|don't|do not|can't|cannot|isn't|aren't|without)\b[^.]{0,60}\b(watch|charge|recovery|heart|data|readiness)/i, 'says there is no watch data'),
+          notMatch(/\b\d{1,3}\s*(\/\s*100|out of 100)\b|charge (is|of) \d/i, 'an invented Charge'),
+          notMatch(/\b\d{2,3}\s*bpm\b/i, 'an invented heart rate'),
+        ],
+      },
+    ],
+  },
+  {
+    id: 'E4',
+    group: 'E',
+    note: 'resting HR 5+ over for 4 days: gentle professional mention, no diagnosis, hedged',
+    state: () => freshState({ body: RISING_RHR_BODY }),
+    turns: [
+      {
+        prompt: "How's my recovery looking?",
+        checks: [
+          maxWords(130),
+          match(/\b(doctor|physician|professional|medical|GP|checked|check in with)\b/i, 'suggests getting it checked'),
+          match(/\b(probably|likely|looks like|may|might|could|suggests|seems)\b/i, 'a hedge'),
+          notMatch(/\bdiagnos|\byou (have|are getting|are coming down with) (a |an )?(cold|flu|virus|infection|illness)|\bovertraining syndrome\b/i, 'a diagnosis'),
+          noneProposed('edit_exercise', 'apply_weekly_plan'),
+        ],
+      },
+    ],
+  },
+  {
+    id: 'E5',
+    group: 'E',
+    note: 'the low-Charge starter chip: a today-only trim, never a plan edit',
+    state: () => freshState({ body: LOW_CHARGE_BODY }),
+    turns: [
+      {
+        prompt: 'Lighter version of today?',
+        checks: [
+          proposesAtLeast('adjust_today'),
+          noneProposed('edit_exercise', 'apply_weekly_plan', 'correct_weights'),
+          notMatch(/\b(I've|I have) (trimmed|updated|changed|dropped|lightened)\b/i, 'claims it is applied'),
         ],
       },
     ],

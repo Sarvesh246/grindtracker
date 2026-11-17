@@ -8,7 +8,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { hashWatchToken, readBearerToken } from '../token'
 import { buildTodayPayload, parseRepsTarget, MAX_TODAY_EXERCISES, type TodayContext } from '../today'
-import { watchPing, watchSessions, watchToday, toSyncPayload, type WatchDeps, type RpcResult } from '../handlers'
+import { watchDaily, watchPing, watchSessions, watchToday, toSyncPayload, type WatchDeps, type RpcResult } from '../handlers'
 import { watchSessionSchema } from '../schema'
 
 const TOKEN = 'gwt_' + 'a1'.repeat(32)
@@ -392,5 +392,133 @@ describe('GET /today payload', () => {
     assert.notEqual(ok.status, 422)
     const bad = await watchToday(req('/today?dya=push'), fakeDeps())
     assert.equal(bad.status, 422)
+  })
+})
+
+describe('GRIND Body uploads', () => {
+  const synced = () => ({
+    data: { session: { id: SESSION, workout_id: 'push', created: true, completed_now: false, completed_at: null } },
+    error: null,
+  })
+
+  it('stores heart rate after the session, with per-set numbers', async () => {
+    let body: Record<string, unknown> | null = null
+    const deps = fakeDeps({
+      watch_sync_session: synced,
+      watch_store_session_body: args => {
+        body = args.p_body as Record<string, unknown>
+        return { data: { sets_updated: 1 }, error: null }
+      },
+    })
+    const s = session({
+      hr: { trace: [90, 0, 120], step: 5, zones: [106, 127, 148, 169, 190, 211], zone_seconds: [10, 20, 30, 0, 0], training_effect: 1.24 },
+    })
+    ;(s.sets as Record<string, unknown>[])[0].hr_peak = 150
+    ;(s.sets as Record<string, unknown>[])[0].hr_rest_drop_60 = 28
+    const res = await watchSessions(req('/sessions', { body: s }), deps)
+    assert.equal(res.status, 201)
+    assert.deepEqual(deps.calls.map(c => c.fn), ['watch_authenticate', 'watch_sync_session', 'watch_store_session_body'])
+    assert.ok(body)
+    const b = body as Record<string, unknown>
+    assert.deepEqual(b.trace, [90, 0, 120])
+    assert.equal(b.training_effect, 1.2)
+    assert.deepEqual(b.sets, [{ id: SET1, hr_peak: 150, hr_end: null, hr_rest_drop_60: 28 }])
+  })
+
+  it('still saves the workout when storing heart rate fails', async () => {
+    const deps = fakeDeps({
+      watch_sync_session: synced,
+      watch_store_session_body: () => ({ data: null, error: { message: 'relation does not exist' } }),
+    })
+    const s = session({ hr: { zone_seconds: [1, 2, 3, 4, 5] } })
+    const res = await watchSessions(req('/sessions', { body: s }), deps)
+    assert.equal(res.status, 201)
+  })
+
+  it('skips the body call for uploads without heart rate', async () => {
+    const deps = fakeDeps({ watch_sync_session: synced })
+    const res = await watchSessions(req('/sessions', { body: session() }), deps)
+    assert.equal(res.status, 201)
+    assert.ok(!deps.calls.some(c => c.fn === 'watch_store_session_body'))
+  })
+
+  it('rejects an oversized trace', async () => {
+    const res = await watchSessions(req('/sessions', { body: session({ hr: { trace: Array(9000).fill(100) } }) }), fakeDeps())
+    assert.equal(res.status, 422)
+  })
+
+  it('a 2-hour trace with 40 sets fits the 64 KB body limit', () => {
+    const sets = Array.from({ length: 40 }, (_, i) => ({
+      id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`, exercise_id: EX1, set_number: i + 1, reps: 12,
+      weight: 1234.5, unit: 'lbs', completed_at: '2026-11-16T17:05:00Z', rest_seconds: 300, hr_peak: 199, hr_end: 180, hr_rest_drop_60: 45,
+    }))
+    const bytes = Buffer.byteLength(JSON.stringify(session({ sets, hr: { trace: Array(1440).fill(188), step: 5, zone_seconds: [1, 2, 3, 4, 5] } })))
+    assert.ok(bytes < 64 * 1024, `payload is ${bytes} bytes`)
+  })
+})
+
+describe('POST /daily', () => {
+  const series = (f: (i: number) => number | null) => Array.from({ length: 96 }, (_, i) => f(i))
+
+  it('derives the aggregates from the series', async () => {
+    let day: Record<string, unknown> | null = null
+    const deps = fakeDeps({
+      watch_upsert_daily: args => {
+        day = args.p_day as Record<string, unknown>
+        return { data: { local_date: '2026-11-16' }, error: null }
+      },
+    })
+    const res = await watchDaily(req('/daily', {
+      body: {
+        date: '2026-11-16',
+        body_battery: series(i => (i >= 28 && i < 72 ? 90 - Math.floor(i / 2) : null)),
+        stress: series(i => (i >= 28 && i < 72 ? (i < 50 ? 20 : 40) : null)),
+        body_battery_now: 30,
+        resting_hr: 58,
+        recovery_hours: 2,
+        steps: 6203,
+      },
+    }), deps)
+    assert.equal(res.status, 200)
+    const d = day as unknown as Record<string, number | null>
+    assert.equal(d.bb_high, 76)
+    assert.equal(d.bb_low, 30)
+    assert.equal(d.bb_latest, 30)
+    assert.equal(d.bb_wake, 76)
+    assert.equal(d.resting_hr, 58)
+    assert.equal(typeof d.stress_avg, 'number')
+  })
+
+  it('422 for a series of the wrong length', async () => {
+    const res = await watchDaily(req('/daily', { body: { date: '2026-11-16', body_battery: [1, 2, 3] } }), fakeDeps())
+    assert.equal(res.status, 422)
+  })
+
+  it('needs a token', async () => {
+    const res = await watchDaily(req('/daily', { token: null, body: { date: '2026-11-16' } }), fakeDeps())
+    assert.equal(res.status, 401)
+  })
+})
+
+describe('/today body', () => {
+  it('adds Charge when there is enough data, and survives a failed read', async () => {
+    const todayCtx = { local_date: '2026-11-16', is_rest_day: false, exercises: [], rotation: null, flex_days: [], last_completion: null }
+    const withBody = await watchToday(req('/today'), fakeDeps({
+      watch_today_context: () => ({ data: todayCtx, error: null }),
+      watch_body_context: () => ({
+        data: { days: [{ local_date: '2026-11-16', bb_wake: 80, recovery_hours: 0 }], sessions: [], prefs: { coach_uses_body: true, smart_rest: true } },
+        error: null,
+      }),
+    }))
+    const j = (await withBody.json()) as { body: { charge: { score: number; label: string }; smart_rest: boolean } }
+    assert.equal(j.body.charge.label, 'Primed')
+    assert.equal(j.body.smart_rest, true)
+
+    const failed = await watchToday(req('/today'), fakeDeps({
+      watch_today_context: () => ({ data: todayCtx, error: null }),
+      watch_body_context: () => ({ data: null, error: { message: 'missing function' } }),
+    }))
+    assert.equal(failed.status, 200)
+    assert.equal(((await failed.json()) as { body: unknown }).body, null)
   })
 })

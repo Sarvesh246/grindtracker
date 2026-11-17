@@ -10,7 +10,9 @@
  * a project whose state you have verified by hand, paste the output in the
  * SQL editor, and the tracker starts out accurate.
  */
-import { listMigrationVersions, missingMigrations } from './lib/migrations'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+import { SQL_DIR, expectedFunctions, listMigrationVersions, missingMigrations } from './lib/migrations'
 
 async function main(): Promise<number> {
   const expected = listMigrationVersions()
@@ -40,12 +42,33 @@ async function main(): Promise<number> {
   const rows = (await res.json()) as { version: string }[]
   const missing = missingMigrations(expected, rows.map(r => r.version))
 
-  if (missing.length === 0) {
-    console.log(`All ${expected.length} migrations recorded.`)
+  if (missing.length > 0) {
+    console.error(`${missing.length} of ${expected.length} migrations have no row:`)
+    for (const v of missing) console.error(`  - ${v}`)
+    return 1
+  }
+  console.log(`All ${expected.length} migrations recorded.`)
+
+  // A row is not proof the SQL ran. PostgREST's schema lists every function
+  // the service role can call, so a missing one means a recorded migration
+  // never actually ran (or was later overwritten by an older file).
+  const spec = await fetch(`${url}/rest/v1/`, {
+    headers: { apikey: key, Authorization: `Bearer ${key}`, Accept: 'application/openapi+json' },
+  })
+  if (!spec.ok) {
+    console.error(`Could not read the API schema: HTTP ${spec.status}`)
+    return 2
+  }
+  const paths = Object.keys(((await spec.json()) as { paths?: Record<string, unknown> }).paths ?? {})
+  const live = new Set(paths.filter(p => p.startsWith('/rpc/')).map(p => p.slice('/rpc/'.length)))
+  const files = expected.map(version => ({ version, sql: readFileSync(path.join(SQL_DIR, `${version}.sql`), 'utf8') }))
+  const absent = [...expectedFunctions(files)].filter(([fn]) => !live.has(fn))
+  if (absent.length === 0) {
+    console.log('Every migration function exists.')
     return 0
   }
-  console.error(`${missing.length} of ${expected.length} migrations have no row:`)
-  for (const v of missing) console.error(`  - ${v}`)
+  console.error(`${absent.length} functions are missing. Re-run the file that defines each:`)
+  for (const [fn, version] of absent) console.error(`  - ${fn}  (${version}.sql)`)
   return 1
 }
 

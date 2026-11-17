@@ -8,7 +8,7 @@
  *   npx tsx --env-file=.env.local scripts/coach-eval/run.ts [flags]
  *
  *   --runs N       repeats per case (default 3; a case passes at >= ceil(2/3 N))
- *   --group A|B|C|D  only that group      --id D8   only that case
+ *   --group A|B|C|D|E  only that group (E = watch body data)   --id D8   only that case
  *   --pace MS      pause between model calls (default 4500; free tier is rate limited)
  *   --model ID     override GEMINI_MODEL
  *   --out FILE     write full per-run results as JSON
@@ -340,7 +340,7 @@ async function main() {
   // Summary
   console.log('\n── by group ──')
   const all: RunRecord[] = []
-  for (const g of ['A', 'B', 'C', 'D']) {
+  for (const g of ['A', 'B', 'C', 'D', 'E']) {
     const ids = cases.filter(c => c.group === g)
     if (!ids.length) continue
     const casePass = ids.filter(c => results[c.id]!.filter(r => r.pass).length >= NEED).length

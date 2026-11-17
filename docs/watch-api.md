@@ -145,6 +145,17 @@ so the user can train anyway) or `no_plan` (the user has no enabled days yet,
 so there is no `days`). Payloads are well under 4 KB (20 exercises with
 32-character names ≈ 3 KB); a test enforces the 4 KB budget.
 
+Every `200` also carries `body` (GRIND Body, migration 59), or `null` when it
+can't be read:
+
+```json
+"body": { "charge": { "score": 72, "band": "primed", "label": "Primed", "advice": "Push your top sets" }, "smart_rest": false }
+```
+
+`charge` is null with fewer than two inputs (see `src/lib/body/charge.ts`);
+`advice` is at most ~20 characters. `smart_rest` is the user's Settings → Watch
+switch. Older watch builds ignore the field.
+
 ## POST /sessions
 
 Upload a session — finished or not — and any of its sets. Call it as often as
@@ -201,6 +212,19 @@ Content-Type: application/json
 | `sets[].completed_at` | yes | ISO 8601 |
 | `sets[].rest_seconds` | no | int 0–3600, rest taken before this set |
 | `sets[].is_warmup` | no | default false. Warm-ups don't count for XP or PRs |
+| `sets[].hr_peak`, `.hr_end` | no | int 20–250. Peak HR around the set, and HR when it was logged |
+| `sets[].hr_rest_drop_60` | no | int −100–200. How far HR fell 60 s into the following rest |
+| `hr.trace` | no | Up to 8640 ints 0–250, one reading per `hr.step` s from `started_at`; 0 = no reading |
+| `hr.step` | no | int 1–60, default 5 |
+| `hr.zones` | no | 5–6 ints: zone 1–5 floors (+ max) from the watch's profile |
+| `hr.zone_seconds` | no | exactly 5 ints, seconds spent in zones 1–5 |
+| `hr.training_effect` | no | number 0–5 |
+
+Heart-rate fields are display and advice only (never XP, PRs or the
+leaderboard). They are stored after the session by
+`watch_store_session_body`; if that fails the upload still succeeds. Send `hr`
+with every request of a finished workout: it overwrites, so retries are safe. A
+2-hour trace with 40 sets is about 12 KB.
 
 Also rejected with `validation_failed`: unknown fields, two sets with the same
 `id` or the same (`exercise_id`, `set_number`) in one request, any timestamp
@@ -301,6 +325,37 @@ Completion rules (same as the web app):
   Send whatever unit the watch displays; always set `unit`.
 - All timestamps are stored in UTC. The workout's calendar day (for streaks) is
   the local date of `ended_at` using `utc_offset_seconds`.
+
+## POST /daily
+
+The day's body snapshot (GRIND Body, migration 59). The watch sends it when
+the app opens and at most every 15 minutes while it's open, never mid-workout.
+Fire and forget: a failure waits for the next snapshot.
+
+```json
+{
+  "date": "2026-11-16",
+  "body_battery": [null, null, 86, 85, "… 96 buckets of 15 min from local midnight …"],
+  "stress": ["… 96 buckets, 0–100 or null …"],
+  "body_battery_now": 36,
+  "resting_hr": 58,
+  "recovery_hours": 14,
+  "steps": 8412,
+  "active_minutes": 40,
+  "floors": 6,
+  "spo2": 96,
+  "vo2max": 60
+}
+```
+
+Everything but `date` is optional. Series must have exactly 96 entries. The
+server derives high, low, latest, wake value and stress average, and merges
+series with earlier snapshots of the same date (the watch's history reaches back
+only a few hours, so each open fills in its own stretch). `date` must be within
+the last 30 days. `200` returns `{ "local_date", "synced_at" }`.
+
+Respiration and SpO2 history are not sent: the Forerunner 165 Music leaves
+them empty (phase 0 probe, 2026-11-16).
 
 ## Rate limits and payload size
 

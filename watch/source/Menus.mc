@@ -9,10 +9,37 @@ module Menus {
         if (onSetScreen) {
             m.addItem(new WatchUi.MenuItem("Change weight", null, :weight, null));
         }
-        m.addItem(new WatchUi.MenuItem("Skip exercise", null, :skip, null));
+        if (Workout.pickable().size() > 1 || hasSkipped()) {
+            m.addItem(new WatchUi.MenuItem("Switch exercise", hasSkipped() ? "Or undo a skip" : "Do another one now", :pick, null));
+        }
+        m.addItem(new WatchUi.MenuItem("Skip exercise", "Undo it from Switch exercise", :skip, null));
         m.addItem(new WatchUi.MenuItem("End workout", null, :end, null));
         m.addItem(new WatchUi.MenuItem("Discard workout", null, :discard, null));
         WatchUi.pushView(m, new PauseDelegate(), WatchUi.SLIDE_UP);
+        return true;
+    }
+
+    function hasSkipped() {
+        if (!Workout.active()) { return false; }
+        for (var i = 0; i < Workout.exCount(); i++) {
+            if (Workout.isSkipped(i) && !Workout.isDone(i)) { return true; }
+        }
+        return false;
+    }
+
+    // Every exercise with sets left, in plan order; skipped ones say so and
+    // come back when chosen. `replace` swaps out the menu this came from.
+    function exercises(replace) {
+        var m = new WatchUi.Menu2({ :title => "Exercises" });
+        var list = Workout.pickable();
+        for (var i = 0; i < list.size(); i++) {
+            m.addItem(new WatchUi.MenuItem(list[i][1], list[i][2], list[i][0], null));
+        }
+        if (replace) {
+            WatchUi.switchToView(m, new PickDelegate(), WatchUi.SLIDE_IMMEDIATE);
+        } else {
+            WatchUi.pushView(m, new PickDelegate(), WatchUi.SLIDE_UP);
+        }
         return true;
     }
 
@@ -20,6 +47,9 @@ module Menus {
     function finish() {
         var m = new WatchUi.Menu2({ :title => "Workout done" });
         m.addItem(new WatchUi.MenuItem("Save workout", null, :save, null));
+        if (hasSkipped()) {
+            m.addItem(new WatchUi.MenuItem("Back to workout", "Undo a skipped exercise", :pick, null));
+        }
         m.addItem(new WatchUi.MenuItem("Discard workout", null, :discard, null));
         WatchUi.pushView(m, new FinishDelegate(), WatchUi.SLIDE_UP);
         return true;
@@ -48,6 +78,10 @@ class PauseDelegate extends WatchUi.Menu2InputDelegate {
         var id = item.getId();
         if (id == :discard) {
             Menus.confirmDiscard(false);
+            return;
+        }
+        if (id == :pick) {
+            Menus.exercises(true);
             return;
         }
         WatchUi.popView(WatchUi.SLIDE_IMMEDIATE);
@@ -83,8 +117,24 @@ class FinishDelegate extends WatchUi.Menu2InputDelegate {
     function initialize() { Menu2InputDelegate.initialize(); }
 
     function onSelect(item) {
+        if (item.getId() == :pick) {
+            Menus.exercises(true);
+            return;
+        }
         WatchUi.popView(WatchUi.SLIDE_IMMEDIATE);
         // 0 = Save, 1 = Discard (which still asks to confirm).
         new SummaryDelegate().act(item.getId() == :save ? 0 : 1);
+    }
+}
+
+// The exercise picker: the chosen one becomes current (un-skipped if needed).
+class PickDelegate extends WatchUi.Menu2InputDelegate {
+    function initialize() { Menu2InputDelegate.initialize(); }
+
+    function onSelect(item) {
+        WatchUi.popView(WatchUi.SLIDE_IMMEDIATE);
+        Workout.choose(item.getId());
+        Nav.buzz(60);
+        Nav.show();
     }
 }

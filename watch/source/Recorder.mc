@@ -67,6 +67,16 @@ module Recorder {
         return out;
     }
 
+    // Garmin's aerobic training effect (0-5) for the session so far, or null.
+    function trainingEffect() {
+        try {
+            var info = Activity.getActivityInfo();
+            if (info != null && session != null && info has :trainingEffect) { return info.trainingEffect; }
+        } catch (e) {
+        }
+        return null;
+    }
+
     function stop(save) {
         if (session == null) { return; }
         try {

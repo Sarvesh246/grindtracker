@@ -23,6 +23,72 @@ export type FixtureState = {
   workingSets: number
   unit: 'lbs' | 'kg'
   catalog: FixtureExercise[]
+  /** USER_DATA.body (watch data), same shape as bodyContext.ts builds; absent = no watch. */
+  body?: Record<string, unknown>
+}
+
+const last7 = (charges: number[], rhr: number[]) =>
+  charges.map((charge, i) => ({ date: `2026-11-0${3 + i}`, charge, resting_hr: rhr[i] }))
+
+/** Charge 34 (Easy): low Body Battery, a day of recovery still owed. Resting HR only +4. */
+export const LOW_CHARGE_BODY = {
+  source: 'Garmin watch',
+  charge_today: {
+    score: 34,
+    band: 'Easy',
+    inputs: [
+      { label: 'Body Battery', value: '31' },
+      { label: 'Recovery left', value: '28 h' },
+      { label: 'Resting HR', value: '+4 bpm' },
+      { label: 'Training load', value: '+18%' },
+    ],
+    advice: 'Easy. 28 h of recovery still left. Keep your weights and drop the last set of each lift.',
+  },
+  last_7_days: last7([71, 74, 69, 66, 58, 49, 34], [52, 52, 53, 52, 54, 55, 56]),
+  resting_hr: { baseline_30d: 52, latest: 56, days_in_a_row_5plus_over: 0 },
+  load: { percent: 18, band: 'building', headline: 'Building well' },
+  watch_sessions: [
+    { date: '2026-11-08', day: 'pull', avg_hr: 121, max_hr: 166, minutes_z3_plus: 24, hardest: 'Hardest set: lat pulldown set 3 at 166 bpm.' },
+  ],
+}
+
+/** Charge 88 (Primed): full battery, recovered, resting HR under usual. */
+export const HIGH_CHARGE_BODY = {
+  source: 'Garmin watch',
+  charge_today: {
+    score: 88,
+    band: 'Primed',
+    inputs: [
+      { label: 'Body Battery', value: '92' },
+      { label: 'Recovery left', value: '0 h' },
+      { label: 'Resting HR', value: '-2 bpm' },
+      { label: 'Training load', value: '+4%' },
+    ],
+    advice: "Primed. Body Battery 92 and you're fully recovered. A good day to push your top sets.",
+  },
+  last_7_days: last7([70, 76, 81, 79, 84, 86, 88], [52, 51, 51, 50, 50, 50, 50]),
+  resting_hr: { baseline_30d: 52, latest: 50, days_in_a_row_5plus_over: 0 },
+  load: { percent: 4, band: 'building', headline: 'Building well' },
+  cardio_cost: [
+    { exercise: 'Barbell Bench Press', at: '95 lb × 8', delta_bpm: 9, line: 'Same weight, 9 bpm easier than September.' },
+  ],
+}
+
+/** Resting HR 7–8 bpm over usual for four days running. */
+export const RISING_RHR_BODY = {
+  source: 'Garmin watch',
+  charge_today: {
+    score: 41,
+    band: 'Easy',
+    inputs: [
+      { label: 'Body Battery', value: '48' },
+      { label: 'Recovery left', value: '12 h' },
+      { label: 'Resting HR', value: '+8 bpm' },
+    ],
+    advice: 'Easy. Resting heart rate is 8 bpm over your usual. Keep your weights and drop the last set of each lift.',
+  },
+  last_7_days: last7([72, 70, 68, 52, 47, 44, 41], [52, 53, 52, 59, 59, 60, 60]),
+  resting_hr: { baseline_30d: 52, latest: 60, days_in_a_row_5plus_over: 4 },
 }
 
 const ex = (
@@ -196,5 +262,6 @@ export function buildFixtureContext(s: FixtureState): Record<string, unknown> {
       { exercise: 'Lateral Raise', weight_lbs: 12.5, reps: 12, local_date: '2026-11-08', completed_at: '2026-11-08T20:00:00Z' },
       { exercise: 'Lat Pulldown', weight_lbs: 85, reps: 10, local_date: '2026-11-08', completed_at: '2026-11-08T20:00:00Z' },
     ],
+    ...(s.body ? { body: s.body } : {}),
   }
 }

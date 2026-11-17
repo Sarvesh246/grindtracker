@@ -25,6 +25,8 @@ export type {
   UpdateNotificationPrefsExecutePayload,
   ApplyWeeklyPlanExecutePayload,
   SetDayEnabledExecutePayload,
+  AdjustTodayExecutePayload,
+  AdjustTodayMode,
   WeeklyPlanDay,
   WeeklyPlanExercise,
   NotificationPrefsPatch,
@@ -103,6 +105,15 @@ export {
   previewSetDayEnabled,
   executeSetDayEnabled,
 } from './setDayEnabled'
+export {
+  validateAdjustTodayInput,
+  planAdjustToday,
+  lighterWeightLbs,
+  adjustTodayCard,
+  previewAdjustToday,
+  executeAdjustToday,
+  formatAdjustTodayMessage,
+} from './adjustToday'
 export {
   groundingReasonFor,
   numbersInText,

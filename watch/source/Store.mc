@@ -72,6 +72,15 @@ module Store {
             }
             out["dy"] = dy;
         }
+        // GRIND Body: Charge for Home and the smart-rest switch.
+        var b = data["body"];
+        if (b instanceof Lang.Dictionary) {
+            var c = b["charge"];
+            if (c instanceof Lang.Dictionary) {
+                out["ch"] = { "s" => c["score"], "b" => c["band"], "l" => c["label"], "a" => c["advice"] };
+            }
+            out["sr"] = b["smart_rest"] == true;
+        }
         put("wk", out);
         put("wkAt", Time.now().value());
         if (out["id"] != null) { put("wk_" + out["id"], out); }
@@ -109,6 +118,17 @@ module Store {
         return isToday(p) && p["ex"] != null ? p : null;
     }
 
+    // Today's Charge { s score, b band, l label, a advice }, or null.
+    function charge() {
+        var w = today();
+        return w == null ? null : w["ch"];
+    }
+
+    function smartRest() {
+        var w = today();
+        return w != null && w["sr"] == true;
+    }
+
     function meta(sid) { return get("m_" + sid); }
     function putMeta(m) { put("m_" + m["id"], m); }
 
@@ -133,6 +153,7 @@ module Store {
             del(k);
         }
         del("m_" + sid);
+        del("h_" + sid);
     }
 
     function enqueue(sid) { put("q", Logic.qAdd(queue(), sid)); }

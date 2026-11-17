@@ -2,11 +2,13 @@ import { LBS_PER_KG } from '@/lib/utils/units'
 import { watchError, watchJson } from './http'
 import { hashWatchToken, readBearerToken } from './token'
 import { buildTodayPayload, type TodayContext } from './today'
+import { toBodyPayload, toDailyPayload, todayBody, type BodyContext, type TodayBody } from './body'
 import {
   MAX_BODY_BYTES,
   formatIssues,
   timestampIssues,
   todayQuerySchema,
+  watchDailySchema,
   watchSessionSchema,
   type WatchSessionInput,
 } from './schema'
@@ -119,7 +121,51 @@ export function watchToday(request: Request, deps: WatchDeps): Promise<Response>
       deps.log('watch_today_context failed', error)
       return watchError(503, 'service_unavailable', 'GRIND is temporarily unavailable. Retry later.', { headers: { 'Retry-After': '30' } })
     }
-    return watchJson(buildTodayPayload(data as TodayContext, query.data.unit ?? 'lbs', query.data.day))
+    const ctx = data as TodayContext
+    const payload = buildTodayPayload(ctx, query.data.unit ?? 'lbs', query.data.day)
+
+    // Charge for the watch's Home. Optional: without it /today is unchanged.
+    let body: TodayBody | null = null
+    try {
+      const bodyCtx = await deps.rpc('watch_body_context', { p_user: auth.userId, p_local_date: ctx.local_date })
+      if (bodyCtx.error || !bodyCtx.data) deps.log('watch_body_context failed', bodyCtx.error)
+      else body = todayBody(bodyCtx.data as BodyContext, ctx.local_date)
+    } catch (err) {
+      deps.log('watch_body_context crashed', err)
+    }
+
+    return watchJson({ ...payload, body })
+  })
+}
+
+// ─── POST /daily ───────────────────────────────────────────────────────────
+
+export function watchDaily(request: Request, deps: WatchDeps): Promise<Response> {
+  return guard(deps, async () => {
+    const auth = await authenticateWatch(request, deps)
+    if (!auth.ok) return auth.response
+
+    const read = await readJsonBody(request)
+    if (!read.ok) return read.response
+
+    const parsed = watchDailySchema.safeParse(read.body)
+    if (!parsed.success) {
+      const details = formatIssues(parsed.error)
+      return watchError(422, 'validation_failed', `${details[0].path}: ${details[0].message}`, { details })
+    }
+
+    const { data, error } = await deps.rpc('watch_upsert_daily', {
+      p_user: auth.userId,
+      p_day: toDailyPayload(parsed.data),
+    })
+    if (error) {
+      if (error.message.includes('WATCH_BAD_DATE')) {
+        return watchError(422, 'validation_failed', 'date: must be within the last 30 days.')
+      }
+      deps.log('watch_upsert_daily failed', error)
+      return watchError(503, 'service_unavailable', 'GRIND is temporarily unavailable. Retry later.', { headers: { 'Retry-After': '60' } })
+    }
+    return watchJson(data)
   })
 }
 
@@ -210,6 +256,14 @@ export function watchSessions(request: Request, deps: WatchDeps): Promise<Respon
 
     const result = data as {
       session: { id: string; workout_id: string; created: boolean; completed_now: boolean; completed_at: string | null }
+    }
+
+    // Heart rate is advice, not record: if storing it fails (say migration 59
+    // isn't applied yet) the workout is still saved and the upload succeeds.
+    const body = toBodyPayload(parsed.data)
+    if (body) {
+      const stored = await deps.rpc('watch_store_session_body', { p_user: auth.userId, p_body: body })
+      if (stored.error) deps.log('watch_store_session_body failed', stored.error)
     }
     if (result.session.completed_now && result.session.completed_at) {
       await deps.afterCompletion({

@@ -12,6 +12,7 @@ import { joinDayTypes, NAMED_DAY_COLORS, mapDayColorRows, resolveDayColor } from
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { useTheme } from '@/lib/contexts/ThemeContext'
 import { markAppDataStale } from '@/lib/cache/appDataCache'
+import HeartbeatRibbon from '@/components/body/HeartbeatRibbon'
 
 function parseDefaultReps(repsTarget: string): string {
   return repsTarget.split('-')[0].trim()
@@ -793,6 +794,12 @@ function LogPastContent() {
               </svg>
             </button>
           </div>
+        )}
+
+        {/* Watch heart rate. Renders nothing for web-logged workouts. Keyed so
+            switching day type on a date remounts it for that session. */}
+        {isEditing && existingSession && (
+          <HeartbeatRibbon key={existingSession.id} sessionId={existingSession.id} />
         )}
 
         {/* Delete confirmation */}

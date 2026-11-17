@@ -107,12 +107,13 @@ function testPayload(logger) {
         T.sampleSet("s4", 4, 6, 140.0, 2)    // rejected: not resent
     ];
     sets[2]["rs"] = 120;
-    var p = Logic.buildPayload(meta, sets, 25);
+    var p = Logic.buildPayload(meta, sets, 25, null);
     var ok = T.ck(logger, "ids", p["id"].equals(meta["id"]) && p["workout_id"].equals("push"));
     ok = T.ck(logger, "started_at", p["started_at"].equals("2026-11-16T17:00:00Z")) && ok;
     ok = T.ck(logger, "open session has no ended_at", !p.hasKey("ended_at")) && ok;
     ok = T.ck(logger, "no hr when unknown", !p.hasKey("heart_rate") && !p.hasKey("calories")) && ok;
     ok = T.ck(logger, "offset", p["utc_offset_seconds"] == -18000) && ok;
+    ok = T.ck(logger, "open session sends no trace", !Logic.buildPayload(meta, sets, 25, { "tr" => [90, 91] }).hasKey("hr")) && ok;
     ok = T.ck(logger, "only unsynced", p["sets"].size() == 2 && p["sets"][0]["id"].equals("s2")) && ok;
     var s = p["sets"][1];
     ok = T.ck(logger, "set fields", s["exercise_id"].equals("ex-1") && s["set_number"] == 3 && s["reps"] == 7
@@ -121,7 +122,14 @@ function testPayload(logger) {
 
     meta["en"] = 1794851550;
     meta["ha"] = 128; meta["hm"] = 300; meta["cal"] = 410; // max out of range: dropped
-    p = Logic.buildPayload(meta, sets, 1);
+    sets[1]["hp"] = 150; sets[1]["he"] = 140; sets[1]["hd"] = 30; sets[2]["hp"] = 400; // out of range: dropped
+    p = Logic.buildPayload(meta, sets, 2, { "tr" => [90, 0, 120], "zs" => [5, 10, 0, 0, 0], "hz" => [106, 127, 148, 169, 190, 211] });
+    ok = T.ck(logger, "set hr", p["sets"][0]["hr_peak"] == 150 && p["sets"][0]["hr_end"] == 140
+        && p["sets"][0]["hr_rest_drop_60"] == 30 && !p["sets"][1].hasKey("hr_peak")) && ok;
+    ok = T.ck(logger, "session hr", p["hr"]["trace"].size() == 3 && p["hr"]["step"] == Config.HR_STEP
+        && p["hr"]["zone_seconds"][1] == 10 && p["hr"]["zones"].size() == 6) && ok;
+    p = Logic.buildPayload(meta, sets, 1, null);
+    ok = T.ck(logger, "no hr block without a record", !p.hasKey("hr")) && ok;
     ok = T.ck(logger, "ended_at", p["ended_at"].equals("2026-11-16T17:52:30Z")) && ok;
     ok = T.ck(logger, "hr", p["heart_rate"]["avg"] == 128 && !p["heart_rate"].hasKey("max")) && ok;
     ok = T.ck(logger, "calories", p["calories"] == 410) && ok;
@@ -197,19 +205,19 @@ function testWorkoutFlow(logger) {
     ] };
     Workout.start(plan);
     var sid = Workout.cur["sid"];
-    var ok = T.ck(logger, "prefilled from target", Workout.cur["w"] == 135.0 && Workout.cur["r"] == 8 && Workout.cur["f"] == 0);
+    var ok = T.ck(logger, "prefilled from target", Workout.cur["w"] == 135.0 && Workout.cur["r"] == 12 && Workout.cur["f"] == 0);
     ok = T.ck(logger, "total", Workout.totalSets() == 4 && Workout.progress() == 0.0) && ok;
     Workout.adjust(1);
     ok = T.ck(logger, "weight step", Workout.cur["w"] == 135.0 + Config.WEIGHT_STEP) && ok;
     Workout.adjust(-1);
     Workout.setFocus(1);
     Workout.adjust(1);
-    ok = T.ck(logger, "reps step", Workout.cur["r"] == 9) && ok;
+    ok = T.ck(logger, "reps step", Workout.cur["r"] == 13) && ok;
 
     ok = T.ck(logger, "first set not last", !Workout.logSet()) && ok;
     ok = T.ck(logger, "resting", Workout.inRest() && Workout.restLeft() > 55 && Workout.restLeft() <= 60) && ok;
     ok = T.ck(logger, "next set, reps focused, values carried", Workout.cur["sn"] == 2 && Workout.cur["f"] == 1
-        && Workout.cur["w"] == 135.0 && Workout.cur["r"] == 9) && ok;
+        && Workout.cur["w"] == 135.0 && Workout.cur["r"] == 13) && ok;
     Workout.adjustRest(15);
     ok = T.ck(logger, "+15s", Workout.restLeft() > 70 && Workout.restLeft() <= 75) && ok;
     Workout.adjustRest(-300);
@@ -221,7 +229,7 @@ function testWorkoutFlow(logger) {
     Workout.cur = null; Workout.plan = null; Workout.meta = null; Workout.sets = null;
     Workout.load();
     ok = T.ck(logger, "recovered", Workout.active() && Workout.cur["sid"].equals(sid) && Workout.sets.size() == 1
-        && Workout.cur["sn"] == 2 && Workout.sets[0]["r"] == 9 && Workout.sets[0]["n"] == 1) && ok;
+        && Workout.cur["sn"] == 2 && Workout.sets[0]["r"] == 13 && Workout.sets[0]["n"] == 1) && ok;
 
     ok = T.ck(logger, "second set moves on", !Workout.logSet()) && ok;
     ok = T.ck(logger, "next exercise defaults", Workout.cur["ei"] == 1 && Workout.cur["sn"] == 1
@@ -232,15 +240,15 @@ function testWorkoutFlow(logger) {
 
     Workout.skipExercise();
     ok = T.ck(logger, "skip last -> summary", Workout.atSummary() && Workout.totalSets() == 2 && Workout.progress() == 1.0) && ok;
-    ok = T.ck(logger, "nothing left to go back to", !Workout.canLeaveSummary()) && ok;
+    ok = T.ck(logger, "a skip can still be undone from the summary", Workout.canLeaveSummary()) && ok;
     var s = Workout.summary();
-    ok = T.ck(logger, "summary", s["sets"] == 2 && s["vol"] == 2430.0 && s["dur"] >= 0) && ok;
+    ok = T.ck(logger, "summary", s["sets"] == 2 && s["vol"] == 3510.0 && s["dur"] >= 0) && ok;
 
     Workout.finish(true);
     var m = Store.meta(sid);
     ok = T.ck(logger, "saved + queued", !Workout.active() && Workout.saved && Store.get("cur") == null
         && Store.queue().indexOf(sid) >= 0 && m["en"] != null && Store.sets(sid).size() == 2) && ok;
-    var p = Logic.buildPayload(m, Store.sets(sid), Config.SYNC_BATCH);
+    var p = Logic.buildPayload(m, Store.sets(sid), Config.SYNC_BATCH, Store.get("h_" + sid));
     ok = T.ck(logger, "payload", p.hasKey("ended_at") && p["sets"].size() == 2 && p["sets"][1]["set_number"] == 2) && ok;
     Store.dequeue(sid);
     Store.dropSession(sid);
@@ -310,5 +318,89 @@ function testDayPicker(logger) {
 
     Pick.id = null; Pick.want = false;
     Store.del("wk"); Store.del("wk_pull"); Store.del("wk_push"); Store.del("wk_legs"); Store.del("wkAt");
+    return ok;
+}
+
+(:test)
+function testExerciseOrder(logger) {
+    // Out of order, skip, undo the skip, and finish everything.
+    var plan = { "date" => "2026-11-16", "unit" => "lbs", "id" => "pull", "name" => "Pull", "ex" => [
+        { "id" => "a", "name" => "Row", "sets" => 2, "reps" => 8, "reps_max" => null, "weight" => 100, "rest" => 30 },
+        { "id" => "b", "name" => "Face Pull", "sets" => 1, "reps" => 15, "reps_max" => null, "weight" => 40, "rest" => 30 },
+        { "id" => "c", "name" => "Preacher Curl", "sets" => 1, "reps" => 10, "reps_max" => 12, "weight" => 50, "rest" => 30 }
+    ] };
+    Workout.start(plan);
+    var sid = Workout.cur["sid"];
+    var ok = T.ck(logger, "three to pick", Workout.pickable().size() == 3);
+
+    Workout.choose(2); // preacher curls before face pulls
+    ok = T.ck(logger, "jumped", Workout.cur["ei"] == 2 && Workout.cur["sn"] == 1 && Workout.cur["r"] == 12 && Workout.cur["w"] == 50.0) && ok;
+    Workout.setFocus(1);
+    Workout.logSet();
+    ok = T.ck(logger, "wraps to first unfinished", Workout.cur["ei"] == 0 && Workout.cur["dn"][2] == 1) && ok;
+    Workout.endRest();
+
+    Workout.skipExercise(); // oops
+    ok = T.ck(logger, "skip moves on", Workout.cur["ei"] == 1 && Workout.isSkipped(0)) && ok;
+    var list = Workout.pickable();
+    ok = T.ck(logger, "skipped still pickable", list.size() == 2 && list[0][0] == 0 && list[0][2].find("Skipped") != null) && ok;
+    Workout.choose(0); // undo
+    ok = T.ck(logger, "undo skip", Workout.cur["ei"] == 0 && !Workout.isSkipped(0) && Workout.totalSets() == 4) && ok;
+
+    Workout.setFocus(1);
+    Workout.logSet(); Workout.endRest();
+    ok = T.ck(logger, "same exercise next set", Workout.cur["ei"] == 0 && Workout.cur["sn"] == 2 && Workout.cur["f"] == 1) && ok;
+    Workout.logSet(); Workout.endRest();
+    ok = T.ck(logger, "then face pulls", Workout.cur["ei"] == 1) && ok;
+    Workout.setFocus(1);
+    ok = T.ck(logger, "last set ends it", Workout.logSet() && Workout.atSummary() && Workout.progress() == 1.0) && ok;
+    ok = T.ck(logger, "set numbers per exercise", Workout.sets[0]["n"] == 1 && Workout.sets[1]["n"] == 1
+        && Workout.sets[2]["n"] == 2 && Workout.sets[3]["n"] == 1) && ok;
+
+    // Skipping every exercise lands on the summary, and BACK can return.
+    Workout.finish(false);
+    Workout.start(plan);
+    var sid2 = Workout.cur["sid"];
+    Workout.skipExercise(); Workout.skipExercise(); Workout.skipExercise();
+    ok = T.ck(logger, "all skipped -> summary", Workout.atSummary() && Workout.canLeaveSummary()) && ok;
+    Workout.leaveSummary();
+    ok = T.ck(logger, "back from summary un-skips", !Workout.atSummary() && !Workout.isSkipped(Workout.cur["ei"])) && ok;
+    Workout.finish(false);
+    Store.dropSession(sid);
+    Store.dropSession(sid2);
+    Workout.saved = false;
+    return ok;
+}
+
+(:test)
+function testHrMath(logger) {
+    var z = [106, 127, 148, 169, 190, 211];
+    var ok = T.ck(logger, "zones", Logic.zoneOf(100, z) == 0 && Logic.zoneOf(130, z) == 2
+        && Logic.zoneOf(170, z) == 4 && Logic.zoneOf(195, z) == 5 && Logic.zoneOf(150, null) == 0 && Logic.zoneOf(null, z) == 0);
+    var tr = [];
+    Logic.traceSet(tr, 0, 90);
+    Logic.traceSet(tr, 3, 120);
+    ok = T.ck(logger, "trace pads gaps", tr.size() == 4 && tr[1] == 0 && tr[3] == 120) && ok;
+    Logic.traceSet(tr, Config.MAX_TRACE, 99);
+    ok = T.ck(logger, "trace capped", tr.size() == 4) && ok;
+    ok = T.ck(logger, "peak", Logic.peakIn(tr, -5, 10) == 120 && Logic.peakIn(tr, 1, 2) == null) && ok;
+    ok = T.ck(logger, "not recovered early", !Logic.recovered(160, 120, 20, z)) && ok;
+    ok = T.ck(logger, "recovered by drop", Logic.recovered(160, 160 - Config.SMART_REST_DROP, 40, z)) && ok;
+    ok = T.ck(logger, "recovered under z2", Logic.recovered(140, 125, 40, z) && !Logic.recovered(140, 130, 40, z)) && ok;
+    ok = T.ck(logger, "no peak, no buzz", !Logic.recovered(null, 90, 90, z)) && ok;
+
+    var b = Logic.buckets([[1000, 50], [1000 + 899, 52], [1000 + 900, 60], [1000 + 95 * 900 + 10, 7], [500, 99]], 1000);
+    ok = T.ck(logger, "buckets", b.size() == 96 && b[0] == 52 && b[1] == 60 && b[2] == null && b[95] == 7) && ok;
+
+    var e = { "reps" => 10, "reps_max" => 12 };
+    ok = T.ck(logger, "reps text whole", Logic.repsText(e).equals("10-12 reps") && Logic.targetReps(e) == 12) && ok;
+    ok = T.ck(logger, "reps text single", Logic.repsText({ "reps" => 8, "reps_max" => null }).equals("8 reps")
+        && Logic.repsText({ "reps" => null, "reps_max" => null }).equals("AMRAP")
+        && Logic.targetReps({ "reps" => null, "reps_max" => null }) == 8) && ok;
+    var ex = Logic.trimPlanSets([{ "sets" => 4 }, { "sets" => 1 }]);
+    ok = T.ck(logger, "lighter day", ex[0]["sets"] == 3 && ex[1]["sets"] == 1) && ok;
+    var one = [{ "sets" => 1 }, { "sets" => 1 }, { "sets" => 1 }];
+    ok = T.ck(logger, "next pending wraps", Logic.nextPending(2, [0, 1, 0], [0, 0, 0], one) == 0
+        && Logic.nextPending(0, [1, 1, 0], [0, 0, 1], one) == -1) && ok;
     return ok;
 }

@@ -57,6 +57,23 @@ module Draw {
         dc.drawText(dc.getWidth() / 2, y, font, s, C);
     }
 
+    // The first candidate that fits whole in any of `fonts`. Only the last
+    // candidate is ever truncated, so put the shortest form last. For text
+    // where a cut-off changes what you do (a rep target), never "...".
+    function fit(dc, frac, fonts, candidates, color) {
+        var y = yAt(dc, frac);
+        for (var c = 0; c < candidates.size(); c++) {
+            for (var i = 0; i < fonts.size(); i++) {
+                if (dc.getTextWidthInPixels(candidates[c], fonts[i]) <= usableW(dc, y, dc.getFontHeight(fonts[i]))) {
+                    dc.setColor(color, Graphics.COLOR_TRANSPARENT);
+                    dc.drawText(dc.getWidth() / 2, y, fonts[i], candidates[c], C);
+                    return;
+                }
+            }
+        }
+        line(dc, frac, fonts, candidates[candidates.size() - 1], color);
+    }
+
     // Exercise name in the upper zone: one line if it fits, else two lines
     // split at the space nearest the middle, each truncated with "...".
     function name(dc, s, color) {
@@ -110,10 +127,30 @@ module Draw {
         return t.hour.format("%d") + ":" + t.min.format("%02d");
     }
 
-    // Top status row: heart rate (or the clock), then the sync state.
+    // Top status row: heart rate and its zone (or the clock), then the sync
+    // state. Mid-workout the HR is coloured by zone, coral for zone 5.
     function status(dc, hr) {
-        var left = hr != null ? "HR " + hr : clock();
-        line(dc, 0.15, [Graphics.FONT_XTINY], left + "  " + gNet.status(), gNet.statusColor());
+        if (hr == null) {
+            line(dc, 0.15, [Graphics.FONT_XTINY], clock() + "  " + gNet.status(), gNet.statusColor());
+            return;
+        }
+        var z = Logic.zoneOf(hr, Hr.zones);
+        var left = "HR " + hr + (z > 0 ? " Z" + z : "");
+        var right = "  " + gNet.status();
+        var f = Graphics.FONT_XTINY;
+        var y = yAt(dc, 0.15);
+        var lw = dc.getTextWidthInPixels(left, f);
+        var rw = dc.getTextWidthInPixels(right, f);
+        if (lw + rw > usableW(dc, y, dc.getFontHeight(f))) {
+            line(dc, 0.15, [f], left, z > 0 ? Config.ZONE_COLORS[z - 1] : Config.DIM);
+            return;
+        }
+        var x = dc.getWidth() / 2 - (lw + rw) / 2;
+        var vc = Graphics.TEXT_JUSTIFY_LEFT | Graphics.TEXT_JUSTIFY_VCENTER;
+        dc.setColor(z >= 3 ? Config.ZONE_COLORS[z - 1] : Config.FG, Graphics.COLOR_TRANSPARENT);
+        dc.drawText(x, y, f, left, vc);
+        dc.setColor(gNet.statusColor(), Graphics.COLOR_TRANSPARENT);
+        dc.drawText(x + lw, y, f, right, vc);
     }
 
     function hint(dc, s) {

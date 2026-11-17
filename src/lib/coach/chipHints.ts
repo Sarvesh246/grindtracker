@@ -3,7 +3,9 @@ import { loadRotationState } from '@/lib/utils/rotationStore'
 import { enabledDayKeys } from '@/lib/utils/dayKeys'
 import type { UserRotation } from '@/lib/types'
 import { effectiveSequence, nextDay } from '@/lib/utils/rotation'
+import { getBodySummary } from '@/lib/body/queries'
 import type { CoachChipHints } from './starterChips'
+import { coachBodyEnabled } from './bodyContext'
 
 /**
  * Lightweight hints for empty-state starter chips (not full USER_DATA).
@@ -13,7 +15,19 @@ import type { CoachChipHints } from './starterChips'
 export async function loadCoachChipHints(
   supabase: SupabaseClient,
   userId: string,
+  /**
+   * The user's local day (localDateKey() from the client). Without it there is
+   * no Charge chip: the server's UTC day would read the wrong daily_body row.
+   */
+  opts?: { localDate?: string | null },
 ): Promise<CoachChipHints> {
+  const localDate = opts?.localDate && /^\d{4}-\d{2}-\d{2}$/.test(opts.localDate) ? opts.localDate : null
+  const chargePromise: Promise<number | null> = localDate
+    ? getBodySummary(supabase, userId, localDate)
+        .then(s => (coachBodyEnabled(s) ? (s.charge?.score ?? null) : null))
+        .catch(() => null)
+    : Promise.resolve(null)
+
   const [
     { data: active },
     { data: exerciseRows },
@@ -75,5 +89,6 @@ export async function loadCoachChipHints(
     hasActiveSession: !!active,
     nextDay: upNext,
     lastPrExercise,
+    chargeScore: await chargePromise,
   }
 }

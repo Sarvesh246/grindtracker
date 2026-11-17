@@ -35,6 +35,9 @@ import { readLastKnownStats, writeLastKnownStats } from '@/lib/cache/lastKnownSt
 import { reportError } from '@/lib/utils/reportError'
 import { logDayHref } from '@/lib/utils/dayKeys'
 import TodayLabel from '@/components/TodayLabel'
+import ChargeRing from '@/components/body/ChargeRing'
+import TodaySheet from '@/components/body/TodaySheet'
+import { useBodySummary } from '@/components/body/useBodySummary'
 
 // "This week"/"this month" start in the VIEWER's local timezone — computed here
 // (client) rather than on the server, whose clock/timezone is very often not
@@ -553,6 +556,11 @@ export default function HomeDashboard({
   const showResume = activeSessions.length > 0 && mounted
   // Hide start/welcome CTAs whenever an open session exists (even before mount).
   const noActiveForUi = activeSessions.length === 0
+
+  // GRIND Body: loaded client-side after first paint (SSR/hydration untouched).
+  // Null for anyone without watch data, so their Home is unchanged.
+  const body = useBodySummary()
+  const [todayOpen, setTodayOpen] = useState(false)
 
   const [busySessionId, setBusySessionId] = useState<string | null>(null)
   const busySessionIdRef = useRef<string | null>(null)
@@ -1355,6 +1363,14 @@ export default function HomeDashboard({
           clear next step instead of competing "start" affordances. */}
       {noActiveForUi && !isNewUser && (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      {/* Charge: the watch's verdict on today, read before the action it
+          informs. Absent without watch data, so Home is unchanged for everyone else. */}
+      {body?.charge && (
+        <>
+          <ChargeRing charge={body.charge} onOpen={() => setTodayOpen(true)} />
+          <TodaySheet open={todayOpen} onClose={() => setTodayOpen(false)} summary={body} />
+        </>
+      )}
       <button className="hover-cta"
         data-onboard="home-cta"
         data-haptic="medium"

@@ -23,6 +23,7 @@ import {
   summarizeTrainingHistory,
   type TrainingHistorySummary,
 } from './trainingHistory'
+import { loadCoachBody, type CoachBodyBlock } from './bodyContext'
 
 export type CoachUnitPreference = 'lbs' | 'kg'
 
@@ -180,6 +181,12 @@ export interface CoachContext {
     local_date: string | null
     completed_at: string | null
   }[]
+  /**
+   * Watch data (Charge, resting HR, workout heart rate, cardio cost, load).
+   * Present only for watch users with "Coach uses body data" on; the key is
+   * left out entirely otherwise, so the Coach can't mention what isn't there.
+   */
+  body?: CoachBodyBlock
 }
 
 const DOW_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const
@@ -265,6 +272,9 @@ export async function buildCoachContext(
     throw new Error('buildCoachContext requires asOfLocalDate from the client')
   }
   const timeZone = opts?.timeZone ?? null
+
+  // Best-effort and never throws: watch data must not be able to fail a turn.
+  const bodyPromise = loadCoachBody(supabase, userId, today, unitPreference)
 
   const [
     { data: profile },
@@ -719,6 +729,8 @@ export async function buildCoachContext(
     COACH_CONTEXT_BODY_WEIGHTS,
   )
 
+  const body = await bodyPromise
+
   return {
     as_of_local_date: today,
     as_of_weekday: weekdayName(today),
@@ -814,5 +826,6 @@ export async function buildCoachContext(
     ),
     recent_sessions,
     recent_prs,
+    ...(body ? { body } : {}),
   }
 }

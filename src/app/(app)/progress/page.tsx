@@ -12,6 +12,9 @@ import { useUnit } from '@/lib/contexts/UnitContext'
 import { useTour, type TourStep } from '@/components/onboarding/Tour'
 import TodayLabel from '@/components/TodayLabel'
 import ProgressLoading from './loading'
+import FitterLine from '@/components/body/FitterLine'
+import LoadGauge from '@/components/body/LoadGauge'
+import { useBodySummary } from '@/components/body/useBodySummary'
 import { CACHE_KEYS, getUiState, setUiState } from '@/lib/cache/appDataCache'
 import { useCachedQuery } from '@/lib/cache/useCachedQuery'
 
@@ -126,6 +129,8 @@ export default function ProgressPage() {
     prCount: 0,
   })
   const [recentSessions, setRecentSessions] = useState<RecentSession[]>([])
+  // GRIND Body: null unless this user has watch data (and migration 59 is in).
+  const body = useBodySummary()
 
   const { data: allExercises = [], loading: loadingExercises } = useCachedQuery<Exercise[]>(
     CACHE_KEYS.exercises,
@@ -676,6 +681,8 @@ export default function ProgressPage() {
         ))}
       </div>
 
+      {body?.hasWatch && body.load && <LoadGauge load={body.load} />}
+
       {/* Chart */}
       <div style={{ padding: '0 16px', marginBottom: '24px' }}>
         <div data-onboard="progress-chart" className="progress-chart-card" style={{
@@ -720,6 +727,9 @@ export default function ProgressPage() {
           )}
         </div>
       </div>
+
+      {/* Same weight, lower heart rate: only when the watch has enough sets to say so. */}
+      {selectedId && body?.hasWatch && <FitterLine key={selectedId} exerciseId={selectedId} />}
 
       {/* Recent sessions */}
       {recentSessions.length > 0 && (

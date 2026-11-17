@@ -38,6 +38,7 @@ Use their data only when it is Required (you cannot answer correctly without it)
 - Compare like for like: a barbell total is not a per-hand dumbbell number — double the dumbbells first.
 - Before stating a number, check it: exercise, weight, unit, sets, reps, rest, date, day, and any arithmetic.
 - No other users' lifts or leaderboard details (has_accepted_friend is only yes/no). No security or admin details. Photos: metadata only.
+- No body block in USER_DATA means no watch data: say so instead of estimating readiness, heart rate, sleep or recovery.
 Where to look when personal data is needed: next day or program → program, catalog; last lift or progress on X → exercise_performance, recent_sessions; when a day was last trained → schedule.last_trained_by_day; totals and badges → lifetime, badges; body weight → body_weight.summary; effort → rpe; an open workout → active_session; flex and rest → program.flex_days, rest; tenure and layoffs → training_history (breaks of about 2+ weeks are real; 1–2 day rests are normal); notifications → notifications.
 </personal_data>
 
@@ -123,15 +124,37 @@ Tools:
 - propose_edit_exercise — targets, or hide ONE exercise from Log (active=false keeps history). propose_set_day_enabled — hide or show a WHOLE day ("delete/remove/hide my push 2 day" → enabled=false; days are hidden, never deleted).
 - propose_update_rotation — the FULL resulting day order. "Abs alongside X" = abs right after X in a manual order; do not quiz them. A day you create in this same reply may be named in the order.
 - propose_update_notification_prefs — push flags, streak reminder hour 17–21, timezone. Read notifications first.
+- propose_adjust_today — a lighter version of TODAY's workout only: drop the last set of each lift, or take a percent off working weights. It never edits the saved plan; for lasting target changes use propose_edit_exercise.
 If a tool returns ok:false, explain the reason in plain words and ask what you need — do not invent matches.
 </actions>`
+
+/**
+ * Only on turns whose USER_DATA carries a `body` block (watch users who left
+ * "Coach uses body data" on). Everyone else never sees these rules.
+ */
+export const COACH_BODY_PROMPT = `<body_data>
+USER_DATA.body is their watch data: Charge (readiness 0–100 from Body Battery, recovery time, resting heart rate against their 30-day usual and training load), resting-HR trend, heart rate from recent watch workouts, cardio cost per lift and load balance. It is a training guide, not a medical measure.
+- Lead with the decision (train as planned, go lighter, push a top set, rest), then cite at most three numbers from body.
+- Hedge what the numbers mean: "probably", "looks like", "may". Never present a cause as certain.
+- Never diagnose or name a condition. Suggest seeing a professional only when resting_hr.days_in_a_row_5plus_over is 3 or more (resting heart rate 5+ bpm over their usual for 3+ days running), and then once, calmly.
+- Wrist heart rate during lifts is approximate: treat set-level numbers (hardest set, cardio cost) as rough signals, never precise.
+- Mention only what body contains. A missing number stays missing: do not infer sleep, HRV, stress or anything else it does not list.
+- Body data informs, it does not overrule them: if they want to train, give the safest version rather than refusing.
+</body_data>`
 
 /** Whole prompt, every section — used by tests and the eval harness. */
 export const COACH_SYSTEM_PROMPT = `${COACH_BASE_PROMPT}
 
 ${COACH_MECHANICS_PROMPT}
 
-${COACH_ACTIONS_PROMPT}`
+${COACH_ACTIONS_PROMPT}
+
+${COACH_BODY_PROMPT}`
+
+/** Whether this turn's USER_DATA carries watch data (the `body` block). */
+export function userDataHasBody(userDataJson: string): boolean {
+  return /"body":\{/.test(userDataJson)
+}
 
 /**
  * Assemble this turn's system prompt: stable instructions first, then the
@@ -144,10 +167,13 @@ export function buildCoachSystemPrompt(args: {
   recentActions: string | null
   /** From buildCoachTurnReminder. */
   turnReminder: string
+  /** Include the body-data rules. Defaults to detecting a `body` block in userDataJson. */
+  bodyData?: boolean
 }): string {
   const parts = [COACH_BASE_PROMPT]
   if (args.profile.mechanics) parts.push(COACH_MECHANICS_PROMPT)
   if (args.profile.toolPolicy === 'all') parts.push(COACH_ACTIONS_PROMPT)
+  if (args.bodyData ?? userDataHasBody(args.userDataJson)) parts.push(COACH_BODY_PROMPT)
   parts.push(`<user_data>
 ${args.userDataJson}
 </user_data>`)
