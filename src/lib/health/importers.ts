@@ -237,7 +237,13 @@ export function parseGarminNight(
       stage_totals: stageTotals,
       overnight_hrv: inRange(num(root.avgOvernightHrv) ?? num(d.avgOvernightHrv), 1, 500),
       respiration: inRange(num(d.averageRespirationValue) ?? num(d.averageRespiration), 1, 80),
-      spo2: inRange(num(d.averageSpO2Value) ?? num(d.averageSpo2), 50, 100),
+      spo2: inRange(
+        num(d.averageSpO2Value) ??
+          num(d.averageSpo2) ??
+          num(rec(d.spo2SleepSummary).averageSPO2), // where the export keeps it
+        50,
+        100
+      ),
       revision_at: now.toISOString(),
       status: endedAgo < 6 * 3600000 ? 'provisional' : 'final'
     }
@@ -246,29 +252,122 @@ export function parseGarminNight(
 const inRange = (v: number | null, lo: number, hi: number) =>
   v != null && v >= lo && v <= hi ? v : null
 
-/** The export's sleep file is an array (or `{ ... : [...] }`) of nights. */
-export function parseGarminExportText(
-  text: string,
+/** One entry of an export day's `napList`. Naps carry no stages, score or vitals. */
+export function parseGarminNap(
+  input: unknown,
   opts: { now?: Date; fallbackZone?: string } = {}
-) {
+): Parsed {
+  const n = rec(input)
+  const start = toIso(n.napStartTimestampGMT)
+  const end = toIso(n.napEndTimestampGMT)
+  if (!start || !end || !(Date.parse(end) > Date.parse(start)))
+    return { ok: false, reason: 'Nap has no usable start/end time' }
+  const calendarDate = validDate(n.calendarDate as string) ? (n.calendarDate as string) : null
+  const timezone = chooseZone(end, calendarDate, [opts.fallbackZone])
+  const wake = dateInZone(end, timezone)
+  if (!wake) return { ok: false, reason: 'Could not place the nap on a date' }
+  const span = Math.floor((Date.parse(end) - Date.parse(start)) / 1000)
+  const asleep = Math.min(num(n.napTimeSec) ?? span, span)
+  if (!(asleep > 0)) return { ok: false, reason: 'Nap has no duration' }
+  const now = opts.now ?? new Date()
+  return {
+    ok: true,
+    night: {
+      provider_id: `garmin_export:${calendarDate ?? wake}:${Math.floor(Date.parse(start) / 1000)}`,
+      wake_date: wake,
+      provider_date: calendarDate ?? wake,
+      timezone,
+      start_at: start,
+      end_at: end,
+      kind: 'nap',
+      duration_seconds: Math.round(asleep),
+      score: null,
+      stages: null,
+      stage_totals: null,
+      overnight_hrv: null,
+      respiration: null,
+      spo2: null,
+      revision_at: now.toISOString(),
+      status: now.getTime() - Date.parse(end) < 6 * 3600000 ? 'provisional' : 'final'
+    }
+  }
+}
+
+/** A JSON file's top-level array, or the first non-empty array inside an object. */
+function jsonList(text: string): unknown[] | null {
   let json: unknown
   try {
     json = JSON.parse(text)
   } catch {
-    return { nights: [] as ImportedNight[], skipped: [{ key: 'file', reason: 'Not valid JSON' }] }
+    return null
   }
-  const list = Array.isArray(json)
+  return Array.isArray(json)
     ? json
-    : (Object.values(rec(json)).find((v) => Array.isArray(v) && v.length) ?? [])
+    : ((Object.values(rec(json)).find((v) => Array.isArray(v) && v.length) as unknown[]) ?? [])
+}
+
+/**
+ * The export's sleep file is an array of days. A day can hold a night, a
+ * `napList`, both, or nothing at all (`{ "retro": false }` for days the watch
+ * wasn't worn) — empty days aren't reported as skipped, they simply had no sleep.
+ */
+export function parseGarminExportText(
+  text: string,
+  opts: { now?: Date; fallbackZone?: string } = {}
+) {
+  const list = jsonList(text)
+  if (!list)
+    return { nights: [] as ImportedNight[], skipped: [{ key: 'file', reason: 'Not valid JSON' }] }
   const nights: ImportedNight[] = []
   const skipped: { key: string; reason: string }[] = []
-  ;(list as unknown[]).forEach((item, i) => {
-    const r = parseGarminNight(item, 'garmin_export', opts)
-    if (r.ok) nights.push(r.night)
-    else skipped.push({ key: String(rec(item).calendarDate ?? `#${i + 1}`), reason: r.reason })
+  list.forEach((item, i) => {
+    const day = rec(item)
+    const key = String(day.calendarDate ?? `#${i + 1}`)
+    const naps = Array.isArray(day.napList) ? day.napList : []
+    const hasNight = day.sleepStartTimestampGMT != null || day.sleepEndTimestampGMT != null
+    if (hasNight || !naps.length) {
+      const r = parseGarminNight(item, 'garmin_export', opts)
+      if (r.ok) nights.push(r.night)
+      else if (hasNight || Object.keys(day).some((k) => k !== 'retro' && k !== 'calendarDate'))
+        skipped.push({ key, reason: r.reason })
+    }
+    for (const nap of naps) {
+      const r = parseGarminNap(nap, opts)
+      if (r.ok) nights.push(r.night)
+      else skipped.push({ key: `${key} nap`, reason: r.reason })
+    }
   })
   return { nights, skipped }
 }
+
+/**
+ * `*_healthStatusData.json`: one entry per day with a `metrics` list. Its `HRV`
+ * metric is Garmin's overnight HRV for the sleep that ended that calendar day —
+ * the sleep file itself has none. Returns calendarDate → ms.
+ */
+export function parseGarminHealthStatusText(text: string): Map<string, number> {
+  const out = new Map<string, number>()
+  for (const item of jsonList(text) ?? []) {
+    const day = rec(item)
+    if (!validDate(day.calendarDate as string)) continue
+    const metrics = Array.isArray(day.metrics) ? day.metrics : []
+    const hrv = inRange(num(rec(metrics.find((m) => rec(m).type === 'HRV')).value), 1, 500)
+    if (hrv != null) out.set(day.calendarDate as string, hrv)
+  }
+  return out
+}
+
+/** Fill overnight HRV on main nights from the health-status file, never overwriting a value. */
+export function withExportHrv(nights: ImportedNight[], hrvByDate: Map<string, number>) {
+  return nights.map((n) =>
+    n.kind === 'main' && n.overnight_hrv == null && hrvByDate.has(n.provider_date)
+      ? { ...n, overnight_hrv: hrvByDate.get(n.provider_date)! }
+      : n
+  )
+}
+
+/** Which files inside the export zip GRIND reads. */
+export const GARMIN_EXPORT_FILE = /(sleepData|healthStatusData).*\.json$/i
 
 // ───────── Apple Health ─────────
 export type AppleSample = { start: string; end: string; value: string }

@@ -2,7 +2,14 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { createClient, getClientUser } from '@/lib/supabase/client'
 import { useDemoMode } from '@/lib/contexts/DemoModeContext'
-import { buildBatches, parseGarminExportText, type ImportedNight } from '@/lib/health/importers'
+import {
+  buildBatches,
+  GARMIN_EXPORT_FILE,
+  parseGarminExportText,
+  parseGarminHealthStatusText,
+  withExportHrv,
+  type ImportedNight
+} from '@/lib/health/importers'
 import { dateLabel, durationShort } from '@/lib/health/model'
 import { sourceLabel } from '@/lib/health/reconcile'
 import './health-import.css'
@@ -183,6 +190,9 @@ export default function HealthImportSettings() {
     setStatus('Reading your export…')
     try {
       const texts: string[] = []
+      const statusTexts: string[] = []
+      const add = (name: string, text: string) =>
+        (/healthStatusData/i.test(name) ? statusTexts : texts).push(text)
       for (const file of Array.from(files)) {
         if (/\.zip$/i.test(file.name)) {
           if (file.size > MAX_ZIP_BYTES) {
@@ -193,16 +203,19 @@ export default function HealthImportSettings() {
           }
           const { unzipSync, strFromU8 } = await import('fflate')
           const entries = unzipSync(new Uint8Array(await file.arrayBuffer()), {
-            filter: (entry) => /sleepData.*\.json$/i.test(entry.name)
+            filter: (entry) => GARMIN_EXPORT_FILE.test(entry.name)
           })
-          for (const bytes of Object.values(entries)) texts.push(strFromU8(bytes))
-        } else texts.push(await file.text())
+          for (const [name, bytes] of Object.entries(entries)) add(name, strFromU8(bytes))
+        } else add(file.name, await file.text())
       }
+      const hrvByDate = new Map<string, number>()
+      for (const text of statusTexts)
+        for (const [date, hrv] of parseGarminHealthStatusText(text)) hrvByDate.set(date, hrv)
       const nights = new Map<string, ImportedNight>()
       const skipped: { key: string; reason: string }[] = []
       for (const text of texts) {
         const r = parseGarminExportText(text, { fallbackZone: zone })
-        for (const n of r.nights) nights.set(n.provider_id, n)
+        for (const n of withExportHrv(r.nights, hrvByDate)) nights.set(n.provider_id, n)
         skipped.push(...r.skipped)
       }
       if (!nights.size) {
@@ -297,9 +310,10 @@ python3 garmin-sleep-sync.py --days 14`
         <p>
           The most complete history, but manual. In Garmin Connect on the web: Account → Data
           Management → Export Your Data. Garmin emails a link (it can take a day or two). Then
-          upload the zip here, or just the <code>*_sleepData.json</code> files from{' '}
-          <code>DI_CONNECT/DI-Connect-Wellness</code>. The file is read on your device; only the
-          sleep nights are sent. Garmin’s export has stage totals, not the stage timeline.
+          upload the zip here, or just the <code>*_sleepData.json</code> and{' '}
+          <code>*_healthStatusData.json</code> files (the second adds overnight HRV) from{' '}
+          <code>DI_CONNECT/DI-Connect-Wellness</code>. The file is read on your device; only sleep
+          nights and naps are sent. Garmin’s export has stage totals, not the stage timeline.
         </p>
         <label className="hi-primary hi-file" aria-disabled={busy || demoMode}>
           Choose export file…

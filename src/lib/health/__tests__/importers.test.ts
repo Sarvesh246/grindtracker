@@ -7,9 +7,12 @@ import {
   etcZone,
   localToIso,
   parseAppleSamples,
+  GARMIN_EXPORT_FILE,
   parseGarminExportText,
+  parseGarminHealthStatusText,
   parseGarminNight,
-  toIso
+  toIso,
+  withExportHrv
 } from '../importers'
 import { mainSleep, type SleepSession } from '../model'
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate'
@@ -75,10 +78,10 @@ describe('Garmin sleep parsing', () => {
   })
 
   it('maps an export night (totals only) and keeps the stage timeline honest as null', () => {
-    const r = parseGarminExportText(JSON.stringify([exportNight, { calendarDate: '2026-11-15' }]), {
-      now: NOW,
-      fallbackZone: 'America/Chicago'
-    })
+    const r = parseGarminExportText(
+      JSON.stringify([exportNight, { calendarDate: '2026-11-15', deepSleepSeconds: 60 }]),
+      { now: NOW, fallbackZone: 'America/Chicago' }
+    )
     assert.equal(r.nights.length, 1)
     assert.equal(r.nights[0].stages, null)
     assert.equal(r.nights[0].score, 79)
@@ -87,6 +90,84 @@ describe('Garmin sleep parsing', () => {
       r.skipped.map((s) => s.reason),
       ['No sleep start/end time']
     )
+  })
+
+  // Field layout copied from a real export (Nov 2026); values are synthetic.
+  const realExportDays = [
+    {
+      ...exportNight,
+      sleepWindowConfirmationType: 'ENHANCED_CONFIRMED_FINAL',
+      unmeasurableSeconds: 0,
+      spo2SleepSummary: { averageSPO2: 95.5, averageHR: 63, lowestSPO2: 82 },
+      napList: [
+        {
+          napTimeSec: 2640,
+          napStartTimestampGMT: '2026-11-16T21:45:00.0',
+          napEndTimestampGMT: '2026-11-16T22:29:00.0',
+          calendarDate: '2026-11-16'
+        }
+      ],
+      retro: false
+    },
+    { retro: false }, // a day the watch wasn't worn
+    {
+      napList: [
+        {
+          napTimeSec: 1500,
+          napStartTimestampGMT: '2026-11-17T20:00:00.0',
+          napEndTimestampGMT: '2026-11-17T20:30:00.0',
+          calendarDate: '2026-11-17'
+        }
+      ],
+      retro: false
+    }
+  ]
+
+  it('reads SpO2 and naps from a real export layout, and stays quiet about empty days', () => {
+    const r = parseGarminExportText(JSON.stringify(realExportDays), {
+      now: new Date('2026-11-18T12:00:00Z'),
+      fallbackZone: 'America/Chicago'
+    })
+    assert.deepEqual(r.skipped, [])
+    assert.deepEqual(
+      r.nights.map((n) => [n.kind, n.wake_date]),
+      [
+        ['main', '2026-11-16'],
+        ['nap', '2026-11-16'],
+        ['nap', '2026-11-17']
+      ]
+    )
+    assert.equal(r.nights[0].spo2, 95.5)
+    const nap = r.nights[1]
+    assert.equal(nap.duration_seconds, 2640)
+    assert.equal(nap.stages, null)
+    assert.notEqual(nap.provider_id, r.nights[0].provider_id)
+  })
+
+  it('takes overnight HRV from healthStatusData by calendar date, mains only', () => {
+    const status = JSON.stringify([
+      {
+        calendarDate: '2026-11-16',
+        metrics: [
+          { type: 'HRV', value: 48, status: 'IN_RANGE' },
+          { type: 'HR', value: 64 },
+          { type: 'SKIN_TEMP_C', status: 'UNKNOWN' }
+        ]
+      },
+      { calendarDate: '2026-11-17', metrics: [{ type: 'HRV', status: 'UNKNOWN' }] }
+    ])
+    const hrv = parseGarminHealthStatusText(status)
+    assert.deepEqual([...hrv], [['2026-11-16', 48]])
+    const { nights } = parseGarminExportText(JSON.stringify(realExportDays), {
+      now: NOW,
+      fallbackZone: 'America/Chicago'
+    })
+    const merged = withExportHrv(nights, hrv)
+    assert.deepEqual(
+      merged.map((n) => n.overnight_hrv),
+      [48, null, null]
+    )
+    assert.equal(parseGarminHealthStatusText('nope').size, 0)
   })
 
   it('marks a night that just ended as provisional so a later revision can replace it', () => {
@@ -358,19 +439,21 @@ describe('merging sources for one night', () => {
 })
 
 describe('reading a real-looking Garmin export zip', () => {
-  it('inflates only the sleepData files, however deep, and ignores everything else', () => {
+  it('inflates only the sleep and health-status files, however deep, and ignores everything else', () => {
     const zip = zipSync({
       'DI_CONNECT/DI-Connect-Wellness/2026-01-01_2026-04-10_9_sleepData.json': strToU8(
         JSON.stringify([exportNight])
       ),
+      'DI_CONNECT/DI-Connect-Wellness/2026-01-01_2026-04-10_9_healthStatusData.json': strToU8('[]'),
       'DI_CONNECT/DI-Connect-Wellness/2026-01-01_2026-04-10_9_UDSFile.json': strToU8('[]'),
       'DI_CONNECT/DI-Connect-Fitness/activity.fit': new Uint8Array(1000)
     })
-    const entries = unzipSync(zip, { filter: (e) => /sleepData.*\.json$/i.test(e.name) })
-    assert.deepEqual(Object.keys(entries), [
+    const entries = unzipSync(zip, { filter: (e) => GARMIN_EXPORT_FILE.test(e.name) })
+    assert.deepEqual(Object.keys(entries).sort(), [
+      'DI_CONNECT/DI-Connect-Wellness/2026-01-01_2026-04-10_9_healthStatusData.json',
       'DI_CONNECT/DI-Connect-Wellness/2026-01-01_2026-04-10_9_sleepData.json'
     ])
-    const r = parseGarminExportText(strFromU8(Object.values(entries)[0]), {
+    const r = parseGarminExportText(strFromU8(entries['DI_CONNECT/DI-Connect-Wellness/2026-01-01_2026-04-10_9_sleepData.json']), {
       now: NOW,
       fallbackZone: 'UTC'
     })

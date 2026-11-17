@@ -7,7 +7,7 @@ combines them per night.
 
 | Route | Source id | Gives | Freshness | Where |
 | --- | --- | --- | --- | --- |
-| Garmin data export (zip or `*_sleepData.json`) | `garmin_export` | duration, stage totals, score, respiration | manual | Settings → Sleep & health sources, parsed on the device |
+| Garmin data export (zip, or `*_sleepData.json` + `*_healthStatusData.json`) | `garmin_export` | duration, stage totals, score, respiration, SpO2, naps; overnight HRV from the health-status file | manual | Settings → Sleep & health sources, parsed on the device |
 | Apple Health via an iPhone Shortcut | `apple_health` | times, stage timeline, naps (never HRV) | automatic if the Shortcut is automated | `POST /api/watch/v1/health-import` with a device token |
 | Garmin sync script (unofficial) | `garmin_unofficial` | everything Garmin Connect shows: timeline, score, HRV, respiration, SpO2 | whenever you run it (cron/launchd) | `public/tools/garmin-sleep-sync.py` → same endpoint |
 
@@ -51,7 +51,17 @@ Verified in this repository: all three parsers against synthetic data in the
 documented shapes, the zip filter, batching, the HTTP handler, and the whole path
 (token → importer → real Postgres) including RLS, pause, revocation and replay.
 
-**Not verified:** any real Garmin export or Garmin Connect response, the
+**Verified against a real export (November 17, 2026):** 29 months of nights from a
+real Garmin export parsed with no unexplained skips, and every wake date matched
+Garmin's own `calendarDate`, including across DST changes. That run is what
+added three things. SpO2 lives in `spo2SleepSummary.averageSPO2`. Naps come from
+each day's `napList` and are imported as `kind: 'nap'`. Overnight HRV comes from
+the separate `*_healthStatusData.json` file (the `HRV` metric for that calendar
+day). The export also has empty days (`{ "retro": false }`) for nights the
+watch wasn't worn; those are not reported as skipped. Comparing values with
+Garmin Connect night by night is still up to the owner, using the preview.
+
+**Not verified:** any Garmin Connect response, the
 `garminconnect` library's behavior, and the iOS Shortcut steps on a device. The
 Garmin shapes follow community documentation, are parsed defensively (unknown
 fields become null; unusable nights are skipped with a reason), and the Settings
