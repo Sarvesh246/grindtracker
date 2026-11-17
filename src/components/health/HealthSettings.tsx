@@ -133,8 +133,8 @@ export default function HealthSettings() {
         Health connections & privacy
       </div>
       <p style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text-secondary)' }}>
-        Watch snapshots and workout readings come from your paired Garmin. Cloud sleep is not
-        connected in this release. Opening GRIND on your phone cannot wake the watch.
+        Watch snapshots and workout readings come from your paired Garmin. Sleep arrives from the
+        sources below. Opening GRIND on your phone cannot wake the watch.
       </p>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 12 }}>
         <button

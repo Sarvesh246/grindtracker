@@ -19,6 +19,7 @@ import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
+import { healthImportRequest } from '@/lib/health/importApi'
 import { watchPing, watchSessions, watchToday, type WatchDeps, type RpcResult } from '../handlers'
 
 const ROOT = path.join(__dirname, '..', '..', '..', '..')
@@ -161,6 +162,25 @@ describe('watch API against the real schema', { skip: !baseUrl && 'set PARITY_DA
       assert.equal(db(`select count(*) from health_samples where user_id='${healthUser}' and provider_id='retention-fresh'`), '1')
       assert.equal(db(`select count(*) from sleep_sessions where user_id='${healthUser}'`), '1')
     })
+    it('imports sleep from export/Apple Health sources, idempotently, as the signed-in owner or a device token', async () => {
+      const end = new Date(Date.now() - 3600_000), start = new Date(end.getTime() - 7 * 3600000)
+      const wake = end.toISOString().slice(0, 10)
+      const night = (id: string) => ({ provider_id: id, wake_date: wake, provider_date: wake, timezone: 'UTC', start_at: start.toISOString(), end_at: end.toISOString(), kind: 'main', duration_seconds: 24000, score: 77, stages: null, stage_totals: { deep: 3600, light: 14400, rem: 6000 }, overnight_hrv: null, respiration: 14, spo2: null, revision_at: new Date().toISOString(), status: 'final' })
+      const batch = (sleeps: unknown[]) => ({ version: 1, batch_id: randomUUID(), generation: 999, source: 'ignored', captured_at: new Date().toISOString(), samples: [], sleeps })
+      const asOwner = (source: string, b: unknown) => asUser(healthUser, `select import_health_batch('${source}', ${lit(b)});`)
+      assert.match(asOwner('garmin_export', batch([night('garmin_export:a')])), /acknowledged/)
+      assert.match(asOwner('garmin_export', batch([night('garmin_export:a')])), /acknowledged/) // replay is harmless
+      assert.equal(db(`select count(*) from sleep_sessions where user_id='${healthUser}' and provider_id='garmin_export:a' and source='garmin_export'`), '1')
+      assert.throws(() => asOwner('garmin_personal', batch([night('x')])), /HEALTH_IMPORT_SOURCE/)
+      assert.throws(() => asOwner('apple_health', { ...batch([]), samples: [{ metric: 'steps' }] }), /HEALTH_IMPORT_SAMPLES/)
+      const viaToken = await serviceRpc('token_import_health_batch', { p_user: healthUser, p_device: healthDevice, p_source: 'apple_health', p_batch: batch([night('apple_health:b')]) })
+      assert.equal(viaToken.error, null)
+      assert.equal(db(`select count(*) from sleep_sessions where user_id='${healthUser}' and source in ('garmin_export','apple_health')`), '2')
+      const wrongDevice = await serviceRpc('token_import_health_batch', { p_user: BOB, p_device: healthDevice, p_source: 'apple_health', p_batch: batch([]) })
+      assert.match(wrongDevice.error?.message ?? '', /HEALTH_DEVICE_UNAVAILABLE/)
+      assert.throws(() => asUser(BOB, `select health_import_batch('${healthUser}','apple_health','{}');`), /permission denied/)
+      assert.equal(asUser(BOB, `select count(*) from sleep_sessions where user_id='${healthUser}'`), '0')
+    })
     it('deletion pauses ingestion and rejects stale generations after explicit resume', async () => {
       asUser(healthUser, 'select delete_body_data();')
       assert.equal(db(`select count(*) from health_samples where user_id='${healthUser}'`), '0')
@@ -206,6 +226,40 @@ describe('watch API against the real schema', { skip: !baseUrl && 'set PARITY_DA
       JSON.parse(asUser(user, `select create_watch_device('${name}')::text;`)).token as string
     aliceToken = mint(ALICE, 'Fenix 7')
     bobToken = mint(BOB, 'Forerunner')
+  })
+
+  describe('health import end to end (token → importer → real schema)', () => {
+    const body = (tz = 'America/Chicago') => ({
+      kind: 'apple_health',
+      timezone: tz,
+      samples: [
+        { start: iso(60 * 9), end: iso(60 * 5), value: 'Core' },
+        { start: iso(60 * 5), end: iso(60 * 2), value: 'REM' }
+      ]
+    })
+    const send = (token: string, b: unknown) => healthImportRequest(request('/health-import', token, b), deps)
+    it('saves a night, replays harmlessly, and keeps each user’s data separate', async () => {
+      const first = await send(aliceToken, body())
+      assert.equal(first.status, 200)
+      assert.equal(((await first.json()) as { imported: number }).imported, 1)
+      assert.equal((await send(aliceToken, body())).status, 200)
+      assert.equal(db(`select count(*) from sleep_sessions where user_id='${ALICE}' and source='apple_health'`), '1')
+      assert.equal(db(`select count(*) from sleep_sessions where user_id='${BOB}'`), '0')
+      assert.equal(asUser(BOB, `select count(*) from sleep_sessions where user_id='${ALICE}'`), '0')
+      assert.equal(db(`select count(*) from health_connections where user_id='${ALICE}' and source='apple_health'`), '1')
+    })
+    it('refuses to import while collection is paused', async () => {
+      asUser(ALICE, 'select set_health_collection(false);')
+      assert.equal(await codeOf(await send(aliceToken, body('UTC'))), 'collection_paused')
+      asUser(ALICE, 'select set_health_collection(true);')
+    })
+    it('stops working the moment the device is revoked', async () => {
+      const minted = JSON.parse(asUser(ALICE, `select create_watch_device('Shortcut to revoke')::text;`)) as { id: string; token: string }
+      assert.equal((await send(minted.token, body())).status, 200)
+      asUser(ALICE, `select revoke_watch_device('${minted.id}');`)
+      assert.equal((await send(minted.token, body())).status, 401)
+      db(`delete from watch_devices where id='${minted.id}'`) // keep later device-count checks exact
+    })
   })
 
   describe('tokens and auth', () => {

@@ -1811,3 +1811,9 @@ html.reduce-motion .health-refresh-btn svg[data-spin='true'] {
   background: color-mix(in srgb, var(--sleep-deep) 55%, transparent);
   opacity: 1;
 }
+
+.health-sources-note {
+  font-size: 0.75rem !important;
+  color: var(--text-muted) !important;
+  margin: -10px 0 16px !important;
+}

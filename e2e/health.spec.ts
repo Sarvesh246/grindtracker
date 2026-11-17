@@ -28,6 +28,7 @@ const css =
   readFileSync('src/app/globals.css', 'utf8').replace(/^@import.*;\s*$/gm, '') +
   readFileSync('src/components/health/health.css', 'utf8') +
   readFileSync('src/components/health/health-entry.css', 'utf8') +
+  readFileSync('src/components/health/health-import.css', 'utf8') +
   fonts
 
 async function render(
@@ -186,4 +187,77 @@ test('chart axis labels line up with the plot, not the y-label gutter', async ({
   await svg.scrollIntoViewIfNeeded()
   const [s, a] = await Promise.all([svg.boundingBox(), axis.locator('span').first().boundingBox()])
   expect(Math.abs(a!.x - s!.x)).toBeLessThan(10)
+})
+
+test('Settings: a Garmin export zip is previewed and imported in batches through the RPC', async ({
+  page
+}) => {
+  const { zipSync, strToU8 } = await import('fflate')
+  const night = (n: number) => {
+    const d = new Date(Date.now() - n * 86400000).toISOString().slice(0, 10)
+    return {
+      calendarDate: d,
+      sleepStartTimestampGMT: `${d}T05:00:00.0`,
+      sleepEndTimestampGMT: `${d}T13:00:00.0`,
+      deepSleepSeconds: 5400,
+      lightSleepSeconds: 14400,
+      remSleepSeconds: 6000,
+      awakeSleepSeconds: 1800,
+      sleepScores: { overallScore: 70 + (n % 20) }
+    }
+  }
+  const zip = zipSync({
+    'DI_CONNECT/DI-Connect-Wellness/2026_sleepData.json': strToU8(
+      JSON.stringify(Array.from({ length: 20 }, (_, i) => night(i + 2)))
+    ),
+    'DI_CONNECT/DI-Connect-Fitness/big.fit': new Uint8Array(5000)
+  })
+  const bundle = buildSync({
+    entryPoints: ['e2e/fixtures/healthImport.tsx'],
+    bundle: true,
+    write: false,
+    format: 'iife',
+    jsx: 'automatic',
+    tsconfig: 'tsconfig.json',
+    loader: { '.css': 'empty' },
+    define: {
+      'process.env':
+        '{"NODE_ENV":"production","NEXT_PUBLIC_SUPABASE_URL":"https://stub.supabase.co","NEXT_PUBLIC_SUPABASE_ANON_KEY":"stub"}'
+    }
+  }).outputFiles[0].text
+  const batches: { source: string; count: number }[] = []
+  await page.route('https://stub.supabase.co/**', async (route) => {
+    const url = route.request().url()
+    if (url.includes('/rpc/import_health_batch')) {
+      const body = route.request().postDataJSON()
+      batches.push({ source: body.p_source, count: body.p_batch.sleeps.length })
+      return route.fulfill({ contentType: 'application/json', body: '{"acknowledged":"x"}' })
+    }
+    return route.fulfill({ status: 401, contentType: 'application/json', body: '{}' })
+  })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.route('https://settings.test/**', (route) =>
+    route.fulfill({
+      contentType: 'text/html',
+      body: `<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}body{overflow:auto!important;height:auto!important}</style></head><body><div id="root"></div></body></html>`
+    })
+  )
+  await page.goto('https://settings.test/')
+  await page.addScriptTag({ content: bundle })
+  await page.getByText('1 · Garmin data export (file upload)').click()
+  await page.locator('input[type=file]').setInputFiles({
+    name: 'garmin-export.zip',
+    mimeType: 'application/zip',
+    buffer: Buffer.from(zip)
+  })
+  await expect(page.getByText('20 nights', { exact: false }).first()).toBeVisible()
+  await expect(page.getByText('Most recent nights in this file')).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await page.getByRole('button', { name: 'Import 20 nights' }).click()
+  await expect(page.getByText('Imported 20 nights.')).toBeVisible()
+  expect(batches).toEqual([
+    { source: 'garmin_export', count: 14 },
+    { source: 'garmin_export', count: 6 }
+  ])
+  await page.screenshot({ path: test.info().outputPath('settings-import.png'), fullPage: true })
 })

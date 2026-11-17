@@ -39,6 +39,7 @@ import Button from '@/components/ui/Button'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import { DEFAULT_BODY_PREFS, type BodyPrefs } from '@/lib/body/queries'
 import HealthSettings from '@/components/health/HealthSettings'
+import HealthImportSettings from '@/components/health/HealthImportSettings'
 import { useTour, type TourStep } from '@/components/onboarding/Tour'
 import { useOnboarding } from '@/lib/contexts/OnboardingContext'
 import {
@@ -1124,6 +1125,7 @@ export default function SettingsView({
       {/* Data */}
       <Section label="Watch">
         <HealthSettings />
+        <HealthImportSettings />
         <WatchDevices supabase={supabase} />
         {bodyPrefs && (
           <>

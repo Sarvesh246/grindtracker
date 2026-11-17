@@ -2,7 +2,14 @@ import { z } from 'zod'
 import { validDate } from './model'
 
 const timestamp = z.iso.datetime({ offset: true })
-const source = z.enum(['connect_iq', 'garmin_personal', 'garmin_business'])
+const source = z.enum([
+  'connect_iq',
+  'garmin_personal',
+  'garmin_business',
+  'garmin_export',
+  'garmin_unofficial',
+  'apple_health'
+])
 const stage = z
   .object({ stage: z.enum(['awake', 'rem', 'light', 'deep']), start: timestamp, end: timestamp })
   .strict()

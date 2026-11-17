@@ -102,6 +102,10 @@ export interface SleepSession {
   revision_at: string
   received_at: string
   status: 'final' | 'provisional' | 'unknown'
+  /** Set on a merged night: field → the source it was borrowed from. */
+  fields_from?: Partial<
+    Record<'stages' | 'stage_totals' | 'score' | 'overnight_hrv' | 'respiration' | 'spo2', string>
+  >
 }
 export type SleepReadState = 'ready' | 'not_enabled' | 'error'
 
@@ -145,28 +149,71 @@ export function metricValue(
   const value = row?.[metric]
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
-/** Approved cloud > personal cloud > watch; unknown source names rank lowest. */
-function sourceRank(source: string): number {
-  return source === 'garmin_business'
-    ? 3
-    : source === 'garmin_personal'
-      ? 2
-      : source === 'connect_iq'
-        ? 1
-        : 0
+/** Higher is richer/more direct; unknown source names rank lowest. */
+const SLEEP_SOURCE_RANK: Record<string, number> = {
+  garmin_business: 6,
+  garmin_personal: 5,
+  garmin_unofficial: 4,
+  garmin_export: 3,
+  apple_health: 2,
+  connect_iq: 1
 }
-export function mainSleep(sessions: SleepSession[], date: string): SleepSession | null {
-  // Provider revisions replace identities on ingestion; choose one main sleep,
-  // never sum overlapping nights or silently fold naps into the main duration.
-  return (
-    sessions
-      .filter((s) => s.wake_date === date && s.kind === 'main')
-      .sort(
-        (a, b) =>
-          sourceRank(b.source) - sourceRank(a.source) ||
-          Date.parse(b.revision_at) - Date.parse(a.revision_at)
-      )[0] ?? null
+const sourceRank = (source: string): number => SLEEP_SOURCE_RANK[source] ?? 0
+
+const MERGE_FIELDS = [
+  'stages',
+  'stage_totals',
+  'score',
+  'overnight_hrv',
+  'respiration',
+  'spo2'
+] as const
+const present = (s: SleepSession, field: (typeof MERGE_FIELDS)[number]) =>
+  field === 'stages' ? !!s.stages?.length : s[field] != null
+function overlapRatio(a: SleepSession, b: SleepSession): number {
+  const start = Math.max(Date.parse(a.start_at), Date.parse(b.start_at))
+  const end = Math.min(Date.parse(a.end_at), Date.parse(b.end_at))
+  const shorter = Math.min(
+    Date.parse(a.end_at) - Date.parse(a.start_at),
+    Date.parse(b.end_at) - Date.parse(b.start_at)
   )
+  return shorter > 0 ? Math.max(0, end - start) / shorter : 0
+}
+
+/**
+ * The night to show for a wake date. Each source+device contributes only its
+ * latest revision; the highest-ranked source wins, and fields it lacks (stage
+ * timeline, score, HRV, respiration) are filled from other sources that describe
+ * the same night (their intervals overlap by 70%+). `fields_from` records every
+ * borrowed field so the UI can say where each number came from. Naps never merge.
+ */
+export function mainSleep(sessions: SleepSession[], date: string): SleepSession | null {
+  const latest = new Map<string, SleepSession>()
+  for (const s of sessions) {
+    if (s.wake_date !== date || s.kind !== 'main') continue
+    const key = `${s.source}:${s.device_id}`
+    const old = latest.get(key)
+    if (!old || Date.parse(s.revision_at) > Date.parse(old.revision_at)) latest.set(key, s)
+  }
+  const ranked = [...latest.values()].sort(
+    (a, b) =>
+      sourceRank(b.source) - sourceRank(a.source) ||
+      Date.parse(b.revision_at) - Date.parse(a.revision_at)
+  )
+  const primary = ranked[0]
+  if (!primary) return null
+  const others = ranked.slice(1).filter((o) => overlapRatio(primary, o) >= 0.7)
+  if (!others.length) return primary
+  const merged: SleepSession = { ...primary }
+  const from: NonNullable<SleepSession['fields_from']> = {}
+  for (const field of MERGE_FIELDS) {
+    if (present(merged, field)) continue
+    const donor = others.find((o) => present(o, field))
+    if (!donor) continue
+    ;(merged as unknown as Record<string, unknown>)[field] = donor[field]
+    from[field] = donor.source
+  }
+  return Object.keys(from).length ? { ...merged, fields_from: from } : primary
 }
 export interface Baseline {
   median: number

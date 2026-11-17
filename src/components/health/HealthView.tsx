@@ -22,7 +22,12 @@ import {
   type HealthMetric
 } from '@/lib/health/model'
 import { Ring } from '@/components/body/ChargeRing'
-import { connectionErrorText, relativeTime, SOURCE_LABEL } from '@/lib/health/reconcile'
+import {
+  connectionErrorText,
+  relativeTime,
+  SOURCE_LABEL,
+  sourceLabel
+} from '@/lib/health/reconcile'
 import { requestOpenCoach } from '@/lib/coach/openCoachBus'
 import Dialog from '@/components/ui/Dialog'
 import {
@@ -440,6 +445,24 @@ export function DailyHealthBrief({ data, date }: { data: HealthSummary; date: st
   )
 }
 
+const FIELD_NAME = {
+  stages: 'Stage timeline',
+  stage_totals: 'Stage totals',
+  score: 'Sleep score',
+  overnight_hrv: 'Overnight HRV',
+  respiration: 'Respiration',
+  spo2: 'Oxygen'
+} as const
+/** "Garmin data export · stage timeline from Apple Health": where this night's numbers came from. */
+export function sleepSourcesNote(sleep: NonNullable<ReturnType<typeof mainSleep>>): string {
+  const borrowed = Object.entries(sleep.fields_from ?? {}) as [keyof typeof FIELD_NAME, string][]
+  if (!borrowed.length) return sourceLabel(sleep.source)
+  const bySource = new Map<string, string[]>()
+  for (const [field, source] of borrowed)
+    bySource.set(source, [...(bySource.get(source) ?? []), FIELD_NAME[field].toLowerCase()])
+  return `${sourceLabel(sleep.source)} · ${[...bySource].map(([src, fields]) => `${fields.join(' and ')} from ${sourceLabel(src)}`).join(' · ')}`
+}
+
 export function SleepSummary({
   data,
   date,
@@ -487,10 +510,10 @@ export function SleepSummary({
             {data.sleepState === 'error'
               ? 'Sleep is temporarily unavailable. Retry the health refresh above.'
               : data.sleepState === 'not_enabled'
-                ? 'Cloud sleep isn’t connected yet. Your watch snapshots don’t contain sleep stages or overnight HRV.'
+                ? 'No sleep has been imported yet. Your watch snapshots don’t contain sleep, so add it from a Garmin export, Apple Health or the sync script in Settings.'
                 : 'No main sleep record is available for this date. Missing sleep is not zero sleep.'}
           </p>
-          <Link href="/profile/settings#health">Connection details ›</Link>
+          <Link href="/profile/settings#health-import">Add sleep data ›</Link>
         </div>
       ) : (
         <>
@@ -509,6 +532,7 @@ export function SleepSummary({
             {clockLabel(sleep.end_at, sleep.timezone)}{' '}
             <span className="health-muted">· {sleep.timezone}</span>
           </p>
+          {sleep.fields_from && <p className="health-sources-note">{sleepSourcesNote(sleep)}</p>}
           <StageBreakdown sleep={sleep} />
           <SleepStageChart sleep={sleep} />
           <p className="health-insight">{sleepComparison(sleep, data.sleeps)}</p>
@@ -550,8 +574,8 @@ export function SleepSummary({
               <h3 className="health-subhead">Sleep timing</h3>
               <p>{sleepConsistency(data.sleeps, date)}</p>
               <p className="health-muted">
-                Source: {sleep.source} · device {sleep.device_id} · {sleep.status}. Wearable sleep
-                stages are estimates. Recorded {sleep.provider_date}; revised{' '}
+                Source: {sleepSourcesNote(sleep)} · {sleep.status}. Wearable sleep stages are
+                estimates. Recorded {sleep.provider_date}; revised{' '}
                 {new Date(sleep.revision_at).toLocaleString()}.
               </p>
             </>

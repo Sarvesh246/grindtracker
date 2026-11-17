@@ -146,3 +146,12 @@ so "today so far" is as fresh as your last open. Automatic hourly uploads need t
 Connect IQ background service (work item 4), which can't be built or verified
 without the Connect IQ SDK and a watch, so it is not shipped.
 
+### Sleep import without an API key (November 17, 2026)
+
+Work items 1–3 now have a working, key-free path for sleep: Garmin data export
+upload, an Apple Health Shortcut and an owner-run Garmin sync script, combined
+field by field per night. See [HEALTH-IMPORT.md](HEALTH-IMPORT.md) for the design,
+precedence, privacy decisions and exactly what is and is not verified. The
+official Garmin cloud connector (item 1), the Connect IQ background service
+(item 4) and the device pilot (item 8) are still not built.
+

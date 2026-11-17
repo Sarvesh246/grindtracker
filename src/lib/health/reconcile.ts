@@ -14,17 +14,36 @@ import type { HealthHistoryDay, HealthMetric } from './model'
  * Nothing here averages two sources together: one reading is chosen and its
  * provenance is kept so the UI can say where it came from.
  */
-export type HealthSource = 'connect_iq' | 'garmin_personal' | 'garmin_business'
+export type HealthSource =
+  | 'connect_iq'
+  | 'garmin_personal'
+  | 'garmin_business'
+  | 'garmin_export'
+  | 'garmin_unofficial'
+  | 'apple_health'
+/**
+ * Richest, most direct source first. Garmin's own cloud beats a hand-imported
+ * Garmin export, which beats Apple Health's coarser copy; the watch app is last
+ * because it supplies no sleep. Lower sources still fill fields the winner lacks.
+ */
 export const SOURCE_RANK: Record<HealthSource, number> = {
-  garmin_business: 3,
-  garmin_personal: 2,
+  garmin_business: 6,
+  garmin_personal: 5,
+  garmin_unofficial: 4,
+  garmin_export: 3,
+  apple_health: 2,
   connect_iq: 1
 }
 export const SOURCE_LABEL: Record<HealthSource, string> = {
   garmin_business: 'Garmin Connect (approved connection)',
   garmin_personal: 'Garmin Connect (personal)',
+  garmin_unofficial: 'Garmin sync script',
+  garmin_export: 'Garmin data export',
+  apple_health: 'Apple Health',
   connect_iq: 'Garmin watch app'
 }
+export const sourceLabel = (source: string): string =>
+  (SOURCE_LABEL as Record<string, string>)[source] ?? source
 
 export interface SampleRow {
   metric: string
