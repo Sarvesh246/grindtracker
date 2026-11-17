@@ -147,6 +147,31 @@ export function mergeSamplesIntoHistory(
   }
 }
 
+/**
+ * Newest successful sync across every source: connection imports (sleep
+ * script, Shortcut, export) and the watch's daily uploads. Preferring one
+ * kind over the other showed an old sleep import as the last sync while the
+ * watch had just uploaded.
+ */
+export function latestSync(
+  connections: { last_success_at: string | null }[],
+  days: { synced_at?: string | null }[]
+): string | null {
+  let best: string | null = null
+  let bestMs = -Infinity
+  for (const iso of [
+    ...connections.map((c) => c.last_success_at),
+    ...days.map((d) => d.synced_at ?? null)
+  ]) {
+    const ms = iso ? Date.parse(iso) : NaN
+    if (Number.isFinite(ms) && ms > bestMs) {
+      best = iso
+      bestMs = ms
+    }
+  }
+  return best
+}
+
 export function relativeTime(iso: string | null | undefined, now: number): string | null {
   if (!iso) return null
   const minutes = Math.round((now - Date.parse(iso)) / 60000)

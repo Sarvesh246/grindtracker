@@ -25,6 +25,7 @@ import { Ring } from '@/components/body/ChargeRing'
 import {
   connectionErrorText,
   relativeTime,
+  latestSync,
   SOURCE_LABEL,
   sourceLabel
 } from '@/lib/health/reconcile'
@@ -226,17 +227,27 @@ const STATUS_TEXT = {
   error: 'Needs attention'
 } as const
 
+/** Wall clock for "synced x ago": re-reads every minute and when the app returns to the foreground. */
+function useNow() {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const tick = () => setNow(Date.now())
+    const id = window.setInterval(tick, 60_000)
+    window.addEventListener('focus', tick)
+    document.addEventListener('visibilitychange', tick)
+    return () => {
+      window.clearInterval(id)
+      window.removeEventListener('focus', tick)
+      document.removeEventListener('visibilitychange', tick)
+    }
+  }, [])
+  return now
+}
+
 export function sourceSummary(data: HealthSummary, date: string, now: number): string {
   const { body, connections } = data
   const row = body.days.find((d) => d.local_date === date)
-  const lastSync =
-    connections
-      .map((c) => c.last_success_at)
-      .filter((t): t is string => !!t)
-      .sort()
-      .at(-1) ??
-    row?.synced_at ??
-    null
+  const lastSync = latestSync(connections, body.days)
   const synced = relativeTime(lastSync, now)
   if (!body.hasWatch && !connections.length) return 'Connection & data sources'
   return `Garmin${body.hasWatch ? ' watch' : ''}${synced ? ` · synced ${synced}` : row ? ` · snapshot ${dateLabel(date)}` : ' · no snapshot'}`
@@ -251,7 +262,7 @@ export function HealthSourceStatus({
   date: string
   id?: string
 }) {
-  const [now] = useState(() => Date.now())
+  const now = useNow()
   const { body, connections } = data
   const row = body.days.find((d) => d.local_date === date)
   const provenance = Object.entries(data.provenance[date] ?? {}) as [
@@ -864,7 +875,7 @@ export function HealthView({
   const body = data?.body
   const selectedRow = data?.history.find((d) => d.local_date === date) ?? null
   const [sourceOpen, setSourceOpen] = useState(false)
-  const [now] = useState(() => Date.now())
+  const now = useNow()
   const hasMetric = (m: HealthMetric) => !!data?.history.some((d) => metricValue(d, m) != null)
   return (
     <>

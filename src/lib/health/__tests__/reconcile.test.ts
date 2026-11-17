@@ -6,6 +6,7 @@ import {
   localDateIn,
   mergeSamplesIntoHistory,
   relativeTime,
+  latestSync,
   type SampleRow
 } from '../reconcile'
 import { dayAnnotations, intradayEnvelope, mainSleep, type SleepSession } from '../model'
@@ -287,5 +288,22 @@ describe('usual shape of the day', () => {
     const env = intradayEnvelope(sparse, '2026-11-16', 'bb_series')!
     assert.equal(env.low[20], null)
     assert.notEqual(env.low[21], null)
+  })
+})
+
+describe('latestSync', () => {
+  it('picks the newest of connection imports and watch uploads', () => {
+    assert.equal(
+      latestSync(
+        [{ last_success_at: '2026-11-16T09:00:00Z' }, { last_success_at: null }],
+        [{ synced_at: '2026-11-16T11:59:00Z' }, { synced_at: '2026-11-15T20:00:00Z' }]
+      ),
+      '2026-11-16T11:59:00Z'
+    )
+    assert.equal(
+      latestSync([{ last_success_at: '2026-11-16T12:00:00Z' }], [{ synced_at: '2026-11-16T11:00:00Z' }]),
+      '2026-11-16T12:00:00Z'
+    )
+    assert.equal(latestSync([], []), null)
   })
 })
