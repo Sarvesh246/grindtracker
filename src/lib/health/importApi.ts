@@ -189,8 +189,19 @@ export async function healthImportRequest(request: Request, deps: WatchDeps) {
             'collection_paused',
             'Health collection is paused in GRIND Settings.'
           )
+        // The migration (or PostgREST's schema cache) is missing: say so plainly.
+        if (
+          /Could not find the function|schema cache|PGRST202|does not exist/i.test(
+            result.error.message
+          )
+        )
+          return watchError(
+            503,
+            'setup_required',
+            "Sleep import isn't installed in the database yet. Run migration 64 in Supabase, then run: notify pgrst, 'reload schema';"
+          )
         // Never log the payload; the message is a stable code from the database.
-        deps.log('health import failed', result.error.message.slice(0, 80))
+        deps.log('health import failed', result.error.message.slice(0, 240))
         return watchError(503, 'service_unavailable', 'Sleep could not be saved. Retry shortly.')
       }
     }

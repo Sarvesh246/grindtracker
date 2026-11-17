@@ -187,3 +187,71 @@ describe('POST /health-import', () => {
     assert.doesNotMatch(await res.text(), /relation/)
   })
 })
+
+describe('simulating the real Shortcut', () => {
+  // A realistic 3-day Apple Health pull: two writers (watch + phone), In Bed rows,
+  // minute-level stage fragments, CRLF line endings, and a trailing blank line.
+  function pull(days = 3, fragmentMinutes = 5) {
+    const rows: string[] = []
+    for (let d = days; d >= 1; d--) {
+      const end = Date.parse('2026-11-17T13:00:00Z') - (d - 1) * 86400000
+      const start = end - 8 * 3600000
+      rows.push(`${new Date(start - 600000).toISOString().replace('Z', '+00:00')} | ${new Date(end + 300000).toISOString().replace('Z', '+00:00')} | In Bed`)
+      const stages = ['Core', 'Deep', 'Core', 'REM', 'Asleep (Core)', 'Awake']
+      for (let t = start, i = 0; t < end; t += fragmentMinutes * 60000, i++) {
+        const row = `${new Date(t).toISOString().replace('Z', '+00:00')} | ${new Date(t + fragmentMinutes * 60000).toISOString().replace('Z', '+00:00')} | ${stages[Math.floor(i / 6) % stages.length]}`
+        rows.push(row)
+        if (i % 7 === 0) rows.push(row) // a second app wrote the same sample
+      }
+    }
+    return rows.join('\r\n') + '\r\n\r\n'
+  }
+  const send = (samples: string, over: Record<string, unknown> = {}, token: string | null = null) => {
+    const { d, calls } = deps()
+    return healthImportRequest(
+      post({ kind: 'apple_health', timezone: 'America/Chicago', token: TOKEN, samples, ...over }, token),
+      d
+    ).then(async (res) => ({ res, body: (await res.json()) as Record<string, unknown>, calls }))
+  }
+  it('saves all three nights from a messy realistic pull', async () => {
+    const { res, body, calls } = await send(pull())
+    assert.equal(res.status, 200)
+    assert.equal(body.imported, 3)
+    const batch = calls.find((c) => c.fn === 'token_import_health_batch')!.args.p_batch as { sleeps: { kind: string; stage_totals: unknown }[] }
+    assert.equal(batch.sleeps.length, 3)
+    assert.ok(batch.sleeps.every((s) => s.kind === 'main' && s.stage_totals))
+  })
+  it('survives a night with thousands of fragments by keeping totals and dropping the timeline', async () => {
+    const { res, body, calls } = await send(pull(1, 1))
+    assert.equal(res.status, 200)
+    assert.equal(body.imported, 1)
+    const batch = calls.find((c) => c.fn === 'token_import_health_batch')!.args.p_batch as { sleeps: { stages: unknown[] | null }[] }
+    assert.ok(batch.sleeps[0].stages === null || batch.sleeps[0].stages.length <= 1500)
+  })
+  it('works with local times that carry no offset', async () => {
+    const naive = [
+      '2026-11-16T23:30:00 | 2026-11-17T02:00:00 | Core',
+      '2026-11-17T02:00:00 | 2026-11-17T03:00:00 | Deep',
+      '2026-11-17T03:00:00 | 2026-11-17T07:15:00 | Asleep (REM)'
+    ].join('\n')
+    const { body } = await send(naive)
+    assert.equal(body.imported, 1)
+  })
+  it('explains a missing database function instead of a vague retry', async () => {
+    const { d } = deps({
+      token_import_health_batch: {
+        data: null,
+        error: { message: 'Could not find the function public.token_import_health_batch(p_batch, p_device, p_source, p_user) in the schema cache' }
+      }
+    })
+    const res = await healthImportRequest(post({ ...apple, token: TOKEN }, null), d)
+    const body = (await res.json()) as { error: { code: string; message: string } }
+    assert.equal(body.error.code, 'setup_required')
+    assert.match(body.error.message, /migration 64/)
+  })
+  it('keeps the old vague error for genuine, unrelated failures', async () => {
+    const { d } = deps({ token_import_health_batch: { data: null, error: { message: 'deadlock detected' } } })
+    const res = await healthImportRequest(post({ ...apple, token: TOKEN }, null), d)
+    assert.equal(((await res.json()) as { error: { code: string } }).error.code, 'service_unavailable')
+  })
+})

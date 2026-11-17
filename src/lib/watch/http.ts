@@ -19,6 +19,7 @@ export type WatchErrorCode =
   | 'open_session_conflict'
   | 'day_already_logged'
   | 'collection_paused'
+  | 'setup_required'
   | 'service_unavailable'
   | 'internal_error'
 

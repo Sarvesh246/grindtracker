@@ -66,3 +66,14 @@ iOS Shortcuts sometimes drops custom request headers, which shows up as
 accepts the device token as a `token` field in the JSON body (same TLS, same
 revocation and rate limits; the body is never logged). Use the header when it works
 and the body field when it does not.
+
+### Error `setup_required`
+
+The import endpoint answers `503 setup_required` when the database cannot find
+`token_import_health_batch`: migration 64 is not applied, or PostgREST's schema
+cache has not reloaded. Apply `docs/sql/64-health-import-sources.sql` and run
+`notify pgrst, 'reload schema';`. Other database failures stay a generic
+`service_unavailable` (the Vercel log shows the first 240 characters of the
+database message, never the payload). The unit suite includes a simulated
+Shortcut pull (two writers, `In Bed` rows, CRLF lines, minute-level fragments,
+offset-less times) so the parser is exercised against realistic input.

@@ -369,7 +369,9 @@ export function parseAppleSamples(
     )
     // Only trust a timeline if the staged samples cover most of the night.
     const covered = stages.reduce((n, s) => n + (Date.parse(s.end) - Date.parse(s.start)), 0)
-    const useStages = stages.length > 0 && covered >= 0.8 * (endMs - startMs)
+    // Ingestion caps a night at 1,500 intervals; past that keep the totals and drop the timeline.
+    const useTotals = stages.length > 0 && covered >= 0.8 * (endMs - startMs)
+    const useStages = useTotals && stages.length <= 1500
     nights.push({
       provider_id: `apple_health:${Math.floor(startMs / 1000)}`,
       wake_date: wake,
@@ -381,7 +383,7 @@ export function parseAppleSamples(
       duration_seconds: Math.min(Math.round(asleep), Math.floor((endMs - startMs) / 1000)),
       score: null,
       stages: useStages ? stages : null,
-      stage_totals: useStages ? totalsFromStages(stages) : null,
+      stage_totals: useTotals ? totalsFromStages(stages) : null,
       overnight_hrv: null,
       respiration: null,
       spo2: null,
