@@ -89,7 +89,14 @@ Moved out of [CLAUDE.md](../CLAUDE.md) to keep that file short; its text is unch
   the analyzed motion window (motion_x/y/z smallint[] milli-g at 12.5 Hz,
   steps), the counter's events timeline and diag (jsonb). Owner SELECT only;
   writes via the service-role `watch_store_rep_lab`. Tuning data for the
-  watch rep counter; nothing in the app reads it (migration `66`).
+  watch rep counter; nothing in the app reads it (migration `66`). Migration
+  `67` adds mag_x/y/z (compass, smallint[]), hr (bpm per second, smallint[])
+  and beats (ms between heartbeats, int[]).
+- watch_telemetry — id PK (chosen by the watch), user_id (cascade), kind
+  (`unclean_exit` | `session`), at, app_version, data jsonb. App health from
+  the watch: crashes with what the app was doing, per-workout battery, memory,
+  counter timing and upload outcomes. Owner SELECT only; writes via the
+  service-role `watch_store_telemetry`; trimmed after 365 days (migration `67`).
 - body_prefs — user_id PK, coach_uses_body (default true), smart_rest (default
   false). Owner select/insert/update; toggled from Settings → Watch.
   `delete_body_data()` (authenticated) wipes the caller's daily_body rows and

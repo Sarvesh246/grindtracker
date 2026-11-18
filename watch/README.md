@@ -152,22 +152,41 @@ Two switches in `source/Config.mc`:
 
 ## Rep lab: tuning the counter on real sets
 
-With Rep lab on (Home → MENU, on by default), every set you finish records
-the motion window the counter analyzed, what AUTO showed and when, and the
-reps you saved. The recordings upload after the workout syncs. To see them:
+Think of it as a flight recorder for the counter. With Rep lab on (Home →
+MENU, on by default), every set you finish records the raw wrist motion, the
+compass, heart rate and beat intervals, what AUTO showed and when, and the
+reps you saved. Recording carries on after you take over with UP/DOWN, since
+those are the sets the counter most needs to learn from. The app also reports
+its own health: any run that never stopped cleanly (a crash) with what it was
+doing, and per workout its battery use, peak memory and longest counter step.
+Everything uploads after the workout syncs.
+
+The loop:
 
 ```bash
-npm run replab                 # last 7 days; add -- --days 30 for more
+npm run replab                          # pull the last 30 days and score them
+npm run replab -- --save-baseline       # remember today's results
+# ...tune watch/tools/reps.mjs...
+npm run replab -- --offline             # did it help? lists sets fixed and broken
+npm run replab -- --offline --set 3f2a  # one set's timeline and diagnostics
 ```
 
-It prints each set (logged vs AUTO vs what the current `tools/reps.mjs` makes
-of the same motion, and the wait from the wrist settling to the count) and
-saves them to `watch/lab-data/` (gitignored) for replaying while tuning.
+It shows each set (logged vs AUTO vs what the current `tools/reps.mjs` makes
+of the same motion), accuracy per exercise, the kinds of miss, how fast the
+count appears, and the watch's health. Recordings are saved to
+`watch/lab-data/` (gitignored). Once a change helps, port it to
+`source/Reps.mc` and check native vs JS parity before sideloading.
+
+If the phone keeps failing to carry a large record, the watch retries it
+without the compass and beat intervals. If the sensor stream breaks in two
+sets while the extra sensors are on, it stops asking for them; switching Rep
+lab off and on gives them another chance.
 
 **The saved number is the truth**, so if AUTO is wrong, fix it before you
 finish the set, or Undo and save it again. A later Undo correction updates the
-recording too. Gotcha: the table comes from `docs/sql/66-rep-lab.sql`; until
-it's applied the watch keeps its recordings and retries.
+recording too. Gotcha: the tables come from `docs/sql/66-rep-lab.sql` and
+`67-watch-telemetry.sql`; until they're applied the watch keeps its records
+and retries.
 
 ## Reading logs off the watch
 

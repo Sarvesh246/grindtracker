@@ -94,6 +94,13 @@ module Reps {
     var batches = 0;
     var lastResult = null;
     var sensorStatus = "idle";
+    var rich = false;          // compass and beat intervals requested too
+    var richCounted = false;   // this set already counted against them
+
+    function richBad() {
+        var v = Store.get("rb");
+        return v instanceof Lang.Number ? v : 0;
+    }
     var head = 0;              // oldest entry once the motion buffer is full
     var clipped = false;
 
@@ -156,36 +163,20 @@ module Reps {
         events = [];
         t0 = System.getTimer();
         analyses = 0; analysisMs = 0; longestStep = 0;
+        Tape.reset();
     }
 
-    // The set's motion window and timeline for the rep lab, in the units the
-    // server stores: milli-g at 12.5 Hz and step-counter deltas.
+    // The set's timeline and diagnostics for the rep lab. The signals
+    // themselves come from Tape.
     function snapshot() {
-        var axes = [ordered(bx), ordered(by), ordered(bz)];
-        var out = [];
-        for (var k = 0; k < 3; k++) {
-            var a = axes[k];
-            var m = new [a.size()];
-            for (var i = 0; i < a.size(); i++) {
-                var v = a[i] * 1000.0;
-                m[i] = (v >= 0 ? v + 0.5 : v - 0.5).toNumber();
-            }
-            out.add(m);
-        }
-        var st = ordered(bs);
-        var steps = new [st.size()];
-        for (var i = 0; i < st.size(); i++) { steps[i] = imax(0, st[i] - st[0]); }
-        return {
-            "x" => out[0], "y" => out[1], "z" => out[2], "steps" => steps, "clipped" => clipped,
-            "events" => events,
-            "diag" => {
-                "sensor" => sensorStatus, "batches" => batches, "motion" => revision,
-                "result" => lastResult == null ? null : lastResult[0] + (lastResult[1] ? "" : "?"),
-                "interrupted" => interrupted, "listening" => listening, "manual" => manual,
-                "analyses" => analyses, "analysis_ms" => analysisMs, "longest_callback_ms" => longestStep,
-                "set_ms" => System.getTimer() - t0
-            }
-        };
+        var d = Tape.diag();
+        d["sensor"] = sensorStatus; d["batches"] = batches; d["motion"] = revision;
+        d["result"] = lastResult == null ? null : lastResult[0] + (lastResult[1] ? "" : "?");
+        d["interrupted"] = interrupted; d["listening"] = listening; d["manual"] = manual;
+        d["analyses"] = analyses; d["analysis_ms"] = analysisMs; d["longest_callback_ms"] = longestStep;
+        d["set_ms"] = System.getTimer() - t0;
+        d["rich"] = rich; d["rich_bad"] = richBad();
+        return { "events" => events, "diag" => d };
     }
 
     function clearMotion() {
@@ -210,14 +201,20 @@ module Reps {
         clipped = false;
     }
 
+    // Your number wins for the rest of the set. The listener keeps running
+    // so the rep lab still records the set; only the counting stops.
     function takeOver() {
-        stop();
+        cancelAnalysis();
         if (!manual) { ev(7, null, null, null, null); }
         manual = true;
     }
 
     function inputGap(reason, detail) {
         ev(4, gapCode(reason), null, null, null);
+        // The extra sensors are the newest thing on this path: if the stream
+        // misbehaves while they're on, count it, and after two such sets
+        // stop asking for them (Lab.RICH_BAD_MAX).
+        if (rich && !richCounted && sawMotion) { richCounted = true; Store.put("rb", richBad() + 1); }
         interrupted = sawMotion;
         if (interrupted || !sensorStatus.equals(reason)) {
             System.println("reps: " + reason + " (" + detail + ") after " + batches + " batches");
@@ -249,14 +246,35 @@ module Reps {
                 System.println("reps: accelerometer limit " + maxRate + " Hz");
                 return;
             }
-            Sensor.registerSensorDataListener(new Lang.Method(Reps, :onData), {
-                :period => 1,
-                :accelerometer => { :enabled => true, :sampleRate => RATE, :includeTimestamps => true }
-            });
+            rich = false;
+            richCounted = false;
+            if (Lab.enabled() && richBad() < Lab.RICH_BAD_MAX) {
+                try {
+                    var opts = {
+                        :period => 1,
+                        :accelerometer => { :enabled => true, :sampleRate => RATE, :includeTimestamps => true },
+                        :heartBeatIntervals => { :enabled => true }
+                    };
+                    if (Sensor has :getMaxSampleRateForSensorType && Sensor.getMaxSampleRateForSensorType(:magnetometer) >= RATE) {
+                        opts[:magnetometer] = { :enabled => true, :sampleRate => RATE };
+                    }
+                    Sensor.registerSensorDataListener(new Lang.Method(Reps, :onData), opts);
+                    rich = true;
+                } catch (e) {
+                    System.println("reps: extra sensors refused " + e.getErrorMessage());
+                    try { Sensor.unregisterSensorDataListener(); } catch (e2) { }
+                }
+            }
+            if (!rich) {
+                Sensor.registerSensorDataListener(new Lang.Method(Reps, :onData), {
+                    :period => 1,
+                    :accelerometer => { :enabled => true, :sampleRate => RATE, :includeTimestamps => true }
+                });
+            }
             listening = true;
             listenerAt = System.getTimer();
             sensorStatus = "waiting";
-            System.println("reps: listening at " + RATE + " Hz (max " + maxRate + ")");
+            System.println("reps: listening at " + RATE + " Hz (max " + maxRate + ") rich=" + rich);
         } catch (e) {
             System.println("reps: no accelerometer " + e.getErrorMessage());
             sensorStatus = "unavailable";
@@ -296,9 +314,13 @@ module Reps {
     }
 
     function onData(data) {
-        if (!listening || manual || interrupted) { return; }
+        if (!listening || interrupted) { return; }
+        Tape.feedExtra(data);
         var a = data == null ? null : data.accelerometerData;
         if (a == null || a.x == null || a.y == null || a.z == null) {
+            // A batch carrying only the extra sensors is not a gap: a stream
+            // that really stops is caught by checkDelivery.
+            if (manual || (data != null && (data.magnetometerData != null || data.heartRateData != null))) { return; }
             inputGap("missing accelerometer", null);
             return;
         }
@@ -306,6 +328,8 @@ module Reps {
     }
 
     function onSamples(xs, ys, zs, timestamps, now, steps) {
+        Tape.feed(xs, ys, zs, steps);
+        if (manual) { return; }
         var n = xs.size();
         if (n == 0 || n > 2 * RATE || ys.size() != n || zs.size() != n) {
             inputGap("invalid sample count", n);

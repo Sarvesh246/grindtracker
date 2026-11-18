@@ -365,7 +365,27 @@ synced, and deletes each once it gets `201`. A `4xx` other than `401` also
 drops it, so a set the server can't place never blocks the queue. Switch it
 off under Home → MENU → Rep lab.
 
-A full recording:
+A recording comes in one of two formats. Builds from `2026-11-18b` send the
+**tape** format; the server decodes it into the same stored arrays.
+
+Tape format (migration `67` stores the extra signals; before it they are
+dropped and the motion is still stored):
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `enc` | `"i16b64"` | Each motion axis is one base64 string of big-endian int16. |
+| `ax`, `ay`, `az` | base64 ≤ 938 samples | Accelerometer, milli-g at 12.5 Hz, same length. Recorded through the whole set, after a manual takeover too. |
+| `mx`, `my`, `mz` | base64, optional | Compass at 12.5 Hz, when the watch delivers it. |
+| `hr` | int[] ≤ 100 | Heart rate per sensor batch (about 1 s), 0 = no reading. |
+| `beats` | int[] ≤ 240, optional | Milliseconds between heartbeats. |
+| `step_marks` | [int, int][] ≤ 100 | Per batch: accelerometer samples since START, steps since START. Expanded to `steps` per sample. |
+| `slim` | bool, optional | The compass and beats were dropped after three Bluetooth failures to get the record through. |
+| `diag` | object | Adds `tape_samples`, `tape_total`, `mag_samples`, `beats`, `mem_peak`, `mem_total`, `battery_start`, `battery_end`, `rich`, `rich_bad`. |
+
+Plus the shared fields from `id` to `clipped`, `events` and `app_version` in
+the table below (not `x`, `y`, `z`, `steps`). A full tape is under 30 KB.
+
+The first format:
 
 | Field | Type | Notes |
 | --- | --- | --- |
@@ -389,6 +409,22 @@ A correction, after the set was reopened with Undo and saved again:
 undoes a correction. `201` returns `{ "id", "stored" }`.
 
 Read them with `npm run replab` (see `watch/README.md`).
+
+## POST /telemetry
+
+App health from the watch (migration `67`), sent through the same queue as the
+rep lab, one record per request, without waiting for any workout.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | uuid | Chosen by the watch; a re-send overwrites itself. |
+| `kind` | `unclean_exit` or `session` | `unclean_exit`: the previous run never reached a clean stop (a crash, a flat battery, a reboot), reported on the next start. `session`: one saved workout's vitals. |
+| `at` | ISO 8601 | When it happened, by the watch's clock. |
+| `app_version` | string | |
+| `data` | object ≤ 40 fields | Strings, numbers, booleans, null or number arrays ≤ 20. An `unclean_exit` carries what the app was doing (`phase`: open, set, logged; `sets`, `manual`, `listening`, `mem`, `battery`, `longest_callback_ms`, …). A `session` carries `duration_s`, `sets`, `battery_start/end`, `mem_peak`, `longest_callback_ms`, sets with compass and beats, sensor gaps, and upload outcomes (`uploads_ok`, `uploads_failed`, `upload_codes`). Both add the device's `part`, `fw` and `ciq`. |
+
+`201` returns `{ "id", "stored" }`; a database failure is `503` and the watch
+retries.
 
 ## Rate limits and payload size
 

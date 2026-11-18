@@ -141,7 +141,59 @@ const milliG = z.int().min(-16_000).max(16_000)
 /** POST /rep-lab: one set recorded for tuning the wrist rep counter
  *  (migration 66). A full recording carries the motion arrays; a correction
  *  made later through Undo carries only `id` and `logged_reps`. */
+/** int16 big-endian samples, base64: at most `max` samples per axis. */
+const b64Bytes = (s: string) => (s.length / 4) * 3 - (s.endsWith('==') ? 2 : s.endsWith('=') ? 1 : 0)
+const i16b64 = (max: number) => z.string()
+  .regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/, 'must be base64')
+  .refine(s => b64Bytes(s) % 2 === 0 && b64Bytes(s) <= 2 * max, { message: `must hold at most ${max} int16 samples` })
+
+/** Shared by both recording formats. */
+const repLabMeta = {
+  id: uuid,
+  session_id: uuid,
+  exercise_id: z.string().max(64).nullish(),
+  exercise_name: z.string().max(120).nullish(),
+  set_number: z.int().min(1).max(100).nullish(),
+  weight: z.number().min(0).max(2000).nullish(),
+  unit: z.enum(['lbs', 'kg']).nullish(),
+  logged_reps: z.int().min(0).max(1000),
+  auto_reps: z.int().min(0).max(1000).nullish(),
+  auto_shown: z.boolean(),
+  typed: z.boolean(),
+  started_at: isoUtc.nullish(),
+  finished_at: isoUtc.nullish(),
+  rate_hz: z.number().min(1).max(100),
+  clipped: z.boolean(),
+  /** Counter timeline: [ms since START, kind, a, b, c, d]. */
+  events: z.array(z.array(z.number()).max(6)).max(120).nullish(),
+  diag: z.record(z.string().max(32), z.union([z.string().max(200), z.number(), z.boolean(), z.null()])).nullish(),
+  app_version: z.string().max(32).nullish(),
+}
+
+/** The tape format (watch builds from 2026-11-18b): each axis one base64
+ *  string of int16, plus compass, heart rate, beat intervals and step marks. */
+export const watchRepLabTapeSchema = z.strictObject({
+  ...repLabMeta,
+  enc: z.literal('i16b64'),
+  ax: i16b64(MAX_REP_LAB_SAMPLES),
+  ay: i16b64(MAX_REP_LAB_SAMPLES),
+  az: i16b64(MAX_REP_LAB_SAMPLES),
+  mx: i16b64(MAX_REP_LAB_SAMPLES).nullish(),
+  my: i16b64(MAX_REP_LAB_SAMPLES).nullish(),
+  mz: i16b64(MAX_REP_LAB_SAMPLES).nullish(),
+  /** Heart rate per sensor batch (about 1 s), 0 = no reading. */
+  hr: z.array(z.int().min(0).max(255)).max(100).nullish(),
+  /** Milliseconds between heartbeats. */
+  beats: z.array(z.int().min(0).max(5000)).max(240).nullish(),
+  /** [accelerometer sample index since START, steps since START] per batch. */
+  step_marks: z.array(z.tuple([z.int().min(0).max(100_000), z.int().min(0).max(10_000)])).max(100).nullish(),
+  /** The compass and beat intervals were dropped to get the record through. */
+  slim: z.boolean().nullish(),
+}).refine(v => v.ax.length === v.ay.length && v.ay.length === v.az.length, { message: 'ax, ay and az must be the same length', path: ['ax'] })
+  .refine(v => v.mx == null || (v.mx.length === (v.my ?? '').length && v.mx.length === (v.mz ?? '').length), { message: 'mx, my and mz must be the same length', path: ['mx'] })
+
 export const watchRepLabSchema = z.union([
+  watchRepLabTapeSchema,
   z.strictObject({
     id: uuid,
     session_id: uuid,
@@ -175,6 +227,24 @@ export const watchRepLabSchema = z.union([
 ])
 
 export type WatchRepLabInput = z.infer<typeof watchRepLabSchema>
+
+const telemetryValue = z.union([
+  z.string().max(200), z.number(), z.boolean(), z.null(), z.array(z.number()).max(20),
+])
+
+/** POST /telemetry: app health from the watch (migration 67). `unclean_exit`
+ *  is a run that never stopped cleanly (a crash, a flat battery, a reboot),
+ *  reported on the next start with what the app was doing; `session` is one
+ *  saved workout's battery, memory, counter timing and upload outcomes. */
+export const watchTelemetrySchema = z.strictObject({
+  id: uuid,
+  kind: z.enum(['unclean_exit', 'session']),
+  at: isoUtc.nullish(),
+  app_version: z.string().max(32).nullish(),
+  data: z.record(z.string().max(32), telemetryValue).refine(d => Object.keys(d).length <= 40, { message: 'at most 40 fields' }),
+})
+
+export type WatchTelemetryInput = z.infer<typeof watchTelemetrySchema>
 
 /** Zod issues as `{ path, message }`, path dotted (`sets.2.reps`). */
 export function formatIssues(error: z.ZodError): { path: string; message: string }[] {

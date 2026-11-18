@@ -13,7 +13,8 @@ using Toybox.Time;
 // per-value limit) and at most MAX_RECORDS waiting, oldest dropped first.
 module Lab {
     const MAX_RECORDS = 60;
-    const VERSION = "2026-11-18";
+    const VERSION = "2026-11-18b";
+    const RICH_BAD_MAX = 2;    // sets with a broken stream before the extra sensors go off
 
     // On unless switched off in the Home menu.
     function enabled() {
@@ -21,7 +22,11 @@ module Lab {
         return v == null || v == true;
     }
 
-    function setEnabled(on) { Store.put("lab", on); }
+    // Switching it back on also gives the extra sensors another chance.
+    function setEnabled(on) {
+        Store.put("lab", on);
+        if (on) { Store.del("rb"); }
+    }
 
     function queue() {
         var q = Store.get("labq");
@@ -48,6 +53,19 @@ module Lab {
     }
 
     // A discarded workout never reaches the server: its recordings can't either.
+    // A record the phone keeps failing to carry: send it again without the
+    // compass and beat intervals, the parts most likely to be dispensable.
+    function slim(key) {
+        var r = Store.get(key);
+        if (!(r instanceof Lang.Dictionary) || !(r["body"] instanceof Lang.Dictionary)) { return false; }
+        var b = r["body"];
+        if (b["mx"] == null && b["beats"] == null) { return false; }
+        b.remove("mx"); b.remove("my"); b.remove("mz"); b.remove("beats");
+        b["slim"] = true;
+        Store.put(key, r);
+        return true;
+    }
+
     function dropSession(sid) {
         var q = queue();
         for (var i = 0; i < q.size(); i++) {
@@ -66,19 +84,16 @@ module Lab {
         if (!enabled() || Config.DEMO_DATA) { return; }
         try {
             var m = Reps.snapshot();
-            push("lb_" + set["id"], {
-                "sid" => sid,
-                "body" => {
-                    "id" => set["id"], "session_id" => sid,
-                    "exercise_id" => ex["id"], "exercise_name" => ex["name"],
-                    "set_number" => set["n"], "weight" => set["w"], "unit" => unit,
-                    "logged_reps" => set["r"], "auto_reps" => Reps.count, "auto_shown" => autoShown,
-                    "typed" => Reps.manual, "started_at" => iso(startedAt), "finished_at" => iso(set["t"]),
-                    "rate_hz" => 12.5, "clipped" => m["clipped"],
-                    "x" => m["x"], "y" => m["y"], "z" => m["z"], "steps" => m["steps"],
-                    "events" => m["events"], "diag" => m["diag"], "app_version" => VERSION
-                }
-            });
+            var body = Tape.encode();
+            body["id"] = set["id"]; body["session_id"] = sid;
+            body["exercise_id"] = ex["id"]; body["exercise_name"] = ex["name"];
+            body["set_number"] = set["n"]; body["weight"] = set["w"]; body["unit"] = unit;
+            body["logged_reps"] = set["r"]; body["auto_reps"] = Reps.count; body["auto_shown"] = autoShown;
+            body["typed"] = Reps.manual; body["started_at"] = iso(startedAt); body["finished_at"] = iso(set["t"]);
+            body["rate_hz"] = 12.5;
+            body["events"] = m["events"]; body["diag"] = m["diag"]; body["app_version"] = VERSION;
+            push("lb_" + set["id"], { "sid" => sid, "body" => body });
+            Health.noteSet(m["diag"]);
         } catch (e) {
             System.println("lab capture failed " + e.getErrorMessage());
         }
@@ -89,7 +104,7 @@ module Lab {
         if (!enabled() || Config.DEMO_DATA) { return; }
         var key = "lb_" + setId;
         var waiting = Store.get(key);
-        if (waiting instanceof Lang.Dictionary && waiting["body"]["x"] != null) {
+        if (waiting instanceof Lang.Dictionary && waiting["body"]["logged_reps"] != null && waiting["body"]["corrected"] == null) {
             // Not uploaded yet: fix the recording itself.
             waiting["body"]["logged_reps"] = reps;
             Store.put(key, waiting);
@@ -108,6 +123,7 @@ module Lab {
             var r = Store.get(q[i]);
             if (!(r instanceof Lang.Dictionary)) { drop(q[i]); return null; }
             var sid = r["sid"];
+            if (sid == null) { return q[i]; } // health records wait for nothing
             if (active != null && active.equals(sid)) { continue; }
             var queued = false;
             for (var j = 0; j < waiting.size(); j++) { if (waiting[j].equals(sid)) { queued = true; } }

@@ -149,3 +149,11 @@ Not testable off the wrist: haptics, rep counting on your own wrist, Garmin Conn
 - The attached watch exposed seven historical watchdog crashes in `CIQ_LOG.BAK`. Its latest logged press and row sets had no automatic count. No labeled workout on the new release was available during this audit.
 - The scratch watch API database now records cron job registrations in a fixture when PostgreSQL lacks the scheduling extension. This lets the real migrations and watch database tests run without dispatching hosted cron jobs.
 - Physical haptics, on-wrist rep counting, Garmin Connect activity creation, a fresh phone-mediated upload, and a scheduled background wake on the new build require use after USB disconnect.
+
+## Telemetry pass (2026-11-18)
+
+- Rep lab records now come from `Tape`: fixed ByteArray rings (about 1.9 KB an axis) holding the accelerometer and compass at 12.5 Hz, plus heart rate per second, beat intervals and step marks, encoded as base64 int16 at capture. A full record is under 30 KB, inside the 32 KB storage value.
+- Taking over with UP/DOWN stops the counting but no longer the listener, so the sets that needed fixing are recorded whole.
+- The compass and beat intervals are requested with the accelerometer and fall back to accelerometer-only if refused. Two sets with a broken stream while they're on switch them off until Rep lab is toggled.
+- `Health` marks each run alive and clears the mark on a clean stop; the next start reports a run that died, with what it was doing. Each saved workout sends battery, peak memory, the longest counter step and upload outcomes.
+- Worst case in the simulator (two minutes of curls through the real callback with every sensor on): peak 216 KB of the watch's 768 KB, 16 ms per sensor batch, 47-62 ms to capture. 47 native tests pass, the demo tour completes with no failures, and 633 repository tests pass.

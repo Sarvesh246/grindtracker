@@ -2,6 +2,7 @@ using Toybox.Lang;
 using Toybox.Test;
 using Toybox.Math;
 using Toybox.System;
+using Toybox.StringUtil;
 
 // Run: build with --unit-test, then `monkeydo bin/grind-test.prg fr165m -t`.
 // (:test) code is stripped from normal builds.
@@ -22,6 +23,21 @@ module T {
     function ck(logger, name, cond) {
         if (!cond) { logger.error("FAILED: " + name); }
         return cond;
+    }
+
+    function unb64(str) {
+        return StringUtil.convertEncodedString(str, {
+            :fromRepresentation => StringUtil.REPRESENTATION_STRING_BASE64,
+            :toRepresentation => StringUtil.REPRESENTATION_BYTE_ARRAY
+        });
+    }
+
+    // One 25 Hz batch of constant milli-g values: 12.5 Hz samples after
+    // pair averaging.
+    function batch(v, size) {
+        var xs = []; var ys = []; var zs = [];
+        for (var i = 0; i < size; i++) { xs.add(v); ys.add(-v); zs.add(v + 1); }
+        return [xs, ys, zs];
     }
 
     function sampleMeta() {
@@ -873,12 +889,17 @@ function testRepLabRecordsSets(logger) {
     }
     for (var i = 0; i < 500 && Reps.job != null; i++) { Reps.advanceAnalysis(); }
     var shown = Reps.offer();
+    var n = data[0].size();
     Workout.logDisplayedSet(shown);
     var setId = Workout.sets[0]["id"];
     var rec = Store.get("lb_" + setId);
     var body = rec == null ? null : rec["body"];
-    var ok = T.ck(logger, "set recorded with its motion window", body != null && body["x"].size() == data[0].size()
-        && body["y"].size() == body["x"].size() && body["logged_reps"] == 8 && body["auto_reps"] == 8
+    var ax = body == null ? null : T.unb64(body["ax"]);
+    var ok = T.ck(logger, "set recorded with its motion window", body != null && body["enc"].equals("i16b64")
+        && ax.size() == 2 * n && T.unb64(body["az"]).size() == ax.size()
+        && Tape.get16(ax, 0) == (1000 * data[0][0]).toNumber() && Tape.get16(ax, n - 1) == (1000 * data[0][n - 1]).toNumber()
+        && body["diag"]["tape_samples"] == n && body["hr"].size() > 0 && body["step_marks"].size() > 0
+        && body["logged_reps"] == 8 && body["auto_reps"] == 8
         && body["auto_shown"] == true && body["session_id"].equals(sid) && body["started_at"] != null);
     var kinds = {};
     for (var i = 0; i < body["events"].size(); i++) { kinds[body["events"][i][1]] = true; }
@@ -893,6 +914,13 @@ function testRepLabRecordsSets(logger) {
     ok = T.ck(logger, "held while its workout is open", Lab.next() == null) && ok;
     Workout.cur["sumAt"] = Workout.now();
     Workout.finish(true);
+    // The saved workout's health summary goes first, waiting for nothing.
+    var h = Lab.next();
+    var hb = h == null ? null : Store.get(h)["body"];
+    ok = T.ck(logger, "workout health summary queued", h != null && h.substring(0, 3).equals("lh_")
+        && hb["kind"].equals("session") && hb["data"]["sets"] == 1 && hb["data"]["lab_sets"] == 1
+        && hb["data"]["mem_peak"] > 0) && ok;
+    Lab.drop(h);
     ok = T.ck(logger, "held while its workout waits to upload", Store.queue().indexOf(sid) >= 0 && Lab.next() == null) && ok;
     Store.dequeue(sid);
     ok = T.ck(logger, "sent once the workout has synced", Lab.next() != null && Lab.next().equals("lb_" + setId)) && ok;
@@ -949,7 +977,8 @@ function testDisplayedRepCorrections(logger) {
     input.view.displayedOffer = 8;
     Reps.count = 10;
     input.bump(1);
-    var ok = T.ck(logger, "corrects visible eight to nine", Workout.cur["r"] == 9 && Reps.manual && !Reps.listening);
+    // The listener stays on for the rep lab; counting stops.
+    var ok = T.ck(logger, "corrects visible eight to nine", Workout.cur["r"] == 9 && Reps.manual && Reps.job == null && Reps.offer() == null);
     input.bump(1);
     ok = T.ck(logger, "second press before redraw increments again", Workout.cur["r"] == 10) && ok;
     Workout.logDisplayedSet(8);
@@ -1151,5 +1180,177 @@ function testWorkoutScreensDoNotExhaustTimers(logger) {
     Reps.listening = was;
     b.onHide();
     a.onHide();
+    return ok;
+}
+
+// The tape's ring keeps the newest 75 s in order, and its int16 encoding
+// survives the full milli-g range and the clamps either side.
+(:test)
+function testTapeRingAndEncoding(logger) {
+    Tape.reset();
+    var b = T.batch(0, 2);
+    // Values written straight through, then a wrap by 10 samples.
+    for (var i = 0; i < Tape.N + 10; i++) {
+        b = T.batch(i - 500, 2);
+        Tape.feed(b[0], b[1], b[2], i);
+    }
+    var e = Tape.encode();
+    var ax = T.unb64(e["ax"]);
+    var ay = T.unb64(e["ay"]);
+    var ok = T.ck(logger, "ring keeps the newest window in order", ax.size() == 2 * Tape.N
+        && Tape.get16(ax, 0) == 10 - 500 && Tape.get16(ax, Tape.N - 1) == Tape.N + 9 - 500
+        && Tape.get16(ay, 0) == 500 - 10 && e["clipped"] == true && Tape.total() == Tape.N + 10);
+    ok = T.ck(logger, "no compass or beats means none sent", e["mx"] == null && e["beats"] == null) && ok;
+    var ba = new [6]b;
+    Tape.put16(ba, 0, 40000); Tape.put16(ba, 1, -40000); Tape.put16(ba, 2, -1);
+    ok = T.ck(logger, "int16 clamps and sign", Tape.get16(ba, 0) == 32767 && Tape.get16(ba, 1) == -32768 && Tape.get16(ba, 2) == -1) && ok;
+    // An odd batch carries its last sample into the next one.
+    Tape.reset();
+    b = T.batch(100, 3); Tape.feed(b[0], b[1], b[2], 0);
+    b = T.batch(300, 1); Tape.feed(b[0], b[1], b[2], 0);
+    ax = T.unb64(Tape.encode()["ax"]);
+    ok = T.ck(logger, "pairs straddle batches", ax.size() == 4 && Tape.get16(ax, 1) == 200) && ok;
+    Tape.reset();
+    return ok;
+}
+
+// Taking over by hand stops the counting, not the recording: the sets you
+// had to fix are the ones the counter needs to learn from.
+(:test)
+function testTapeRecordsAfterTakeOver(logger) {
+    T.startPress(0);
+    Workout.setFocus(1);
+    Workout.beginSet();
+    Reps.listening = true;
+    var b = T.batch(50, Reps.RATE);
+    var ts = [];
+    for (var i = 0; i < Reps.RATE; i++) { ts.add(i * 40); }
+    Reps.onSamples(b[0], b[1], b[2], ts, 0, 0);
+    Workout.adjust(1, null);
+    var tsb = [];
+    for (var i = 0; i < Reps.RATE; i++) { tsb.add(1000 + i * 40); }
+    Reps.onSamples(b[0], b[1], b[2], tsb, 1000, 3);
+    var ok = T.ck(logger, "manual set keeps recording", Reps.manual && Reps.job == null && Reps.offer() == null
+        && Tape.total() == Reps.RATE && Reps.batches == 1);
+    Workout.finish(false);
+    return ok;
+}
+
+// A run that never stopped cleanly is reported on the next start, with what
+// it was doing; a clean stop leaves nothing to report.
+(:test)
+function testHealthReportsUncleanExit(logger) {
+    var savedQ = Store.get("labq");
+    var savedAlive = Store.get("alive");
+    Store.put("labq", []);
+    Lab.setEnabled(true);
+    Store.put("alive", { "at" => 1794848400, "phase" => "set", "mem" => 123456, "battery" => 54.0 });
+    Health.boot();
+    var key = Lab.next();
+    var body = key == null ? null : Store.get(key)["body"];
+    var ok = T.ck(logger, "unclean exit queued for upload", body != null && body["kind"].equals("unclean_exit")
+        && body["data"]["phase"].equals("set") && body["data"]["mem"] == 123456 && body["at"] != null);
+    ok = T.ck(logger, "this run is marked alive", Store.get("alive") instanceof Lang.Dictionary) && ok;
+    if (key != null) { Lab.drop(key); }
+    Health.stop();
+    Health.boot();
+    ok = T.ck(logger, "clean stop reports nothing", Lab.queue().size() == 0) && ok;
+    Health.stop();
+    if (savedAlive != null) { Store.put("alive", savedAlive); }
+    Store.put("labq", savedQ == null ? [] : savedQ);
+    return ok;
+}
+
+// The extra sensors switch themselves off after two sets whose stream broke
+// while they were on, and come back when Rep lab is switched on again.
+(:test)
+function testRichSensorsBackOff(logger) {
+    Store.del("rb");
+    Reps.reset();
+    Reps.rich = true; Reps.richCounted = false; Reps.listening = true; Reps.sawMotion = true;
+    Reps.inputGap("sample gap", 300);
+    Reps.reset();
+    Reps.rich = true; Reps.richCounted = false; Reps.listening = true; Reps.sawMotion = true;
+    Reps.inputGap("sample gap", 300);
+    Reps.inputGap("sample gap", 300);
+    var ok = T.ck(logger, "two broken sets counted once each", Reps.richBad() == 2);
+    Lab.setEnabled(true);
+    ok = T.ck(logger, "switching Rep lab on resets it", Reps.richBad() == 0) && ok;
+    Reps.rich = false; Reps.listening = false; Reps.reset();
+    return ok;
+}
+
+(:test)
+class FakeAxes {
+    var x; var y; var z; var timestamp;
+    function initialize(a, b, c, t) { x = a; y = b; z = c; timestamp = t; }
+}
+
+(:test)
+class FakeBeats {
+    var heartBeatIntervals;
+    function initialize(b) { heartBeatIntervals = b; }
+}
+
+(:test)
+class FakeSensorData {
+    var accelerometerData; var magnetometerData; var heartRateData;
+    function initialize(a, m, h) { accelerometerData = a; magnetometerData = m; heartRateData = h; }
+}
+
+// The worst set the watch can meet: two minutes of curls through the real
+// listener callback with the compass and beat intervals on, so the window
+// wraps, then a capture. Memory, the longest step and the capture's cost must
+// stay far from the limits, and the record must fit one storage value.
+(:test)
+function testWorstCaseSetStaysInBudget(logger) {
+    var savedQ = Store.get("labq");
+    Store.put("labq", []);
+    Lab.setEnabled(true);
+    T.startPress(0);
+    Workout.setFocus(1);
+    Workout.beginSet();
+    Reps.listening = true; Reps.rich = true;
+    var data = RepFx.curl(12, false);
+    var n = data[0].size();
+    var total = 0;
+    var memMax = 0;
+    var batchMs = 0;
+    for (var b = 0; b < 120; b++) {
+        var xs = []; var ys = []; var zs = []; var ts = [];
+        for (var i = 0; i < Reps.RATE; i++) {
+            var k = ((b * Reps.RATE + i) / 2) % n;
+            xs.add((1000 * data[0][k]).toNumber()); ys.add((1000 * data[1][k]).toNumber()); zs.add((1000 * data[2][k]).toNumber());
+            ts.add((b * Reps.RATE + i) * 40);
+        }
+        var t0 = System.getTimer();
+        Reps.onData(new FakeSensorData(new FakeAxes(xs, ys, zs, ts), new FakeAxes(ys, zs, xs, null), new FakeBeats([620, 640])));
+        var spent = System.getTimer() - t0;
+        if (spent > batchMs) { batchMs = spent; }
+        for (var j = 0; j < 20 && Reps.job != null; j++) { Reps.advanceAnalysis(); }
+        var used = System.getSystemStats().usedMemory;
+        if (used > memMax) { memMax = used; }
+        total += Reps.RATE;
+    }
+    for (var i = 0; i < 500 && Reps.job != null; i++) { Reps.advanceAnalysis(); }
+    var c0 = System.getTimer();
+    Workout.logDisplayedSet(Reps.offer());
+    var captureMs = System.getTimer() - c0;
+    var rec = Store.get("lb_" + Workout.sets[0]["id"]);
+    var body = rec == null ? null : rec["body"];
+    var totalMem = System.getSystemStats().totalMemory;
+    System.println("worst case: peak " + memMax + "/" + totalMem + " B, batch " + batchMs + " ms, longest step "
+        + Reps.longestStep + " ms, capture " + captureMs + " ms, tape " + (body == null ? "-" : body["diag"]["tape_samples"])
+        + " compass " + (body == null ? "-" : body["diag"]["mag_samples"]));
+    var ok = T.ck(logger, "record stored with every signal", body != null && body["mx"] != null && body["beats"].size() == Tape.MAX_BEATS
+        && body["diag"]["tape_samples"] == Tape.N && body["clipped"] == true && T.unb64(body["mz"]).size() == 2 * Tape.N);
+    // Test builds get far more memory than the app's 768 KB on the watch:
+    // judge against the watch's limit.
+    ok = T.ck(logger, "memory stays well under the watch's limit", memMax < 786432 * 6 / 10) && ok;
+    ok = T.ck(logger, "sensor callback stays short", batchMs < 250) && ok;
+    ok = T.ck(logger, "capture stays short", captureMs < 1000) && ok;
+    Workout.finish(false);
+    Store.put("labq", savedQ == null ? [] : savedQ);
+    Reps.rich = false; Reps.listening = false;
     return ok;
 }

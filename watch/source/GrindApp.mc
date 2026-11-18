@@ -36,6 +36,7 @@ class GrindApp extends Application.AppBase {
         fg = true;
         gNet = new Net();
         Workout.load();
+        Health.boot();
         if (Config.DEMO_DATA && !Workout.active()) {
             Store.cacheToday({ "date" => Logic.localDate(), "unit" => Config.UNIT, "workout" => { "id" => "demo", "name" => "Push Day", "exercises" => [
                 { "id" => "d1", "name" => "Incline Dumbbell Bench Press", "sets" => 2, "reps" => 8, "reps_max" => 12, "weight" => 62.5, "rest" => 20 },
@@ -91,6 +92,7 @@ class GrindApp extends Application.AppBase {
         Hr.save();
         Reps.stop();
         Recorder.stop(false);
+        Health.stop();
     }
 
     function getInitialView() {

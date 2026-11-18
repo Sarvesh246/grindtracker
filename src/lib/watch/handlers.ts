@@ -11,6 +11,8 @@ import {
   watchDailySchema,
   watchRepLabSchema,
   watchSessionSchema,
+  watchTelemetrySchema,
+  type WatchRepLabInput,
   type WatchSessionInput,
 } from './schema'
 
@@ -172,6 +174,76 @@ export function watchDaily(request: Request, deps: WatchDeps): Promise<Response>
 
 // ─── POST /rep-lab ─────────────────────────────────────────────────────────
 
+/** Base64 int16 big-endian, as the watch's Tape writes it. */
+export function decodeI16(b64: string): number[] {
+  const bytes = Buffer.from(b64, 'base64')
+  const out = new Array<number>(bytes.length >> 1)
+  for (let i = 0; i < out.length; i++) out[i] = bytes.readInt16BE(2 * i)
+  return out
+}
+
+/** Per-batch step marks to a step count per sample, from the window's start
+ *  (the shape the first recording format sent). `total` is how many samples
+ *  the set produced, the window's dropped start included. */
+export function stepsPerSample(marks: [number, number][], n: number, total: number): number[] {
+  const out = new Array<number>(n).fill(0)
+  if (marks.length === 0) return out
+  const offset = Math.max(0, total - n)
+  let m = 0
+  for (let i = 0; i < n; i++) {
+    const at = offset + i
+    while (m < marks.length - 1 && marks[m][0] <= at) m++
+    out[i] = marks[m][1]
+  }
+  const base = out[0]
+  return out.map(v => Math.max(0, v - base))
+}
+
+/** The RPC's row shape: the tape format decoded to the first format's arrays
+ *  plus the extra signals. The first format passes through unchanged. */
+export function repLabRow(body: WatchRepLabInput): Record<string, unknown> {
+  if (!('enc' in body)) return body
+  const { enc: _enc, ax, ay, az, mx, my, mz, step_marks, slim, ...meta } = body
+  const x = decodeI16(ax)
+  const total = typeof body.diag?.tape_total === 'number' ? body.diag.tape_total : x.length
+  return {
+    ...meta,
+    x, y: decodeI16(ay), z: decodeI16(az),
+    steps: stepsPerSample(step_marks ?? [], x.length, total),
+    mag_x: mx ? decodeI16(mx) : null,
+    mag_y: my ? decodeI16(my) : null,
+    mag_z: mz ? decodeI16(mz) : null,
+    hr: body.hr ?? null,
+    beats: body.beats ?? null,
+    diag: { ...(body.diag ?? {}), ...(slim ? { slim: true } : {}) },
+  }
+}
+
+/** App health from the watch: crashes and per-workout vitals. Never fatal
+ *  to the watch either. */
+export function watchTelemetry(request: Request, deps: WatchDeps): Promise<Response> {
+  return guard(deps, async () => {
+    const auth = await authenticateWatch(request, deps)
+    if (!auth.ok) return auth.response
+
+    const read = await readJsonBody(request)
+    if (!read.ok) return read.response
+
+    const parsed = watchTelemetrySchema.safeParse(read.body)
+    if (!parsed.success) {
+      const details = formatIssues(parsed.error)
+      return watchError(422, 'validation_failed', `${details[0].path}: ${details[0].message}`, { details })
+    }
+
+    const { data, error } = await deps.rpc('watch_store_telemetry', { p_user: auth.userId, p_row: parsed.data })
+    if (error) {
+      deps.log('watch_store_telemetry failed', error)
+      return watchError(503, 'service_unavailable', 'GRIND is temporarily unavailable. Retry later.', { headers: { 'Retry-After': '300' } })
+    }
+    return watchJson(data, 201)
+  })
+}
+
 /** One set recorded for tuning the wrist rep counter. Never fatal to the
  *  watch: a set the server can't place is answered 422 so the watch drops it. */
 export function watchRepLab(request: Request, deps: WatchDeps): Promise<Response> {
@@ -188,7 +260,7 @@ export function watchRepLab(request: Request, deps: WatchDeps): Promise<Response
       return watchError(422, 'validation_failed', `${details[0].path}: ${details[0].message}`, { details })
     }
 
-    const { data, error } = await deps.rpc('watch_store_rep_lab', { p_user: auth.userId, p_set: parsed.data })
+    const { data, error } = await deps.rpc('watch_store_rep_lab', { p_user: auth.userId, p_set: repLabRow(parsed.data) })
     if (error) {
       if (error.message.includes('WATCH_SESSION_NOT_FOUND')) {
         return watchError(422, 'session_not_found', 'session_id is not one of your uploaded sessions.')

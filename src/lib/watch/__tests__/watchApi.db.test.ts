@@ -20,7 +20,7 @@ import { randomUUID } from 'node:crypto'
 import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { healthImportRequest } from '@/lib/health/importApi'
-import { watchPing, watchRepLab, watchSessions, watchToday, type WatchDeps, type RpcResult } from '../handlers'
+import { watchPing, watchRepLab, watchTelemetry, watchSessions, watchToday, type WatchDeps, type RpcResult } from '../handlers'
 
 const ROOT = path.join(__dirname, '..', '..', '..', '..')
 const SQL_DIR = path.join(ROOT, 'docs', 'sql')
@@ -594,6 +594,47 @@ describe('watch API against the real schema', { skip: !baseUrl && 'set PARITY_DA
       assert.equal(res.status, 422)
       assert.equal(await codeOf(res), 'session_not_found')
       assert.throws(() => asUser(ALICE, `insert into rep_lab_sets (id, user_id, session_id, logged_reps) values ('${id('lab3')}', '${ALICE}', '${S1}', 1)`))
+    })
+  })
+
+  describe('rep lab tape and watch telemetry (migration 67)', () => {
+    const S1 = id('s1')
+    const TAPE = id('lab-tape')
+    const i16 = (vals: number[]) => {
+      const b = Buffer.alloc(vals.length * 2)
+      vals.forEach((v, i) => b.writeInt16BE(v, 2 * i))
+      return b.toString('base64')
+    }
+    const wave = (n: number) => Array.from({ length: n }, (_, i) => Math.round(900 * Math.sin(i / 6)))
+
+    it('stores the compass, heart rate and beats from a tape recording', async () => {
+      clock = new Date()
+      const res = await watchRepLab(request('/rep-lab', aliceToken, {
+        id: TAPE, session_id: S1, exercise_id: id('bench'), exercise_name: 'Bench', set_number: 2, weight: 135, unit: 'lbs',
+        logged_reps: 8, auto_reps: 8, auto_shown: true, typed: false, started_at: iso(56), finished_at: iso(55),
+        rate_hz: 12.5, clipped: false, enc: 'i16b64', ax: i16(wave(200)), ay: i16(wave(200)), az: i16(wave(200)),
+        mx: i16(wave(200)), my: i16(wave(200)), mz: i16(wave(200)), hr: [100, 104], beats: [600, 590, 610],
+        step_marks: [[12, 0], [200, 3]], events: [[1000, 1, 25]], diag: { tape_total: 200 }, app_version: 'test',
+      }), deps)
+      assert.equal(res.status, 201)
+      assert.equal(db(`select array_length(motion_x, 1) || ',' || array_length(mag_z, 1) || ',' || array_to_string(hr, ' ') || ',' || array_to_string(beats, ' ') || ',' || steps[200] from rep_lab_sets where id = '${TAPE}'`), '200,200,100 104,600 590 610,3')
+    })
+
+    it('stores crash and workout health records, owner-only and not client-writable', async () => {
+      const CRASH = id('crash1')
+      for (let i = 0; i < 2; i++) {
+        const res = await watchTelemetry(request('/telemetry', aliceToken, {
+          id: CRASH, kind: 'unclean_exit', at: iso(30), app_version: 'test', data: { phase: 'set', mem: 190000, upload_codes: [-104] },
+        }), deps)
+        assert.equal(res.status, 201)
+      }
+      assert.equal(db(`select count(*) || ',' || kind || ',' || (data->>'mem') from watch_telemetry where id = '${CRASH}' group by kind, data`), '1,unclean_exit,190000')
+      assert.equal(asUser(ALICE, `select count(*) from watch_telemetry where id = '${CRASH}'`), '1')
+      assert.equal(asUser(BOB, `select count(*) from watch_telemetry where id = '${CRASH}'`), '0')
+      assert.throws(() => asUser(ALICE, `insert into watch_telemetry (id, user_id, kind) values ('${id('crash2')}', '${ALICE}', 'session')`))
+      // A re-sent id from another account must not overwrite it.
+      await watchTelemetry(request('/telemetry', bobToken, { id: CRASH, kind: 'session', data: {} }), deps)
+      assert.equal(db(`select kind from watch_telemetry where id = '${CRASH}'`), 'unclean_exit')
     })
   })
 })

@@ -17,6 +17,9 @@ class Net {
     var upSid = null;
     var upSets = null;
     var labKey = null;
+    var labOk = 0;           // this run's rep lab uploads, for the health record
+    var labFailed = 0;
+    var labCodes = [];       // the last few failure codes
     var labFails = 0;
     var labNextAt = 0;
 
@@ -262,7 +265,7 @@ class Net {
         if (key == null) { return; }
         var r = Store.get(key);
         labKey = key;
-        request("/rep-lab", r["body"], true, method(:onLab));
+        request(key.substring(0, 3).equals("lh_") ? "/telemetry" : "/rep-lab", r["body"], true, method(:onLab));
     }
 
     function onLab(code, data) {
@@ -276,6 +279,7 @@ class Net {
             // Stored, or never storable as sent (its workout was refused):
             // either way it must not block the records behind it.
             Lab.drop(key);
+            if (r == Logic.R_OK) { labOk += 1; }
             labFails = 0;
             labNextAt = 0;
             if (labDue()) { lab(); }
@@ -283,7 +287,13 @@ class Net {
             authError = true;
         } else {
             labFails += 1;
+            labFailed += 1;
+            labCodes.add(code);
+            if (labCodes.size() > 5) { labCodes = labCodes.slice(labCodes.size() - 5, null); }
             labNextAt = now() + Logic.backoffSecs(labFails);
+            // Bluetooth-side failures (negative codes) three times running:
+            // try the smaller version of the record before giving up on it.
+            if (code < 0 && labFails == 3 && Lab.slim(key)) { labNextAt = now() + 5; }
             // A record the phone keeps failing to carry (too large for the
             // bridge, say) must not hold up the ones behind it for ever.
             if (labFails >= 8) { Lab.drop(key); labFails = 0; labNextAt = 0; }

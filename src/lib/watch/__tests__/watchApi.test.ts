@@ -8,7 +8,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { hashWatchToken, readBearerToken } from '../token'
 import { buildTodayPayload, parseRepsTarget, MAX_TODAY_EXERCISES, type TodayContext } from '../today'
-import { watchDaily, watchPing, watchRepLab, watchSessions, watchToday, toSyncPayload, type WatchDeps, type RpcResult } from '../handlers'
+import { watchDaily, watchPing, watchRepLab, watchSessions, watchTelemetry, watchToday, decodeI16, stepsPerSample, toSyncPayload, type WatchDeps, type RpcResult } from '../handlers'
 import { watchSessionSchema } from '../schema'
 
 const TOKEN = 'gwt_' + 'a1'.repeat(32)
@@ -523,6 +523,41 @@ describe('/today body', () => {
   })
 })
 
+describe('POST /telemetry', () => {
+  const crash = (overrides: Record<string, unknown> = {}) => ({
+    id: SET1, kind: 'unclean_exit', at: '2026-11-16T17:04:00Z', app_version: '2026-11-18b',
+    data: { phase: 'set', mem: 180000, mem_total: 786432, battery: 54, upload_codes: [-104, 503], part: '006-B4766-00' },
+    ...overrides,
+  })
+
+  it('stores a health record for the token owner', async () => {
+    const deps = fakeDeps({ watch_store_telemetry: () => ({ data: { id: SET1, stored: true }, error: null }) })
+    const res = await watchTelemetry(req('/telemetry', { body: crash() }), deps)
+    assert.equal(res.status, 201)
+    const call = deps.calls.find(c => c.fn === 'watch_store_telemetry')!
+    assert.equal(call.args.p_user, USER)
+    assert.equal((call.args.p_row as { kind: string }).kind, 'unclean_exit')
+  })
+
+  it('rejects unknown kinds, nested data and too many fields', async () => {
+    for (const body of [
+      crash({ kind: 'debug' }),
+      crash({ data: { nested: { a: 1 } } }),
+      crash({ data: Object.fromEntries(Array.from({ length: 41 }, (_, i) => [`k${i}`, i])) }),
+      crash({ extra: true }),
+    ]) {
+      const res = await watchTelemetry(req('/telemetry', { body }), fakeDeps())
+      assert.equal(res.status, 422)
+    }
+  })
+
+  it('a database failure is a retryable 503', async () => {
+    const down = fakeDeps({ watch_store_telemetry: () => ({ data: null, error: { message: 'function does not exist' } }) })
+    const res = await watchTelemetry(req('/telemetry', { body: crash() }), down)
+    assert.equal(res.status, 503)
+  })
+})
+
 describe('POST /rep-lab', () => {
   const motion = (n: number) => Array.from({ length: n }, (_, i) => Math.round(1000 * Math.sin(i / 5)))
   const recording = (overrides: Record<string, unknown> = {}) => ({
@@ -565,6 +600,73 @@ describe('POST /rep-lab', () => {
   it('a full 75 s window fits the body limit', async () => {
     const body = JSON.stringify(recording({ x: motion(938).map(v => v - 16000 + 16000), y: motion(938), z: motion(938), steps: new Array(938).fill(9999), events: Array.from({ length: 120 }, () => [99999, 3, 15, 1, 9999, 999]) }))
     assert.ok(Buffer.byteLength(body) < 64 * 1024, `${Buffer.byteLength(body)} bytes`)
+  })
+
+  const i16 = (vals: number[]) => {
+    const b = Buffer.alloc(vals.length * 2)
+    vals.forEach((v, i) => b.writeInt16BE(v, 2 * i))
+    return b.toString('base64')
+  }
+  const tape = (n: number, overrides: Record<string, unknown> = {}) => {
+    const { x: _x, y: _y, z: _z, steps: _s, ...meta } = recording()
+    return {
+      ...meta, enc: 'i16b64', ax: i16(motion(n)), ay: i16(motion(n)), az: i16(motion(n).map(v => 0 - v)),
+      mx: i16(motion(n)), my: i16(motion(n)), mz: i16(motion(n)),
+      hr: [90, 92, 95], beats: [650, 640, 655], step_marks: [[12, 0], [25, 2], [n, 5]],
+      diag: { sensor: 'receiving', tape_total: n },
+      ...overrides,
+    }
+  }
+
+  it('decodes the tape format into the stored arrays', async () => {
+    const deps = fakeDeps({ watch_store_rep_lab: () => ({ data: { id: SET1, stored: true }, error: null }) })
+    const res = await watchRepLab(req('/rep-lab', { body: tape(40) }), deps)
+    assert.equal(res.status, 201)
+    const row = deps.calls.find(c => c.fn === 'watch_store_rep_lab')!.args.p_set as Record<string, unknown>
+    assert.deepEqual(row.x, motion(40))
+    assert.deepEqual(row.z, motion(40).map(v => 0 - v))
+    assert.deepEqual(row.mag_x, motion(40))
+    assert.deepEqual(row.hr, [90, 92, 95])
+    assert.deepEqual(row.beats, [650, 640, 655])
+    // Steps per sample from the window start: 0 until sample 12, then 2, then 5.
+    const steps = row.steps as number[]
+    assert.equal(steps.length, 40)
+    assert.deepEqual([steps[0], steps[11], steps[12], steps[24], steps[25], steps[39]], [0, 0, 2, 2, 5, 5])
+    assert.equal('ax' in row || 'enc' in row || 'step_marks' in row, false)
+  })
+
+  it('decodeI16 and stepsPerSample handle the edges', () => {
+    assert.deepEqual(decodeI16(Buffer.from([0x7f, 0xff, 0x80, 0x00, 0xff, 0xff]).toString('base64')), [32767, -32768, -1])
+    // A clipped window: marks count from START, the window from 10 samples in.
+    assert.deepEqual(stepsPerSample([[5, 1], [15, 3], [20, 4]], 10, 20), [0, 0, 0, 0, 0, 1, 1, 1, 1, 1])
+    assert.deepEqual(stepsPerSample([], 3, 3), [0, 0, 0])
+  })
+
+  it('a slimmed tape (no compass or beats) still stores, flagged', async () => {
+    const deps = fakeDeps({ watch_store_rep_lab: () => ({ data: { id: SET1, stored: true }, error: null }) })
+    const res = await watchRepLab(req('/rep-lab', { body: tape(30, { mx: undefined, my: undefined, mz: undefined, beats: undefined, slim: true }) }), deps)
+    assert.equal(res.status, 201)
+    const row = deps.calls.find(c => c.fn === 'watch_store_rep_lab')!.args.p_set as Record<string, unknown>
+    assert.equal(row.mag_x, null)
+    assert.equal((row.diag as { slim?: boolean }).slim, true)
+  })
+
+  it('rejects a malformed tape', async () => {
+    for (const body of [
+      tape(40, { ay: i16(motion(39)) }),
+      tape(40, { mx: i16(motion(10)) }),
+      tape(40, { ax: 'not base64!' }),
+      tape(939, {}),
+      tape(40, { enc: 'f32' }),
+    ]) {
+      const res = await watchRepLab(req('/rep-lab', { body }), fakeDeps())
+      assert.equal(res.status, 422, JSON.stringify(body).slice(0, 80))
+    }
+  })
+
+  it('a full tape with every extra fits the body limit', async () => {
+    const body = JSON.stringify(tape(938, { hr: new Array(100).fill(200), beats: new Array(240).fill(4999), events: Array.from({ length: 120 }, () => [99999, 3, 15, 1, 9999, 999]), step_marks: Array.from({ length: 100 }, () => [99999, 9999]) }))
+    assert.ok(Buffer.byteLength(body) < 32 * 1024, `${Buffer.byteLength(body)} bytes`)
   })
 
   it('maps an unknown session to 422 and a database failure to 503', async () => {

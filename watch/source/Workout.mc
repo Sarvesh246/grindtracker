@@ -126,6 +126,7 @@ module Workout {
         Recorder.start();
         Hr.begin(meta);
         Reps.reset();
+        Health.workoutStart(sid);
     }
 
     function resume() {
@@ -149,6 +150,7 @@ module Workout {
         if (Recorder.session == null) { Recorder.ensureRecording(); }
         Reps.reset();
         Reps.start();
+        Health.mark("set");
     }
 
     function closeSetWindow() {
@@ -240,6 +242,7 @@ module Workout {
             Lab.correct(cur["sid"], s["id"], reps);
         }
         if (edit == null) { Hr.onSetLogged(sets.size() - 1, s["t"]); }
+        Health.mark("logged");
         return advanceAfterSet(e, s["t"]);
     }
 
@@ -471,11 +474,13 @@ module Workout {
             Store.enqueue(sid);
             Probe.log("save");
             Recorder.stop(true);
+            Health.workoutEnd(sid, sets.size(), true, $.gNet);
             saved = true;
         } else {
             meta["discard"] = true;
             Store.putMeta(meta);
             Lab.dropSession(sid);
+            Health.workoutEnd(sid, sets.size(), false, null);
             Hr.end(false);
             Recorder.stop(false);
             Store.dropSession(sid);
