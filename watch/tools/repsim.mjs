@@ -14,7 +14,7 @@
 // reps, and guessing on lifts the wrist barely moves in. For those the right
 // answer is "no count", and the report scores it that way.
 
-import { analyze, FS } from './reps.mjs';
+import { analyze } from './reps.mjs';
 
 const RAW = 25; // Hz the watch samples at
 

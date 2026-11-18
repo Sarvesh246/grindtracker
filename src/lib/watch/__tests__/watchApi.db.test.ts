@@ -208,8 +208,18 @@ describe('watch API against the real schema', { skip: !baseUrl && 'set PARITY_DA
       psql(baseUrl!, `create database ${DB_NAME};`)
     }
     db(readFileSync(STUB, 'utf8'))
+    // The stock Postgres parity service has no Supabase scheduler. Keep the
+    // migration's schema, job-registration SQL and ledger in the test.
+    const emulateCron = db("select count(*) from pg_available_extensions where name = 'pg_cron'") === '0'
+    if (emulateCron) {
+      db(readFileSync(path.join(path.dirname(STUB), 'cron-stub.sql'), 'utf8'))
+    }
     for (const file of readdirSync(SQL_DIR).filter(f => /^\d{2}-.+\.sql$/.test(f)).sort()) {
-      db(readFileSync(path.join(SQL_DIR, file), 'utf8'))
+      let sql = readFileSync(path.join(SQL_DIR, file), 'utf8')
+      if (emulateCron && file === '65-energy-schedule.sql') {
+        sql = sql.replace(/^create extension if not exists (?:pg_cron|pg_net with schema extensions);\r?$/gm, '')
+      }
+      db(sql)
     }
     db(`
       insert into auth.users (id, email) values ('${ALICE}', 'alice@test'), ('${BOB}', 'bob@test');
