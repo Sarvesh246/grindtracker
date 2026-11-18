@@ -156,6 +156,13 @@ can't be read:
 `advice` is at most ~20 characters. `smart_rest` is the user's Settings → Watch
 switch. Older watch builds ignore the field.
 
+Since migration 68, `body` also carries `hrv`: `{ low, high, days, today,
+status }`, the usual readiness-check range in ms (null until 5 mornings), and
+`lift`: `{ advice: "deload" | "push", headline, percent }` when lifting load
+advice fired, else null. Each exercise may carry `tune`, the rep counter
+settings learned from the user's own sets of it (`ac`, `cv`, `swing`, `lag`;
+only valid, in-range keys; absent = defaults). See `src/lib/reps/tuning.ts`.
+
 ## POST /sessions
 
 Upload a session — finished or not — and any of its sets. Call it as often as
@@ -409,6 +416,28 @@ A correction, after the set was reopened with Undo and saved again:
 undoes a correction. `201` returns `{ "id", "stored" }`.
 
 Read them with `npm run replab` (see `watch/README.md`).
+
+## POST /readiness
+
+One morning readiness check (migration `68`): a minute of beat-to-beat
+intervals recorded while the user sits still, after a 10 s settle.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | uuid | Chosen by the watch; a re-send overwrites itself. |
+| `local_date` | YYYY-MM-DD | The watch's local date. |
+| `measured_at` | ISO 8601 | Start of the measured minute. |
+| `duration_s` | int 10–600 | 60 today. |
+| `rr_ms` | int[] 1–600 | Intervals as delivered, artifacts included. |
+| `moving_s` | int, optional | Seconds the accelerometer saw movement. |
+| `watch_rmssd` | number, optional | What the watch showed, kept to check the two agree. |
+| `app_version` | string, optional | |
+
+The server recomputes RMSSD, mean HR, SDNN, artifacts and quality from
+`rr_ms` (`src/lib/body/hrv.ts`, the same steps the watch runs) and stores the
+raw intervals with them. A poor reading is stored as poor and never reaches
+Charge or the baseline. `201` returns `{ id, stored, rmssd, mean_hr, quality,
+reason }`; `stored` is false while the user has health collection switched off.
 
 ## POST /telemetry
 

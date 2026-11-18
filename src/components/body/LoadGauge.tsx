@@ -1,12 +1,14 @@
 'use client'
 import Link from 'next/link'
 import { ChevronRight } from '@/components/ui/Icons'
-import { SWEET_SPOT, type LoadBalance } from '@/lib/body'
+import { SWEET_SPOT, type LoadBalance, type StrengthLoad } from '@/lib/body'
 
 /**
  * Training load on Progress: the headline and sentence first, then a single
  * track with the 0.8–1.3 sweet spot marked and a dot where this week sits.
- * Only rendered for watch users with enough history (load != null).
+ * Lifting load (strength.ts) when there is enough of it, else heart-rate
+ * load for watch users. A fired lifting advice (Go lighter / Room to push)
+ * replaces the headline and is the sentence.
  */
 
 const MAX_RATIO = 2
@@ -15,8 +17,10 @@ function pos(ratio: number): number {
   return (Math.max(0, Math.min(MAX_RATIO, ratio)) / MAX_RATIO) * 100
 }
 
-export default function LoadGauge({ load }: { load: LoadBalance }) {
-  const inBand = load.band === 'building'
+export default function LoadGauge({ load }: { load: LoadBalance | StrengthLoad }) {
+  const lifting = 'weeks' in load
+  const advice = lifting ? load.advice : null
+  const inBand = advice === 'push' || (advice == null && load.band === 'building')
   const [a, b] = SWEET_SPOT
   return (
     <div
@@ -34,7 +38,7 @@ export default function LoadGauge({ load }: { load: LoadBalance }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '12px' }}>
           <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1.5px' }}>
-            Training load
+            {lifting ? 'Lifting load' : 'Training load'}
           </span>
           <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-secondary)' }}>
             {load.percent > 0 ? '+' : ''}{load.percent}%
@@ -52,6 +56,7 @@ export default function LoadGauge({ load }: { load: LoadBalance }) {
       <div
         role="img"
         aria-label={`${load.headline}. This week is ${Math.abs(load.percent)}% ${load.percent >= 0 ? 'above' : 'below'} your monthly average; the comparison band is 80 to 130%, not a safety threshold.`}
+        data-advice={advice ?? undefined}
       >
         <div style={{ position: 'relative', height: '18px' }}>
           <div style={{

@@ -1354,3 +1354,92 @@ function testWorstCaseSetStaysInBudget(logger) {
     Reps.rich = false; Reps.listening = false;
     return ok;
 }
+
+// The watch's HRV maths must give exactly what src/lib/body/hrv.ts gives on
+// the same intervals (expected values printed by analyzeRr on this fixture:
+// a missed beat, a doubled one, an out-of-range pair and a spike).
+(:test)
+function testReadinessMathMatchesServer(logger) {
+    var rr = [930,976,998,992,1015,994,994,989,973,965,480,924,891,881,881,898,895,897,950,946,956,987,1020,1015,999,1900,2600,966,939,936,919,915,886,879,901,909,904,947,974,988,1450,1020,1014,1020,992,984,958,949,927,902,914,888,878,889,917,250,936,959,980,986,1006,1011,1011,1004,1004,968,943,928,922,894];
+    var a = Readiness.analyze(rr, 2);
+    var ok = T.ck(logger, "full minute: rmssd 20.4, HR 63.1, 65 clean, 60 pairs, 7.1% artifacts, good",
+        (a["rmssd"] - 20.4).abs() < 0.05 && (a["meanHr"] - 63.1).abs() < 0.05 && a["cleanBeats"] == 65
+        && a["pairs"] == 60 && (a["artifactPct"] - 7.1).abs() < 0.05 && a["quality"].equals("good"));
+    var b = Readiness.analyze(rr.slice(0, 25), 0);
+    ok = T.ck(logger, "short: rmssd 22.1, poor for too few beats", (b["rmssd"] - 22.1).abs() < 0.05
+        && b["quality"].equals("poor") && b["reason"].equals("too few beats")) && ok;
+    var c = Readiness.analyze(rr, 12);
+    ok = T.ck(logger, "moving 12 s is poor", c["quality"].equals("poor") && c["reason"].equals("moving")) && ok;
+    var d = Readiness.analyze([], 0);
+    ok = T.ck(logger, "nothing is poor, not a crash", d["rmssd"] == null && d["quality"].equals("poor")) && ok;
+    return ok;
+}
+
+// A whole check through the listener callback: settle, a minute of beats,
+// then a queued upload with the raw intervals; and the two ways it fails.
+(:test)
+function testReadinessCheckFlow(logger) {
+    var savedQ = Store.get("labq");
+    Store.put("labq", []);
+    Readiness.begin();
+    var ok = T.ck(logger, "starts settling", Readiness.state == :settle);
+    var still = new FakeAxes([0, 1, 0, 1], [-1000, -1000, -1001, -1000], [0, 0, 1, 0], null);
+    Readiness.startedAt -= 11000;
+    Readiness.onData(new FakeSensorData(still, null, new FakeBeats([900])));
+    ok = T.ck(logger, "then measures, the settle beats dropped", Readiness.state == :measure && Readiness.rr.size() == 0) && ok;
+    for (var i = 0; i < 60; i++) {
+        Readiness.onData(new FakeSensorData(still, null, new FakeBeats([900 + (i % 7) * 12, 910 - (i % 5) * 9])));
+    }
+    Readiness.measureAt -= 61000;
+    Readiness.onData(new FakeSensorData(still, null, new FakeBeats([905])));
+    var key = Lab.next();
+    var body = key == null ? null : Store.get(key)["body"];
+    ok = T.ck(logger, "done with a good reading", Readiness.state == :done && Readiness.result["quality"].equals("good")
+        && !Readiness.listening) && ok;
+    ok = T.ck(logger, "queued for /readiness with raw intervals", key != null && key.substring(0, 3).equals("lr_")
+        && body["rr_ms"].size() == 121 && body["duration_s"] == 60 && body["moving_s"] == 0
+        && body["watch_rmssd"] == Readiness.result["rmssd"] && body["local_date"] != null) && ok;
+    if (key != null) { Lab.drop(key); }
+    // A watch that never sends intervals fails after 15 s with a reason.
+    Readiness.begin();
+    Readiness.startedAt -= 11000;
+    Readiness.onData(new FakeSensorData(still, null, null));
+    Readiness.measureAt -= 16000;
+    Readiness.onData(new FakeSensorData(still, null, null));
+    ok = T.ck(logger, "no intervals is a clear failure", Readiness.state == :fail && Readiness.reason != null && !Readiness.listening) && ok;
+    // Moving the whole time is a poor reading, still uploaded as evidence.
+    Readiness.begin();
+    Readiness.startedAt -= 11000;
+    var shake = new FakeAxes([0, 400, -300, 500], [-1000, -600, -1400, -800], [0, 300, -200, 100], null);
+    Readiness.onData(new FakeSensorData(shake, null, null));
+    for (var i = 0; i < 60; i++) { Readiness.onData(new FakeSensorData(shake, null, new FakeBeats([900, 910]))); }
+    Readiness.measureAt -= 61000;
+    Readiness.onData(new FakeSensorData(shake, null, new FakeBeats([900])));
+    ok = T.ck(logger, "moving is poor", Readiness.state == :done && Readiness.result["quality"].equals("poor")
+        && Readiness.result["reason"].equals("moving")) && ok;
+    Readiness.cancel();
+    Store.put("labq", savedQ == null ? [] : savedQ);
+    return ok;
+}
+
+// Tuned counter settings: only valid, in-range keys survive, the same as
+// cleanParams() in tools/reps.mjs; a bad tune never costs the plan.
+(:test)
+function testRepTuningSettings(logger) {
+    var v = Reps.validTune({ "ac" => 0.551, "cv" => 9, "swing" => "x", "lag" => 6.6, "evil" => 1 });
+    var ok = T.ck(logger, "keeps valid keys, rounded", v != null && (v["ac"] - 0.55).abs() < 0.001 && v["lag"] == 7
+        && v["cv"] == null && v["swing"] == null && v["evil"] == null);
+    ok = T.ck(logger, "nothing valid is null", Reps.validTune({ "ac" => 2 }) == null && Reps.validTune("x") == null) && ok;
+    Reps.configure({ "ac" => 0.55, "lag" => 7 });
+    ok = T.ck(logger, "configure applies", (Reps.MIN_AC - 0.55).abs() < 0.001 && Reps.LAG_MIN == 7
+        && (Reps.MAX_CV - 0.32).abs() < 0.001 && Reps.tuneTag.length() > 0) && ok;
+    Reps.configure(null);
+    ok = T.ck(logger, "and resets to defaults", (Reps.MIN_AC - 0.60).abs() < 0.001 && Reps.LAG_MIN == 8 && Reps.tuneTag.length() == 0) && ok;
+    var plan = Store.trimPlan({ "date" => "2026-11-18", "unit" => "lbs", "workout" => { "id" => "push", "name" => "Push", "exercises" => [
+        { "id" => "a", "name" => "Bench", "sets" => 3, "reps" => 8, "reps_max" => null, "weight" => 135, "rest" => 90, "tune" => { "lag" => 7 } },
+        { "id" => "b", "name" => "Fly", "sets" => 3, "reps" => 12, "reps_max" => null, "weight" => 25, "rest" => 60, "tune" => "junk" }
+    ] } });
+    ok = T.ck(logger, "plan keeps a valid tune and drops a junk one", plan != null && plan["ex"].size() == 2
+        && plan["ex"][0]["tune"]["lag"] == 7 && plan["ex"][1]["tune"] == null) && ok;
+    return ok;
+}

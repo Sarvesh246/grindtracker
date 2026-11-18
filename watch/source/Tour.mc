@@ -6,7 +6,7 @@ using Toybox.WatchUi;
 // hands-free. One step every Config.TOUR_STEP_MS.
 module Tour {
     var step = 0;
-    const LAST_STEP = 18;
+    const LAST_STEP = 24;
     var failures = 0;
 
     function check(ok, message) {
@@ -48,8 +48,30 @@ module Tour {
         } else if (step == 17) {
             check(Workout.saved && Store.queue().indexOf(Workout.last["sid"]) >= 0, "saved offline");
             new SummaryDelegate().onSelect();
-        } else if (step == LAST_STEP) {
+        } else if (step == 18) {
             check(!Workout.active() && WatchUi.getCurrentView()[0] instanceof HomeView, "returned home");
+            // Readiness check: intro, settling, measuring, a good and a poor result.
+            Readiness.state = :idle;
+            WatchUi.pushView(new ReadinessView(), new ReadinessDelegate(), WatchUi.SLIDE_IMMEDIATE);
+        } else if (step == 19) {
+            new ReadinessDelegate().onSelect();
+            check(Readiness.state == :settle || Readiness.state == :fail, "check begins");
+        } else if (step == 20) {
+            Readiness.stop();
+            Readiness.state = :measure; Readiness.measureAt = System.getTimer() - 22000; Readiness.hr = 58;
+            Readiness.rr = [900, 910, 905, 920]; Readiness.recentMove = true;
+            WatchUi.requestUpdate();
+        } else if (step == 21) {
+            Readiness.state = :done; Readiness.result = Readiness.analyze([930,976,998,992,1015,994,994,989,973,965,924,891,881,881,898,895,897,950,946,956,987,1020,1015,999,966,939,936,919,915,886,879,901,909,904,947,974,988,1020,1014,1020,992,984,958,949,927,902,914,888,878,889,917,936,959,980], 0);
+            check(Readiness.result["quality"].equals("good"), "good reading");
+            WatchUi.requestUpdate();
+        } else if (step == 22) {
+            Readiness.result = Readiness.analyze([900, 905], 12);
+            WatchUi.requestUpdate();
+        } else if (step == 23) {
+            new ReadinessDelegate().onBack();
+        } else if (step == LAST_STEP) {
+            check(!Workout.active() && WatchUi.getCurrentView()[0] instanceof HomeView && !Readiness.listening, "back home after the check");
             System.println("tour complete, failures=" + failures);
             // The demo workout must never reach the server.
             var q = Store.queue();

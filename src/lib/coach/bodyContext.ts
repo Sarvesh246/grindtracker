@@ -53,6 +53,24 @@ export interface CoachBodyBlock {
     days_in_a_row_5plus_over: number
   }
   load?: { percent: number; band: string; headline: string }
+  /** Morning HRV check (watch, 1 min seated): today vs the 60-day usual range. */
+  hrv_check?: {
+    today_ms: number | null
+    usual_range_ms: { low: number; high: number; days: number } | null
+    status: 'below' | 'within' | 'above' | null
+    /** The 7-day average vs usual, in standard deviations: the trend that matters more than one morning. */
+    week_vs_usual_sd: number | null
+  }
+  /** Lifting load: standard sets this week vs the 28-day weekly average, and the advice it triggers. */
+  lifting_load?: {
+    standard_sets_7d: number
+    weekly_average_28d: number
+    percent: number
+    band: string
+    /** 'deload' = up 30%+ while recovery is falling; 'push' = three steady weeks, no gains, recovered. */
+    advice: 'deload' | 'push' | null
+    sentence: string
+  }
   /** Newest first. */
   watch_sessions?: {
     date: string | null
@@ -384,7 +402,9 @@ export function summarizeCoachBody(input: {
   const last_7_days = Array.from({ length: 7 }, (_, i) => {
     const date = shiftKey(today, i - 6)
     const row = days.find(d => d.local_date === date)
-    const charge = date === today ? summary.charge : computeCharge(days, sessions, date)
+    const charge = date === today
+      ? summary.charge
+      : computeCharge(days, sessions, date, { readiness: summary.readinessChecks, strength: summary.strengthSets })
     return { date, charge: charge?.score ?? null, resting_hr: row?.resting_hr ?? null }
   })
 
@@ -415,6 +435,26 @@ export function summarizeCoachBody(input: {
 
   if (summary.load) {
     block.load = { percent: summary.load.percent, band: summary.load.band, headline: summary.load.headline }
+  }
+  const r = summary.readiness
+  if (r && (r.today || r.baseline)) {
+    block.hrv_check = {
+      today_ms: r.today ? Math.round(r.today.rmssd) : null,
+      usual_range_ms: r.baseline ? { low: r.baseline.lowMs, high: r.baseline.highMs, days: r.baseline.days } : null,
+      status: r.status,
+      week_vs_usual_sd: r.weekZ,
+    }
+  }
+  const st = summary.strength
+  if (st) {
+    block.lifting_load = {
+      standard_sets_7d: Math.round(st.acute),
+      weekly_average_28d: Math.round(st.chronicWeekly),
+      percent: st.percent,
+      band: st.band,
+      advice: st.advice,
+      sentence: st.sentence,
+    }
   }
 
   const watch = input.watchSessions.slice(0, 3).map(s => {

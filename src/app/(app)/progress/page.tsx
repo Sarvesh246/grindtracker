@@ -662,7 +662,7 @@ export default function ProgressPage() {
         <aside className="progress-related" aria-label="Photos and recovery">
           <PhotoEntryCard count={photoCount} latestDate={latestPhotoDate} thumb={latestPhotoThumb} />
           <HealthEntry body={body} />
-          {body?.hasWatch && body.load && <LoadGauge load={body.load} />}
+          {body?.strength ? <LoadGauge load={body.strength} /> : body?.hasWatch && body.load && <LoadGauge load={body.load} />}
         </aside>
       </div>
     </div>

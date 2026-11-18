@@ -8,8 +8,9 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { hashWatchToken, readBearerToken } from '../token'
 import { buildTodayPayload, parseRepsTarget, MAX_TODAY_EXERCISES, type TodayContext } from '../today'
-import { watchDaily, watchPing, watchRepLab, watchSessions, watchTelemetry, watchToday, decodeI16, stepsPerSample, toSyncPayload, type WatchDeps, type RpcResult } from '../handlers'
+import { watchDaily, watchPing, watchRepLab, watchSessions, watchTelemetry, watchToday, watchReadiness, decodeI16, stepsPerSample, toSyncPayload, type WatchDeps, type RpcResult } from '../handlers'
 import { watchSessionSchema } from '../schema'
+import { todayBody } from '../body'
 
 const TOKEN = 'gwt_' + 'a1'.repeat(32)
 const NOW = new Date('2026-11-16T18:00:00Z')
@@ -677,5 +678,86 @@ describe('POST /rep-lab', () => {
     const down = fakeDeps({ watch_store_rep_lab: () => ({ data: null, error: { message: 'relation "rep_lab_sets" does not exist' } }) })
     const r2 = await watchRepLab(req('/rep-lab', { body: recording() }), down)
     assert.equal(r2.status, 503)
+  })
+})
+
+describe('POST /readiness', () => {
+  const RR = [930, 976, 998, 992, 1015, 994, 994, 989, 973, 965, 480, 924, 891, 881, 881, 898, 895, 897, 950, 946, 956, 987, 1020, 1015, 999, 1900, 2600, 966, 939, 936, 919, 915, 886, 879, 901, 909, 904, 947, 974, 988, 1450, 1020, 1014, 1020, 992, 984, 958, 949, 927, 902, 914, 888, 878, 889, 917, 250, 936, 959, 980, 986, 1006, 1011, 1011, 1004, 1004, 968, 943, 928, 922, 894]
+  const body = (o: Record<string, unknown> = {}) => ({
+    id: SET1, local_date: '2026-11-16', measured_at: '2026-11-16T11:30:00Z', duration_s: 60,
+    rr_ms: RR, moving_s: 2, watch_rmssd: 20.4, app_version: '2026-11-18c', ...o,
+  })
+
+  it('recomputes HRV from the raw intervals and stores it', async () => {
+    const deps = fakeDeps({ watch_store_readiness: () => ({ data: { id: SET1, stored: true }, error: null }) })
+    const res = await watchReadiness(req('/readiness', { body: body({ watch_rmssd: 99 }) }), deps)
+    assert.equal(res.status, 201)
+    const out = (await res.json()) as { rmssd: number; quality: string; stored: boolean }
+    assert.deepEqual([out.rmssd, out.quality, out.stored], [20.4, 'good', true])
+    const row = deps.calls.find(c => c.fn === 'watch_store_readiness')!.args.p_check as Record<string, unknown>
+    // The server's number wins; the watch's is kept only to compare.
+    assert.deepEqual([row.rmssd, row.watch_rmssd, row.clean_beats, row.quality], [20.4, 99, 65, 'good'])
+  })
+
+  it('stores a poor reading as poor, with the reason in the reply', async () => {
+    const deps = fakeDeps({ watch_store_readiness: () => ({ data: { id: SET1, stored: true }, error: null }) })
+    const res = await watchReadiness(req('/readiness', { body: body({ moving_s: 30 }) }), deps)
+    const out = (await res.json()) as { quality: string; reason: string }
+    assert.deepEqual([out.quality, out.reason], ['poor', 'moving'])
+  })
+
+  it('rejects malformed checks and maps a database failure to 503', async () => {
+    for (const b of [body({ rr_ms: [] }), body({ duration_s: 5 }), body({ local_date: '11/16' }), body({ extra: 1 }), body({ rr_ms: new Array(601).fill(900) })]) {
+      assert.equal((await watchReadiness(req('/readiness', { body: b }), fakeDeps())).status, 422)
+    }
+    const down = fakeDeps({ watch_store_readiness: () => ({ data: null, error: { message: 'no function' } }) })
+    assert.equal((await watchReadiness(req('/readiness', { body: body() }), down)).status, 503)
+  })
+})
+
+describe('/today tuning and readiness', () => {
+  const todayCtx = {
+    local_date: '2026-11-16', is_rest_day: false, rotation: null, flex_days: [], last_completion: null,
+    exercises: [
+      { id: 'a', name: 'Bench', day_type: 'push', active: true, sets_target: 3, reps_target: '8', weight_target: 135, rest_seconds: 90, sort_order: 0, last_weight: null },
+      { id: 'b', name: 'Fly', day_type: 'push', active: true, sets_target: 3, reps_target: '12', weight_target: 25, rest_seconds: 60, sort_order: 1, last_weight: null },
+    ],
+  }
+
+  it('sends each exercise its tuned counter settings, valid ones only', async () => {
+    const res = await watchToday(req('/today'), fakeDeps({
+      watch_today_context: () => ({ data: todayCtx, error: null }),
+      watch_rep_tuning: args => {
+        assert.equal(typeof args.p_algo, 'string')
+        return { data: [{ exercise_id: 'a', params: { lag: 7, ac: 0.55, bogus: 3 } }, { exercise_id: 'b', params: { ac: 9 } }], error: null }
+      },
+      watch_body_context: () => ({ data: { days: [], sessions: [], prefs: null }, error: null }),
+    }))
+    const p = (await res.json()) as { workout: { exercises: { id: string; tune?: Record<string, number> }[] } }
+    assert.deepEqual(p.workout.exercises[0].tune, { ac: 0.55, lag: 7 })
+    assert.equal(p.workout.exercises[1].tune, undefined)
+  })
+
+  it('a failed tuning read leaves /today untouched', async () => {
+    const res = await watchToday(req('/today'), fakeDeps({
+      watch_today_context: () => ({ data: todayCtx, error: null }),
+      watch_rep_tuning: () => ({ data: null, error: { message: 'missing function' } }),
+      watch_body_context: () => ({ data: { days: [], sessions: [], prefs: null }, error: null }),
+    }))
+    assert.equal(res.status, 200)
+    const p = (await res.json()) as { workout: { exercises: { tune?: unknown }[] } }
+    assert.equal(p.workout.exercises.some(e => e.tune), false)
+  })
+
+  it('body carries the HRV range and lifting advice for the watch', () => {
+    const day = (i: number) => {
+      const d = new Date('2026-11-16T12:00:00'); d.setDate(d.getDate() - i)
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    }
+    const readiness = Array.from({ length: 8 }, (_, i) => ({ local_date: day(i + 1), measured_at: `${day(i + 1)}T06:30:00Z`, rmssd: 55 + (i % 3) * 3, ln_rmssd: Math.log(55 + (i % 3) * 3), mean_hr: 52, quality: 'good' as const }))
+    const b = todayBody({ days: [], sessions: [], readiness, strength: [], prefs: null }, '2026-11-16')
+    assert.ok(b.hrv && b.hrv.low < 55 && b.hrv.high > 58 && b.hrv.days === 8 && b.hrv.today === null)
+    assert.equal(b.lift, null)
+    assert.equal(todayBody({ days: [], sessions: [], prefs: null }, '2026-11-16').hrv, null)
   })
 })

@@ -265,7 +265,8 @@ class Net {
         if (key == null) { return; }
         var r = Store.get(key);
         labKey = key;
-        request(key.substring(0, 3).equals("lh_") ? "/telemetry" : "/rep-lab", r["body"], true, method(:onLab));
+        var kind = key.substring(0, 3);
+        request(kind.equals("lh_") ? "/telemetry" : kind.equals("lr_") ? "/readiness" : "/rep-lab", r["body"], true, method(:onLab));
     }
 
     function onLab(code, data) {

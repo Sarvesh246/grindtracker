@@ -20,7 +20,7 @@ import { randomUUID } from 'node:crypto'
 import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { healthImportRequest } from '@/lib/health/importApi'
-import { watchPing, watchRepLab, watchTelemetry, watchSessions, watchToday, type WatchDeps, type RpcResult } from '../handlers'
+import { watchPing, watchRepLab, watchTelemetry, watchReadiness, watchSessions, watchToday, type WatchDeps, type RpcResult } from '../handlers'
 
 const ROOT = path.join(__dirname, '..', '..', '..', '..')
 const SQL_DIR = path.join(ROOT, 'docs', 'sql')
@@ -594,6 +594,61 @@ describe('watch API against the real schema', { skip: !baseUrl && 'set PARITY_DA
       assert.equal(res.status, 422)
       assert.equal(await codeOf(res), 'session_not_found')
       assert.throws(() => asUser(ALICE, `insert into rep_lab_sets (id, user_id, session_id, logged_reps) values ('${id('lab3')}', '${ALICE}', '${S1}', 1)`))
+    })
+  })
+
+  describe('readiness checks, lifting load context and rep tuning (migration 68)', () => {
+    const RR = Array.from({ length: 70 }, (_, i) => 950 + (i % 2 ? 25 : -25))
+    const check = (cid: string, extra: object = {}) => ({
+      id: cid, local_date: '2026-11-16', measured_at: iso(30), duration_s: 60, rr_ms: RR, moving_s: 0, watch_rmssd: 50, app_version: 'test', ...extra,
+    })
+
+    it('stores a check with the server-computed numbers, owner-only, and deletion wipes it', async () => {
+      clock = new Date()
+      const res = await watchReadiness(request('/readiness', aliceToken, check(id('rd1'))), deps)
+      assert.equal(res.status, 201)
+      assert.equal(db(`select quality || ',' || rmssd || ',' || clean_beats || ',' || array_length(rr_ms, 1) || ',' || watch_rmssd from readiness_checks where id = '${id('rd1')}'`), 'good,50.0,70,70,50.0')
+      assert.equal(asUser(ALICE, `select count(*) from readiness_checks where id = '${id('rd1')}'`), '1')
+      assert.equal(asUser(BOB, `select count(*) from readiness_checks where id = '${id('rd1')}'`), '0')
+      assert.throws(() => asUser(ALICE, `insert into readiness_checks (id, user_id, local_date, measured_at, duration_s, rr_ms, quality) values ('${id('rd9')}', '${ALICE}', '2026-11-16', now(), 60, '{900}', 'good')`))
+      // Bob re-sending Alice's id must not overwrite it.
+      await watchReadiness(request('/readiness', bobToken, check(id('rd1'), { local_date: '2026-01-01' })), deps)
+      assert.equal(db(`select local_date from readiness_checks where id = '${id('rd1')}'`), '2026-11-16')
+      // The watch's body context carries it, and the lifting sets.
+      const ctx = JSON.parse(db(`select watch_body_context('${ALICE}', '2026-11-16')::text`))
+      assert.ok(Array.isArray(ctx.readiness) && ctx.readiness.length >= 1)
+      assert.ok(Array.isArray(ctx.strength))
+    })
+
+    it('refuses checks while health collection is off; deleting health data removes them', async () => {
+      asUser(ALICE, 'select set_health_collection(false);')
+      const res = await watchReadiness(request('/readiness', aliceToken, check(id('rd2'))), deps)
+      assert.equal(res.status, 201)
+      assert.equal(((await res.json()) as { stored: boolean }).stored, false)
+      assert.equal(db(`select count(*) from readiness_checks where id = '${id('rd2')}'`), '0')
+      asUser(ALICE, 'select set_health_collection(true);')
+      await watchReadiness(request('/readiness', aliceToken, check(id('rd3'))), deps)
+      asUser(ALICE, 'select delete_health_history();')
+      assert.equal(db(`select count(*) from readiness_checks where user_id = '${ALICE}'`), '0')
+      asUser(ALICE, 'select set_health_collection(true);')
+    })
+
+    it('hands the watch only applied tunings for the current counter, owner-only', () => {
+      db(`insert into rep_tuning (user_id, exercise_id, algo_version, params, sets_used, default_exact, default_wrong, tuned_exact, tuned_wrong, applied) values
+        ('${ALICE}', 'ex-a', 'v1', '{"lag":7}', 25, 10, 0, 20, 0, true),
+        ('${ALICE}', 'ex-b', 'v1', '{}', 25, 20, 0, 20, 0, false),
+        ('${ALICE}', 'ex-c', 'v0', '{"ac":0.55}', 25, 10, 0, 20, 0, true)
+        on conflict do nothing`)
+      const got = JSON.parse(db(`set role service_role; select watch_rep_tuning('${ALICE}', 'v1')::text`).split('\n').pop()!)
+      assert.deepEqual(got, [{ exercise_id: 'ex-a', params: { lag: 7 } }])
+      assert.equal(asUser(BOB, 'select count(*) from rep_tuning'), '0')
+      assert.throws(() => asUser(ALICE, `insert into rep_tuning (user_id, exercise_id, algo_version, params, sets_used, default_exact, default_wrong, tuned_exact, tuned_wrong, applied) values ('${ALICE}', 'x', 'v1', '{}', 1, 0, 0, 0, 0, true)`))
+      assert.throws(() => asUser(ALICE, `select watch_rep_tuning('${ALICE}', 'v1')`))
+    })
+
+    it('counts usable rep lab sets for the nightly job without moving motion', () => {
+      const out = db(`select exercise_id || ':' || n from rep_tuning_candidates(now() - interval '1 day') where user_id = '${ALICE}' order by 1`)
+      assert.match(out, new RegExp(`${id('bench')}:\\d+`))
     })
   })
 

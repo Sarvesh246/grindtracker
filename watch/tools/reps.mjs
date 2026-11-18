@@ -43,18 +43,18 @@ export const FS = 12.5;
 const BLOCK = 12;          // samples per motion block (~1 s)
 const GAP_BLOCKS = 3;      // still blocks a bout may contain (pause at lockout)
 const MIN_MOTION = 0.03;   // g: a block quieter than this is still
-const LAG_MIN = 8;         // at 6.25 Hz: 1.28 s, the fastest rep we trust
+let LAG_MIN = 8;           // at 6.25 Hz: 1.28 s, the fastest rep we trust (tunable)
 const LAG_MAX = 40;        // 6.4 s, the slowest
 const PICK = 0.85;         // fraction of the best AC peak a shorter lag needs
-export const MIN_AC = 0.60;
-export const MAX_CV = 0.32;
+export let MIN_AC = 0.60;  // tunable
+export let MAX_CV = 0.32;  // tunable
 export const MIN_REPS = 3;
 const SHORT_REPS = 4;
 const SHORT_AC = 0.7;
 const SHORT_CV = 0.15;
 const FRAG_AC = 0.35;      // another bout this periodic...
 const FRAG_T = 0.25;       // ...at this close a period = the set came in pieces
-const SWING_MIN = 0.45;    // of the median swing
+let SWING_MIN = 0.45;      // of the median swing (tunable)
 const SWING_MAX = 2.4;
 export const MIN_AMP = 0.06; // g: median swing below this is tremor, not reps
 const GAP_LO = 0.6;        // core rep gap vs period
@@ -574,7 +574,43 @@ export function analyzeBout(x, y, z, lo, hi) {
 
 // The whole buffer -> { reps, ok, ac, cv, T, bouts }. The set is the bout
 // with the best reps x periodicity score; ties go to the later bout.
-export function analyze(x, y, z, steps) {
+// Per-exercise tuning (src/lib/reps/tuning.ts, Reps.configure on the watch):
+// four decision thresholds a user's own sets may move, inside ranges that
+// keep the counter's structure intact. Anything outside, or any other key,
+// is ignored here and on the watch alike. Bump ALGO_VERSION whenever the
+// counter changes in a way that makes old tunings meaningless.
+export const ALGO_VERSION = '2026-11-18';
+export const TUNE_DEFAULTS = Object.freeze({ ac: 0.60, cv: 0.32, swing: 0.45, lag: 8 });
+export const TUNE_RANGES = Object.freeze({ ac: [0.45, 0.75], cv: [0.22, 0.45], swing: [0.30, 0.60], lag: [6, 10] });
+
+/** Valid overrides only, rounded the way the watch stores them. */
+export function cleanParams(p) {
+  const out = {};
+  if (!p || typeof p !== 'object') return out;
+  for (const k of Object.keys(TUNE_RANGES)) {
+    const v = p[k];
+    if (typeof v !== 'number' || !Number.isFinite(v)) continue;
+    const [lo, hi] = TUNE_RANGES[k];
+    if (v < lo || v > hi) continue;
+    out[k] = k === 'lag' ? Math.round(v) : Math.round(v * 100) / 100;
+  }
+  return out;
+}
+
+function applyParams(p) {
+  const q = { ...TUNE_DEFAULTS, ...cleanParams(p) };
+  MIN_AC = q.ac; MAX_CV = q.cv; SWING_MIN = q.swing; LAG_MIN = q.lag;
+}
+
+export function analyze(x, y, z, steps, params) {
+  if (params) {
+    applyParams(params);
+    try { return analyzeDefault(x, y, z, steps); } finally { applyParams(null); }
+  }
+  return analyzeDefault(x, y, z, steps);
+}
+
+function analyzeDefault(x, y, z, steps) {
   x = x.slice(); y = y.slice(); z = z.slice();
   trimWindow(x, y, z);
   if (x.length) {

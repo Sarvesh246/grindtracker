@@ -28,6 +28,7 @@
 // reps, and guessing on lifts the wrist barely moves in. For those the right
 // answer is "no count", and the report scores it that way.
 
+import { fileURLToPath } from 'node:url';
 import { analyze } from './reps.mjs';
 
 const RAW = 25; // Hz the watch samples at
@@ -299,16 +300,34 @@ function report() {
 }
 const pct = (a, b) => `${((100 * a) / b).toFixed(1).padStart(5)}%`;
 
-const si = process.argv.indexOf('--seed');
-if (si > 0) {
-  const seed = +process.argv[si + 1];
-  const name = process.argv[si + 2] || 'curl';
-  const r = rng(seed * 7919 + name.length * 31);
-  const reps = 3 + Math.floor(r() * 13);
-  const ses = session(r, name, reps, { window: !process.argv.includes('--whole') });
-  const d = render(r, ses.segs);
-  const a = analyze(d.x, d.y, d.z, d.steps);
-  console.log({ name, real: ses.real, got: a.reps, ok: a.ok, bouts: a.bouts.map((b) => ({ lo: b.lo, hi: b.hi, reps: b.reps, ac: +b.ac.toFixed(2), cv: +b.cv.toFixed(2), T: +b.T.toFixed(1), amp: +(b.amp || 0).toFixed(3), ok: b.ok })) });
-} else {
-  report();
+/** The no-set corpus: `n` sessions of walking, fidgeting, drinking, phone
+ *  use, stretching... with no lift. The right count for every one is none.
+ *  tune.mjs uses it to refuse a tuning that turns everyday motion into reps. */
+export function noSetSessions(n = 200) {
+  const out = [];
+  for (let seed = 1; seed <= n; seed++) {
+    const r = rng(seed * 104729);
+    const d = render(r, noise(r));
+    out.push({ x: d.x, y: d.y, z: d.z, steps: d.steps });
+  }
+  return out;
+}
+
+const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+if (isMain) main();
+
+function main() {
+  const si = process.argv.indexOf('--seed');
+  if (si > 0) {
+    const seed = +process.argv[si + 1];
+    const name = process.argv[si + 2] || 'curl';
+    const r = rng(seed * 7919 + name.length * 31);
+    const reps = 3 + Math.floor(r() * 13);
+    const ses = session(r, name, reps, { window: !process.argv.includes('--whole') });
+    const d = render(r, ses.segs);
+    const a = analyze(d.x, d.y, d.z, d.steps);
+    console.log({ name, real: ses.real, got: a.reps, ok: a.ok, bouts: a.bouts.map((b) => ({ lo: b.lo, hi: b.hi, reps: b.reps, ac: +b.ac.toFixed(2), cv: +b.cv.toFixed(2), T: +b.T.toFixed(1), amp: +(b.amp || 0).toFixed(3), ok: b.ok })) });
+  } else {
+    report();
+  }
 }

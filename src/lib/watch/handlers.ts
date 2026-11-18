@@ -1,4 +1,6 @@
 import { LBS_PER_KG } from '@/lib/utils/units'
+import { analyzeRr } from '@/lib/body/hrv'
+import { ALGO_VERSION, cleanParams } from '../../../watch/tools/reps.mjs'
 import { watchError, watchJson } from './http'
 import { hashWatchToken, readBearerToken } from './token'
 import { buildTodayPayload, type TodayContext } from './today'
@@ -12,6 +14,7 @@ import {
   watchRepLabSchema,
   watchSessionSchema,
   watchTelemetrySchema,
+  watchReadinessSchema,
   type WatchRepLabInput,
   type WatchSessionInput,
 } from './schema'
@@ -128,6 +131,16 @@ export function watchToday(request: Request, deps: WatchDeps): Promise<Response>
     const payload = buildTodayPayload(ctx, query.data.unit ?? 'lbs', query.data.day)
 
     // Charge for the watch's Home. Optional: without it /today is unchanged.
+    // Per-exercise counter tunings (migration 68). Optional, like body.
+    try {
+      const tuning = await deps.rpc('watch_rep_tuning', { p_user: auth.userId, p_algo: ALGO_VERSION })
+      if (!tuning.error && Array.isArray(tuning.data) && payload.workout) {
+        attachTuning(payload.workout.exercises, tuning.data as { exercise_id: string; params: unknown }[])
+      }
+    } catch (err) {
+      deps.log('watch_rep_tuning crashed', err)
+    }
+
     let body: TodayBody | null = null
     try {
       const bodyCtx = await deps.rpc('watch_body_context', { p_user: auth.userId, p_local_date: ctx.local_date })
@@ -217,6 +230,51 @@ export function repLabRow(body: WatchRepLabInput): Record<string, unknown> {
     beats: body.beats ?? null,
     diag: { ...(body.diag ?? {}), ...(slim ? { slim: true } : {}) },
   }
+}
+
+/** Puts each exercise's tuned counter settings on it, as `tune` with the
+ *  watch's short keys. Only valid, in-range settings travel. */
+export function attachTuning(exercises: { id: string }[], rows: { exercise_id: string; params: unknown }[]): void {
+  const byId = new Map(rows.map(r => [r.exercise_id, cleanParams(r.params) as Record<string, number>]))
+  for (const e of exercises) {
+    const p = byId.get(e.id)
+    if (p && Object.keys(p).length) (e as { tune?: Record<string, number> }).tune = p
+  }
+}
+
+/** One morning HRV check. The numbers that count are computed here from the
+ *  raw intervals (src/lib/body/hrv.ts); a poor reading is stored too, marked
+ *  poor, so a bad sensor day shows up in the evidence instead of vanishing. */
+export function watchReadiness(request: Request, deps: WatchDeps): Promise<Response> {
+  return guard(deps, async () => {
+    const auth = await authenticateWatch(request, deps)
+    if (!auth.ok) return auth.response
+
+    const read = await readJsonBody(request)
+    if (!read.ok) return read.response
+
+    const parsed = watchReadinessSchema.safeParse(read.body)
+    if (!parsed.success) {
+      const details = formatIssues(parsed.error)
+      return watchError(422, 'validation_failed', `${details[0].path}: ${details[0].message}`, { details })
+    }
+    const c = parsed.data
+    const h = analyzeRr(c.rr_ms, c.moving_s ?? 0)
+    const row = {
+      id: c.id, local_date: c.local_date, measured_at: c.measured_at, duration_s: c.duration_s,
+      rr_ms: c.rr_ms, moving_s: c.moving_s ?? 0,
+      rmssd: h.rmssd, ln_rmssd: h.lnRmssd, mean_hr: h.meanHr, sdnn: h.sdnn,
+      clean_beats: h.cleanBeats, artifact_pct: h.artifactPct, quality: h.quality,
+      watch_rmssd: c.watch_rmssd ?? null, app_version: c.app_version ?? null,
+    }
+    const { data, error } = await deps.rpc('watch_store_readiness', { p_user: auth.userId, p_check: row })
+    if (error) {
+      deps.log('watch_store_readiness failed', error)
+      return watchError(503, 'service_unavailable', 'GRIND is temporarily unavailable. Retry later.', { headers: { 'Retry-After': '300' } })
+    }
+    const stored = (data as { stored?: boolean } | null)?.stored ?? false
+    return watchJson({ id: c.id, stored, rmssd: h.rmssd, mean_hr: h.meanHr, quality: h.quality, reason: h.reason }, 201)
+  })
 }
 
 /** App health from the watch: crashes and per-workout vitals. Never fatal

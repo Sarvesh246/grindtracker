@@ -97,6 +97,18 @@ Moved out of [CLAUDE.md](../CLAUDE.md) to keep that file short; its text is unch
   the watch: crashes with what the app was doing, per-workout battery, memory,
   counter timing and upload outcomes. Owner SELECT only; writes via the
   service-role `watch_store_telemetry`; trimmed after 365 days (migration `67`).
+- readiness_checks — id PK (chosen by the watch), user_id (cascade), local_date,
+  measured_at, duration_s, rr_ms int[] (raw beat intervals), moving_s, and the
+  server-computed rmssd, ln_rmssd, mean_hr, sdnn, clean_beats, artifact_pct,
+  quality (`good` | `fair` | `poor`), plus watch_rmssd. One row per morning
+  HRV check; feeds Charge's HRV input and the Coach. Owner SELECT only; writes
+  via the service-role `watch_store_readiness`, refused while health
+  collection is off; wiped by `delete_health_history()` (migration `68`).
+- rep_tuning — (user_id, exercise_id) PK, algo_version, params jsonb
+  (`ac`, `cv`, `swing`, `lag`), sets_used, the cross-validated default vs tuned
+  exact/wrong counts, applied. Written nightly by `/api/cron/rep-tuning` with
+  the service role; owner SELECT; `watch_rep_tuning` hands the applied rows
+  for the current counter to `/today` (migration `68`).
 - body_prefs — user_id PK, coach_uses_body (default true), smart_rest (default
   false). Owner select/insert/update; toggled from Settings → Watch.
   `delete_body_data()` (authenticated) wipes the caller's daily_body rows and

@@ -89,9 +89,14 @@ export default function TodaySheet({
   const week = useMemo(
     () => Array.from({ length: 7 }, (_, i) => {
       const date = shiftKey(today, i - 6)
-      return { date, charge: computeCharge(days, sessions, date) }
+      return {
+        date,
+        charge: date === today
+          ? charge
+          : computeCharge(days, sessions, date, { readiness: summary.readinessChecks, strength: summary.strengthSets }),
+      }
     }),
-    [days, sessions, today],
+    [days, sessions, today, charge, summary.readinessChecks, summary.strengthSets],
   )
   const weekSentence = useMemo(() => {
     const scored = week.filter(d => d.charge)

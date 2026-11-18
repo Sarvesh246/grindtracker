@@ -16,6 +16,9 @@
 //   npm run replab -- --offline         the saved files only, no network
 //   npm run replab -- --save-baseline   remember today's replay results
 //   npm run replab -- --set <id-prefix> one set in detail (timeline, diag)
+//   npm run replab -- --tune            what per-exercise tuning would change, and
+//                                       the cross-validated evidence (the nightly
+//                                       job applies the same rule on its own)
 //
 // After --save-baseline, every run lists the sets a change fixed or broke.
 // Needs NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (.env.local).
@@ -25,6 +28,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { analyze } from './reps.mjs'
+import { MIN_SETS, tuneExercise } from './tune.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const DATA = path.join(HERE, '..', 'lab-data')
@@ -38,6 +42,7 @@ const days = +arg('--days', 30)
 const offline = process.argv.includes('--offline')
 const saveBaseline = process.argv.includes('--save-baseline')
 const only = arg('--set', null)
+const tuneMode = process.argv.includes('--tune')
 
 const EVENT = { 1: 'first batch', 2: 'count shown', 3: 'analysis done', 4: 'sensor gap', 5: 'wrist settled', 6: 'glance kept count', 7: 'taken over by hand' }
 const GAP = ['?', 'sample gap', 'invalid sample count', 'unexpected sample count', 'invalid sample interval', 'unexpected sample spacing', 'missing accelerometer', 'sensor timeout']
@@ -238,7 +243,27 @@ try {
   process.exitCode = 1
 }
 
-if (sets && only) {
+function tuneReport(rows) {
+  const byEx = new Map()
+  for (const r of rows) {
+    if (!r.exercise_id) continue
+    if (!byEx.has(r.exercise_id)) byEx.set(r.exercise_id, [])
+    byEx.get(r.exercise_id).push(r)
+  }
+  console.log(`
+Per-exercise tuning (needs ${MIN_SETS}+ usable sets; held-out sets decide):`)
+  for (const [, group] of [...byEx].sort((a, b) => b[1].length - a[1].length)) {
+    const name = (group[0].exercise_name ?? '?').slice(0, 28).padEnd(28)
+    const t = tuneExercise(group)
+    if (!t) { console.log(`  ${name} ${group.length} sets, not enough yet`); continue }
+    const change = Object.keys(t.candidate).length ? JSON.stringify(t.candidate) : 'defaults'
+    console.log(`  ${name} ${t.setsUsed} sets  defaults ${t.defaultExact} exact/${t.defaultWrong} wrong  tuned ${t.tunedExact}/${t.tunedWrong}  ${change}  ${t.applied ? 'APPLY' : 'keep defaults'}  (no-lift counts ${t.noSetCounts.defaults}→${t.noSetCounts.tuned} of 200)`)
+  }
+}
+
+if (sets && tuneMode) {
+  tuneReport(sets)
+} else if (sets && only) {
   const r = sets.find(s => s.id.startsWith(only))
   if (r) detail(r)
   else console.log(`No set starting ${only}.`)

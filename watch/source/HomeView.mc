@@ -142,7 +142,10 @@ class HomeView extends WatchUi.View {
             }
             if (charge != null) {
                 Draw.line(dc, 0.675, sub, "Charge " + charge["s"] + "  ·  " + charge["l"], chargeColor(charge));
-                if (charge["a"] != null) { Draw.line(dc, 0.755, small, charge["a"], Config.DIM); }
+                // Lifting advice, when it fired, says more than the band's.
+                var lift = Store.liftAdvice();
+                var advice = lift != null ? lift : charge["a"];
+                if (advice != null) { Draw.line(dc, 0.755, small, advice, lift != null ? Config.FG : Config.DIM); }
             }
             if (days != null && (days.size() > 1 || did == null)) { Draw.scrollArrows(dc); }
         }
@@ -225,6 +228,7 @@ class HomeDelegate extends WatchUi.BehaviorDelegate {
     function onMenu() {
         var dead = Store.dead().size();
         var m = new WatchUi.Menu2({ :title => "GRIND" });
+        m.addItem(new WatchUi.MenuItem("Readiness check", "1 min HRV, sitting still", :ready, null));
         m.addItem(new WatchUi.MenuItem("Refresh", null, :refresh, null));
         m.addItem(Menus.repToggle());
         m.addItem(Menus.labToggle());
@@ -268,6 +272,11 @@ class HomeMenuDelegate extends WatchUi.Menu2InputDelegate {
             return;
         }
         WatchUi.popView(WatchUi.SLIDE_IMMEDIATE);
+        if (item.getId() == :ready) {
+            Readiness.state = :idle;
+            WatchUi.pushView(new ReadinessView(), new ReadinessDelegate(), WatchUi.SLIDE_UP);
+            return;
+        }
         if (item.getId() == :clear) {
             var d = Store.dead();
             for (var i = 0; i < d.size(); i++) { Store.dropSession(d[i]); }

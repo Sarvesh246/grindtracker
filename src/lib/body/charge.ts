@@ -1,19 +1,24 @@
+import { hrvScore, summarizeReadiness, type ReadinessCheck, type ReadinessSummary } from './hrv'
 import { clamp, daysBetween, loadBalance, loadScore } from './load'
+import { strengthLoad, strengthScore, type RecoverySignals, type StrengthLoad, type StrengthSet } from './strength'
 import type { DailyBody, LoadSession } from './types'
 
 /**
  * Charge: how ready you are to train today, 0–100, with its working shown.
  *
- *   Body Battery morning peak   40%   the value itself
- *   Recovery time left          25%   0 h → 100, 48 h → 0
- *   Resting HR vs 30-day usual  20%   −3 bpm or lower → 100, +7 → 0
- *   Training load balance       15%   7 days vs 28, 0.8–1.3 → 100
+ *   Body Battery morning peak   30%   the value itself
+ *   HRV check vs your usual     20%   at or above usual → 90–100, −1 SD → 60
+ *   Recovery time left          20%   0 h → 100, 48 h → 0
+ *   Resting HR vs 30-day usual  15%   −3 bpm or lower → 100, +7 → 0
+ *   Training load balance       15%   7 days vs 28, 0.8–1.3 → 100. Lifting
+ *                                     load (strength.ts) when there is enough
+ *                                     of it, else heart-rate load (load.ts)
  *
  * Missing inputs drop out and the rest are re-weighted; fewer than two inputs
  * means no score at all. A training guide, never a medical measure.
  */
 
-export type ChargeKey = 'body_battery' | 'recovery' | 'resting_hr' | 'load'
+export type ChargeKey = 'body_battery' | 'hrv' | 'recovery' | 'resting_hr' | 'load'
 export type ChargeBand = 'primed' | 'steady' | 'easy'
 
 export interface ChargeInput {
@@ -40,7 +45,43 @@ export interface Charge {
   shortAdvice: string
 }
 
-const WEIGHTS: Record<ChargeKey, number> = { body_battery: 0.4, recovery: 0.25, resting_hr: 0.2, load: 0.15 }
+const WEIGHTS: Record<ChargeKey, number> = { body_battery: 0.3, hrv: 0.2, recovery: 0.2, resting_hr: 0.15, load: 0.15 }
+
+/** Optional inputs beyond daily_body and sessions. */
+export interface ChargeExtras {
+  readiness?: ReadinessCheck[]
+  strength?: StrengthSet[]
+}
+
+/** Mean morning Body Battery over the 7 days before `today`. */
+function bbUsual(days: DailyBody[], today: string): number | null {
+  const v = days
+    .filter(d => d.local_date < today && daysBetween(d.local_date, today) <= 7)
+    .map(d => d.bb_wake ?? d.bb_high)
+    .filter((x): x is number => x != null)
+  return v.length >= 3 ? v.reduce((a, b) => a + b, 0) / v.length : null
+}
+
+/** Readiness and lifting load for `today`, with the recovery signals that
+ *  decide the lifting advice. One place, so Charge, the load card, the Coach
+ *  and the watch can never disagree. */
+export function bodyExtras(days: DailyBody[], today: string, extras: ChargeExtras = {}): {
+  readiness: ReadinessSummary | null
+  strength: StrengthLoad | null
+} {
+  const readiness = extras.readiness?.length ? summarizeReadiness(extras.readiness, today) : null
+  const row = days.find(d => d.local_date === today)
+  const baseline = restingBaseline(days, today)
+  const signals: RecoverySignals = {
+    restingDelta: row?.resting_hr != null && baseline != null ? row.resting_hr - baseline : null,
+    hrvWeekZ: readiness?.weekZ ?? null,
+    hrvZ: readiness?.z ?? null,
+    bbToday: row?.bb_wake ?? row?.bb_high ?? null,
+    bbUsual: bbUsual(days, today),
+  }
+  const strength = extras.strength?.length ? strengthLoad(extras.strength, today, signals) : null
+  return { readiness, strength }
+}
 const MIN_BASELINE_DAYS = 5
 
 export function chargeBand(score: number): ChargeBand {
@@ -56,13 +97,30 @@ export function restingBaseline(days: DailyBody[], today: string): number | null
   return vals.reduce((a, b) => a + b, 0) / vals.length
 }
 
-export function computeCharge(days: DailyBody[], sessions: LoadSession[], today: string): Charge | null {
+export function computeCharge(days: DailyBody[], sessions: LoadSession[], today: string, extras: ChargeExtras = {}): Charge | null {
   const row = days.find(d => d.local_date === today)
   const raw: Omit<ChargeInput, 'weight'>[] = []
+  const { readiness, strength } = bodyExtras(days, today, extras)
 
   const bb = row?.bb_wake ?? row?.bb_high ?? null
   if (bb != null) {
     raw.push({ key: 'body_battery', label: 'Body Battery', value: String(bb), score: clamp(bb, 0, 100), phrase: `Body Battery ${bb}` })
+  }
+
+  if (readiness?.today && readiness.z != null && readiness.baseline) {
+    const { lowMs, highMs } = readiness.baseline
+    raw.push({
+      key: 'hrv',
+      label: 'HRV check',
+      value: `${Math.round(readiness.today.rmssd)} ms`,
+      score: hrvScore(readiness.z),
+      phrase:
+        readiness.status === 'below'
+          ? `this morning's HRV is under your usual ${lowMs}–${highMs} ms`
+          : readiness.status === 'above'
+            ? "this morning's HRV is above your usual"
+            : "this morning's HRV is in your usual range",
+    })
   }
 
   const rec = row?.recovery_hours ?? null
@@ -93,8 +151,23 @@ export function computeCharge(days: DailyBody[], sessions: LoadSession[], today:
     })
   }
 
-  const load = loadBalance(sessions, today)
-  if (load) {
+  const load = strength ? null : loadBalance(sessions, today)
+  if (strength) {
+    raw.push({
+      key: 'load',
+      label: 'Lifting load',
+      value: `${strength.percent > 0 ? '+' : ''}${strength.percent}%`,
+      score: strengthScore(strength),
+      phrase:
+        strength.advice === 'deload'
+          ? `lifting is up ${strength.percent}% this week while recovery is slipping`
+          : strength.band === 'high'
+            ? "you've lifted a lot more than usual this week"
+            : strength.band === 'low'
+              ? "it's been a light lifting week"
+              : 'your lifting load is building well',
+    })
+  } else if (load) {
     raw.push({
       key: 'load',
       label: 'Training load',

@@ -47,6 +47,9 @@ export interface TodayExercise {
   weight: number | null
   /** Seconds the plan calls for after a working set; null = device default. */
   rest: number | null
+  /** Rep counter settings tuned on this user's sets of this exercise
+   *  (migration 68, attachTuning). Absent = the counter's defaults. */
+  tune?: Record<string, number>
 }
 
 /** One of the user's workout days, for the watch's day picker. */

@@ -124,6 +124,19 @@ advice. On a low-Charge day, starting a workout asks once whether you want one
 set fewer per lift. With Smart rest on (GRIND → Settings → Watch) the rest
 screen buzzes twice and says RECOVERED once your HR has come back down.
 
+**Readiness check** (Home → MENU): sit still for 70 s and the watch measures
+your heart-rate variability (RMSSD) from beat-to-beat intervals, the same
+way HRV4Training does. Do it on waking, before coffee, in the same position
+each day; the first 10 s settle and are thrown away. After five mornings it
+tells you whether today is below, within or above your usual range, and the
+reading becomes part of Charge. A reading where you moved or the sensor missed
+too many beats says so and asks you to try again; it never counts.
+
+**Lifting load** compares this week's sets with your monthly average, each set
+measured against your usual set of that exercise. When it's up a lot while
+your recovery is slipping, Home says *Go lighter*; after three steady weeks
+with no strength gains and good recovery, *Room to push*.
+
 Every set is written to storage the moment you log it. If the app dies
 mid-workout, the next launch offers to resume or discard. Only Save on the
 summary writes a Garmin activity (and so a Strava post); closing mid-workout
@@ -176,6 +189,15 @@ of the same motion), accuracy per exercise, the kinds of miss, how fast the
 count appears, and the watch's health. Recordings are saved to
 `watch/lab-data/` (gitignored). Once a change helps, port it to
 `source/Reps.mc` and check native vs JS parity before sideloading.
+
+**It tunes itself.** Once an exercise has 20 recorded sets, a nightly job
+tries small changes to four of the counter's thresholds on those sets. A change
+is kept only if it counts more of your sets exactly on sets it was *not*
+tuned on (5-fold cross-validation), never adds a wrong count, and doesn't make
+walking or fidgeting show a count on the simulated no-lift sessions. The watch
+gets the result with the day's plan; `npm run replab -- --tune` shows the
+evidence. The JS reference and the watch apply the settings identically
+(checked on 60 traces with default and tuned settings).
 
 If the phone keeps failing to carry a large record, the watch retries it
 without the compass and beat intervals. If the sensor stream breaks in two

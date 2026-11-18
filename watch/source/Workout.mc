@@ -149,6 +149,7 @@ module Workout {
         Hr.closeRecovery();
         if (Recorder.session == null) { Recorder.ensureRecording(); }
         Reps.reset();
+        Reps.configure(ex()["tune"]);
         Reps.start();
         Health.mark("set");
     }

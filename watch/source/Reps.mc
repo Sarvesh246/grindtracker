@@ -21,18 +21,18 @@ module Reps {
     const BLOCK = 12;
     const GAP_BLOCKS = 3;
     const MIN_MOTION = 0.03;
-    const LAG_MIN = 8;
+    var LAG_MIN = 8;           // tunable per exercise (configure)
     const LAG_MAX = 40;
     const PICK = 0.85;
-    const MIN_AC = 0.60;
-    const MAX_CV = 0.32;
+    var MIN_AC = 0.60;         // tunable
+    var MAX_CV = 0.32;         // tunable
     const MIN_REPS = 3;
     const SHORT_REPS = 4;
     const SHORT_AC = 0.7;
     const SHORT_CV = 0.15;
     const FRAG_AC = 0.35;
     const FRAG_T = 0.25;
-    const SWING_MIN = 0.45;
+    var SWING_MIN = 0.45;      // tunable
     const SWING_MAX = 2.4;
     const MIN_AMP = 0.06;
     const GAP_LO = 0.6;
@@ -96,6 +96,39 @@ module Reps {
     var sensorStatus = "idle";
     var rich = false;          // compass and beat intervals requested too
     var richCounted = false;   // this set already counted against them
+
+    // --- per-exercise tuning (tools/reps.mjs TUNE_RANGES, src/lib/reps) ---
+    // /today may send an exercise's `tune`: settings learned from your own
+    // sets of it. Same keys, ranges and rounding as cleanParams() in JS, so
+    // the watch and the replay can never count differently.
+    var tuneTag = "";
+
+    function inRange(v, lo, hi) {
+        return (v instanceof Lang.Number || v instanceof Lang.Float || v instanceof Lang.Double) && v >= lo && v <= hi;
+    }
+
+    // The valid settings in `t`, rounded, or null if none.
+    function validTune(t) {
+        if (!(t instanceof Lang.Dictionary)) { return null; }
+        var out = {};
+        if (inRange(t["ac"], 0.45, 0.75)) { out["ac"] = Math.round(t["ac"] * 100.0) / 100.0; }
+        if (inRange(t["cv"], 0.22, 0.45)) { out["cv"] = Math.round(t["cv"] * 100.0) / 100.0; }
+        if (inRange(t["swing"], 0.30, 0.60)) { out["swing"] = Math.round(t["swing"] * 100.0) / 100.0; }
+        if (inRange(t["lag"], 6, 10)) { out["lag"] = Math.round(t["lag"].toFloat()).toNumber(); }
+        return out.size() == 0 ? null : out;
+    }
+
+    // The settings for the set about to start: defaults, then the exercise's.
+    function configure(t) {
+        MIN_AC = 0.60; MAX_CV = 0.32; SWING_MIN = 0.45; LAG_MIN = 8;
+        tuneTag = "";
+        var v = validTune(t);
+        if (v == null) { return; }
+        if (v["ac"] != null) { MIN_AC = v["ac"]; tuneTag += "ac" + v["ac"].format("%.2f") + " "; }
+        if (v["cv"] != null) { MAX_CV = v["cv"]; tuneTag += "cv" + v["cv"].format("%.2f") + " "; }
+        if (v["swing"] != null) { SWING_MIN = v["swing"]; tuneTag += "swing" + v["swing"].format("%.2f") + " "; }
+        if (v["lag"] != null) { LAG_MIN = v["lag"]; tuneTag += "lag" + v["lag"] + " "; }
+    }
 
     function richBad() {
         var v = Store.get("rb");
@@ -176,6 +209,7 @@ module Reps {
         d["analyses"] = analyses; d["analysis_ms"] = analysisMs; d["longest_callback_ms"] = longestStep;
         d["set_ms"] = System.getTimer() - t0;
         d["rich"] = rich; d["rich_bad"] = richBad();
+        d["tune"] = tuneTag.length() == 0 ? null : tuneTag;
         return { "events" => events, "diag" => d };
     }
 

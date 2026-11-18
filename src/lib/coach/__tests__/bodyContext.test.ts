@@ -58,6 +58,10 @@ function summary(over: Partial<BodySummary> = {}, rise = 0, wake = 38): BodySumm
     sessions: s,
     charge: computeCharge(d, s, TODAY),
     load: loadBalance(s, TODAY),
+    readinessChecks: [],
+    readiness: null,
+    strengthSets: [],
+    strength: null,
     prefs: DEFAULT_BODY_PREFS,
     ...over,
   }

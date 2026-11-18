@@ -62,11 +62,16 @@ module Store {
                 var weight = e["weight"];
                 if (weight != null && !(weight instanceof Lang.Number || weight instanceof Lang.Float || weight instanceof Lang.Double)) { return null; }
                 if (weight != null && (weight < 0 || weight > 2000)) { return null; }
-                ex.add({
+                var x = {
                     "id" => e["id"], "name" => e["name"], "sets" => e["sets"],
                     "reps" => e["reps"], "reps_max" => e["reps_max"],
                     "weight" => e["weight"], "rest" => e["rest"]
-                });
+                };
+                // Counter settings tuned on your own sets of this exercise.
+                // Anything malformed is dropped, never the plan.
+                var t = Reps.validTune(e["tune"]);
+                if (t != null) { x["tune"] = t; }
+                ex.add(x);
             }
             out["ex"] = ex;
         } else {
@@ -102,6 +107,16 @@ module Store {
                 out["ch"] = { "s" => c["score"], "b" => c["band"], "l" => c["label"], "a" => c["advice"] };
             }
             out["sr"] = b["smart_rest"] == true;
+            // The readiness check's usual range, and lifting advice for Home.
+            var hv = b["hrv"];
+            if (hv instanceof Lang.Dictionary && hv["low"] instanceof Lang.Number && hv["high"] instanceof Lang.Number
+                && hv["low"] > 0 && hv["high"] >= hv["low"] && hv["high"] < 1000) {
+                out["hv"] = { "lo" => hv["low"], "hi" => hv["high"] };
+            }
+            var lf = b["lift"];
+            if (lf instanceof Lang.Dictionary && lf["headline"] instanceof Lang.String && lf["headline"].length() <= 40) {
+                out["lf"] = lf["headline"];
+            }
         }
         put("wk", out);
         put("wkAt", Time.now().value());
@@ -147,6 +162,18 @@ module Store {
     function charge() {
         var w = today();
         return w == null ? null : w["ch"];
+    }
+
+    // { lo, hi } ms, your usual readiness range, or null.
+    function hrvRange() {
+        var w = today();
+        return w == null ? null : w["hv"];
+    }
+
+    // "Go lighter" / "Room to push", or null.
+    function liftAdvice() {
+        var w = today();
+        return w == null ? null : w["lf"];
     }
 
     function smartRest() {

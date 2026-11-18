@@ -246,6 +246,24 @@ export const watchTelemetrySchema = z.strictObject({
 
 export type WatchTelemetryInput = z.infer<typeof watchTelemetrySchema>
 
+/** POST /readiness: one morning HRV check (migration 68). The server
+ *  recomputes everything from `rr_ms`; `watch_rmssd` is only what the watch
+ *  showed, kept to check the two agree. */
+export const watchReadinessSchema = z.strictObject({
+  id: uuid,
+  local_date: z.iso.date({ message: 'must be YYYY-MM-DD' }),
+  measured_at: isoUtc,
+  duration_s: z.int().min(10).max(600),
+  /** Beat-to-beat intervals in ms, as delivered (artifacts included). */
+  rr_ms: z.array(z.int().min(0).max(5000)).min(1).max(600),
+  /** Seconds the watch saw the wrist move during the check. */
+  moving_s: z.int().min(0).max(600).optional(),
+  watch_rmssd: z.number().min(0).max(1000).nullish(),
+  app_version: z.string().max(32).nullish(),
+})
+
+export type WatchReadinessInput = z.infer<typeof watchReadinessSchema>
+
 /** Zod issues as `{ path, message }`, path dotted (`sets.2.reps`). */
 export function formatIssues(error: z.ZodError): { path: string; message: string }[] {
   return error.issues.map(issue => ({

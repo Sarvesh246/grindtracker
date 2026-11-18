@@ -1,6 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { computeCharge, type Charge } from './charge'
+import { bodyExtras, computeCharge, type Charge } from './charge'
+import type { ReadinessCheck, ReadinessSummary } from './hrv'
 import { loadBalance, type LoadBalance } from './load'
+import type { StrengthLoad, StrengthSet } from './strength'
 import type { DailyBody, LoadSession } from './types'
 
 /**
@@ -27,6 +29,12 @@ export interface BodySummary {
   sessions: LoadSession[]
   charge: Charge | null
   load: LoadBalance | null
+  /** Morning HRV checks (migration 68), the last 60 days. */
+  readinessChecks: ReadinessCheck[]
+  readiness: ReadinessSummary | null
+  /** Working sets of the last 90 days, for lifting load. */
+  strengthSets: StrengthSet[]
+  strength: StrengthLoad | null
   prefs: BodyPrefs
 }
 
@@ -42,8 +50,44 @@ function shiftKey(key: string, days: number): string {
 export function emptyBodySummary(today: string): BodySummary {
   return {
     available: false, hasWatch: false, today, days: [], todayRow: null, sessions: [],
-    charge: null, load: null, prefs: DEFAULT_BODY_PREFS,
+    charge: null, load: null, readinessChecks: [], readiness: null, strengthSets: [], strength: null,
+    prefs: DEFAULT_BODY_PREFS,
   }
+}
+
+/** Readiness checks; an absent table (migration 68 not applied) reads as none. */
+async function readReadiness(supabase: SupabaseClient, userId: string, today: string): Promise<ReadinessCheck[]> {
+  const { data, error } = await supabase
+    .from('readiness_checks')
+    .select('local_date,measured_at,rmssd,ln_rmssd,mean_hr,quality')
+    .eq('user_id', userId)
+    .gte('local_date', shiftKey(today, -60))
+    .lte('local_date', today)
+    .order('measured_at')
+  return error || !data ? [] : (data as ReadinessCheck[])
+}
+
+/** Working sets for lifting load: completed sessions, no warm-ups or skips. */
+export async function readStrengthSets(supabase: SupabaseClient, userId: string, today: string): Promise<StrengthSet[]> {
+  const { data, error } = await supabase
+    .from('session_logs')
+    .select('exercise_id, weight, reps, is_skipped, is_warmup, sessions!inner(user_id, local_date, completed_at)')
+    .eq('sessions.user_id', userId)
+    .not('sessions.completed_at', 'is', null)
+    .gte('sessions.local_date', shiftKey(today, -90))
+    .lte('sessions.local_date', today)
+    .limit(5000)
+  if (error || !data) return []
+  type Row = { exercise_id: string; weight: number | null; reps: number | null; is_skipped: boolean | null; is_warmup: boolean | null
+    sessions: { local_date: string | null } | { local_date: string | null }[] | null }
+  const out: StrengthSet[] = []
+  for (const r of data as Row[]) {
+    if (r.is_skipped || r.is_warmup || r.reps == null) continue
+    const sess = Array.isArray(r.sessions) ? r.sessions[0] : r.sessions
+    if (!sess?.local_date) continue
+    out.push({ local_date: sess.local_date, exercise_id: r.exercise_id, weight: r.weight == null ? null : Number(r.weight), reps: r.reps })
+  }
+  return out
 }
 
 /** `today` must come from localDateKey() (CLAUDE.md "Dates & timezones"). */
@@ -66,10 +110,16 @@ export async function getBodySummary(supabase: SupabaseClient, userId: string, t
         .lte('local_date', today),
       supabase.from('body_prefs').select('coach_uses_body,smart_rest').eq('user_id', userId).maybeSingle(),
     ])
+    const [readinessChecks, strengthSets] = await Promise.all([
+      readReadiness(supabase, userId, today).catch(() => []),
+      readStrengthSets(supabase, userId, today).catch(() => []),
+    ])
     if (daysRes.error || sessRes.error) return emptyBodySummary(today)
     const days = (daysRes.data ?? []) as DailyBody[]
     const sessions = (sessRes.data ?? []) as LoadSession[]
-    const hasWatch = days.length > 0 || sessions.some(s => s.zone_seconds != null)
+    const hasWatch = days.length > 0 || sessions.some(s => s.zone_seconds != null) || readinessChecks.length > 0
+    const extras = { readiness: readinessChecks, strength: strengthSets }
+    const { readiness, strength } = bodyExtras(days, today, extras)
     return {
       available: true,
       hasWatch,
@@ -77,10 +127,15 @@ export async function getBodySummary(supabase: SupabaseClient, userId: string, t
       days,
       todayRow: days.find(d => d.local_date === today) ?? null,
       sessions,
-      charge: computeCharge(days, sessions, today),
+      charge: computeCharge(days, sessions, today, extras),
       // Load balance only means something for watch users; web-only users
       // would otherwise get a gauge they never asked for.
       load: hasWatch ? loadBalance(sessions, today) : null,
+      readinessChecks,
+      readiness,
+      strengthSets,
+      // Lifting load needs no watch: every logged set counts.
+      strength,
       // A failed consent read must never silently re-enable Coach health access.
       prefs: prefsRes.error ? { ...DEFAULT_BODY_PREFS, coach_uses_body: false } : (prefsRes.data as BodyPrefs | null) ?? DEFAULT_BODY_PREFS,
     }

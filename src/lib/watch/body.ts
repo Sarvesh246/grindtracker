@@ -1,4 +1,4 @@
-import { computeCharge, type ChargeBand, type DailyBody, type LoadSession } from '@/lib/body'
+import { bodyExtras, computeCharge, type ChargeBand, type DailyBody, type LoadSession, type ReadinessCheck, type StrengthSet } from '@/lib/body'
 import type { WatchDailyInput, WatchSessionInput } from './schema'
 
 /**
@@ -62,18 +62,32 @@ export function toDailyPayload(input: WatchDailyInput) {
 export interface BodyContext {
   days: DailyBody[]
   sessions: LoadSession[]
+  /** Migration 68; absent before it. */
+  readiness?: ReadinessCheck[] | null
+  strength?: StrengthSet[] | null
   prefs: { coach_uses_body: boolean; smart_rest: boolean } | null
 }
 
 export interface TodayBody {
   charge: { score: number; band: ChargeBand; label: string; advice: string } | null
   smart_rest: boolean
+  /** For the readiness check's result screen: your usual range, and today's
+   *  reading once one is in. Null until 5 mornings exist. */
+  hrv: { low: number; high: number; days: number; today: number | null; status: 'below' | 'within' | 'above' | null } | null
+  /** Lifting advice when it fired: Go lighter / Room to push. */
+  lift: { advice: 'deload' | 'push'; headline: string; percent: number } | null
 }
 
 export function todayBody(ctx: BodyContext, localDate: string): TodayBody {
-  const c = computeCharge(ctx.days ?? [], ctx.sessions ?? [], localDate)
+  const days = ctx.days ?? []
+  const extras = { readiness: ctx.readiness ?? [], strength: ctx.strength ?? [] }
+  const c = computeCharge(days, ctx.sessions ?? [], localDate, extras)
+  const { readiness, strength } = bodyExtras(days, localDate, extras)
+  const b = readiness?.baseline
   return {
     charge: c ? { score: c.score, band: c.band, label: c.bandLabel, advice: c.shortAdvice } : null,
     smart_rest: ctx.prefs?.smart_rest ?? false,
+    hrv: b ? { low: b.lowMs, high: b.highMs, days: b.days, today: readiness?.today ? Math.round(readiness.today.rmssd) : null, status: readiness?.status ?? null } : null,
+    lift: strength?.advice ? { advice: strength.advice, headline: strength.headline, percent: strength.percent } : null,
   }
 }

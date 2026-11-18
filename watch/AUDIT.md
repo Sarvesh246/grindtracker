@@ -157,3 +157,9 @@ Not testable off the wrist: haptics, rep counting on your own wrist, Garmin Conn
 - The compass and beat intervals are requested with the accelerometer and fall back to accelerometer-only if refused. Two sets with a broken stream while they're on switch them off until Rep lab is toggled.
 - `Health` marks each run alive and clears the mark on a clean stop; the next start reports a run that died, with what it was doing. Each saved workout sends battery, peak memory, the longest counter step and upload outcomes.
 - Worst case in the simulator (two minutes of curls through the real callback with every sensor on): peak 216 KB of the watch's 768 KB, 16 ms per sensor batch, 47-62 ms to capture. 47 native tests pass, the demo tour completes with no failures, and 633 repository tests pass.
+
+## Readiness, lifting load and self-tuning (2026-11-18)
+
+- **Readiness check** (`Readiness.mc`): 10 s settle, then 60 s of beat-to-beat intervals and accelerometer motion. Its maths matches `src/lib/body/hrv.ts` exactly on a shared fixture with a missed beat, a doubled one, out-of-range beats and a spike (RMSSD 20.4, 65 clean beats, 7.1% artifacts in both). The server recomputes from the raw intervals and its copy counts. Failure paths: no intervals after 15 s, a listener that goes quiet for 5 s, more than 10 s of movement. Only with no workout open, because the app gets one sensor listener at a time.
+- **Per-exercise tuning**: four thresholds (`ac`, `cv`, `swing`, `lag`) are now module vars set by `Reps.configure` at each set start, validated with the same ranges and rounding as `cleanParams` in JS. Native vs JS counts were identical on 60 recorded traces with default settings and with two tuned sets, one of which changes a count.
+- The simulator tour now walks the readiness intro, settle, measuring, good and poor results, and back to Home: no failures. 50 native tests pass, and the worst-case set peaked at 230 KB of the watch's 768 KB.
