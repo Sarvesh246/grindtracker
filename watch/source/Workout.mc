@@ -68,7 +68,7 @@ module Workout {
             if (counts[i] == cur["dn"][i] + 1 && i == cur["ei"]) {
                 var row = sets[sets.size() - 1];
                 cur["w"] = row["w"];
-                cur["r"] = row["r"];
+                if (row["ar"] != true) { cur["r"] = row["r"]; }
                 advanceAfterSet(ex(), row["t"]);
                 return;
             }
@@ -162,8 +162,10 @@ module Workout {
         if (cur["f"] == 0) {
             cur["w"] = Logic.clamp(cur["w"] + dir * Config.WEIGHT_STEP, 0.0, 2000.0);
         } else {
-            cur["r"] = Logic.clamp(cur["r"] + dir, 0, 1000);
-            Reps.manual = true; // your number wins for the rest of this set
+            var offered = Reps.offer();
+            var reps = offered == null ? cur["r"] : offered;
+            cur["r"] = Logic.clamp(reps + dir, 0, 1000);
+            Reps.takeOver(); // your number wins for the rest of this set
         }
     }
 
@@ -175,14 +177,16 @@ module Workout {
     // Returns true when that was the last set of the workout.
     function logSet() {
         var e = ex();
+        var offered = Reps.offer();
+        var reps = offered == null ? cur["r"] : offered;
         // `ra`: what the rep counter made of this set (null: no confident
         // count). Kept on the watch only, to measure the counter against
         // what was logged; never uploaded.
         var s = {
-            "id" => Logic.uuid4(), "e" => e["id"], "n" => cur["sn"], "r" => cur["r"], "w" => cur["w"],
-            "t" => now(), "rs" => cur["rs"], "y" => 0, "ra" => Reps.count
+            "id" => Logic.uuid4(), "e" => e["id"], "n" => cur["sn"], "r" => reps, "w" => cur["w"],
+            "t" => now(), "rs" => cur["rs"], "y" => 0, "ra" => Reps.count, "ar" => offered != null
         };
-        System.println("reps auto=" + Reps.count + " logged=" + cur["r"] + " typed=" + Reps.manual + " " + e["name"]);
+        System.println("reps auto=" + Reps.count + " logged=" + reps + " typed=" + Reps.manual + " " + e["name"]);
         Store.putSet(cur["sid"], sets.size(), s);
         sets.add(s);
         Hr.onSetLogged(sets.size() - 1, s["t"]);
@@ -195,6 +199,7 @@ module Workout {
         cur["dn"][cur["ei"]] += 1;
 
         var rest = e["rest"] == null ? Config.DEFAULT_REST : e["rest"];
+        rest = Logic.clamp(rest, 0, 3600);
         var done = false;
         if (!isDone(cur["ei"])) {
             cur["sn"] = cur["dn"][cur["ei"]] + 1;
@@ -207,7 +212,7 @@ module Workout {
         } else {
             cur["r0"] = loggedAt;
             cur["rd"] = rest;
-            cur["re"] = loggedAt + rest;
+            cur["re"] = rest > 0 ? loggedAt + rest : null;
             saveCur();
         }
         return done;
@@ -244,6 +249,7 @@ module Workout {
         sets = sets.slice(0, k);
         Hr.onSetUndone(k);
         Reps.reset();
+        Reps.takeOver();
         cur["dn"][i] -= 1;
         if (cur["dn"][i] < 0) { cur["dn"][i] = 0; }
         cur["sk"][i] = 0;

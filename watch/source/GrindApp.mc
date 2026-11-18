@@ -79,6 +79,7 @@ class GrindApp extends Application.AppBase {
     function onStop(state) {
         if (!fg) { return; }
         if (timer != null) { timer.stop(); }
+        if (tour != null) { tour.stop(); }
         // Closing mid-workout drops the Garmin recording instead of saving
         // it. Resuming starts a new recording, so saving here posted one
         // Garmin/Strava activity per close-and-resume. The sets and our own

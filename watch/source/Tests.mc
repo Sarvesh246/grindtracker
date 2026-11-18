@@ -574,7 +574,7 @@ module RepFx {
     }
 
     function run(d) {
-        var job = new RepAnalysis(d[0], d[1], d[2], d[3]);
+        var job = new RepAnalysis(d[0], d[1], d[2], d[3], false);
         var result = null;
         while (result == null) { result = job.step(); }
         return result;
@@ -620,7 +620,7 @@ function testRepsTooLittleData(logger) {
 (:test)
 function testRepsFullBufferTime(logger) {
     var d = RepFx.curl(20, false);
-    var job = new RepAnalysis(d[0], d[1], d[2], d[3]);
+    var job = new RepAnalysis(d[0], d[1], d[2], d[3], false);
     var longest = 0;
     var result = null;
     var calls = 0;
@@ -633,6 +633,66 @@ function testRepsFullBufferTime(logger) {
     logger.debug("Full buffer: " + calls + " callbacks, longest " + longest + " ms");
     return T.ck(logger, "bounded callbacks and accurate count", calls > 10 && longest < 250
         && result != null && result[1] && result[0] == 20);
+}
+
+(:test)
+function testRepsRollingWindow(logger) {
+    Reps.reset();
+    var data = RepFx.curl(25, false);
+    for (var i = 0; i < data[0].size(); i++) {
+        Reps.append(data[0][i], data[1][i], data[2][i], i);
+    }
+    var steps = Reps.ordered(Reps.bs);
+    var ok = T.ck(logger, "rolling buffer keeps the latest samples in order",
+        Reps.clipped && steps.size() == Reps.MAX_SAMPLES && steps[0] == data[0].size() - Reps.MAX_SAMPLES
+            && steps[steps.size() - 1] == data[0].size() - 1);
+    // No walking in this fixture. Feed the same clipped motion to the worker.
+    var job = new RepAnalysis(Reps.ordered(Reps.bx), Reps.ordered(Reps.by), Reps.ordered(Reps.bz),
+        data[3].slice(data[3].size() - Reps.MAX_SAMPLES, null), true);
+    var result = null;
+    for (var i = 0; i < 500 && result == null; i++) { result = job.step(); }
+    ok = T.ck(logger, "clipped set withdraws the rep offer", result != null && result[0] == -1 && !result[1]) && ok;
+    Reps.reset();
+    return ok;
+}
+
+(:test)
+function testRepSensorGap(logger) {
+    Reps.reset();
+    Reps.listening = true;
+    Reps.onData(null);
+    var ok = T.ck(logger, "missing startup batch can recover", !Reps.interrupted);
+    Reps.sawMotion = true;
+    Reps.count = 8;
+    Reps.onData(null);
+    ok = T.ck(logger, "missing mid-set batch withdraws the offer", Reps.interrupted && Reps.offer() == null) && ok;
+    Reps.reset();
+    Reps.listening = false;
+    return T.ck(logger, "next set can count again", !Reps.interrupted) && ok;
+}
+
+(:test)
+function testRepOfferDoesNotCarryForward(logger) {
+    Workout.start({ "id" => "push", "name" => "Push", "unit" => "lbs", "ex" => [
+        { "id" => "e", "name" => "Bench", "sets" => 3, "reps" => 12, "weight" => 135.0, "rest" => 0 }
+    ] });
+    Workout.setFocus(1);
+    Reps.count = 8;
+    Workout.logSet();
+    var ok = T.ck(logger, "offer saved, next set keeps planned reps, no rest screen",
+        Workout.sets[0]["r"] == 8 && Workout.cur["r"] == 12 && !Workout.inRest());
+    Workout.cur["dn"][0] = 0; Workout.cur["sn"] = 1; Workout.saveCur();
+    Workout.load();
+    ok = T.ck(logger, "recovery retains fallback reps", Workout.cur["sn"] == 2 && Workout.cur["r"] == 12) && ok;
+    Reps.count = 9;
+    Workout.adjust(1);
+    ok = T.ck(logger, "manual adjustment starts from the offer", Workout.cur["r"] == 10 && Reps.offer() == null) && ok;
+    Workout.logSet();
+    Workout.undoSet();
+    Reps.count = 7;
+    ok = T.ck(logger, "undo retains reps for correction", Workout.cur["r"] == 10 && Reps.offer() == null) && ok;
+    Workout.finish(false);
+    return ok;
 }
 
 (:test)

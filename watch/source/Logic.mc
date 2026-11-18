@@ -347,6 +347,13 @@ module Logic {
     // MAX_TRACE are dropped (a session left running for half a day).
     function traceSet(trace, idx, hr) {
         if (idx < 0 || idx >= Config.MAX_TRACE) { return trace; }
+        // Resuming hours later can leave thousands of missing samples.
+        // Fill long gaps in blocks instead of making a VM call for each zero.
+        if (idx - trace.size() >= 32) {
+            var zeros = new [32];
+            for (var i = 0; i < zeros.size(); i++) { zeros[i] = 0; }
+            while (idx - trace.size() >= zeros.size()) { trace.addAll(zeros); }
+        }
         while (trace.size() <= idx) { trace.add(0); }
         trace[idx] = hr;
         return trace;

@@ -28,10 +28,6 @@ module Recorder {
         }
     }
 
-    function isOn() {
-        return session != null;
-    }
-
     // Current heart rate or null. Also feeds our own average, used when the
     // activity doesn't report one (recording failed, or resumed after a crash).
     function sampleHr() {

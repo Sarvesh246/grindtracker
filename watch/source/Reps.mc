@@ -53,7 +53,9 @@ module Reps {
 
     const RATE = 25;           // Hz asked of the sensor
     const MAX_SAMPLES = 938;   // 75 s at 12.5 Hz
-    const EVERY = 3;           // analyse every 3rd one-second batch, if moved
+    const BATCH_MS = 1000;
+    const PAIR_BUDGET = 256;   // maximum correlation pairs per timer callback
+    const SAMPLE_BUDGET = 128; // maximum filter samples per timer callback
 
     // --- live state -------------------------------------------------------
     var bx = [];
@@ -64,8 +66,13 @@ module Reps {
     var count = null;          // confident rep count, or null
     var manual = false;        // the user changed reps by hand: stop offering
     var listening = false;
-    var batches = 0;
     var dirty = false;         // moved since the last analysis
+    var wasMoving = false;
+    var sawMotion = false;
+    var interrupted = false;
+    var lastBatch = null;
+    var head = 0;              // oldest entry once the motion buffer is full
+    var clipped = false;
 
     var job = null;
     var worker = null;
@@ -83,24 +90,43 @@ module Reps {
 
     function setEnabled(on) {
         Store.put("rc", on);
-        if (!on) { stop(); reset(); }
+        if (!on) { stop(); clearMotion(); }
     }
 
     // A new set: forget the motion so far.
     function reset() {
+        clearMotion();
+        manual = false;
+        interrupted = false;
+    }
+
+    function clearMotion() {
         cancelAnalysis();
         bx = []; by = []; bz = []; bs = [];
         carry = null;
         count = null;
-        manual = false;
-        batches = 0;
         dirty = false;
+        wasMoving = false;
+        sawMotion = false;
+        lastBatch = null;
+        head = 0;
+        clipped = false;
+    }
+
+    function takeOver() {
+        cancelAnalysis();
+        manual = true;
+    }
+
+    function inputGap() {
+        interrupted = sawMotion;
+        clearMotion();
     }
 
     // The reps the set screen should show: the confident count unless the
     // user has taken over, else null (keep whatever is there).
     function offer() {
-        if (manual || count == null || !enabled()) { return null; }
+        if (manual || count == null) { return null; }
         return count;
     }
 
@@ -123,8 +149,8 @@ module Reps {
     function stop() {
         cancelAnalysis();
         if (!listening) { return; }
-        try { Sensor.unregisterSensorDataListener(); } catch (e) { }
         listening = false;
+        try { Sensor.unregisterSensorDataListener(); } catch (e) { }
     }
 
     function stepsNow() {
@@ -137,10 +163,26 @@ module Reps {
     }
 
     function onData(data) {
-        var a = data.accelerometerData;
-        if (a == null || a.x == null || a.y == null || a.z == null) { return; }
-        var st = stepsNow();
+        if (!listening || manual || interrupted) { return; }
+        var a = data == null ? null : data.accelerometerData;
+        if (a == null || a.x == null || a.y == null || a.z == null) {
+            inputGap();
+            return;
+        }
         var n = a.x.size();
+        // A delayed or malformed batch breaks the time axis used for cadence.
+        // Ignore counts for a set seen only in pieces.
+        var now = System.getTimer();
+        if (n < RATE - 2 || n > RATE + 2 || a.y.size() != n || a.z.size() != n) {
+            inputGap();
+            return;
+        }
+        if (lastBatch != null && (now < lastBatch || now - lastBatch > 2 * BATCH_MS)) {
+            inputGap();
+            if (interrupted) { return; }
+        }
+        lastBatch = now;
+        var st = stepsNow();
         for (var i = 0; i < n; i++) {
             var x = a.x[i] / 1000.0;
             var y = a.y[i] / 1000.0;
@@ -148,21 +190,37 @@ module Reps {
             if (carry == null) {
                 carry = [x, y, z];
             } else {
-                bx.add((carry[0] + x) / 2.0);
-                by.add((carry[1] + y) / 2.0);
-                bz.add((carry[2] + z) / 2.0);
-                bs.add(st);
+                append((carry[0] + x) / 2.0, (carry[1] + y) / 2.0, (carry[2] + z) / 2.0, st);
                 carry = null;
             }
         }
-        var over = bx.size() - MAX_SAMPLES;
-        if (over > 0) {
-            bx = bx.slice(over, null); by = by.slice(over, null);
-            bz = bz.slice(over, null); bs = bs.slice(over, null);
+        // Offer a count after the motion has settled. A fresh burst cancels
+        // the old snapshot so START cannot log a stale, partial count.
+        if (moving()) {
+            if (!wasMoving) { cancelAnalysis(); count = null; }
+            dirty = true;
+            sawMotion = true;
+            wasMoving = true;
+        } else {
+            wasMoving = false;
+            update();
         }
-        batches += 1;
-        if (moving()) { dirty = true; }
-        if (batches % EVERY == 0) { update(); }
+    }
+
+    function append(x, y, z, steps) {
+        if (bx.size() < MAX_SAMPLES) {
+            bx.add(x); by.add(y); bz.add(z); bs.add(steps);
+        } else {
+            bx[head] = x; by[head] = y; bz[head] = z; bs[head] = steps;
+            head = (head + 1) % MAX_SAMPLES;
+            clipped = true;
+        }
+    }
+
+    function ordered(a) {
+        var out = a.slice(head, null);
+        if (head != 0) { out.addAll(a.slice(0, head)); }
+        return out;
     }
 
     // Any real motion in the newest second? While the wrist is still nothing
@@ -174,17 +232,22 @@ module Reps {
         var axes = [bx, by, bz];
         for (var k = 0; k < 3; k++) {
             var a = axes[k];
-            var m = mean(a, n - BLOCK, n);
-            for (var i = n - BLOCK; i < n; i++) { v += (a[i] - m) * (a[i] - m); }
+            var m = 0.0;
+            for (var i = n - BLOCK; i < n; i++) { m += a[(head + i) % n]; }
+            m /= BLOCK;
+            for (var i = n - BLOCK; i < n; i++) {
+                var delta = a[(head + i) % n] - m;
+                v += delta * delta;
+            }
         }
         return Math.sqrt(v / BLOCK) > MIN_MOTION;
     }
 
     function update() {
-        if (manual || job != null || !dirty || !listening) { return; }
+        if (manual || job != null || !dirty || !listening || bx.size() < 48) { return; }
         dirty = false;
         // The sensor keeps appending while this snapshot is being analyzed.
-        job = new RepAnalysis(bx.slice(0, null), by.slice(0, null), bz.slice(0, null), bs.slice(0, null));
+        job = new RepAnalysis(ordered(bx), ordered(by), ordered(bz), ordered(bs), clipped);
         worker = new Timer.Timer();
         worker.start(new Lang.Method(Reps, :advanceAnalysis), 50, true);
     }
@@ -194,8 +257,9 @@ module Reps {
         var result = job.step();
         if (result == null) { return; }
         cancelAnalysis();
-        if (result[1] && count != result[0]) {
-            count = result[0];
+        var offered = result[1] ? result[0] : (result[0] < 0 ? null : count);
+        if (count != offered) {
+            count = offered;
             WatchUi.requestUpdate();
         }
     }
@@ -213,64 +277,45 @@ module Reps {
         return s / (hi - lo);
     }
 
-    // Centred moving average with shrinking edges, O(n).
-    function movAvg(a, w) {
-        var n = a.size();
-        var out = new [n];
-        if (w <= 1) {
-            for (var i = 0; i < n; i++) { out[i] = a[i]; }
-            return out;
-        }
-        var half = w / 2;
-        var lo = 0;
-        var hi = 0;
-        var s = 0.0;
-        for (var i = 0; i < n; i++) {
-            var wantLo = imax(0, i - half);
-            var wantHi = imin(n, i + half + 1);
-            while (hi < wantHi) { s += a[hi]; hi++; }
-            while (lo < wantLo) { s -= a[lo]; lo++; }
-            out[i] = s / (hi - lo);
-        }
-        return out;
-    }
-
-    // Median of a copy (insertion sort: the arrays are small).
+    // Median of a copy. Gap passes keep the largest motion buffers from
+    // hitting insertion sort's quadratic worst case in one callback.
     function median(src) {
         var n = src.size();
         if (n == 0) { return 0.0; }
         var a = src.slice(0, null);
-        for (var i = 1; i < n; i++) {
-            var v = a[i];
-            var j = i - 1;
-            while (j >= 0 && a[j] > v) { a[j + 1] = a[j]; j--; }
-            a[j + 1] = v;
+        for (var gap = n / 2; gap >= 1; gap /= 2) {
+            for (var i = gap; i < n; i++) {
+                var v = a[i];
+                var j = i;
+                while (j >= gap && a[j - gap] > v) { a[j] = a[j - gap]; j -= gap; }
+                a[j] = v;
+            }
         }
         return n % 2 == 1 ? a[(n - 1) / 2].toFloat() : (a[n / 2 - 1] + a[n / 2]) / 2.0;
     }
 
     // --- 1. motion bouts ------------------------------------------------------
 
-    function bouts(x, y, z, steps) {
-        var n = x.size();
-        var nb = n / BLOCK;
+    function motion(x, y, z, b) {
+        var lo = b * BLOCK;
+        var hi = lo + BLOCK;
+        var v = 0.0;
+        var axes = [x, y, z];
+        for (var k = 0; k < 3; k++) {
+            var a = axes[k];
+            var m = mean(a, lo, hi);
+            for (var i = lo; i < hi; i++) {
+                var delta = a[i] - m;
+                v += delta * delta;
+            }
+        }
+        return Math.sqrt(v / BLOCK);
+    }
+
+    function bouts(mo, steps, n) {
+        var nb = mo.size();
         var out = [];
         if (nb < 3) { return out; }
-        var mo = new [nb];
-        for (var b = 0; b < nb; b++) {
-            var lo = b * BLOCK;
-            var hi = lo + BLOCK;
-            var v = 0.0;
-            var axes = [x, y, z];
-            for (var k = 0; k < 3; k++) {
-                var a = axes[k];
-                var m = mean(a, lo, hi);
-                var s = 0.0;
-                for (var i = lo; i < hi; i++) { s += (a[i] - m) * (a[i] - m); }
-                v += s / BLOCK;
-            }
-            mo[b] = Math.sqrt(v);
-        }
         var thr = 0.15 * median(mo);
         if (thr < MIN_MOTION) { thr = MIN_MOTION; }
         var act = new [nb];
@@ -298,18 +343,7 @@ module Reps {
 
     // --- 2. principal axis ------------------------------------------------------
 
-    function principal(x, y, z, lo, hi) {
-        var mx = mean(x, lo, hi);
-        var my = mean(y, lo, hi);
-        var mz = mean(z, lo, hi);
-        var cxx = 0.0; var cyy = 0.0; var czz = 0.0;
-        var cxy = 0.0; var cxz = 0.0; var cyz = 0.0;
-        for (var i = lo; i < hi; i++) {
-            var a = x[i] - mx;
-            var b = y[i] - my;
-            var c = z[i] - mz;
-            cxx += a * a; cyy += b * b; czz += c * c; cxy += a * b; cxz += a * c; cyz += b * c;
-        }
+    function principal(cxx, cyy, czz, cxy, cxz, cyz) {
         var vx = 0.0; var vy = 0.0; var vz = 0.0;
         if (cxx >= cyy && cxx >= czz) { vx = 1.0; } else if (cyy >= czz) { vy = 1.0; } else { vz = 1.0; }
         for (var it = 0; it < 25; it++) {
@@ -320,21 +354,12 @@ module Reps {
             if (nn == 0) { break; }
             vx = nx / nn; vy = ny / nn; vz = nz / nn;
         }
-        return [vx, vy, vz, mx, my, mz];
+        return [vx, vy, vz];
     }
 
     // --- 3. period ------------------------------------------------------------
 
     // [period in 12.5 Hz samples, autocorrelation peak], or [0, 0].
-    function correlation(d, lo, hi, lag) {
-        var xy = 0.0; var xx = 0.0; var yy = 0.0;
-        for (var i = lo; i + lag < hi; i++) {
-            var a = d[i]; var b = d[i + lag];
-            xy += a * b; xx += a * a; yy += b * b;
-        }
-        return xx > 0 && yy > 0 ? xy / Math.sqrt(xx * yy) : 0.0;
-    }
-
     function selectPeriod(r, lmax) {
         var best = 0.0;
         for (var L = LAG_MIN; L <= lmax; L++) {
@@ -425,42 +450,12 @@ module Reps {
     }
 
     // [reps, cv, amp, times, agree]
-    function countCycles(y, T, ax, ay, az, raw) {
-        var n = y.size();
+    function countCycles(extrema, T, ax, ay, az, raw) {
         var none = [0, 1.0, 0.0, [], false];
-        var W = imax(4, rnd(T));
-        var wsd = [];
-        for (var w0 = 0; w0 + W <= n; w0 += W) {
-            var ss = 0.0;
-            for (var i = w0; i < w0 + W; i++) { ss += y[i] * y[i]; }
-            wsd.add(Math.sqrt(ss / W));
-        }
-        if (wsd.size() == 0) { return none; }
-        var h = 0.45 * median(wsd);
-        var refr = 0.45 * T;
-        var ext = [];
-        var ei = [];
-        var kind = [];
-        var at = [];
-        var state = 0;
-        var lastUp = -1000000;
-        var lastDn = -1000000;
-        var lo = y[0]; var hi = y[0]; var loI = 0; var hiI = 0;
-        for (var i = 0; i < n; i++) {
-            var v = y[i];
-            if (v < lo) { lo = v; loI = i; }
-            if (v > hi) { hi = v; hiI = i; }
-            if (state != 1 && v > h && i - lastUp >= refr) {
-                ext.add(lo); ei.add(loI); kind.add(-1); at.add(i);
-                state = 1; lastUp = i; hi = v; hiI = i; lo = v; loI = i;
-            } else if (state != -1 && v < -h && i - lastDn >= refr) {
-                ext.add(hi); ei.add(hiI); kind.add(1); at.add(i);
-                state = -1; lastDn = i; lo = v; loI = i; hi = v; hiI = i;
-            }
-        }
-        if (state == 1) { ext.add(hi); ei.add(hiI); kind.add(1); }
-        else { ext.add(lo); ei.add(loI); kind.add(-1); }
-        at.add(n);
+        var ext = extrema.ext;
+        var ei = extrema.ei;
+        var kind = extrema.kind;
+        var at = extrema.at;
         var ns = ext.size() - 1;
         if (ns < 2) { return none; }
 
@@ -606,74 +601,182 @@ module Reps {
 class RepAnalysis {
     var x; var y; var z; var steps;
     var ranges; var index = 0; var all = [];
-    var phase = :ranges;
+    var phase = :motion;
+    var clipped;
+    var motion;
+    var cursor = 0;
     var lo; var hi; var signal; var pr; var d; var correlations;
     var lag; var maxLag; var period; var ac; var w;
     var filtered; var ax; var ay; var az; var raw; var cycles;
     var spanStart; var spanEnd;
+    var mx; var my; var mz;
+    var cxx; var cyy; var czz; var cxy; var cxz; var cyz;
+    var pairIndex; var xy; var xx; var yy;
+    var filter = null;
+    var extrema = null;
 
-    function initialize(xs, ys, zs, walking) {
+    function initialize(xs, ys, zs, walking, wasClipped) {
         x = xs; y = ys; z = zs; steps = walking;
+        clipped = wasClipped;
+        motion = new [x.size() / Reps.BLOCK];
+    }
+
+    function beginLag(at) {
+        pairIndex = at;
+        xy = 0.0; xx = 0.0; yy = 0.0;
+    }
+
+    // Share a single pair budget across lags. Even one lag over a full
+    // resolution set can take too long for the watch's event watchdog.
+    function scanLags(values, start, end, savePeaks) {
+        var budget = Reps.PAIR_BUDGET;
+        while (lag <= maxLag && budget > 0) {
+            var finish = Reps.imin(end - lag, pairIndex + budget);
+            while (pairIndex < finish) {
+                var a = values[pairIndex]; var b = values[pairIndex + lag];
+                xy += a * b; xx += a * a; yy += b * b;
+                pairIndex++;
+                budget--;
+            }
+            if (pairIndex + lag < end) { break; }
+            var value = xx > 0 && yy > 0 ? xy / Math.sqrt(xx * yy) : 0.0;
+            if (savePeaks) { correlations[lag] = value; }
+            else if (value > ac) { ac = value; }
+            lag++;
+            beginLag(start);
+        }
+        return lag > maxLag;
+    }
+
+    function average(values, start, end, width) {
+        if (filter == null) { filter = new RepAverage(values, start, end, width); }
+        if (!filter.step()) { return null; }
+        var result = filter.out;
+        filter = null;
+        return result;
     }
 
     function step() {
+        var end;
         switch (phase) {
+        case :motion:
+            end = Reps.imin(motion.size(), cursor + 6);
+            for (; cursor < end; cursor++) { motion[cursor] = Reps.motion(x, y, z, cursor); }
+            if (cursor == motion.size()) { phase = :ranges; }
+            break;
         case :ranges:
-            ranges = Reps.bouts(x, y, z, steps);
+            ranges = Reps.bouts(motion, steps, x.size());
+            motion = null; steps = null;
+            // The set extends outside the rolling window. Withdraw even an
+            // earlier offer so a partial count never becomes the set's value.
+            if (clipped && ranges.size() > 0 && ranges[0][0] == 0) { return [-1, false]; }
             phase = :bout;
             break;
         case :bout:
             if (index >= ranges.size()) { return Reps.selectBout(all); }
             lo = ranges[index][0]; hi = ranges[index][1]; index++;
             if (hi - lo < 38) { break; }
-            pr = Reps.principal(x, y, z, lo, hi);
-            phase = :project;
+            mx = 0.0; my = 0.0; mz = 0.0;
+            cursor = lo;
+            phase = :means;
+            break;
+        case :means:
+            end = Reps.imin(hi, cursor + Reps.SAMPLE_BUDGET);
+            for (; cursor < end; cursor++) {
+                mx += x[cursor]; my += y[cursor]; mz += z[cursor];
+            }
+            if (cursor == hi) {
+                mx /= hi - lo; my /= hi - lo; mz /= hi - lo;
+                cxx = 0.0; cyy = 0.0; czz = 0.0; cxy = 0.0; cxz = 0.0; cyz = 0.0;
+                cursor = lo;
+                phase = :covariance;
+            }
+            break;
+        case :covariance:
+            end = Reps.imin(hi, cursor + Reps.SAMPLE_BUDGET);
+            for (; cursor < end; cursor++) {
+                var a = x[cursor] - mx; var b = y[cursor] - my; var c = z[cursor] - mz;
+                cxx += a*a; cyy += b*b; czz += c*c;
+                cxy += a*b; cxz += a*c; cyz += b*c;
+            }
+            if (cursor == hi) {
+                pr = Reps.principal(cxx, cyy, czz, cxy, cxz, cyz);
+                signal = new [hi - lo];
+                cursor = lo;
+                phase = :project;
+            }
             break;
         case :project:
-            signal = new [hi - lo];
-            for (var i = lo; i < hi; i++) {
-                signal[i-lo] = pr[0]*(x[i]-pr[3]) + pr[1]*(y[i]-pr[4]) + pr[2]*(z[i]-pr[5]);
+            end = Reps.imin(hi, cursor + Reps.SAMPLE_BUDGET);
+            for (; cursor < end; cursor++) {
+                signal[cursor-lo] = pr[0]*(x[cursor]-mx) + pr[1]*(y[cursor]-my) + pr[2]*(z[cursor]-mz);
             }
-            phase = :detrend;
+            if (cursor == hi) { phase = :slow; }
+            break;
+        case :slow:
+            filtered = average(signal, 0, signal.size(), 63);
+            if (filtered != null) {
+                d = new [signal.size() / 2];
+                cursor = 0;
+                phase = :detrend;
+            }
             break;
         case :detrend:
-            var slow = Reps.movAvg(signal, 63);
-            d = new [signal.size() / 2];
-            for (var i = 0; i < d.size(); i++) {
-                var j = 2*i;
-                d[i] = ((signal[j]-slow[j]) + (signal[j+1]-slow[j+1])) / 2.0;
+            end = Reps.imin(d.size(), cursor + Reps.SAMPLE_BUDGET);
+            for (; cursor < end; cursor++) {
+                var j = 2 * cursor;
+                d[cursor] = ((signal[j]-filtered[j]) + (signal[j+1]-filtered[j+1])) / 2.0;
             }
-            maxLag = Reps.imin(Reps.LAG_MAX, d.size()/2);
-            if (maxLag <= Reps.LAG_MIN + 1) { phase = :bout; break; }
-            correlations = new [maxLag + 2];
+            if (cursor < d.size()) { break; }
+            filtered = null;
+            maxLag = Reps.imin(Reps.LAG_MAX, d.size()/2) + 1;
+            if (maxLag <= Reps.LAG_MIN + 2) { signal = null; d = null; phase = :bout; break; }
+            correlations = new [maxLag + 1];
             lag = Reps.LAG_MIN - 1;
+            beginLag(0);
             phase = :lags;
             break;
         case :lags:
-            for (var k = 0; k < 3 && lag <= maxLag + 1; k++) {
-                correlations[lag] = Reps.correlation(d, 0, d.size(), lag);
-                lag++;
-            }
-            if (lag > maxLag + 1) {
-                var pd = Reps.selectPeriod(correlations, maxLag);
-                period = pd[0]; ac = pd[1]; d = null;
+            if (scanLags(d, 0, d.size(), true)) {
+                var pd = Reps.selectPeriod(correlations, maxLag - 1);
+                period = pd[0]; ac = pd[1]; d = null; correlations = null;
                 phase = period > 0 && hi-lo >= 1.8*period ? :baseline : :bout;
+                if (phase == :bout) { signal = null; }
             }
             break;
         case :baseline:
-            var base = Reps.movAvg(signal, Reps.imax(3, Reps.rnd(period)));
-            for (var i = 0; i < base.size(); i++) { base[i] = signal[i]-base[i]; }
-            filtered = base;
-            w = Reps.imax(1, Reps.rnd(period/5.0));
-            phase = :smooth;
+            filtered = average(signal, 0, signal.size(), Reps.imax(3, Reps.rnd(period)));
+            if (filtered != null) { cursor = 0; phase = :subtract; }
             break;
-        case :smooth: filtered = Reps.movAvg(filtered, w); phase = :axisX; break;
-        case :axisX: ax = Reps.movAvg(x.slice(lo, hi), w); phase = :axisY; break;
-        case :axisY: ay = Reps.movAvg(y.slice(lo, hi), w); phase = :axisZ; break;
-        case :axisZ: az = Reps.movAvg(z.slice(lo, hi), w); phase = :raw; break;
-        case :raw: raw = Reps.movAvg(signal, w); signal = null; phase = :cycles; break;
+        case :subtract:
+            end = Reps.imin(filtered.size(), cursor + Reps.SAMPLE_BUDGET);
+            for (; cursor < end; cursor++) { filtered[cursor] = signal[cursor] - filtered[cursor]; }
+            if (cursor == filtered.size()) {
+                w = Reps.imax(1, Reps.rnd(period/5.0));
+                phase = :smooth;
+            }
+            break;
+        case :smooth:
+            var smoothed = average(filtered, 0, filtered.size(), w);
+            if (smoothed != null) { filtered = smoothed; phase = :axisX; }
+            break;
+        case :axisX: ax = average(x, lo, hi, w); if (ax != null) { phase = :axisY; } break;
+        case :axisY: ay = average(y, lo, hi, w); if (ay != null) { phase = :axisZ; } break;
+        case :axisZ: az = average(z, lo, hi, w); if (az != null) { phase = :raw; } break;
+        case :raw:
+            raw = average(signal, 0, signal.size(), w);
+            if (raw != null) {
+                signal = null;
+                extrema = new RepExtrema(filtered, period);
+                phase = :extrema;
+            }
+            break;
+        case :extrema:
+            if (extrema.step()) { phase = :cycles; }
+            break;
         case :cycles:
-            cycles = Reps.countCycles(filtered, period, ax, ay, az, raw);
+            cycles = Reps.countCycles(extrema, period, ax, ay, az, raw);
+            extrema = null;
             ax = null; ay = null; az = null; raw = null;
             if (cycles[0] < 2) { phase = :finish; break; }
             var times = cycles[3];
@@ -682,15 +785,11 @@ class RepAnalysis {
             lag = Reps.imax(1, (0.85*period).toNumber());
             maxLag = Math.ceil(1.15*period).toNumber();
             ac = 0.0;
+            beginLag(spanStart);
             phase = :span;
             break;
         case :span:
-            for (var k = 0; k < 2 && lag <= maxLag; k++) {
-                var value = Reps.correlation(filtered, spanStart, spanEnd, lag);
-                if (value > ac) { ac = value; }
-                lag++;
-            }
-            if (lag > maxLag) { phase = :finish; }
+            if (scanLags(filtered, spanStart, spanEnd, false)) { phase = :finish; }
             break;
         case :finish:
             var few = cycles[0] <= Reps.SHORT_REPS;
@@ -703,5 +802,94 @@ class RepAnalysis {
             break;
         }
         return null;
+    }
+}
+
+// Finds hysteresis crossings after measuring the signal's typical size.
+class RepExtrema {
+    var values; var width; var refr;
+    var ext = []; var ei = []; var kind = []; var at = [];
+    var scales = []; var sum = 0.0;
+    var cursor = 0;
+    var threshold = null;
+    var state = 0;
+    var lastUp = -1000000; var lastDown = -1000000;
+    var low; var high; var lowIndex = 0; var highIndex = 0;
+
+    function initialize(series, period) {
+        values = series;
+        width = Reps.imax(4, Reps.rnd(period));
+        refr = 0.45 * period;
+        low = values[0]; high = low;
+    }
+
+    function step() {
+        if (threshold == null) {
+            var fullWindows = values.size() - values.size() % width;
+            var end = Reps.imin(fullWindows, cursor + Reps.SAMPLE_BUDGET);
+            for (; cursor < end; cursor++) {
+                var value = values[cursor];
+                sum += value * value;
+                if ((cursor + 1) % width == 0) {
+                    scales.add(Math.sqrt(sum / width));
+                    sum = 0.0;
+                }
+            }
+            if (cursor == fullWindows) {
+                if (scales.size() == 0) { return true; }
+                threshold = 0.45 * Reps.median(scales);
+                scales = null;
+                cursor = 0;
+            }
+            return false;
+        }
+
+        var end = Reps.imin(values.size(), cursor + Reps.SAMPLE_BUDGET);
+        for (; cursor < end; cursor++) {
+            var value = values[cursor];
+            if (value < low) { low = value; lowIndex = cursor; }
+            if (value > high) { high = value; highIndex = cursor; }
+            if (state != 1 && value > threshold && cursor - lastUp >= refr) {
+                ext.add(low); ei.add(lowIndex); kind.add(-1); at.add(cursor);
+                state = 1; lastUp = cursor;
+            } else if (state != -1 && value < -threshold && cursor - lastDown >= refr) {
+                ext.add(high); ei.add(highIndex); kind.add(1); at.add(cursor);
+                state = -1; lastDown = cursor;
+            } else {
+                continue;
+            }
+            low = value; high = value; lowIndex = cursor; highIndex = cursor;
+        }
+        if (cursor < values.size()) { return false; }
+        if (state == 1) { ext.add(high); ei.add(highIndex); kind.add(1); }
+        else { ext.add(low); ei.add(lowIndex); kind.add(-1); }
+        at.add(values.size());
+        return true;
+    }
+}
+
+// Centred moving average with shrinking edges. Read the source in place and
+// carry the running sum across callbacks so the window retains its shape.
+class RepAverage {
+    var source; var start; var half;
+    var out;
+    var cursor = 0;
+    var lo = 0; var hi = 0; var sum = 0.0;
+
+    function initialize(values, from, to, width) {
+        source = values; start = from; half = width / 2;
+        out = new [to - from];
+    }
+
+    function step() {
+        var end = Reps.imin(out.size(), cursor + Reps.SAMPLE_BUDGET);
+        for (; cursor < end; cursor++) {
+            var wantLo = Reps.imax(0, cursor - half);
+            var wantHi = Reps.imin(out.size(), cursor + half + 1);
+            while (hi < wantHi) { sum += source[start + hi]; hi++; }
+            while (lo < wantLo) { sum -= source[start + lo]; lo++; }
+            out[cursor] = half == 0 ? source[start + cursor] : sum / (hi - lo);
+        }
+        return cursor == out.size();
     }
 }

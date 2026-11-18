@@ -2,7 +2,6 @@ using Toybox.Lang;
 using Toybox.Attention;
 using Toybox.Graphics;
 using Toybox.System;
-using Toybox.Timer;
 using Toybox.WatchUi;
 
 // The workout screen the app clock refreshes each second (GrindApp.onTick).
@@ -51,7 +50,6 @@ class SetView extends TickView {
         // The rep counter's number, once it is sure, unless you've set reps
         // yourself this set. Not saved until the set is logged.
         var auto = Reps.offer();
-        if (auto != null) { c["r"] = auto; }
         Draw.clear(dc);
         Draw.status(dc, hr);
         Draw.name(dc, e["name"], Config.FG);
@@ -59,7 +57,7 @@ class SetView extends TickView {
         // Hero: weight and reps, each with its label underneath. The value
         // UP/DOWN changes is lime, number and label both.
         var w = Logic.fmtLoad(c["w"]);
-        var r = c["r"].toString();
+        var r = (auto == null ? c["r"] : auto).toString();
         var cy = Draw.yAt(dc, 0.50);
         var cx = dc.getWidth() / 2;
         var xw = dc.getTextWidthInPixels("x", Graphics.FONT_SMALL);

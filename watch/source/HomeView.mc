@@ -170,7 +170,7 @@ class HomeDelegate extends WatchUi.BehaviorDelegate {
             var m = new WatchUi.Menu2({ :title => "Unfinished" });
             m.addItem(new WatchUi.MenuItem("Resume", null, :resume, null));
             m.addItem(new WatchUi.MenuItem("Discard", null, :discard, null));
-            WatchUi.pushView(m, new PauseDelegate(), WatchUi.SLIDE_UP);
+            WatchUi.pushView(m, new PauseDelegate(true), WatchUi.SLIDE_UP);
             return true;
         }
         var did = Pick.currentId();
@@ -198,7 +198,7 @@ class HomeDelegate extends WatchUi.BehaviorDelegate {
 
     function scheduleFetch() {
         if (prefetch != null) { prefetch.stop(); }
-        prefetch = new Timer.Timer();
+        else { prefetch = new Timer.Timer(); }
         prefetch.start(method(:onSettled), 700, false);
     }
 

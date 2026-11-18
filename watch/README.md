@@ -74,13 +74,13 @@ target is always shown next to the set count. The ring on the set screen has
 one segment per planned set, so you can count what's left at a glance. A
 weight of 0 shows as BW (bodyweight).
 
-**Rep counting.** While a set or rest screen is up, the watch reads wrist
-motion and, once it is sure, puts the count in the reps slot with **AUTO**
-under it. Press START as usual. If it is wrong, UP/DOWN takes over and it
-stays out of that set. It only shows a number it trusts: if it can't tell
-(a lift your wrist barely moves in, like leg press, or a set it only saw in
-pieces) the reps stay at the target. Turn it off with Home MENU → Rep
-counting, or from the workout menu.
+**Rep counting.** On the set and rest screens, the watch reads wrist motion.
+Once movement settles, an estimate can appear in the reps slot with
+**AUTO** under it. Check the number before pressing START. UP/DOWN adjusts
+the displayed reps and takes over for that set. The estimate takes longer
+for long sets. When motion is ambiguous, samples are interrupted, or a set
+runs beyond the 75-second motion window, enter reps yourself. Turn the
+feature off with Home MENU → Rep counting, or from the workout menu.
 
 It counts a rep only when the wrist goes away and comes back, in the set's
 own rhythm, size and direction. That is what keeps out picking the weight up,
@@ -151,8 +151,10 @@ Two switches in `source/Config.mc`:
 
 `System.println` only reaches the watch's disk if
 `GARMIN/APPS/LOGS/GRIND.TXT` already exists, so copy an empty file there once.
-Every request logs its status code there (`upload <id> -> 500 internal_error`),
-which is the fastest way to see why something isn't syncing. Turn `PROBE` on in
+Every request logs its status code there (`upload <id> -> 500 internal_error`).
+Connect IQ crashes go to `CIQ_LOG.YML`. On USB, the Forerunner may expose
+those entries in `CIQ_LOG.BAK` instead. Keep the debug XML from the same build
+to interpret numeric stack addresses. Turn `PROBE` on in
 `Config.mc` to also log every sensor value the watch gives the app on each
 launch, every 15 minutes and every Save (`-` empty, `!` threw, `n/a` not on this
 firmware): useful on a new watch or firmware.

@@ -21,7 +21,7 @@ module Menus {
         m.addItem(repToggle());
         m.addItem(new WatchUi.MenuItem("End workout", null, :end, null));
         m.addItem(new WatchUi.MenuItem("Discard workout", null, :discard, null));
-        WatchUi.pushView(m, new PauseDelegate(), WatchUi.SLIDE_UP);
+        WatchUi.pushView(m, new PauseDelegate(false), WatchUi.SLIDE_UP);
         return true;
     }
 
@@ -88,13 +88,17 @@ module Menus {
 }
 
 class PauseDelegate extends WatchUi.Menu2InputDelegate {
-    function initialize() { Menu2InputDelegate.initialize(); }
+    var recovering;
+
+    function initialize(fromHome) {
+        Menu2InputDelegate.initialize();
+        recovering = fromHome;
+    }
 
     function onSelect(item) {
         var id = item.getId();
         if (id == :reps) {
             Reps.setEnabled(item.isEnabled());
-            if (item.isEnabled() && Workout.active() && !Workout.atSummary()) { Reps.start(); }
             return;
         }
         if (id == :discard) {
@@ -118,7 +122,7 @@ class PauseDelegate extends WatchUi.Menu2InputDelegate {
         } else if (id == :end) {
             Workout.toSummary();
             Nav.show();
-        } else if (id == :resume && !Recorder.isOn()) {
+        } else if (id == :resume && recovering) {
             // Resuming a recovered workout from Home: restart recording.
             Workout.resume();
             Nav.show();
