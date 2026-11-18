@@ -1,4 +1,5 @@
 import { computeCharge } from '../../src/lib/body/charge'
+import { summarizeReadiness, type ReadinessCheck } from '../../src/lib/body/hrv'
 import { emptyBodySummary } from '../../src/lib/body/queries'
 import { shiftDate, type SleepSession, type SleepStageName } from '../../src/lib/health/model'
 import type { DailyBody } from '../../src/lib/body/types'
@@ -68,13 +69,21 @@ sleep.stages = stages.map(([stage, minutes]) => {
   at += minutes * 60000
   return { stage, start, end: new Date(at).toISOString() }
 })
+/** Morning HRV checks: most days for six weeks, a dip this week, two missed mornings. */
+const readinessChecks: ReadinessCheck[] = Array.from({ length: 42 }, (_, i) => {
+  const day = shiftDate(date, i - 41)
+  const rmssd = i >= 38 ? 41 + (i - 38) * 2 : 54 + ((i * 7) % 11) - 5
+  return { local_date: day, measured_at: `${day}T11:40:00Z`, rmssd, ln_rmssd: Math.log(rmssd), mean_hr: 54 + (i % 4), quality: 'good' as const }
+}).filter((_, i) => i !== 20 && i !== 31)
 const body = {
   ...emptyBodySummary(date),
   available: true,
   hasWatch: true,
   days,
   todayRow: days.at(-1)!,
-  charge: computeCharge(days, [], date)
+  charge: computeCharge(days, [], date, { readiness: readinessChecks }),
+  readinessChecks,
+  readiness: summarizeReadiness(readinessChecks, date)
 }
 export const data: HealthSummary = {
   body,

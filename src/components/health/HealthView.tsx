@@ -31,6 +31,7 @@ import {
 } from '@/lib/health/reconcile'
 import { requestOpenCoach } from '@/lib/coach/openCoachBus'
 import Dialog from '@/components/ui/Dialog'
+import ReadinessTrend from './ReadinessTrend'
 import { ChevronDown, ChevronLeft, ChevronRight, CloseIcon } from '@/components/ui/Icons'
 import {
   DailyHealthTimeline,
@@ -1036,7 +1037,12 @@ export function HealthView({
                 <SleepSummary data={data} date={date} today={today} />
                 <RecoveryBreakdown body={data.body} />
               </div>
-              <Panel title="Your day" id="day" index={4}>
+              {body?.hasWatch && (
+                <Panel title="Readiness" id="readiness" index={4}>
+                  <ReadinessTrend checks={body.readinessChecks} date={date} />
+                </Panel>
+              )}
+              <Panel title="Your day" id="day" index={5}>
                 {body?.todayRow &&
                 [...(body.todayRow.bb_series ?? []), ...(body.todayRow.stress_series ?? [])].some(
                   (v) => v != null
@@ -1062,7 +1068,7 @@ export function HealthView({
                   <p className="health-muted">No readings for this date</p>
                 )}
               </Panel>
-              <Panel title="Trends" index={5}>
+              <Panel title="Trends" index={6}>
                 <HealthTrend data={data} date={date} />
               </Panel>
             </div>

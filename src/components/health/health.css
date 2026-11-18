@@ -1931,3 +1931,29 @@ html.reduce-motion .health-refresh-btn svg[data-spin='true'] {
   font-size: 0.8125rem;
   color: var(--text-secondary);
 }
+
+/* Readiness (morning HRV check): status pill beside the picked reading. */
+.health-readiness-status {
+  align-self: center;
+  padding: 3px 9px;
+  border-radius: 9999px;
+  border: 1px solid var(--border);
+  font-size: 10px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.health-readiness-status[data-status='within'],
+.health-readiness-status[data-status='above'] {
+  color: var(--accent-text);
+  border-color: var(--accent-border-strong);
+}
+.health-readiness-status[data-status='below'] {
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 45%, transparent);
+}
+.health-readiness .health-insight strong {
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+}

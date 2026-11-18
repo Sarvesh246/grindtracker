@@ -288,3 +288,18 @@ test('Settings: a Garmin export zip is previewed and imported in batches through
   ])
   await page.screenshot({ path: test.info().outputPath('settings-import.png'), fullPage: true })
 })
+
+test('readiness trend: usual band, picked reading, status and empty state', async ({ page }, info) => {
+  for (const width of [390, 1280]) {
+    await render(page, { width })
+    const panel = page.locator('#readiness')
+    await expect(panel.getByText('HRV (RMSSD)')).toBeVisible()
+    await expect(panel.getByText(/This morning: 47 ms, below your usual/)).toBeVisible()
+    await expect(panel.locator('.health-readiness-status')).toHaveText('Below usual')
+    await expect(panel.getByText(/Usual \d+–\d+ ms, from \d+ mornings/)).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await panel.screenshot({ path: info.outputPath(`readiness-${width}.png`) })
+  }
+  await render(page, { state: 'disconnected', width: 390 })
+  await expect(page.locator('#readiness')).toHaveCount(0)
+})
