@@ -984,6 +984,20 @@ export function HealthView({
           ) : (
             <div className="stagger">
               <DailyHealthBrief data={data} date={date} />
+              {data.sleeps.length > 0 && (
+                <Link href="/progress/health/energy" className="energy-entry press-card" data-haptic="light">
+                  <span className="energy-entry-wave" aria-hidden="true">
+                    <svg width="44" height="28" viewBox="0 0 44 28" fill="none">
+                      <path d="M2 20C7 20 9 6 15 6s7 14 12 14 7-10 15-12" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+                    </svg>
+                  </span>
+                  <span className="energy-entry-body">
+                    <strong>Energy</strong>
+                    <span>Your peaks, dips and wind-down today</span>
+                  </span>
+                  <ChevronRight size={20} className="health-arrow" />
+                </Link>
+              )}
               {!body?.hasWatch && !data.sleeps.length && (
                 <Panel title="Connect a watch" index={1}>
                   <p>Sleep, recovery and daily activity from your Garmin.</p>

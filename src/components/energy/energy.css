@@ -1,0 +1,586 @@
+/* GRIND Energy. Extends health.css; phase colours are marks, never body text. */
+:root {
+  --energy-peak: rgba(200, 241, 53, 0.1);
+  --energy-dip: rgba(245, 158, 11, 0.14);
+  --energy-wind: rgba(141, 174, 223, 0.16);
+  --energy-dip-mark: #f59e0b;
+  --energy-wind-mark: #8daedf;
+}
+html.light {
+  --energy-peak: rgba(95, 122, 22, 0.1);
+  --energy-dip: rgba(180, 83, 9, 0.1);
+  --energy-wind: rgba(72, 123, 180, 0.12);
+  --energy-dip-mark: #b45309;
+  --energy-wind-mark: #487bb4;
+}
+
+/* ───────── Header ───────── */
+.energy-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 16px;
+}
+.health-page .energy-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 44px;
+  align-self: flex-start;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+.energy-title {
+  font: 400 2.75rem/1 var(--font-display);
+  letter-spacing: 0.02em;
+  color: var(--text-primary);
+}
+
+/* ───────── Hero ───────── */
+.energy-hero {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 22px 20px 20px;
+  margin-bottom: 20px;
+  background: var(--surface);
+  box-shadow: var(--card-shadow);
+  --tone: var(--accent);
+}
+.energy-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: var(--tone);
+}
+.energy-hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(90% 120% at 100% 0%, color-mix(in srgb, var(--tone) 14%, transparent), transparent 60%);
+}
+.energy-hero > * {
+  position: relative;
+  z-index: 1;
+}
+.energy-hero[data-state='afternoon_dip'],
+.energy-hero[data-state='grogginess_end'] {
+  --tone: var(--energy-dip-mark);
+}
+.energy-hero[data-state='wind_down'],
+.energy-hero[data-state='past_bedtime'],
+.energy-hero[data-state='before_wake'] {
+  --tone: var(--energy-wind-mark);
+}
+.energy-hero[data-state='between'],
+.energy-hero[data-state='loading'] {
+  --tone: var(--border);
+}
+.energy-phase {
+  font: 400 clamp(2.75rem, 11vw, 4.5rem) / 0.95 var(--font-display);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-primary);
+  margin: 6px 0 8px !important;
+}
+.health-page .energy-hint {
+  font-size: 0.9375rem;
+  color: var(--text-secondary);
+  max-width: 46ch;
+}
+.health-page .energy-next {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin-top: 16px;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+.energy-next b {
+  font: 600 1.375rem/1 var(--font-mono);
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.energy-next-at {
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+}
+.energy-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 16px;
+}
+.energy-chip {
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  background: var(--surface-elevated);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+.energy-chip-high {
+  color: var(--accent-text);
+  background: var(--accent-wash);
+  border-color: transparent;
+}
+
+/* ───────── Curve ───────── */
+.energy-curve {
+  margin: 0;
+}
+.energy-plot {
+  position: relative;
+  height: 180px;
+  touch-action: pan-y;
+  cursor: crosshair;
+  user-select: none;
+}
+.energy-plot svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.energy-grid {
+  stroke: var(--border);
+  stroke-width: 0.15;
+  stroke-dasharray: 0.6 0.8;
+}
+.energy-band-peak {
+  fill: var(--energy-peak);
+}
+.energy-band-dip {
+  fill: var(--energy-dip);
+}
+.energy-band-wind {
+  fill: var(--energy-wind);
+}
+.energy-line {
+  fill: none;
+  stroke: var(--accent-text);
+  stroke-width: 2.25;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.energy-now-line {
+  stroke: var(--text-primary);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  opacity: 0.55;
+}
+.energy-cursor {
+  stroke: var(--text-primary);
+  stroke-width: 1;
+}
+.energy-now-dot {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 50%;
+  background: var(--text-primary);
+  box-shadow: 0 0 0 4px var(--surface), 0 0 0 5px var(--border);
+  pointer-events: none;
+}
+.energy-reading {
+  position: absolute;
+  top: -6px;
+  transform: translate(-50%, -100%);
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.energy-reading b {
+  font: 600 1rem/1 var(--font-mono);
+}
+.energy-reading small {
+  font: 500 0.75rem/1 var(--font-mono);
+  color: var(--text-muted);
+}
+.energy-axis {
+  position: relative;
+  height: 22px;
+  margin-top: 6px;
+}
+.energy-axis span {
+  position: absolute;
+  transform: translateX(-50%);
+  font: 500 0.6875rem/1 var(--font-mono);
+  color: var(--text-muted);
+}
+.energy-axis span:first-child {
+  transform: none;
+}
+.energy-axis span:last-child {
+  transform: translateX(-100%);
+}
+.energy-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+.energy-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.energy-legend i {
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+}
+.energy-key-peak {
+  background: var(--accent);
+  opacity: 0.5;
+}
+.energy-key-dip {
+  background: var(--energy-dip-mark);
+  opacity: 0.55;
+}
+.energy-key-wind {
+  background: var(--energy-wind-mark);
+  opacity: 0.6;
+}
+
+/* ───────── Two-up grid on desktop ───────── */
+.energy-grid {
+  display: grid;
+  gap: 0 20px;
+}
+@media (min-width: 900px) {
+  .energy-grid {
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+}
+
+/* ───────── Timeline ───────── */
+.energy-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.energy-event {
+  display: grid;
+  grid-template-columns: 14px 1fr auto 16px;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 0 10px;
+  margin: 0 -10px;
+  border-radius: 12px;
+  border-bottom: 1px solid var(--border);
+  transition: background 150ms ease, opacity 150ms ease;
+}
+.energy-event:last-child {
+  border-bottom: 0;
+}
+.energy-event[data-past] {
+  opacity: 0.45;
+}
+.energy-event[data-next] {
+  background: var(--surface-elevated);
+  border-bottom-color: transparent;
+}
+.energy-event-mark {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+.energy-event-morning_peak .energy-event-mark,
+.energy-event-evening_peak .energy-event-mark {
+  background: var(--accent);
+}
+.energy-event-afternoon_dip .energy-event-mark {
+  background: var(--energy-dip-mark);
+}
+.energy-event-wind_down .energy-event-mark,
+.energy-event-bedtime .energy-event-mark {
+  background: var(--energy-wind-mark);
+}
+.energy-event-name {
+  font-size: 0.9375rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.energy-event[data-next] .energy-event-name {
+  font-weight: 600;
+}
+.energy-event-time {
+  font: 500 0.8125rem/1 var(--font-mono);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.energy-bell {
+  color: var(--accent-text);
+  grid-column: 4;
+}
+
+/* ───────── Debt ───────── */
+.energy-debt-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.energy-big {
+  font: 600 2.25rem/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+.energy-debt-state {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--accent-text);
+}
+.energy-debt-over {
+  color: var(--energy-dip-mark);
+}
+.energy-meter {
+  position: relative;
+  height: 8px;
+  border-radius: 9999px;
+  background: var(--surface-elevated);
+  margin: 14px 0 18px;
+  overflow: hidden;
+}
+.energy-meter span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+.energy-meter span[data-over] {
+  background: var(--energy-dip-mark);
+}
+.energy-meter i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--text-muted);
+}
+.energy-nights {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 64px;
+}
+.energy-nights::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  border-top: 1px solid var(--border);
+}
+.energy-night {
+  position: relative;
+  flex: 1;
+  height: 100%;
+}
+.energy-night i {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 50%;
+  border-radius: 3px;
+  background: var(--accent);
+  opacity: 0.6;
+}
+.energy-night i[data-short] {
+  bottom: auto;
+  top: 50%;
+  background: var(--energy-dip-mark);
+  opacity: 0.75;
+}
+.energy-facts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 16px !important;
+}
+.energy-facts dt {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.11em;
+  color: var(--text-muted);
+}
+.energy-facts dd {
+  font: 600 1.125rem/1.4 var(--font-mono);
+}
+
+/* ───────── Check-in ───────── */
+.energy-feel {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.health-page .energy-feel button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 84px;
+  border-radius: 16px;
+  font-weight: 600;
+  font-size: 0.9375rem;
+  background: var(--surface-elevated);
+}
+.health-page .energy-feel button[data-feel='-1'] svg {
+  color: var(--energy-dip-mark);
+}
+.health-page .energy-feel button[data-feel='1'] svg {
+  color: var(--accent-text);
+}
+.health-page .energy-feel button[data-feel='0'] svg {
+  color: var(--text-muted);
+}
+.health-page .energy-feel-note {
+  margin-top: 12px;
+}
+
+/* ───────── Alerts ───────── */
+.energy-alert-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.health-page .energy-switch {
+  position: relative;
+  width: 48px;
+  min-height: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 9999px;
+  border: 1px solid var(--border);
+  background: var(--surface-elevated);
+}
+.health-page .energy-switch[aria-checked='true'] {
+  background: var(--accent);
+  border-color: transparent;
+}
+.energy-switch span {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: transform 150ms ease, background 150ms ease;
+}
+.energy-switch[aria-checked='true'] span {
+  transform: translateX(20px);
+  background: var(--on-accent);
+}
+.energy-kinds {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 18px;
+  transition: opacity 150ms ease;
+}
+.energy-kinds[data-off] {
+  opacity: 0.5;
+}
+.health-page .energy-kinds button {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--surface);
+}
+.health-page .energy-kinds button[aria-pressed='true'] {
+  color: var(--accent-text);
+  background: var(--accent-wash);
+  border-color: color-mix(in srgb, var(--accent-text) 40%, transparent);
+}
+.energy-lead-label {
+  display: block;
+  margin-bottom: 8px;
+}
+
+/* ───────── Empty ───────── */
+.energy-empty h2 {
+  font: 400 2rem/1.05 var(--font-display);
+  letter-spacing: 0.02em;
+  margin: 6px 0 8px;
+}
+
+@media (min-width: 768px) {
+  .energy-hero {
+    padding: 28px 28px 24px;
+  }
+  .energy-plot {
+    height: 240px;
+  }
+}
+
+/* ───────── What shaped today (watch signals) ───────── */
+.energy-signals {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.energy-signals ul {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+@media (min-width: 900px) {
+  .energy-signals ul {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+.energy-signals li {
+  display: grid;
+  grid-template-columns: 10px 1fr;
+  column-gap: 10px;
+  align-items: baseline;
+}
+.energy-signals li i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  grid-row: span 2;
+  align-self: start;
+  margin-top: 7px;
+}
+.energy-signals li[data-tone='lift'] i {
+  background: var(--accent);
+}
+.energy-signals li[data-tone='drag'] i {
+  background: var(--energy-dip-mark);
+}
+.energy-signals strong {
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+.energy-signals span {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}

@@ -7,6 +7,10 @@ export interface NotificationPrefs {
   streak_reminder: boolean
   streak_reminder_hour: number
   timezone: string
+  /** GRIND Energy heads-ups (migration 65). */
+  energy_alerts: boolean
+  energy_kinds: string[]
+  energy_lead_min: number
   updated_at?: string
 }
 
@@ -18,6 +22,9 @@ export const DEFAULT_NOTIFICATION_PREFS: Omit<NotificationPrefs, 'user_id' | 'up
   streak_reminder: true,
   streak_reminder_hour: 19,
   timezone: 'UTC',
+  energy_alerts: false,
+  energy_kinds: ['morning_peak', 'afternoon_dip', 'evening_peak', 'wind_down'],
+  energy_lead_min: 20,
 }
 
 export type ScheduleAction =

@@ -4,7 +4,10 @@
  * so the hour set and timezone check cannot drift apart.
  */
 
+import { ALERT_KINDS } from '@/lib/energy/types'
+
 export const STREAK_REMINDER_HOURS = new Set([17, 18, 19, 20, 21])
+export const ENERGY_LEAD_MINUTES = new Set([10, 20, 30])
 
 export type NotificationPrefsPatch = {
   enabled?: boolean
@@ -14,6 +17,9 @@ export type NotificationPrefsPatch = {
   streak_reminder?: boolean
   streak_reminder_hour?: number
   timezone?: string
+  energy_alerts?: boolean
+  energy_kinds?: string[]
+  energy_lead_min?: number
 }
 
 const BOOL_KEYS = [
@@ -22,6 +28,7 @@ const BOOL_KEYS = [
   'rest_warning_10s',
   'workout_status',
   'streak_reminder',
+  'energy_alerts',
 ] as const
 
 export function validateNotificationPrefsPatch(
@@ -59,6 +66,23 @@ export function validateNotificationPrefsPatch(
       return { ok: false, reason: 'streak_reminder_hour must be 17–21' }
     }
     patch.streak_reminder_hour = h
+  }
+
+  if ('energy_kinds' in body && body.energy_kinds != null) {
+    const kinds = body.energy_kinds
+    const known = new Set<string>(ALERT_KINDS)
+    if (!Array.isArray(kinds) || !kinds.every((k) => typeof k === 'string' && known.has(k))) {
+      return { ok: false, reason: `energy_kinds must be a subset of ${ALERT_KINDS.join(', ')}` }
+    }
+    patch.energy_kinds = [...new Set(kinds as string[])]
+  }
+
+  if ('energy_lead_min' in body && body.energy_lead_min != null) {
+    const m = Math.round(Number(body.energy_lead_min))
+    if (!ENERGY_LEAD_MINUTES.has(m)) {
+      return { ok: false, reason: 'energy_lead_min must be 10, 20 or 30' }
+    }
+    patch.energy_lead_min = m
   }
 
   return { ok: true, patch }

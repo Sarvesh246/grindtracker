@@ -1236,6 +1236,7 @@ export default function SettingsView({
             ['rest_warning_10s', 'Rest warning (10s)', 'A heads-up 10 seconds before rest ends. Works while GRIND is open.'] as const,
             ['workout_status', 'Workout status', 'One card while the app is in the background'] as const,
             ['streak_reminder', 'Streak reminder', 'Evening nudge if you have not trained'] as const,
+            ['energy_alerts', 'Energy heads-ups', 'Before your peaks, dip and wind-down. Tune them on Health → Energy.'] as const,
           ] as const
         ).map(([key, label, hint], i) => (
           <Fragment key={key}>

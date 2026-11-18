@@ -1,45 +1,21 @@
-import { timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/admin'
-import { sendPushToSubscription } from '@/lib/push/webPush'
+import { authorizeCron, sendDueNotifications } from '@/lib/push/sendDue'
 import { reportError } from '@/lib/utils/reportError'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-function authorize(request: Request): boolean {
-  const secret = process.env.CRON_SECRET
-  if (!secret) return false
-  const header = request.headers.get('authorization') || ''
-  // Constant-time compare so the secret can't be probed byte by byte. The
-  // buffers must be the same length for timingSafeEqual, so a length mismatch
-  // is rejected up front (length of the expected value isn't secret).
-  const given = Buffer.from(header)
-  const expected = Buffer.from(`Bearer ${secret}`)
-  return given.length === expected.length && timingSafeEqual(given, expected)
-}
-
-type ClaimedRow = {
-  notification_id: string
-  user_id: string
-  kind: string
-  payload: Record<string, unknown> | null
-  endpoint: string
-  p256dh: string
-  auth: string
-}
-
 export async function POST(request: Request) {
-  if (!authorize(request)) {
+  if (!authorizeCron(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
-
-  // Also accept GET for Vercel Cron (which uses GET by default unless configured).
   return runCron()
 }
 
+// Also accept GET for Vercel Cron (which uses GET by default unless configured).
 export async function GET(request: Request) {
-  if (!authorize(request)) {
+  if (!authorizeCron(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   return runCron()
@@ -47,9 +23,6 @@ export async function GET(request: Request) {
 
 async function runCron() {
   let streakScheduled = 0
-  let sent = 0
-  let gone = 0
-  let errors = 0
 
   try {
     const supabase = createServiceClient()
@@ -61,53 +34,13 @@ async function runCron() {
       streakScheduled = typeof streakCount === 'number' ? streakCount : Number(streakCount) || 0
     }
 
-    const { data: rows, error: claimErr } = await supabase.rpc('claim_due_notifications', {
-      p_limit: 200,
-    })
-    if (claimErr) {
+    let result
+    try {
+      result = await sendDueNotifications(supabase)
+    } catch (claimErr) {
       console.error('[grind] claim_due_notifications', claimErr)
-      return NextResponse.json({ error: 'Claim failed', detail: claimErr.message }, { status: 500 })
-    }
-
-    const claimed = (rows || []) as ClaimedRow[]
-    const goneEndpoints = new Set<string>()
-
-    for (const row of claimed) {
-      if (goneEndpoints.has(row.endpoint)) continue
-
-      const payload = (row.payload && typeof row.payload === 'object' ? row.payload : {}) as Record<
-        string,
-        unknown
-      >
-      // Ensure tag defaults per kind.
-      if (!payload.tag) {
-        payload.tag =
-          row.kind === 'streak_daily'
-            ? 'grind-streak'
-            : row.kind === 'rest_warn'
-              ? 'grind-rest-warn'
-              : row.kind === 'rest_end'
-                ? 'grind-rest'
-                : 'grind'
-      }
-      if (row.kind === 'rest_end' && payload.renotify == null) {
-        payload.renotify = true
-      }
-
-      const result = await sendPushToSubscription(
-        { endpoint: row.endpoint, p256dh: row.p256dh, auth: row.auth },
-        payload,
-      )
-
-      if (result === 'ok') {
-        sent++
-      } else if (result === 'gone') {
-        gone++
-        goneEndpoints.add(row.endpoint)
-        await supabase.from('push_subscriptions').delete().eq('endpoint', row.endpoint)
-      } else {
-        errors++
-      }
+      const detail = claimErr instanceof Error ? claimErr.message : String((claimErr as { message?: string })?.message ?? claimErr)
+      return NextResponse.json({ error: 'Claim failed', detail }, { status: 500 })
     }
 
     // Best-effort prune of old terminal rows (ignore failures).
@@ -117,14 +50,7 @@ async function runCron() {
       /* migration 30 may not be applied yet */
     }
 
-    return NextResponse.json({
-      ok: true,
-      streakScheduled,
-      claimed: claimed.length,
-      sent,
-      gone,
-      errors,
-    })
+    return NextResponse.json({ ok: true, streakScheduled, ...result })
   } catch (err) {
     reportError(err, { operation: 'cron-notifications', route: '/api/cron/notifications' })
     return NextResponse.json(

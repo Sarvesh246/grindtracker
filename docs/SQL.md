@@ -99,6 +99,7 @@ so pasting a migration records it. Copy that line into every new migration —
 | [62-account-storage-cleanup.sql](sql/62-account-storage-cleanup.sql) | 62 | Account deletion requires private files to be removed through the Storage API first; replaces the obsolete direct storage-table deletion. |
 | [63-health-retention.sql](sql/63-health-retention.sql) | 63 | Service-role-only `health_retention_cleanup()` for the daily retention cron: raw samples older than 180 days, batch receipts older than 30 days and expired insights. Sleep and daily history are kept. |
 | [64-health-import-sources.sql](sql/64-health-import-sources.sql) | 64 | Sleep import sources (`garmin_export`, `garmin_unofficial`, `apple_health`): internal `health_import_batch`, signed-in `import_health_batch` (Settings upload) and service-role `token_import_health_batch` (Shortcut / sync script). Honours pause and deletion generations; stores no credentials. |
+| [65-energy-schedule.sql](sql/65-energy-schedule.sql) | 65 | GRIND Energy: `energy_schedules` (service-role writes, owner reads), `energy_checkins` (owner RLS), `notification_prefs.energy_alerts/energy_kinds/energy_lead_min`, four `energy_*` notification kinds, and the 5-minute `grind-energy` pg_cron job that posts to `/api/cron/energy` using Vault secrets `grind_app_url` + `grind_cron_secret`. See [ENERGY.md](ENERGY.md). |
 
 See also [PUSH.md](PUSH.md) for VAPID keys, Vercel env, and cron setup.
 See [COACH.md](COACH.md) for Gemini env, rate limits, `/api/coach/chat`, and

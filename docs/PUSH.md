@@ -60,6 +60,17 @@ for a 90s rest; don’t rely on it for gym rest alerts).
 On **Pro**, you can collapse this to one `*/15 * * * *` (or `* * * * *`) entry
 instead of the 24 daily jobs.
 
+**Energy heads-ups (5-minute cadence):** a Supabase **pg_cron** job,
+`grind-energy` (migration **65**), posts to `/api/cron/energy` every 5 minutes
+using the same `Bearer $CRON_SECRET`, read from the Vault secrets
+`grind_app_url` and `grind_cron_secret`. That route keeps each opted-in user's
+energy schedule current, queues the `energy_morning_peak` / `energy_dip` /
+`energy_evening_peak` / `energy_wind_down` kinds, then claims and sends
+**everything** that's due. As a side effect, rest and streak rows also go out
+within about 5 minutes instead of within the hour. Both routes share
+`sendDueNotifications` (`src/lib/push/sendDue.ts`). Details are in
+[ENERGY.md](ENERGY.md).
+
 ## Client defaults (anti-spam)
 
 - Rest-complete: **on**
