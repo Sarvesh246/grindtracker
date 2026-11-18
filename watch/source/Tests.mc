@@ -672,6 +672,35 @@ function testRepSensorGap(logger) {
 }
 
 (:test)
+function testRepSensorCallbackFlow(logger) {
+    Reps.reset();
+    Reps.listening = true;
+    var data = RepFx.curl(8, false);
+    var samples = data[0].size() * 2;
+    var analysisDuringMotion = false;
+    for (var start = 0; start < samples; start += Reps.RATE) {
+        var xs = []; var ys = []; var zs = []; var ts = [];
+        for (var i = start; i < Reps.imin(samples, start + Reps.RATE); i++) {
+            xs.add((1000 * data[0][i / 2]).toNumber());
+            ys.add((1000 * data[1][i / 2]).toNumber());
+            zs.add((1000 * data[2][i / 2]).toNumber());
+            ts.add(i * 40);
+        }
+        // Timestamped samples remain contiguous even when the callback runs
+        // several seconds late.
+        Reps.onSamples(xs, ys, zs, ts, start * 40 + (start == 75 ? 4000 : 0), 0);
+        if (Reps.movingBatches > 0 && Reps.job != null) { analysisDuringMotion = true; }
+        for (var j = 0; j < 20 && Reps.job != null; j++) { Reps.advanceAnalysis(); }
+    }
+    for (var i = 0; i < 500 && Reps.job != null; i++) { Reps.advanceAnalysis(); }
+    var ok = T.ck(logger, "analysis begins during the lift", analysisDuringMotion)
+        && T.ck(logger, "complete sensor flow offers eight curls", !Reps.interrupted && Reps.offer() == 8);
+    Reps.reset();
+    Reps.listening = false;
+    return ok;
+}
+
+(:test)
 function testRepOfferDoesNotCarryForward(logger) {
     Workout.start({ "id" => "push", "name" => "Push", "unit" => "lbs", "ex" => [
         { "id" => "e", "name" => "Bench", "sets" => 3, "reps" => 12, "weight" => 135.0, "rest" => 0 }

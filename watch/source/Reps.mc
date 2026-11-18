@@ -54,6 +54,7 @@ module Reps {
     const RATE = 25;           // Hz asked of the sensor
     const MAX_SAMPLES = 938;   // 75 s at 12.5 Hz
     const BATCH_MS = 1000;
+    const PREVIEW_EVERY = 3;  // sensor batches between in-set estimates
     const PAIR_BUDGET = 256;   // maximum correlation pairs per timer callback
     const SAMPLE_BUDGET = 128; // maximum filter samples per timer callback
 
@@ -67,10 +68,16 @@ module Reps {
     var manual = false;        // the user changed reps by hand: stop offering
     var listening = false;
     var dirty = false;         // moved since the last analysis
-    var wasMoving = false;
+    var movingBatches = 0;
     var sawMotion = false;
     var interrupted = false;
     var lastBatch = null;
+    var lastSample = null;
+    var revision = 0;
+    var jobRevision = 0;
+    var batches = 0;
+    var lastResult = null;
+    var sensorStatus = "idle";
     var head = 0;              // oldest entry once the motion buffer is full
     var clipped = false;
 
@@ -106,9 +113,13 @@ module Reps {
         carry = null;
         count = null;
         dirty = false;
-        wasMoving = false;
+        movingBatches = 0;
         sawMotion = false;
         lastBatch = null;
+        lastSample = null;
+        revision = 0;
+        batches = 0;
+        lastResult = null;
         head = 0;
         clipped = false;
     }
@@ -118,9 +129,13 @@ module Reps {
         manual = true;
     }
 
-    function inputGap() {
+    function inputGap(reason, detail) {
         interrupted = sawMotion;
+        if (interrupted || !sensorStatus.equals(reason)) {
+            System.println("reps: " + reason + " (" + detail + ") after " + batches + " batches");
+        }
         clearMotion();
+        sensorStatus = reason;
     }
 
     // The reps the set screen should show: the confident count unless the
@@ -133,15 +148,28 @@ module Reps {
     function start() {
         if (listening || (Config.DEMO_DATA && Config.TOUR) || !enabled()) { return; }
         try {
-            if (!(Sensor has :registerSensorDataListener)) { return; }
-            if (Sensor has :getMaxSampleRate && Sensor.getMaxSampleRate() < RATE) { return; }
+            if (!(Sensor has :registerSensorDataListener)) {
+                sensorStatus = "unavailable";
+                System.println("reps: accelerometer listener unavailable");
+                return;
+            }
+            var maxRate = Sensor has :getMaxSampleRateForSensorType
+                ? Sensor.getMaxSampleRateForSensorType(:accelerometer) : Sensor.getMaxSampleRate();
+            if (maxRate < RATE) {
+                sensorStatus = "unavailable";
+                System.println("reps: accelerometer limit " + maxRate + " Hz");
+                return;
+            }
             Sensor.registerSensorDataListener(new Lang.Method(Reps, :onData), {
                 :period => 1,
-                :accelerometer => { :enabled => true, :sampleRate => RATE }
+                :accelerometer => { :enabled => true, :sampleRate => RATE, :includeTimestamps => true }
             });
             listening = true;
+            sensorStatus = "waiting";
+            System.println("reps: listening at " + RATE + " Hz (max " + maxRate + ")");
         } catch (e) {
             System.println("reps: no accelerometer " + e.getErrorMessage());
+            sensorStatus = "unavailable";
             listening = false;
         }
     }
@@ -149,7 +177,9 @@ module Reps {
     function stop() {
         cancelAnalysis();
         if (!listening) { return; }
+        System.println("reps: stopped" + diagnostics());
         listening = false;
+        sensorStatus = "idle";
         try { Sensor.unregisterSensorDataListener(); } catch (e) { }
     }
 
@@ -166,43 +196,77 @@ module Reps {
         if (!listening || manual || interrupted) { return; }
         var a = data == null ? null : data.accelerometerData;
         if (a == null || a.x == null || a.y == null || a.z == null) {
-            inputGap();
+            inputGap("missing accelerometer", null);
             return;
         }
-        var n = a.x.size();
-        // A delayed or malformed batch breaks the time axis used for cadence.
-        // Ignore counts for a set seen only in pieces.
-        var now = System.getTimer();
-        if (n < RATE - 2 || n > RATE + 2 || a.y.size() != n || a.z.size() != n) {
-            inputGap();
+        onSamples(a.x, a.y, a.z, a.timestamp, System.getTimer(), stepsNow());
+    }
+
+    function onSamples(xs, ys, zs, timestamps, now, steps) {
+        var n = xs.size();
+        if (n == 0 || n > 2 * RATE || ys.size() != n || zs.size() != n) {
+            inputGap("invalid sample count", n);
             return;
         }
-        if (lastBatch != null && (now < lastBatch || now - lastBatch > 2 * BATCH_MS)) {
-            inputGap();
+        var time = timestamps != null && timestamps.size() == n && n > 1 && timestamps[n - 1] > timestamps[0]
+            ? timestamps : null;
+        // Use sample time where the firmware supplies it. A late callback
+        // can still carry contiguous samples.
+        var gap = time != null && lastSample != null ? time[0] - lastSample : null;
+        var delay = lastBatch == null ? 0 : now - lastBatch;
+        // Some firmware can report timestamps relative to each batch. Use
+        // delivery time if the timestamp starts over.
+        if ((gap != null && gap > 200)
+            || ((gap == null || gap <= 0) && (delay < 0 || delay > 3 * BATCH_MS))) {
+            inputGap("sample gap", gap != null && gap > 0 ? gap : delay);
             if (interrupted) { return; }
         }
+        if (time == null && (n < RATE - 4 || n > RATE + 4)) {
+            inputGap("unexpected sample count", n);
+            return;
+        }
+        // The classifier expects 25 Hz before pair averaging. Suppress
+        // counts when the reported cadence is substantially different.
+        if (time != null) {
+            var averageMs = (time[n - 1] - time[0]).toFloat() / (n - 1);
+            if (averageMs < 32.0 || averageMs > 50.0) {
+                inputGap("unexpected sample spacing", averageMs);
+                return;
+            }
+        }
+        if (!sensorStatus.equals("receiving")) {
+            System.println("reps: received " + n + " samples, timestamps=" + (time != null));
+            sensorStatus = "receiving";
+        }
         lastBatch = now;
-        var st = stepsNow();
+        lastSample = time == null ? null : time[n - 1];
+        batches++;
         for (var i = 0; i < n; i++) {
-            var x = a.x[i] / 1000.0;
-            var y = a.y[i] / 1000.0;
-            var z = a.z[i] / 1000.0;
+            var x = xs[i] / 1000.0;
+            var y = ys[i] / 1000.0;
+            var z = zs[i] / 1000.0;
             if (carry == null) {
                 carry = [x, y, z];
             } else {
-                append((carry[0] + x) / 2.0, (carry[1] + y) / 2.0, (carry[2] + z) / 2.0, st);
+                append((carry[0] + x) / 2.0, (carry[1] + y) / 2.0, (carry[2] + z) / 2.0, steps);
                 carry = null;
             }
         }
-        // Offer a count after the motion has settled. A fresh burst cancels
-        // the old snapshot so START cannot log a stale, partial count.
+        // Estimate periodically during the lift. A brief wrist raise can be
+        // how the user checks a finished set, so keep the offer through one
+        // moving batch. Sustained new motion needs a fresh estimate.
         if (moving()) {
-            if (!wasMoving) { cancelAnalysis(); count = null; }
             dirty = true;
             sawMotion = true;
-            wasMoving = true;
+            movingBatches++;
+            revision++;
+            if (movingBatches == 2) { count = null; }
+            if (revision % PREVIEW_EVERY == 0) { update(); }
         } else {
-            wasMoving = false;
+            if (movingBatches > 0 && job != null && revision - jobRevision >= PREVIEW_EVERY) {
+                cancelAnalysis();
+            }
+            movingBatches = 0;
             update();
         }
     }
@@ -244,8 +308,9 @@ module Reps {
     }
 
     function update() {
-        if (manual || job != null || !dirty || !listening || bx.size() < 48) { return; }
+        if (manual || interrupted || job != null || !dirty || !listening || bx.size() < 48) { return; }
         dirty = false;
+        jobRevision = revision;
         // The sensor keeps appending while this snapshot is being analyzed.
         job = new RepAnalysis(ordered(bx), ordered(by), ordered(bz), ordered(bs), clipped);
         worker = new Timer.Timer();
@@ -256,12 +321,27 @@ module Reps {
         if (manual || !listening || job == null) { cancelAnalysis(); return; }
         var result = job.step();
         if (result == null) { return; }
+        lastResult = result;
         cancelAnalysis();
-        var offered = result[1] ? result[0] : (result[0] < 0 ? null : count);
+        var fresh = revision - jobRevision < PREVIEW_EVERY;
+        var offered = result[1] && fresh ? result[0] : (result[0] < 0 ? null : count);
         if (count != offered) {
             count = offered;
             WatchUi.requestUpdate();
         }
+        if (movingBatches == 0) { update(); }
+    }
+
+    function hint() {
+        if (manual) { return null; }
+        if (interrupted || sensorStatus.equals("unavailable")) { return "Enter reps manually"; }
+        if (job != null && count == null) { return "Checking wrist motion"; }
+        return null;
+    }
+
+    function diagnostics() {
+        return " sensor=" + sensorStatus + " batches=" + batches + " motion=" + revision
+            + " result=" + lastResult + " gap=" + interrupted;
     }
 
     // --- maths helpers ------------------------------------------------------

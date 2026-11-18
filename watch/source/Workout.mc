@@ -186,7 +186,8 @@ module Workout {
             "id" => Logic.uuid4(), "e" => e["id"], "n" => cur["sn"], "r" => reps, "w" => cur["w"],
             "t" => now(), "rs" => cur["rs"], "y" => 0, "ra" => Reps.count, "ar" => offered != null
         };
-        System.println("reps auto=" + Reps.count + " logged=" + reps + " typed=" + Reps.manual + " " + e["name"]);
+        System.println("reps auto=" + Reps.count + " logged=" + reps + " typed=" + Reps.manual
+            + " " + e["name"] + Reps.diagnostics());
         Store.putSet(cur["sid"], sets.size(), s);
         sets.add(s);
         Hr.onSetLogged(sets.size() - 1, s["t"]);

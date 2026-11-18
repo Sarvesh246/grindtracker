@@ -75,8 +75,9 @@ one segment per planned set, so you can count what's left at a glance. A
 weight of 0 shows as BW (bodyweight).
 
 **Rep counting.** On the set and rest screens, the watch reads wrist motion.
-Once movement settles, an estimate can appear in the reps slot with
-**AUTO** under it. Check the number before pressing START. UP/DOWN adjusts
+An estimate can appear during the lift and update after movement settles.
+**AUTO** under the reps means the watch found a count. Check the number before
+pressing START. UP/DOWN adjusts
 the displayed reps and takes over for that set. The estimate takes longer
 for long sets. When motion is ambiguous, samples are interrupted, or a set
 runs beyond the 75-second motion window, enter reps yourself. Turn the
@@ -85,9 +86,9 @@ feature off with Home MENU → Rep counting, or from the workout menu.
 It counts a rep only when the wrist goes away and comes back, in the set's
 own rhythm, size and direction. That is what keeps out picking the weight up,
 re-racking, a sip of water, walking (step counter), fidgeting with your phone,
-and raising your wrist to press START. Every logged set writes
-`reps auto=<count> logged=<what you saved>` to the log (below), which is how
-to check it on your own lifts. The method, and a simulator that scores it on
+and raising your wrist to press START. Every logged set reports its estimate,
+the saved reps, and whether the watch received and analyzed motion in the log
+below. The method, and a simulator that scores it on
 18 lifts plus no-set sessions, are in `tools/` (`node tools/repsim.mjs`).
 
 **Logged the wrong thing?** BACK → Undo last set (it names the set) takes it

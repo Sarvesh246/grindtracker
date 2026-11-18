@@ -104,6 +104,8 @@ class SetView extends TickView {
         // while that's not obvious.
         if (e["weight"] != null && e["weight"].toFloat() != c["w"].toFloat()) {
             Draw.line(dc, 0.845, [Graphics.FONT_XTINY], "Goal " + Logic.fmtLoad(e["weight"]) + " " + unit, Config.DIM);
+        } else if (auto == null && Reps.hint() != null) {
+            Draw.line(dc, 0.845, [Graphics.FONT_XTINY], Reps.hint(), Config.DIM);
         } else if (c["f"] == 0) {
             Draw.line(dc, 0.845, [Graphics.FONT_XTINY], "START for reps", Config.DIM);
         }
