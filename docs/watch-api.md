@@ -336,8 +336,9 @@ Completion rules (same as the web app):
 ## POST /daily
 
 The day's body snapshot (GRIND Body, migration 59). The watch sends it when
-the app opens and at most every 15 minutes while it's open, never mid-workout.
-Fire and forget: a failure waits for the next snapshot.
+the app opens and at most every 15 minutes while it's open, never mid-workout,
+and every 15 minutes from the background service with the app closed. Fire and
+forget: a failure waits for the next snapshot.
 
 ```json
 {
@@ -351,7 +352,10 @@ Fire and forget: a failure waits for the next snapshot.
   "active_minutes": 40,
   "floors": 6,
   "spo2": 96,
-  "vo2max": 60
+  "vo2max": 60,
+  "heart_rate": ["… 96 buckets, average bpm or null …"],
+  "bucket": 58,
+  "source": "background"
 }
 ```
 
@@ -360,6 +364,15 @@ server derives high, low, latest, wake value and stress average, and merges
 series with earlier snapshots of the same date (the watch's history reaches back
 only a few hours, so each open fills in its own stretch). `date` must be within
 the last 30 days. `200` returns `{ "local_date", "synced_at" }`.
+
+Migration `69` adds the all-day fields. `heart_rate` is 96 bucket averages
+(25–250 bpm). `bucket` (0–95) is the local 15-minute slot the snapshot was taken
+in: the server puts `steps`, `active_minutes` and `floors` there on the day's
+curves (`steps_series`, …), since the watch only knows running totals.
+`source` is `app` (the default) or `background`, and every stored snapshot is
+logged in `body_sync_log` with it, so the Health page can show when and how
+the last one arrived. Before migration 69 these fields are accepted and
+ignored.
 
 Respiration and SpO2 history are not sent: the Forerunner 165 Music leaves
 them empty (phase 0 probe, 2026-11-16).

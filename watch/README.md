@@ -116,8 +116,9 @@ trace, time in each of your zones, and per set the peak, the reading when you
 logged it, and how far it fell 60 s into the rest. All of it uploads with the
 workout. The set screen's status row shows your HR and zone (coral for zone 5).
 
-On open (and every 15 min while open, never mid-workout) it sends the day's
-snapshot to `POST /daily`: Body Battery and stress for the day, resting HR,
+On open (every 15 min while open, never mid-workout, and every 15 min in the
+background) it sends the day's snapshot to `POST /daily`: Body Battery, stress
+and heart rate for the day, resting HR,
 recovery time, steps, active minutes, floors, SpO2 and VO2 max. GRIND turns
 that into **Charge**, which Home shows in the bezel ring with one line of
 advice. On a low-Charge day, starting a workout asks once whether you want one
@@ -224,11 +225,20 @@ firmware): useful on a new watch or firmware.
 
 ## Background sync
 
-With the app closed, the watch wakes GRIND every 2 hours and sends the day
-snapshot (the same one as on open) so Charge stays fresh. It's skipped if a
-snapshot went out in the last 30 minutes or the phone isn't connected. The
-result lands in storage (`bg`: time and status code) and prints as
-`bg daily -> <code>` the next time the app is open.
+With the app closed, the watch wakes GRIND every 15 minutes and sends the day
+snapshot (the same one as on open, marked `background`) so the Health page
+fills in through the day: Body Battery, stress, all-day heart rate, and the
+step, active-minute and floor totals that build the day's curves. It's skipped
+if the open app sent one in the last 10 minutes or the phone isn't connected.
+The result lands in storage (`bg`: time and status code) and prints as
+`bg daily -> <code>` the next time the app is open. The Health page's
+"Received … (background) · N syncs" line shows whether these arrive.
+
+A new sync period only takes over once the app has been opened after
+installing the build.
+
+Home's "synced … ago" is the last successful contact of any kind, a workout
+upload or a day snapshot, so it matches the Health page.
 
 Logged workouts still upload only while the app is open: the upload path is
 too big for the 64 KB a background process gets, and a finished workout is

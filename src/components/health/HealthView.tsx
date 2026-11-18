@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import Link from 'next/link'
 import type { BodySummary } from '@/lib/body/queries'
+import { receivedText } from '@/lib/health/intraday'
 import type { HealthSummary } from '@/lib/health/queries'
 import {
   clockLabel,
@@ -321,11 +322,7 @@ export function HealthSourceStatus({
           </table>
         </div>
       )}
-      <p>
-        {row?.synced_at
-          ? `Received ${new Date(row.synced_at).toLocaleString()}`
-          : 'Nothing received for this date'}
-      </p>
+      <p>{receivedText(body.syncs.filter((s) => s.local_date === date), row?.synced_at ?? null)}</p>
       <Link href="/profile/settings#health">
         Manage connections
         <ChevronRight size={14} />
@@ -1044,12 +1041,17 @@ export function HealthView({
               )}
               <Panel title="Your day" id="day" index={5}>
                 {body?.todayRow &&
-                [...(body.todayRow.bb_series ?? []), ...(body.todayRow.stress_series ?? [])].some(
-                  (v) => v != null
-                ) ? (
+                [
+                  ...(body.todayRow.bb_series ?? []),
+                  ...(body.todayRow.stress_series ?? []),
+                  ...(body.todayRow.hr_series ?? []),
+                  ...(body.todayRow.steps_series ?? [])
+                ].some((v) => v != null) ? (
                   <DailyHealthTimeline
                     bb={body.todayRow.bb_series ?? []}
                     stress={body.todayRow.stress_series ?? []}
+                    hr={body.todayRow.hr_series ?? []}
+                    steps={body.todayRow.steps_series ?? []}
                     date={date}
                     today={today}
                     usual={{

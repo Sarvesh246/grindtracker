@@ -1,4 +1,5 @@
 'use client'
+import { stepCurve } from '@/lib/health/intraday'
 import {
   useId,
   useRef,
@@ -530,6 +531,8 @@ export function SeriesPlot({
   )
 }
 
+type Plot = 'energy' | 'stress' | 'hr' | 'steps'
+
 export function DailyHealthTimeline({
   bb,
   stress,
@@ -537,10 +540,16 @@ export function DailyHealthTimeline({
   today,
   summary,
   annotations = [],
-  usual
+  usual,
+  hr = [],
+  steps = []
 }: {
   bb: (number | null)[]
   stress: (number | null)[]
+  /** All-day heart rate, bucket averages (migration 69). */
+  hr?: (number | null)[]
+  /** The day's step total at the buckets syncs arrived in (migration 69). */
+  steps?: (number | null)[]
   date: string
   today: string
   summary?: {
@@ -553,35 +562,43 @@ export function DailyHealthTimeline({
   /** Previous days' usual shape, per metric. */
   usual?: { bb: Envelope | null; stress: Envelope | null }
 }) {
-  const [picked, setPicked] = useState<{ index: number; plot: 'energy' | 'stress' } | null>(null)
+  const [picked, setPicked] = useState<{ index: number; plot: Plot } | null>(null)
   const limit =
     date === today ? Math.floor((new Date().getHours() * 60 + new Date().getMinutes()) / 15) : 95
   const observed = (values: (number | null)[]) =>
     Array.from({ length: 96 }, (_, i) => (i <= limit ? (values[i] ?? null) : null))
   const energy = observed(bb),
-    strain = observed(stress)
+    strain = observed(stress),
+    pulse = observed(hr),
+    walked = observed(stepCurve(steps))
+  const hasPulse = pulse.some((v) => v != null),
+    hasSteps = walked.some((v) => v != null)
   const time = (i: number) =>
     `${String(Math.floor(i / 4)).padStart(2, '0')}:${String((i % 4) * 15).padStart(2, '0')}`
   const latestIndex = Math.max(
     0,
-    ...energy.flatMap((v, i) => (v != null || strain[i] != null ? [i] : []))
+    ...energy.flatMap((v, i) => (v != null || strain[i] != null || pulse[i] != null ? [i] : []))
   )
   const selected = Math.min(picked?.index ?? latestIndex, limit)
-  const activePlot = picked?.plot ?? (energy[selected] != null ? 'energy' : 'stress')
+  const activePlot: Plot =
+    picked?.plot ??
+    (energy[selected] != null ? 'energy' : strain[selected] != null || !hasPulse ? 'stress' : 'hr')
   const reading = (
     <>
       <strong>{time(selected)}</strong>
       <div className="health-plot-reading-values">
         {([
           ['energy', 'Energy', energy[selected], usual?.bb],
-          ['stress', 'Stress', strain[selected], usual?.stress]
+          ['stress', 'Stress', strain[selected], usual?.stress],
+          ...(hasPulse ? ([['hr', 'Heart rate', pulse[selected], null]] as const) : []),
+          ...(hasSteps ? ([['steps', 'Steps', walked[selected], null]] as const) : [])
         ] as const).map(([key, label, value, range]) => {
           const low = range?.low[selected]
           const high = range?.high[selected]
           return (
             <div key={key}>
               <span><i className={`health-dot-${key}`} aria-hidden="true" />{label}</span>
-              <b>{value ?? 'No reading'}</b>
+              <b>{value == null ? 'No reading' : key === 'steps' ? value.toLocaleString() : value}</b>
               {low != null && high != null && <small>usual {Math.round(low)}–{Math.round(high)}</small>}
             </div>
           )
@@ -635,6 +652,32 @@ export function DailyHealthTimeline({
         envelope={usual?.stress}
         reading={activePlot === 'stress' ? reading : undefined}
       />
+      {hasPulse && (
+        <>
+          <p className="health-eyebrow health-plot-title">Heart rate</p>
+          <SeriesPlot
+            values={pulse}
+            label="Heart rate, beats per minute"
+            selected={selected}
+            onSelect={index => setPicked({ index, plot: 'hr' })}
+            marks={annotations}
+            reading={activePlot === 'hr' ? reading : undefined}
+          />
+        </>
+      )}
+      {hasSteps && (
+        <>
+          <p className="health-eyebrow health-plot-title">Steps</p>
+          <SeriesPlot
+            values={walked}
+            label="Steps so far"
+            selected={selected}
+            onSelect={index => setPicked({ index, plot: 'steps' })}
+            marks={annotations}
+            reading={activePlot === 'steps' ? reading : undefined}
+          />
+        </>
+      )}
       {(annotations.length > 0 || usual?.bb || usual?.stress) && (
         <ul className="health-annotations">
           {(usual?.bb || usual?.stress) && (
@@ -665,15 +708,19 @@ export function DailyHealthTimeline({
                 <th>Local time</th>
                 <th>Body Battery</th>
                 <th>Stress</th>
+                {hasPulse && <th>Heart rate</th>}
+                {hasSteps && <th>Steps</th>}
               </tr>
             </thead>
             <tbody>
               {energy.map((v, i) =>
-                v == null && strain[i] == null ? null : (
+                v == null && strain[i] == null && pulse[i] == null && steps[i] == null ? null : (
                   <tr key={i}>
                     <th>{time(i)}</th>
                     <td>{v ?? 'No reading'}</td>
                     <td>{strain[i] ?? 'No reading'}</td>
+                    {hasPulse && <td>{pulse[i] ?? 'No reading'}</td>}
+                    {hasSteps && <td>{steps[i] != null ? steps[i]!.toLocaleString() : '—'}</td>}
                   </tr>
                 )
               )}

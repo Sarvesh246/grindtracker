@@ -84,6 +84,13 @@ Moved out of [CLAUDE.md](../CLAUDE.md) to keep that file short; its text is unch
   steps, active_minutes, floors, spo2, vo2max, synced_at. Owner SELECT only;
   writes via the service-role `watch_upsert_daily`. Read by `src/lib/body`
   (Charge, the Today sheet), never by friend, leaderboard or share RPCs.
+  Migration `69` adds hr_series (bucket-average heart rate) and
+  steps_series / active_series / floors_series (the day's running total at the
+  bucket each sync arrived in; gaps between syncs stay null).
+- body_sync_log — one row per stored watch day snapshot: user_id, local_date,
+  received_at, source (`app` or `background`). Kept 14 days. Owner SELECT only;
+  written by `watch_upsert_daily` (migration `69`). The Health page reads it to
+  show when and how the last snapshot arrived.
 - rep_lab_sets — id (the set id) PK, user_id, session_id (FK → sessions, ON
   DELETE CASCADE), exercise, logged/auto reps, auto_shown, typed, corrected,
   the analyzed motion window (motion_x/y/z smallint[] milli-g at 12.5 Hz,

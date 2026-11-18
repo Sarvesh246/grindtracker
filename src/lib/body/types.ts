@@ -26,6 +26,19 @@ export interface DailyBody {
   spo2?: number | null
   vo2max?: number | null
   synced_at?: string | null
+  /** Migration 69: all-day heart rate (bucket averages) and the day's running
+   *  totals at the bucket each sync arrived in; absent before it. */
+  hr_series?: (number | null)[] | null
+  steps_series?: (number | null)[] | null
+  active_series?: (number | null)[] | null
+  floors_series?: (number | null)[] | null
+}
+
+/** One stored watch snapshot (migration 69's body_sync_log). */
+export interface BodySync {
+  local_date: string
+  received_at: string
+  source: 'app' | 'background'
 }
 
 /** What training load needs from a finished session. */

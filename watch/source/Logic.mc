@@ -220,6 +220,13 @@ module Logic {
         return m + ":" + s.format("%02d");
     }
 
+    // The later of two epoch times, either of which may be null.
+    function latest(a, b) {
+        if (a == null) { return b; }
+        if (b == null) { return a; }
+        return a > b ? a : b;
+    }
+
     function agoText(secs) {
         if (secs < 60) { return "synced just now"; }
         if (secs < 3600) { return "synced " + (secs / 60) + "m ago"; }

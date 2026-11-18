@@ -199,6 +199,8 @@ function testMath(logger) {
         && T.ck(logger, "ago min", Logic.agoText(300).equals("synced 5m ago"))
         && T.ck(logger, "ago hour", Logic.agoText(7300).equals("synced 2h ago"))
         && T.ck(logger, "ago day", Logic.agoText(200000).equals("synced 2d ago"))
+        && T.ck(logger, "latest of workout and day sync", Logic.latest(100, 900) == 900 && Logic.latest(900, 100) == 900)
+        && T.ck(logger, "latest with one missing", Logic.latest(null, 5) == 5 && Logic.latest(5, null) == 5 && Logic.latest(null, null) == null)
         && T.ck(logger, "clamp", Logic.clamp(-1, 0, 10) == 0 && Logic.clamp(11, 0, 10) == 10 && Logic.clamp(5, 0, 10) == 5);
 }
 

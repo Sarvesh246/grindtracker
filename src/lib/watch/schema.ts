@@ -130,6 +130,13 @@ export const watchDailySchema = z.strictObject({
   floors: z.int().min(0).max(2000).nullish(),
   spo2: z.int().min(50).max(100).nullish(),
   vo2max: z.int().min(10).max(100).nullish(),
+  /** All-day heart rate, bucket averages (migration 69). */
+  heart_rate: z.array(z.int().min(25).max(250).nullable()).length(96).optional(),
+  /** The 15-min bucket (0–95, local) this snapshot was taken in; the running
+   *  totals (steps, active minutes, floors) are placed there on the day's curve. */
+  bucket: z.int().min(0).max(95).optional(),
+  /** `background`: sent by the watch's background service with the app closed. */
+  source: z.enum(['app', 'background']).optional(),
 })
 
 export type WatchDailyInput = z.infer<typeof watchDailySchema>

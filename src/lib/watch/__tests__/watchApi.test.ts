@@ -490,6 +490,55 @@ describe('POST /daily', () => {
     assert.equal(typeof d.stress_avg, 'number')
   })
 
+  it('places running totals at the sync bucket and passes heart rate and source through', async () => {
+    let day: Record<string, unknown> | null = null
+    const deps = fakeDeps({
+      watch_upsert_daily: args => {
+        day = args.p_day as Record<string, unknown>
+        return { data: { local_date: '2026-11-16' }, error: null }
+      },
+    })
+    const res = await watchDaily(req('/daily', {
+      body: {
+        date: '2026-11-16',
+        heart_rate: series(i => (i >= 40 && i < 44 ? 72 : null)),
+        bucket: 43,
+        steps: 5120,
+        active_minutes: 22,
+        source: 'background',
+      },
+    }), deps)
+    assert.equal(res.status, 200)
+    const d = day as unknown as Record<string, unknown>
+    const steps = d.steps_series as (number | null)[]
+    assert.equal(steps.length, 96)
+    assert.equal(steps[43], 5120)
+    assert.equal(steps.filter(v => v != null).length, 1)
+    assert.equal((d.active_series as (number | null)[])[43], 22)
+    assert.equal(d.floors_series, null)
+    assert.equal((d.hr as (number | null)[])[41], 72)
+    assert.equal(d.source, 'background')
+  })
+
+  it('defaults the source to the app and leaves curves out without a bucket', async () => {
+    let day: Record<string, unknown> | null = null
+    const deps = fakeDeps({
+      watch_upsert_daily: args => {
+        day = args.p_day as Record<string, unknown>
+        return { data: { local_date: '2026-11-16' }, error: null }
+      },
+    })
+    await watchDaily(req('/daily', { body: { date: '2026-11-16', steps: 100 } }), deps)
+    const d = day as unknown as Record<string, unknown>
+    assert.equal(d.source, 'app')
+    assert.equal(d.steps_series, null)
+  })
+
+  it('422 for an unknown source or out-of-range bucket', async () => {
+    assert.equal((await watchDaily(req('/daily', { body: { date: '2026-11-16', source: 'cron' } }), fakeDeps())).status, 422)
+    assert.equal((await watchDaily(req('/daily', { body: { date: '2026-11-16', bucket: 96 } }), fakeDeps())).status, 422)
+  })
+
   it('422 for a series of the wrong length', async () => {
     const res = await watchDaily(req('/daily', { body: { date: '2026-11-16', body_battery: [1, 2, 3] } }), fakeDeps())
     assert.equal(res.status, 422)

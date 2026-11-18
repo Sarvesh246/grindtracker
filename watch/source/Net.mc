@@ -154,7 +154,7 @@ class Net {
         var last = Store.get("dl");
         if (last != null && last <= now() && now() - last < Config.DAILY_EVERY) { return; }
         dailyRetryAt = now() + 120;
-        request("/daily", Body.snapshot(), true, method(:onDaily));
+        request("/daily", Body.snapshot("app"), true, method(:onDaily));
     }
 
     function onDaily(code, data) {
@@ -327,14 +327,16 @@ class Net {
         return Config.DIM;
     }
 
-    // Longer form for Home.
+    // Longer form for Home. The last contact of any kind: a workout upload
+    // ("ls") or a day snapshot, open or in the background ("dl"), so it
+    // agrees with the Health page's "Received".
     function homeStatus() {
         if (authError) { return "Auth error"; }
         var n = Store.queue().size();
         if (n > 0) { return n + " to sync"; }
         if (Store.dead().size() > 0) { return "sync failed"; }
-        var ls = Store.get("ls");
         if (!connected()) { return "offline"; }
+        var ls = Logic.latest(Store.get("ls"), Store.get("dl"));
         if (ls == null) { return "not synced yet"; }
         return Logic.agoText(now() - ls);
     }

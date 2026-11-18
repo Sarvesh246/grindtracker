@@ -56,7 +56,23 @@ export function toDailyPayload(input: WatchDailyInput) {
     floors: input.floors ?? null,
     spo2: input.spo2 ?? null,
     vo2max: input.vo2max ?? null,
+    // Migration 69. The 59 RPC ignores these keys, so the order of applying
+    // the SQL and deploying this doesn't matter.
+    hr: input.heart_rate ?? null,
+    steps_series: atBucket(input.bucket, input.steps),
+    active_series: atBucket(input.bucket, input.active_minutes),
+    floors_series: atBucket(input.bucket, input.floors),
+    source: input.source ?? 'app',
   }
+}
+
+/** A running total placed on the day's 96-bucket curve at the bucket it was
+ *  read in; every other bucket null, so the merge keeps earlier syncs. */
+function atBucket(bucket: number | undefined, value: number | null | undefined): (number | null)[] | null {
+  if (bucket == null || value == null) return null
+  const out: (number | null)[] = new Array(96).fill(null)
+  out[bucket] = value
+  return out
 }
 
 export interface BodyContext {

@@ -3,7 +3,7 @@ import { bodyExtras, computeCharge, type Charge } from './charge'
 import type { ReadinessCheck, ReadinessSummary } from './hrv'
 import { loadBalance, type LoadBalance } from './load'
 import type { StrengthLoad, StrengthSet } from './strength'
-import type { DailyBody, LoadSession } from './types'
+import type { BodySync, DailyBody, LoadSession } from './types'
 
 /**
  * The one read every body surface shares. Works with either Supabase client
@@ -36,6 +36,9 @@ export interface BodySummary {
   strengthSets: StrengthSet[]
   strength: StrengthLoad | null
   prefs: BodyPrefs
+  /** Stored watch snapshots of the last 14 days, newest first (migration 69;
+   *  empty before it). */
+  syncs: BodySync[]
 }
 
 const DAY_COLUMNS =
@@ -51,8 +54,36 @@ export function emptyBodySummary(today: string): BodySummary {
   return {
     available: false, hasWatch: false, today, days: [], todayRow: null, sessions: [],
     charge: null, load: null, readinessChecks: [], readiness: null, strengthSets: [], strength: null,
-    prefs: DEFAULT_BODY_PREFS,
+    prefs: DEFAULT_BODY_PREFS, syncs: [],
   }
+}
+
+const INTRADAY_COLUMNS = 'local_date,hr_series,steps_series,active_series,floors_series'
+
+/** Migration 69's day curves, merged into the day rows. Read on their own so a
+ *  database without the columns yet still shows everything else. */
+async function readIntraday(supabase: SupabaseClient, userId: string, today: string): Promise<Map<string, Partial<DailyBody>>> {
+  const { data, error } = await supabase
+    .from('daily_body')
+    .select(INTRADAY_COLUMNS)
+    .eq('user_id', userId)
+    .gte('local_date', shiftKey(today, -35))
+    .lte('local_date', today)
+  const out = new Map<string, Partial<DailyBody>>()
+  if (error || !data) return out
+  for (const r of data as unknown as Partial<DailyBody>[]) if (r.local_date) out.set(r.local_date, r)
+  return out
+}
+
+/** Watch snapshots as they arrived; an absent table reads as none. */
+async function readSyncs(supabase: SupabaseClient, userId: string): Promise<BodySync[]> {
+  const { data, error } = await supabase
+    .from('body_sync_log')
+    .select('local_date,received_at,source')
+    .eq('user_id', userId)
+    .order('received_at', { ascending: false })
+    .limit(200)
+  return error || !data ? [] : (data as BodySync[])
 }
 
 /** Readiness checks; an absent table (migration 68 not applied) reads as none. */
@@ -110,12 +141,14 @@ export async function getBodySummary(supabase: SupabaseClient, userId: string, t
         .lte('local_date', today),
       supabase.from('body_prefs').select('coach_uses_body,smart_rest').eq('user_id', userId).maybeSingle(),
     ])
-    const [readinessChecks, strengthSets] = await Promise.all([
+    const [readinessChecks, strengthSets, intraday, syncs] = await Promise.all([
       readReadiness(supabase, userId, today).catch(() => []),
       readStrengthSets(supabase, userId, today).catch(() => []),
+      readIntraday(supabase, userId, today).catch(() => new Map<string, Partial<DailyBody>>()),
+      readSyncs(supabase, userId).catch(() => []),
     ])
     if (daysRes.error || sessRes.error) return emptyBodySummary(today)
-    const days = (daysRes.data ?? []) as DailyBody[]
+    const days = ((daysRes.data ?? []) as DailyBody[]).map(d => ({ ...d, ...intraday.get(d.local_date) }))
     const sessions = (sessRes.data ?? []) as LoadSession[]
     const hasWatch = days.length > 0 || sessions.some(s => s.zone_seconds != null) || readinessChecks.length > 0
     const extras = { readiness: readinessChecks, strength: strengthSets }
@@ -137,6 +170,7 @@ export async function getBodySummary(supabase: SupabaseClient, userId: string, t
       // Lifting load needs no watch: every logged set counts.
       strength,
       // A failed consent read must never silently re-enable Coach health access.
+      syncs,
       prefs: prefsRes.error ? { ...DEFAULT_BODY_PREFS, coach_uses_body: false } : (prefsRes.data as BodyPrefs | null) ?? DEFAULT_BODY_PREFS,
     }
   } catch {

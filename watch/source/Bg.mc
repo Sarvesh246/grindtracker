@@ -14,11 +14,12 @@ using Toybox.Time;
 // Nothing here may touch Net, Workout, Store or the UI.
 (:background)
 module Bg {
-    const EVERY = 7200;          // 2 h; Connect IQ allows 5 min at the least
-    const MIN_GAP = 1800;        // skip if a snapshot went out this recently
+    const EVERY = 900;           // 15 min, one bucket; Connect IQ allows 5 min at the least
+    const MIN_GAP = 600;         // skip if the open app sent one this recently
 
     // Called from the foreground on every launch. Registering again with
-    // the same period is skipped so the 2 h rhythm isn't restarted.
+    // the same period is skipped so the rhythm isn't restarted; a build with
+    // a new EVERY takes over the first time the app is opened.
     function register() {
         try {
             if (!(Toybox has :Background)) { return; }
@@ -47,7 +48,7 @@ class GrindService extends System.ServiceDelegate {
             return;
         }
         try {
-            Communications.makeWebRequest(Secrets.API_BASE + "/daily", Body.snapshot(), {
+            Communications.makeWebRequest(Secrets.API_BASE + "/daily", Body.snapshot("background"), {
                 :method => Communications.HTTP_REQUEST_METHOD_POST,
                 :headers => {
                     "Authorization" => "Bearer " + Secrets.TOKEN,

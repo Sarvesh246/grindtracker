@@ -8,9 +8,10 @@ using Toybox.Time.Gregorian;
 using Toybox.UserProfile;
 
 // GRIND Body, phase 1: the day's snapshot for POST /daily. Only the values the
-// phase 0 probe saw this watch actually fill in: Body Battery and stress
-// history, resting HR, recovery time, steps, active minutes, floors, live
-// SpO2 and VO2 max. (Respiration and SpO2 history came back empty.)
+// phase 0 probe saw this watch actually fill in: Body Battery, stress and
+// heart-rate history, resting HR, recovery time, steps, active minutes,
+// floors, live SpO2 and VO2 max. (Respiration and SpO2 history came back
+// empty.)
 //
 // Also runs in the background service (Bg.mc), which has 64 KB in all, so
 // the history is bucketed as it is read: 96 slots per series whatever the
@@ -65,15 +66,52 @@ module Body {
         return null;
     }
 
+    // All-day heart rate since midnight: the average of each 15-minute bucket
+    // (HR history comes every minute or two, so "latest wins" would be a
+    // single beat-rate). Null when the watch has none.
+    function heartRate(since) {
+        try {
+            if (!(Toybox has :SensorHistory) || !(SensorHistory has :getHeartRateHistory)) { return null; }
+            var it = SensorHistory.getHeartRateHistory({ :period => new Time.Duration(Time.now().value() - since + 60), :order => SensorHistory.ORDER_OLDEST_FIRST });
+            if (it == null) { return null; }
+            var sum = new [96];
+            var n = new [96];
+            var any = false;
+            var s = it.next();
+            while (s != null) {
+                if (s.data != null && s.when != null && s.data >= 25 && s.data <= 250) {
+                    var b = (s.when.value() - since) / 900;
+                    if (b >= 0 && b <= 95) {
+                        sum[b] = (sum[b] == null ? 0 : sum[b]) + s.data.toNumber();
+                        n[b] = (n[b] == null ? 0 : n[b]) + 1;
+                        any = true;
+                    }
+                }
+                s = it.next();
+            }
+            if (!any) { return null; }
+            for (var i = 0; i < 96; i++) {
+                if (n[i] != null) { sum[i] = (sum[i] + n[i] / 2) / n[i]; }
+            }
+            return sum;
+        } catch (e) {
+        }
+        return null;
+    }
+
     function num(v, lo, hi) {
         if (v == null) { return null; }
         var n = v.toNumber();
         return n < lo || n > hi ? null : n;
     }
 
-    function snapshot() {
+    // `source`: "app" with the app open, "background" from Bg.mc.
+    function snapshot(source) {
         var m = midnight();
-        var day = { "date" => date() };
+        var day = { "date" => date(), "source" => source };
+        // Where on the day's curve the running totals below belong.
+        var b = (Time.now().value() - m) / 900;
+        if (b >= 0 && b <= 95) { day["bucket"] = b; }
         var bb = history(0, m);
         if (bb != null) {
             day["body_battery"] = bb[0];
@@ -83,6 +121,7 @@ module Body {
         var st = history(1, m);
         if (st != null) { day["stress"] = st[0]; }
         st = null;
+        day["heart_rate"] = heartRate(m);
         try {
             var a = ActivityMonitor.getInfo();
             if (a != null) {
