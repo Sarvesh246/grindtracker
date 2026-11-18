@@ -628,7 +628,8 @@ describe('watch API against the real schema', { skip: !baseUrl && 'set PARITY_DA
       assert.equal(db(`select count(*) from readiness_checks where id = '${id('rd2')}'`), '0')
       asUser(ALICE, 'select set_health_collection(true);')
       await watchReadiness(request('/readiness', aliceToken, check(id('rd3'))), deps)
-      asUser(ALICE, 'select delete_health_history();')
+      // What Settings calls; it runs delete_health_history() inside.
+      asUser(ALICE, 'select delete_body_data();')
       assert.equal(db(`select count(*) from readiness_checks where user_id = '${ALICE}'`), '0')
       asUser(ALICE, 'select set_health_collection(true);')
     })
