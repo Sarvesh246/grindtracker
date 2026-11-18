@@ -10,6 +10,7 @@ import {
   inNap,
   phaseTimes,
   sleepDebt,
+  startS,
   toPercents,
   DEBT_NIGHTS,
   type DayModel,
@@ -65,11 +66,17 @@ export function buildEnergySchedule({
   const recovery = recoveryFor(date, nights, daily)
   const today = nights[0]?.wakeDate === date ? nights[0] : null
   const wake = today ? today.wake : phase.habitualWake
+  // Last night acts through this morning's sleep pressure; only earlier nights
+  // count as chronic debt, so a short night isn't charged twice.
+  const chronicH = sleepDebt(today ? nights.slice(1) : nights, needH)
+  const recent = nights.slice(0, 7).map((n) => n.sleepH).sort((a, b) => a - b)
+  const lastSleepH = today ? today.sleepH : recent[Math.floor(recent.length / 2)]
   const todayNaps = naps.filter((n) => n.date === date && n.start >= wake)
   const day: DayModel = {
     wake,
     dlmo: phase.dlmo,
-    debtH: Math.max(0, debtH + recovery.debtEquivH),
+    debtH: Math.max(0, chronicH + recovery.debtEquivH),
+    lastSleepH,
     naps: todayNaps,
     inertiaRate: today?.wakeStage === 'deep' ? DEEP_WAKE_INERTIA_RATE : undefined,
   }
@@ -89,7 +96,7 @@ export function buildEnergySchedule({
   // 96 quarter-hours across the local day; asleep (before wake, naps, after bedtime) is null.
   const hours = Array.from({ length: 96 }, (_, i) => (i + 0.5) / 4)
   const isAwake = (h: number) => h >= wake && h <= bedtime && !inNap(day, h)
-  const pct = toPercents(hours.filter(isAwake).map((h) => alertness(day, h)), day.debtH, activeRange(day))
+  const pct = toPercents(hours.filter(isAwake).map((h) => alertness(day, h)), startS(day), activeRange(day))
   let k = 0
   const curve = hours.map((h) => (isAwake(h) ? pct[k++] : null))
 

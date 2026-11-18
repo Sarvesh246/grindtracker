@@ -5,10 +5,11 @@ import { shiftDate } from '@/lib/health/model'
 import { localToIso } from '@/lib/health/importers'
 import {
   MAX_CALIBRATION_H,
+  acuteS0,
+  chronicPenalty,
   alertness,
   calibrationOffset,
   circadianPhase,
-  debtWeights,
   phaseTimes,
   sleepDebt,
 } from '../model'
@@ -75,11 +76,14 @@ describe('time helpers', () => {
 })
 
 describe('sleep debt', () => {
-  it('weights last night 15% and the rest 85%', () => {
-    const w = debtWeights(14)
-    assert.equal(w[0], 0.15)
-    assert.ok(Math.abs(w.reduce((a, b) => a + b, 0) - 1) < 1e-9)
-    assert.ok(w[1] > w[13])
+  it('counts one short night as its real shortfall and lets extra sleep repay it', () => {
+    const base = Array.from({ length: 14 }, (_, i) => ({ wakeDate: shiftDate(TODAY, -i), onset: -1, wake: 7, sleepH: 8 }))
+    const oneBad = base.map((n, i) => (i === 0 ? { ...n, sleepH: 5 } : n))
+    assert.equal(sleepDebt(oneBad, 8), 3)
+    const repaid = base.map((n, i) => (i === 1 ? { ...n, sleepH: 5 } : i === 0 ? { ...n, sleepH: 10 } : n))
+    assert.equal(sleepDebt(repaid, 8), 1)
+    const banked = base.map((n, i) => (i === 1 ? { ...n, sleepH: 11 } : i === 0 ? { ...n, sleepH: 6 } : n))
+    assert.equal(sleepDebt(banked, 8), 2, "you can't bank sleep ahead")
   })
 
   it('is zero when you sleep your need and grows with short nights', () => {
@@ -304,5 +308,71 @@ describe('watch signals', () => {
 
   it('adds no signals when the watch had nothing to say', () => {
     assert.deepEqual(buildEnergySchedule({ date: TODAY, timezone: ZONE, sessions: regular(14) })!.signals, [])
+  })
+})
+
+describe('sleep need from real-world nights', () => {
+  const night = (i: number, sleepH: number, wake = 7, pieces = 1): Night => ({
+    wakeDate: shiftDate(TODAY, -i),
+    onset: wake - sleepH - 0.2,
+    wake,
+    sleepH,
+    pieces,
+  })
+
+  it('does not let alarm-capped weekdays drag need down to habitual sleep', () => {
+    // 5 alarm nights of 7h at 07:00, then 2 free mornings of 9h at 09:00, for 4 weeks.
+    const nights = Array.from({ length: 28 }, (_, i) =>
+      i % 7 < 2 ? night(i, 9, 9) : night(i, 7, 7),
+    )
+    const need = sleepNeed(nights)
+    const habitual = nights.reduce((s, n) => s + n.sleepH, 0) / nights.length
+    assert.ok(need > habitual + 0.2 && need < 9, `need ${need} vs habitual ${habitual}`)
+  })
+
+  it('discounts catch-up sleep after a short night (rebound correction)', () => {
+    const nights = Array.from({ length: 14 }, (_, i) => night(i, 8))
+    nights[3] = night(3, 3) // the short night…
+    nights[2] = night(2, 11, 10) // …and the long lie-in after it
+    const need = sleepNeed(nights)
+    assert.ok(need < 8.4, `need ${need}`)
+  })
+
+  it('never reads a chronic short sleeper with no free mornings as needing 6h', () => {
+    const nights = Array.from({ length: 21 }, (_, i) => night(i, 6))
+    assert.ok(sleepNeed(nights) > 7, `need ${sleepNeed(nights)}`)
+  })
+
+  it('counts a broken night as weaker evidence than a whole one', () => {
+    const base = Array.from({ length: 10 }, (_, i) => night(i, 8))
+    const whole = [night(0, 9.5, 9), ...base]
+    const broken = [night(0, 9.5, 9, 2), ...base]
+    assert.ok(sleepNeed(broken) <= sleepNeed(whole))
+  })
+})
+
+describe('debt → alertness (study-based)', () => {
+  it('derives this morning from last night via the model’s own recovery equation', () => {
+    assert.ok(Math.abs(acuteS0(8) - 14) < 1e-9)
+    assert.ok(acuteS0(5) < acuteS0(7) && acuteS0(7) < acuteS0(8))
+    assert.ok(14 - acuteS0(3) > 1 && 14 - acuteS0(3) < 2.5)
+  })
+
+  it('felt cost of chronic debt plateaus (Van Dongen 2003)', () => {
+    assert.equal(chronicPenalty(0), 0)
+    assert.ok(chronicPenalty(20) <= 2.2)
+    assert.ok(chronicPenalty(6) / chronicPenalty(20) > 0.6, 'most of it lands in the first ~6h')
+    assert.ok(chronicPenalty(20) - chronicPenalty(14) < 0.2, 'then it barely moves')
+  })
+
+  it('charges a short last night once, through the morning, not again as debt', () => {
+    const rested = regular(14)
+    const shortLast = rested.map((s, i) => (i === 0 ? { ...s, duration_seconds: 5 * 3600 } : s))
+    const a = buildEnergySchedule({ date: TODAY, timezone: ZONE, sessions: rested })!
+    const b = buildEnergySchedule({ date: TODAY, timezone: ZONE, sessions: shortLast })!
+    assert.ok(Math.max(...b.curve.map((v) => v ?? 0)) < Math.max(...a.curve.map((v) => v ?? 0)))
+    assert.equal(b.debtMin, 180, 'a 3h shortfall is 3h of debt')
+    // Sleep amount barely touches the clock (only Roenneberg's oversleep correction, minutes).
+    assert.ok(Math.abs(Date.parse(b.dlmoAt) - Date.parse(a.dlmoAt)) < 15 * 60_000)
   })
 })

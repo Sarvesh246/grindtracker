@@ -13,18 +13,20 @@ All maths runs in **clock hours relative to the day's local midnight**: 7.5 mean
    - Blocks within **2h** of the main block are chained into one **broken night**: onset is the first start, wake the last end, and sleep the sum of the blocks.
    - Later daytime blocks of 10 min or more are **naps**.
    - A date with only naps on record produces no night.
-2. **Sleep need** (`sleepNeed.ts`). Starts from an 8h prior (RISE's population median, and lab sleep-extension studies). Evidence from your own nights pulls it away from 8h, shrunk by 5 pseudo-nights and clamped to 6–10h.
-3. **Sleep debt** (`sleepDebt`). Uses RISE's published definition: the last 14 nights, with last night weighted 15% and the other 85% spread over earlier nights with a 0.9 recency decay. Surplus pays debt back, and **naps count**. The weighted mean deficit is scaled by the number of nights actually observed.
+2. **Sleep need** (`sleepNeed.ts`). Learned from your own nights; see **Sleep need** below. Starts from an 8h prior, shrunk by 5 pseudo-nights and clamped to 6–10h.
+3. **Sleep debt** (`sleepDebt`). A running balance over the last 14 nights, oldest first: each night adds need − sleep − naps, extra sleep pays it back, and it never goes below 0 (you can't bank sleep). Capped at 20h. This is the cumulative deficit of Van Dongen 2003, repaid only by actually sleeping more (Kitamura 2016). An earlier version used RISE-style 15%/85% recency weights; scaled to 14 nights, those counted last night at 2.1× its real shortfall, so a 3h-short night showed as 6.3h of debt.
 4. **Circadian phase** (`circadianPhase`). Estimates DLMO (dim-light melatonin onset, the clock's anchor) as the mean of:
    - *mid-sleep − 6h* (Kantermann 2015; Burgess & Fogg 2008), with Roenneberg's oversleep correction: a long lie-in pulls that night's mid back by half its excess sleep.
    - *habitual onset − 2h* (Burgess & Fogg 2008).
 
    Nights are weighted with a 3-night half-life, because the clock shifts at most about 1h a day.
 5. **Alertness** (`alertness`). The Åkerstedt–Folkard three-process model, with parameters from Ingre et al. 2014:
-   - S = 2.4 + (S₀ − 2.4)·e^(−0.0353t). S₀ = 14 − 0.35 × debt hours, with debt capped at 10h.
+   - S = 2.4 + (S₀ − 2.4)·e^(−0.0353t). **S₀ = acute(last night) − chronic(earlier debt)**:
+     - *Acute* comes from the model's own equations: S falls over the (24 − slept) hours awake, then recovers by S′ = 14.3 − (14.3 − S)·e^(−0.381·slept). An 8h night gives 14.0, 5h gives 13.4 and 3h gives 12.2.
+     - *Chronic* is 2.2·(1 − e^(−debt/6h)), using the 14-night balance **excluding last night** so a short night isn't charged twice. It levels off because, in Van Dongen 2003, felt sleepiness under 14 days of restriction rose about 1 point on the 7-point Stanford scale and then held. Converted: about 1.3 KSS points, or 2.2 alertness units. Performance kept falling, but the curve shows felt energy.
    - C = 2.5·cos(2π(h − (DLMO − 4.2))/24). The published C peak is 16.8h for a typical 21:00 DLMO, so the peak sits 4.2h *before* DLMO.
    - W = −5.72·e^(−1.51t): sleep inertia.
-   - U = −A·cos(2π(h − (DLMO − 6))/12): the 12h harmonic that carves the post-lunch dip. Its trough is about 6h before DLMO. A = 1 + 0.04 × debt hours (max 1.4), so debt deepens the dip.
+   - U = −A·cos(2π(h − (DLMO − 6))/12): the 12h harmonic that carves the post-lunch dip. Its trough is about 6h before DLMO. A = 1 + 0.4 × (chronic ÷ 2.2), so up to +40%. Sleep loss deepens the afternoon dip specifically (Carskadon & Dement 1987, afternoon sleep latency; Monk 2005 review). C is left alone, because Cohen 2010's chronic-loss amplification happens in the biological night, which a waking-day curve doesn't reach.
 6. **Phases** (`phaseTimes`). Each phase comes from a *bounded* search, so a flat curve can't produce nonsense:
    - **Grogginess:** ends when W has recovered 90%, about 1.5h after waking.
    - **Morning peak:** the highest point between the end of grogginess and the dip region.
@@ -34,7 +36,7 @@ All maths runs in **clock hours relative to the day's local midnight**: 7.5 mean
    Each window is where the curve stays within 30% of the peak-to-dip swing. Peaks are capped at 3h and the dip at 2.5h.
 
    **Wind-down** runs from DLMO to DLMO + 1h. **Bedtime** is habitual wake − need − 15 min.
-7. **Display curve** (`toPercents`). Raw three-process units mean nothing to a reader. The active day's range (grogginess end → DLMO) maps onto 15 → top, where top = 95 − 3 × debt hours. Debt therefore lowers the ceiling while the shape stays readable.
+7. **Display curve** (`toPercents`). Raw three-process units mean nothing to a reader. The active day's range (grogginess end → DLMO) maps onto 15 → top, where top = 95 − 10 × (14 − S₀), clamped to 55–95. Lost sleep pressure lowers the ceiling while the shape stays readable.
 
 For a 23:00–07:00 sleeper this gives:
 
@@ -55,6 +57,16 @@ The page has three buttons (Tired / OK / Sharp). Each tap writes an `energy_chec
 ### Confidence and provisional days
 - **Confidence:** `high` / `medium` / `low` comes from nights observed (7 or more is full coverage) × mid-sleep regularity (spread under 45 min, 90 min, or worse).
 - **Provisional days:** if last night hasn't been imported yet, the habitual wake time stands in and the hero says "Using your usual wake time".
+
+## Sleep need (model v3)
+
+Most nights don't measure need; they're capped by an alarm or a schedule. `sleepNeed` therefore treats nights as evidence with two corrections, then takes a recency-weighted **median** (robust to a sick night or a tracking glitch) and shrinks it toward 8h. It runs in two passes, because carried debt depends on the need being estimated.
+
+1. **Which nights ran their course.** A night at least **30 min longer than your usual** counts as unconstrained. This is the MCTQ idea of free days as *oversleep* (Roenneberg). It uses duration, not wake time, because a shifted night (asleep 05:20, up 12:26) wakes late without sleeping longer. An earlier draft keyed on wake time and misread exactly that kind of night.
+2. **Rebound correction.** An unconstrained night after short ones includes catch-up on top of need, so implied need = slept − 0.25 × the debt carried in. The 0.25 comes from Kitamura 2016: with 12h in bed, 1h of debt took about 4 nights to clear.
+3. **Censoring.** Any other night only says "need ≥ this". It counts fully when it's above the current estimate (that's information) and at weight 0.25 below it (it might be an alarm, not the body). Broken nights count half. Recency half-life is 14 nights.
+
+On real data (Nov 2026), the six unconstrained nights read 9.1 / 9.07 / 9.0 / 8.28 / 7.97 / 11.08h raw. After the rebound correction they read 7.9 / 7.8 / 8.0 / 7.2 / 7.0 / 8.8h: tightly clustered, giving a need of 7h 46m against a habitual 7.3h.
 
 ## Watch signals (model v2)
 
@@ -106,7 +118,8 @@ We chose pg_cron. The cost is two Vault secrets that must be created by hand (se
 
 ## Known limitations
 - Phase comes from sleep *timing* only. A light- or activity-driven oscillator would track jet lag and weekend drift faster: Forger/Jewett/Kronauer 1999 and St Hilaire 2007, fed by Garmin steps (Huang 2021 found activity predicts DLMO within about 1h). That's the natural v2.
-- The debt-to-S₀ (0.35/h) and debt-to-dip-depth (0.04/h) gains are heuristics, not published constants.
+- Calibration choices, not published constants: the dip gain's size (+40%), the 10-points-per-S-unit display ceiling, and the 0.25 rebound share.
+- Need and debt are in **device-measured** hours. Garmin overstates total sleep by about 45 min versus polysomnography (Chinoy 2021). Because need is learned from the same device, the bias cancels out of debt. It's also why a learned need can sit below the lab figures (8.4h in Kitamura 2016; 8.9h for young adults in Klerman & Dijk 2008).
 - Check-ins only calibrate *timing*, not amplitude.
 
 ## Sources
@@ -116,6 +129,11 @@ We chose pg_cron. The cost is two Vault secrets that must be created by hand (se
 - Burgess & Fogg 2008 (DLMO vs sleep timing); Kantermann et al. 2015 (MSFsc → DLMO)
 - Roenneberg et al. (MCTQ, oversleep correction)
 - Lavie 1986; Strogatz 1987 (wake-maintenance zone)
-- Van Dongen et al. 2003 (cumulative debt)
+- Van Dongen et al. 2003, *Sleep* 26(2) (cumulative debt; felt sleepiness plateaus while performance keeps falling)
+- Kitamura et al. 2016, *Sci Rep* (optimal sleep 8.41h vs habitual 7.37h; 1h of debt takes ~4 days to repay)
+- Klerman & Dijk 2005, *Sleep*; 2008, *Curr Biol* (extended sleep opportunity; asymptote 8.9h young / 7.4h older adults)
+- Carskadon & Dement 1987; Monk 2005 (sleep loss deepens the post-lunch dip)
+- Cohen et al. 2010, *Sci Transl Med* (chronic loss amplifies deficits in the biological night)
+- Chinoy et al. 2021, *Sleep* (wearable total-sleep bias vs polysomnography)
 - RISE Science help center (14-night debt, 15%/85% weighting)
 - Huang et al. 2021, *Sleep* 44 (wearable phase estimation)

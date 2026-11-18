@@ -5,33 +5,30 @@ import type { Confidence, EnergyCheckin, Night } from './types'
  * docs/ENERGY.md for the sources behind every constant.
  */
 
-export const MODEL_VERSION = 2
+export const MODEL_VERSION = 3
 
-// ── Sleep debt (RISE's definition: 14 nights, last night 15%, the rest 85%) ──
+// ── Sleep debt: a running 14-night balance ───────────────────────────────────
 
 export const DEBT_NIGHTS = 14
-
-/** Recency weights for up to 14 nights, newest first, summing to 1. */
-export function debtWeights(count: number): number[] {
-  const n = Math.min(count, DEBT_NIGHTS)
-  if (n <= 0) return []
-  if (n === 1) return [1]
-  const rest = Array.from({ length: n - 1 }, (_, i) => Math.pow(0.9, i))
-  const restSum = rest.reduce((s, w) => s + w, 0)
-  return [0.15, ...rest.map((w) => (0.85 * w) / restSum)]
-}
+/** Beyond this, the balance is tracking noise, not recoverable debt. */
+export const MAX_DEBT_H = 20
 
 /**
- * Hours of sleep debt over the observed nights (newest first). The weighted mean
- * deficit is scaled by how many nights we actually saw, so three short nights
- * read as three nights of debt, not fourteen.
+ * Sleep debt as a running balance over the last 14 nights, oldest first: each
+ * night adds (need − slept − naps), extra sleep pays it back, and it never goes
+ * below zero (you can't bank sleep ahead). This is the cumulative deficit of
+ * Van Dongen 2003, repaid only by actually sleeping more (Kitamura 2016). It
+ * replaces RISE-style recency weighting, which, scaled to 14 nights, counted
+ * last night 2.1× its real shortfall.
  */
 export function sleepDebt(nights: Night[], needH: number): number {
-  const recent = nights.slice(0, DEBT_NIGHTS)
-  const w = debtWeights(recent.length)
-  // Naps pay debt back (they are real sleep), but they never count toward need or phase.
-  const mean = recent.reduce((s, n, i) => s + w[i] * (needH - n.sleepH - (n.napH ?? 0)), 0)
-  return Math.max(0, mean * recent.length)
+  const window = nights.slice(0, DEBT_NIGHTS)
+  let balance = 0
+  for (let i = window.length - 1; i >= 0; i--) {
+    const n = window[i]
+    balance = Math.max(0, Math.min(MAX_DEBT_H, balance + needH - n.sleepH - (n.napH ?? 0)))
+  }
+  return balance
 }
 
 // ── Circadian phase ──────────────────────────────────────────────────────────
@@ -125,24 +122,73 @@ export function confidenceOf(nightCount: number, midSpread: number): Confidence 
 
 /** Process S starts near 14 after a full night; each hour of debt lowers it. */
 const S_RESTED = 14
-const S_DEBT_PER_H = 0.35
-const S_DEBT_CAP_H = 10
+/**
+ * Chronic debt lowers felt energy with a plateau, not a straight line: in Van
+ * Dongen 2003, sleepiness under 14 days of restriction rose ~1 point on the
+ * 7-point Stanford scale within days and then levelled off (performance kept
+ * falling; felt energy is what GRIND draws). ~1.3 KSS points = 2.2 alertness
+ * units (KSS = 10.6 − 0.6·alertness), approached with a ~6h debt constant.
+ */
+const CHRONIC_MAX_S = 2.2
+const CHRONIC_TAU_H = 6
+/** Most catch-up a recovery model trusts; past this, numbers are tracking noise. */
+const DEBT_CAP_H = 20
 /** Circadian C peaks at 16.8h for a 21:00 DLMO, i.e. 4.2h before DLMO. */
 const C_PEAK_BEFORE_DLMO = 4.2
 /** 12h harmonic that carves the post-lunch dip; deepens with debt. */
 const U_AMPLITUDE = 1
-const U_DEBT_GAIN = 0.04
-const U_MAX_AMPLITUDE = 1.4
+/**
+ * Sleep loss deepens the post-lunch dip specifically: afternoon sleep latency
+ * shortens most after restriction (Carskadon & Dement 1987; Monk 2005 review).
+ * Cohen 2010's chronic-loss amplification is in the biological NIGHT, which a
+ * waking-day curve doesn't reach, so C is left alone and only U grows, saturating
+ * like felt sleepiness. Up to +40%: the size is a calibration choice, the
+ * direction is the evidence.
+ */
+const DIP_DEBT_GAIN = 0.4
 
 export interface DayModel {
   wake: number
   dlmo: number
-  /** Effective debt: sleep debt plus the recovery adjustment, never below 0. */
+  /**
+   * Chronic debt carried from earlier nights, plus the recovery adjustment, never
+   * below 0. Last night is NOT in here; it acts through `lastSleepH`.
+   */
   debtH: number
+  /** Hours slept last night; sets this morning's sleep pressure. Absent = a full night. */
+  lastSleepH?: number
   /** Today's naps, clock hours. Sleep pressure recovers during each one. */
   naps?: { start: number; end: number }[]
   /** Sleep-inertia decay rate; slower after waking from deep sleep. */
   inertiaRate?: number
+}
+
+const FULL_NIGHT_H = 8
+
+/**
+ * Process S at wake after `sleptH` of sleep, from the three-process equations
+ * themselves: S falls through the preceding (24 − slept) hours awake, then
+ * recovers S' = 14.3 − (14.3 − S)·e^(−0.381·slept). A full 8h night lands at
+ * ≈14.05; 5h at ≈13.4; 3h at ≈12.4. Expressed relative to S_RESTED.
+ */
+export function acuteS0(sleptH: number): number {
+  const at = (h: number) => {
+    const awake = Math.max(0, 24 - h)
+    const bed = 2.4 + (S_RESTED - 2.4) * Math.exp(-0.0353 * awake)
+    return 14.3 - (14.3 - bed) * Math.exp(-0.381 * h)
+  }
+  return S_RESTED + at(Math.max(0, Math.min(14, sleptH))) - at(FULL_NIGHT_H)
+}
+
+/** Felt-energy cost of chronic debt: saturating, per Van Dongen 2003. */
+export function chronicPenalty(debtH: number): number {
+  const d = Math.max(0, Math.min(DEBT_CAP_H, debtH))
+  return CHRONIC_MAX_S * (1 - Math.exp(-d / CHRONIC_TAU_H))
+}
+
+/** S at wake for this day: last night's sleep, minus the chronic plateau. */
+export function startS(day: Pick<DayModel, 'debtH' | 'lastSleepH'>): number {
+  return Math.min(S_RESTED, acuteS0(day.lastSleepH ?? FULL_NIGHT_H)) - chronicPenalty(day.debtH)
 }
 
 /** Default inertia decay (Åkerstedt–Folkard); waking from deep sleep uses the slower one. */
@@ -161,8 +207,7 @@ export function inNap(day: DayModel, h: number): boolean {
  * end, with a lighter inertia dip afterwards scaled by the nap's length.
  */
 export function alertness(day: DayModel, h: number): number {
-  const debt = Math.min(day.debtH, S_DEBT_CAP_H)
-  let s0 = S_RESTED - S_DEBT_PER_H * debt
+  let s0 = startS(day)
   let from = day.wake
   let napInertia = 0
   for (const nap of [...(day.naps ?? [])].sort((a, b) => a.start - b.start)) {
@@ -176,23 +221,26 @@ export function alertness(day: DayModel, h: number): number {
   }
   const t = Math.max(0, h - day.wake)
   const S = 2.4 + (s0 - 2.4) * Math.exp(-0.0353 * Math.max(0, h - from))
+  const gain = 1 + DIP_DEBT_GAIN * (chronicPenalty(day.debtH) / CHRONIC_MAX_S)
   const C = 2.5 * Math.cos((2 * Math.PI * (h - (day.dlmo - C_PEAK_BEFORE_DLMO))) / 24)
   const W = -5.72 * Math.exp(-(day.inertiaRate ?? INERTIA_RATE) * t) + napInertia
-  const amp = Math.min(U_MAX_AMPLITUDE, U_AMPLITUDE + U_DEBT_GAIN * debt)
-  const U = -amp * Math.cos((2 * Math.PI * (h - (day.dlmo - DIP_BEFORE_DLMO))) / 12)
+  const U = -U_AMPLITUDE * gain * Math.cos((2 * Math.PI * (h - (day.dlmo - DIP_BEFORE_DLMO))) / 12)
   return S + C + W + U
 }
 
 /**
  * Alertness mapped onto the 0–100 scale the UI draws. Absolute three-process
  * units are meaningless to a reader and collapse under heavy debt, so the day's
- * own range becomes the shape (floor 10) and debt lowers the ceiling: a rested
- * day reaches 95, ten hours of debt tops out at 65.
+ * own range becomes the shape and sleep pressure lowers the ceiling (see below).
+ * `s0` is the day's starting sleep pressure from `startS`.
  */
-export function toPercents(raw: number[], debtH: number, range?: [number, number]): number[] {
+export function toPercents(raw: number[], s0: number, range?: [number, number]): number[] {
   if (!raw.length) return []
   const [lo, hi] = range ?? [Math.min(...raw), Math.max(...raw)]
-  const top = 95 - 3 * Math.min(debtH, 10)
+  // The ceiling drops 10 points per unit of morning sleep pressure lost (≈1.7 KSS
+  // points per 10): a full night tops out at 95, the plateau of chronic debt
+  // plus a 5h night near 66.
+  const top = Math.max(55, Math.min(95, 95 - 10 * (S_RESTED - s0)))
   const span = Math.max(1e-6, hi - lo)
   // Grogginess and the late evening fall below the active range; let them sink toward 0.
   return raw.map((a) => Math.round(Math.max(2, Math.min(top, 15 + ((a - lo) / span) * (top - 15)))))
