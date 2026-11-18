@@ -653,3 +653,28 @@ function testLiveRepAnalysis(logger) {
     Reps.listening = false;
     return T.ck(logger, "new set cancels previous analysis", Reps.count == null && Reps.worker == null) && ok;
 }
+
+// Regression: the watch allows 3 running timers and the app clock holds one.
+// A workout screen shown twice without onHide (menu pop + view switch) used
+// to leak its 1 s timer, and the rep analyser's timer then crashed the app
+// with Too Many Timers a few seconds into every set.
+(:test)
+function testWorkoutScreensDoNotExhaustTimers(logger) {
+    var a = new SetView();
+    a.onShow();
+    a.onShow();
+    var b = new RestView();
+    b.onShow();
+    var was = Reps.listening;
+    Reps.listening = true;
+    Reps.reset();
+    for (var i = 0; i < 120; i++) { Reps.bx.add(0.0); Reps.by.add(0.0); Reps.bz.add(0.0); Reps.bs.add(0); }
+    Reps.dirty = true;
+    Reps.update();
+    var ok = T.ck(logger, "analysis scheduled", Reps.job != null);
+    Reps.reset();
+    Reps.listening = was;
+    b.onHide();
+    a.onHide();
+    return ok;
+}

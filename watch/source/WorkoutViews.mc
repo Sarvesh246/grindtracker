@@ -5,23 +5,29 @@ using Toybox.System;
 using Toybox.Timer;
 using Toybox.WatchUi;
 
+// The workout screen the app clock refreshes each second (GrindApp.onTick).
+// Screens don't own timers: the watch allows only 3 running at once, and a
+// screen shown twice without onHide used to leak one, which crashed the app
+// when the rep analyser started its own a few seconds into a set.
+module Clock {
+    var view = null;
+}
+
 // Screens that refresh once a second while visible (heart rate, countdown).
 class TickView extends WatchUi.View {
-    var timer = null;
     var hr = null;
 
     function initialize() { View.initialize(); }
 
     function onShow() {
-        timer = new Timer.Timer();
-        timer.start(method(:onSecond), 1000, true);
+        Clock.view = self;
         // Rep counting runs on the set and rest screens (a set started
         // before the rest timer ran out still counts). Nav.show stops it.
         Reps.start();
     }
 
     function onHide() {
-        if (timer != null) { timer.stop(); timer = null; }
+        if (Clock.view == self) { Clock.view = null; }
     }
 
     function onSecond() {

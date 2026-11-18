@@ -24,9 +24,11 @@ module Config {
 
     // Sets per upload. Keeps the request dictionary small in memory.
     const SYNC_BATCH = 25;
-    // The app ticks every 5 s (heart rate); sync work runs every 6th tick.
-    const TICK_MS = 5000;
-    const SYNC_EVERY_TICKS = 6;
+    // The app clock ticks every second: it refreshes the workout screen,
+    // samples heart rate every HR_STEP ticks and syncs every 30th tick. It is
+    // the only always-on timer; the watch allows 3 running at once.
+    const TICK_MS = 1000;
+    const SYNC_EVERY_TICKS = 30;
 
     // GRIND Body. One heart-rate reading per HR_STEP seconds; a trace stops
     // growing after 12 hours. The daily snapshot is sent at most every

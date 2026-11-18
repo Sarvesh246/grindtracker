@@ -58,12 +58,15 @@ class GrindApp extends Application.AppBase {
         if (Config.DEMO_DATA) { Bg.unregister(); } else { Bg.register(); }
     }
 
-    // Every 5 s: heart rate while a workout is open. Every 30 s: sync.
+    // Every second: the visible workout screen. Every HR_STEP s: heart rate
+    // while a workout is open. Every 30 s: sync.
     function onTick() {
         ticks += 1;
-        if (Workout.active() && !Workout.atSummary()) { Hr.sample(Time.now().value()); }
+        var v = Clock.view;
+        if (v != null) { v.onSecond(); }
+        if (ticks % Config.HR_STEP == 0 && Workout.active() && !Workout.atSummary()) { Hr.sample(Time.now().value()); }
         if (ticks % Config.SYNC_EVERY_TICKS != 0) { return; }
-        if (ticks % 180 == 0) { Probe.log("tick"); } // every 15 min while open
+        if (ticks % 900 == 0) { Probe.log("tick"); } // every 15 min while open
         gNet.tick();
         WatchUi.requestUpdate();
     }
