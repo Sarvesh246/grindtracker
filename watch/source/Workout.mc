@@ -37,12 +37,18 @@ module Workout {
             clear();
             return;
         }
+        if (meta["discard"] == true) {
+            Store.dropSession(cur["sid"]);
+            clear();
+            return;
+        }
         if (meta["en"] != null) {
             // Save was interrupted after stamping the workout as finished.
             Store.enqueue(cur["sid"]);
             clear();
             return;
         }
+        finishUndo();
         sets = Store.sets(cur["sid"]);
         if (cur["dn"] == null) { upgrade(); } else { reconcileSets(); }
         Hr.begin(meta);
@@ -75,6 +81,7 @@ module Workout {
                 return;
             }
             cur["dn"] = counts;
+            closeSetWindow();
             cur["sum"] = false;
             cur["re"] = null;
             cur["rs"] = null;
@@ -123,7 +130,8 @@ module Workout {
     function resume() {
         awaitingResume = false;
         saved = false;
-        Recorder.start();
+        if (!atSummary()) { Recorder.start(); }
+        if (inRest() && restLeft() <= 0) { endRest(); }
         Reps.reset();
         // The motion recorded before the interruption cannot be recovered.
         if (setRunning()) { Reps.takeOver(); }
@@ -136,12 +144,15 @@ module Workout {
         cur["setAt"] = now();
         cur["f"] = 1;
         saveCur();
+        Hr.closeRecovery();
+        if (Recorder.session == null) { Recorder.ensureRecording(); }
         Reps.reset();
         Reps.start();
     }
 
     function closeSetWindow() {
         cur["setAt"] = null;
+        cur["editRow"] = null;
         Reps.stop();
         Reps.reset();
     }
@@ -182,12 +193,11 @@ module Workout {
         return Logic.clamp(sets.size().toFloat() / t, 0.0, 1.0);
     }
 
-    function adjust(dir) {
+    function adjust(dir, displayedOffer) {
         if (cur["f"] == 0) {
             cur["w"] = Logic.clamp(cur["w"] + dir * Config.WEIGHT_STEP, 0.0, 2000.0);
         } else {
-            var offered = Reps.offer();
-            var reps = offered == null ? cur["r"] : offered;
+            var reps = Reps.manual || displayedOffer == null ? cur["r"] : displayedOffer;
             cur["r"] = Logic.clamp(reps + dir, 0, 1000);
             Reps.takeOver(); // your number wins for the rest of this set
         }
@@ -200,26 +210,29 @@ module Workout {
     }
 
     // Returns true when that was the last set of the workout.
-    function logSet() {
-        return logDisplayedSet(Reps.offer());
-    }
-
     function logDisplayedSet(offered) {
+        if (!setRunning() || inRest() || atSummary()) { return false; }
         var e = ex();
         if (Reps.manual) { offered = null; }
         var reps = offered == null ? cur["r"] : offered;
         // `ra`: what the rep counter made of this set (null: no confident
         // count). Kept on the watch only, to measure the counter against
         // what was logged; never uploaded.
-        var s = {
+        var edit = cur["editRow"];
+        var s = edit == null ? {
             "id" => Logic.uuid4(), "e" => e["id"], "n" => cur["sn"], "r" => reps, "w" => cur["w"],
             "t" => now(), "rs" => cur["rs"], "y" => 0, "ra" => Reps.count, "ar" => offered != null
-        };
+        } : edit;
+        if (edit != null) {
+            s["w"] = cur["w"];
+            s["r"] = reps;
+            s["ar"] = false;
+        }
         System.println("reps auto=" + Reps.count + " logged=" + reps + " typed=" + Reps.manual
             + " " + e["name"] + Reps.diagnostics());
         Store.putSet(cur["sid"], sets.size(), s);
         sets.add(s);
-        Hr.onSetLogged(sets.size() - 1, s["t"]);
+        if (edit == null) { Hr.onSetLogged(sets.size() - 1, s["t"]); }
         return advanceAfterSet(e, s["t"]);
     }
 
@@ -267,20 +280,20 @@ module Workout {
     // Takes back the last logged set (a double-pressed START, the wrong
     // reps) and puts you back on it with its numbers filled in, ready to
     // fix and log again. Sets only reach the server after Save, so nothing
-    // needs un-syncing. The set is deleted before `cur` is saved: a crash in
-    // between leaves one set fewer to do, never two sets with one number.
+    // needs un-syncing. Persist the row and its position before removing it.
     function undoSet() {
         if (sets == null || sets.size() == 0) { return false; }
         var k = sets.size() - 1;
         var s = sets[k];
         var i = indexOfEx(s["e"]);
         if (i < 0) { return false; }
-        Store.del("t_" + cur["sid"] + "_" + k);
         sets = sets.slice(0, k);
         Hr.onSetUndone(k);
         closeSetWindow();
         // The set already happened. START can save the corrected numbers.
         cur["setAt"] = now();
+        cur["editRow"] = s;
+        cur["removeAt"] = k;
         Reps.takeOver();
         cur["dn"][i] -= 1;
         if (cur["dn"][i] < 0) { cur["dn"][i] = 0; }
@@ -294,7 +307,15 @@ module Workout {
         cur["rs"] = s["rs"];
         cur["sum"] = false;
         saveCur();
+        finishUndo();
         return true;
+    }
+
+    function finishUndo() {
+        if (cur["removeAt"] == null) { return; }
+        Store.del("t_" + cur["sid"] + "_" + cur["removeAt"]);
+        cur["removeAt"] = null;
+        saveCur();
     }
 
     // Moves to the next exercise with sets left, wrapping around. False when
@@ -348,9 +369,14 @@ module Workout {
         return out;
     }
 
-    function inRest() { return cur["re"] != null; }
+    function inRest() { return cur != null && cur["re"] != null; }
     function restLeft() { return cur["re"] - now(); }
-    function restElapsed() { return cur["r0"] == null ? 0 : now() - cur["r0"]; }
+    function restElapsed() {
+        if (!inRest() || cur["r0"] == null) { return 0; }
+        var end = now();
+        if (end > cur["re"]) { end = cur["re"]; }
+        return Logic.clamp(end - cur["r0"], 0, 3600);
+    }
 
     function restFrac() {
         if (cur["rd"] == null || cur["rd"] <= 0) { return 0.0; }
@@ -358,6 +384,7 @@ module Workout {
     }
 
     function adjustRest(delta) {
+        if (!inRest()) { return; }
         var left = Logic.clamp(restLeft() + delta, 0, 3600);
         cur["re"] = now() + left;
         cur["rd"] = Logic.clamp(cur["rd"] + delta, left, 3600);
@@ -366,7 +393,8 @@ module Workout {
     }
 
     function endRest() {
-        cur["rs"] = Logic.clamp(now() - cur["r0"], 0, 3600);
+        if (!inRest()) { return; }
+        cur["rs"] = restElapsed();
         cur["re"] = null;
         saveCur();
     }
@@ -431,13 +459,15 @@ module Workout {
             meta["hm"] = st["hm"];
             meta["cal"] = st["cal"];
             meta["te"] = Recorder.trainingEffect();
-            Store.putMeta(meta);
             Hr.end(true);
+            Store.putMeta(meta);
             Store.enqueue(sid);
             Probe.log("save");
             Recorder.stop(true);
             saved = true;
         } else {
+            meta["discard"] = true;
+            Store.putMeta(meta);
             Hr.end(false);
             Recorder.stop(false);
             Store.dropSession(sid);

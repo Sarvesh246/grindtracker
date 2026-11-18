@@ -13,6 +13,10 @@ module Recorder {
 
     function start() {
         hrSum = 0; hrN = 0; hrMax = 0;
+        ensureRecording();
+    }
+
+    function ensureRecording() {
         try {
             if (Toybox has :ActivityRecording && session == null) {
                 session = ActivityRecording.createSession({

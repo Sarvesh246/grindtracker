@@ -87,8 +87,7 @@ class Net {
         System.println("today -> " + code + " " + errCode(data));
         busy = false;
         if (code == 200 && data instanceof Lang.Dictionary && data["date"] != null) {
-            Store.cacheToday(data);
-            Store.put("ls", now());
+            if (Store.cacheToday(data)) { Store.put("ls", now()); }
         } else if (code == 401) {
             authError = true;
         }
@@ -114,7 +113,7 @@ class Net {
         var ok = code == 200 && data instanceof Lang.Dictionary && data["workout"] instanceof Lang.Dictionary
             && id != null && id.equals(data["workout"]["id"]);
         if (ok) {
-            Store.cacheDay(data);
+            ok = Store.cacheDay(data);
         } else if (code == 401) {
             authError = true;
         }
@@ -202,19 +201,22 @@ class Net {
         upSets = null;
         var r = Logic.classify(code, err);
         if (r == Logic.R_OK) {
+            var changed = Logic.applyResult(sets, data);
+            if (changed.size() == 0) {
+                // A 2xx without a matching set ID has made no progress.
+                fails += 1;
+                nextAt = now() + Logic.backoffSecs(fails);
+                WatchUi.requestUpdate();
+                return;
+            }
             fails = 0;
             nextAt = 0;
-            var changed = Logic.applyResult(sets, data);
             keepResult(sid, data);
             for (var i = 0; i < changed.size(); i++) {
                 Store.putSet(sid, changed[i], sets[changed[i]]);
             }
             Store.put("ls", now());
-            if (changed.size() == 0) {
-                // A 2xx that acknowledged none of our sets: don't spin on it.
-                fails = 1;
-                nextAt = now() + Logic.backoffSecs(fails);
-            } else if (Logic.pendingCount(sets) == 0) {
+            if (Logic.pendingCount(sets) == 0) {
                 retire(sid, sets);
                 // The finished workout moved GRIND's "up next": fetch it, so
                 // Home stops offering the day that was just done.

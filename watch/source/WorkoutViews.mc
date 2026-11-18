@@ -97,7 +97,7 @@ class SetView extends TickView {
         // Set count and the whole rep target on one line; the target is
         // never cut off (shorter forms drop words, never numbers).
         var sn = "Set " + c["sn"] + "/" + e["sets"];
-        if (Workout.setRunning()) {
+        if (Workout.setRunning() && c["editRow"] == null) {
             sn += "  " + Logic.fmtDuration(Logic.clamp(Workout.now() - c["setAt"], 0, 86400));
         }
         var bare = Logic.bareTarget(e);
@@ -105,7 +105,7 @@ class SetView extends TickView {
             [sn + "  ·  " + Logic.repsText(e), sn + "  ·  " + bare, sn], Config.FG);
         // Below it: the planned weight when you're off it, else what START does
         // while that's not obvious.
-        var action = Workout.setRunning() ? "START to finish set"
+        var action = c["editRow"] != null ? "START to save edit" : Workout.setRunning() ? "START to finish set"
             : (c["f"] == 0 ? "START for reps" : "START to begin set");
         Draw.line(dc, 0.845, [Graphics.FONT_XTINY], action, Config.DIM);
         Draw.segments(dc, Workout.sets.size(), Workout.totalSets(), Config.ACCENT);
@@ -117,27 +117,36 @@ class SetView extends TickView {
 class SetDelegate extends WatchUi.BehaviorDelegate {
     function initialize() { BehaviorDelegate.initialize(); }
 
+    function current() {
+        if (!Workout.active() || Workout.inRest() || Workout.atSummary()) { return null; }
+        var v = WatchUi.getCurrentView()[0];
+        return v instanceof SetView ? v : null;
+    }
+
     function bump(dir) {
-        Workout.adjust(dir);
+        var v = current();
+        if (v == null) { return true; }
+        Workout.adjust(dir, v.displayedOffer);
         WatchUi.requestUpdate();
         return true;
     }
 
     // START confirms weight, begins the set, then logs the finished set.
     function onSelect() {
+        var view = current();
+        if (view == null) { return true; }
         if (!Workout.setRunning() && Workout.cur["f"] == 0) {
             Workout.setFocus(1);
             WatchUi.requestUpdate();
             return true;
         }
         if (!Workout.setRunning()) {
+            view.displayedOffer = null;
             Workout.beginSet();
             Nav.buzz(55);
             WatchUi.requestUpdate();
             return true;
         }
-        var view = WatchUi.getCurrentView()[0];
-        if (!(view instanceof SetView)) { return true; }
         Workout.logDisplayedSet(view.displayedOffer);
         Nav.buzz(120);
         Nav.show();
@@ -157,6 +166,7 @@ class SetDelegate extends WatchUi.BehaviorDelegate {
     // Center zone, three columns: left quarter -1, right quarter +1, and the
     // numbers in the middle switch between weight and reps.
     function onTap(evt) {
+        if (current() == null) { return true; }
         var xy = evt.getCoordinates();
         var size = System.getDeviceSettings().screenWidth;
         var y = xy[1].toFloat() / size;
@@ -238,6 +248,7 @@ class RestDelegate extends WatchUi.BehaviorDelegate {
     }
 
     function skip() {
+        if (!Workout.inRest()) { return true; }
         Workout.endRest();
         Nav.buzz(60);
         Nav.show();
@@ -357,7 +368,7 @@ class SummaryDelegate extends WatchUi.BehaviorDelegate {
 
     function onSelect() {
         var v = current();
-        return act(v == null ? 0 : v.sel);
+        return v == null ? true : act(v.sel);
     }
 
     function onPreviousPage() { return toggle(); }

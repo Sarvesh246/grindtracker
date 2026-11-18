@@ -62,6 +62,7 @@ class GrindApp extends Application.AppBase {
     // while a workout is open. Every 30 s: sync.
     function onTick() {
         ticks += 1;
+        Reps.checkDelivery(System.getTimer());
         var v = Clock.view;
         if (v != null) { v.onSecond(); }
         if (ticks % Config.HR_STEP == 0 && Workout.active() && !Workout.awaitingResume && !Workout.atSummary()) {
@@ -75,7 +76,7 @@ class GrindApp extends Application.AppBase {
 
     function onTour() {
         Tour.next();
-        if (Tour.step >= 16) { tour.stop(); }
+        if (Tour.step >= Tour.LAST_STEP) { tour.stop(); }
     }
 
     function onStop(state) {

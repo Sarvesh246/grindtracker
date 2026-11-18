@@ -39,38 +39,56 @@ module Store {
     // { date, unit, id, name, ex: [...] } for a workout day, or
     // { date, unit, reason } when nothing is planned.
     function trimPlan(data) {
+        if (!(data["date"] instanceof Lang.String) || !("lbs".equals(data["unit"]) || "kg".equals(data["unit"]))) { return null; }
         var out = { "date" => data["date"], "unit" => data["unit"] };
         var w = data["workout"];
         if (w instanceof Lang.Dictionary) {
+            if (!(w["id"] instanceof Lang.String) || !(w["name"] instanceof Lang.String)
+                || !(w["exercises"] instanceof Lang.Array)) { return null; }
             out["id"] = w["id"];
             out["name"] = w["name"];
             var ex = [];
             var src = w["exercises"];
-            if (src instanceof Lang.Array) {
-                for (var i = 0; i < src.size(); i++) {
-                    var e = src[i];
-                    ex.add({
-                        "id" => e["id"], "name" => e["name"], "sets" => e["sets"],
-                        "reps" => e["reps"], "reps_max" => e["reps_max"],
-                        "weight" => e["weight"], "rest" => e["rest"]
-                    });
-                }
+            for (var i = 0; i < src.size(); i++) {
+                var e = src[i];
+                if (!(e instanceof Lang.Dictionary) || !(e["id"] instanceof Lang.String)
+                    || !(e["name"] instanceof Lang.String) || !(e["sets"] instanceof Lang.Number)
+                    || e["sets"] > 100) { return null; }
+                // A zero-set exercise has nothing to log. Leave it out rather
+                // than refuse the whole day.
+                if (e["sets"] < 1) { continue; }
+                if (!optionalCount(e["reps"]) || !optionalCount(e["reps_max"])
+                    || (e["rest"] != null && !(e["rest"] instanceof Lang.Number))) { return null; }
+                var weight = e["weight"];
+                if (weight != null && !(weight instanceof Lang.Number || weight instanceof Lang.Float || weight instanceof Lang.Double)) { return null; }
+                if (weight != null && (weight < 0 || weight > 2000)) { return null; }
+                ex.add({
+                    "id" => e["id"], "name" => e["name"], "sets" => e["sets"],
+                    "reps" => e["reps"], "reps_max" => e["reps_max"],
+                    "weight" => e["weight"], "rest" => e["rest"]
+                });
             }
             out["ex"] = ex;
         } else {
+            if (w != null || !data.hasKey("workout")) { return null; }
             out["reason"] = data["reason"];
         }
         return out;
     }
 
+    function optionalCount(n) { return n == null || (n instanceof Lang.Number && n >= 0 && n <= 1000); }
+
     // The default response (the day GRIND says is up next). Also keeps the
     // list of days for the picker, and the plan under its own day key.
     function cacheToday(data) {
         var out = trimPlan(data);
+        if (out == null) { return false; }
         var d = data["days"];
         if (d instanceof Lang.Array) {
             var dy = [];
             for (var i = 0; i < d.size(); i++) {
+                if (!(d[i] instanceof Lang.Dictionary) || !(d[i]["id"] instanceof Lang.String)
+                    || !(d[i]["name"] instanceof Lang.String)) { continue; }
                 dy.add({ "id" => d[i]["id"], "name" => d[i]["name"] });
             }
             out["dy"] = dy;
@@ -79,7 +97,8 @@ module Store {
         var b = data["body"];
         if (b instanceof Lang.Dictionary) {
             var c = b["charge"];
-            if (c instanceof Lang.Dictionary) {
+            if (c instanceof Lang.Dictionary && c["score"] instanceof Lang.Number && c["label"] instanceof Lang.String
+                && (c["advice"] == null || c["advice"] instanceof Lang.String)) {
                 out["ch"] = { "s" => c["score"], "b" => c["band"], "l" => c["label"], "a" => c["advice"] };
             }
             out["sr"] = b["smart_rest"] == true;
@@ -87,12 +106,15 @@ module Store {
         put("wk", out);
         put("wkAt", Time.now().value());
         if (out["id"] != null) { put("wk_" + out["id"], out); }
+        return true;
     }
 
     // A day the user picked (GET /today?day=...). The default stays as is.
     function cacheDay(data) {
         var out = trimPlan(data);
-        if (out["id"] != null) { put("wk_" + out["id"], out); }
+        if (out == null || out["id"] == null) { return false; }
+        put("wk_" + out["id"], out);
+        return true;
     }
 
     function isToday(w) {
@@ -180,14 +202,18 @@ module Store {
     }
 
     function dropSession(sid) {
-        for (var i = 0; true; i++) {
-            var k = "t_" + sid + "_" + i;
-            if (get(k) == null) { break; }
-            del(k);
-        }
-        del("m_" + sid);
-        for (var i = 0; get("hc_" + sid + "_" + i) != null; i++) { del("hc_" + sid + "_" + i); }
+        dropSequence("t_" + sid + "_");
+        dropSequence("hc_" + sid + "_");
         del("h_" + sid);
+        del("m_" + sid);
+    }
+
+    // Deleting from the tail keeps the remaining prefix discoverable if
+    // power is lost during cleanup.
+    function dropSequence(prefix) {
+        var end = 0;
+        while (get(prefix + end) != null) { end++; }
+        while (end > 0) { end--; del(prefix + end); }
     }
 
     function enqueue(sid) { put("q", Logic.qAdd(queue(), sid)); }

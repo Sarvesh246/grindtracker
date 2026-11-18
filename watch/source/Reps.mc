@@ -6,7 +6,7 @@ using Toybox.System;
 using Toybox.Timer;
 using Toybox.WatchUi;
 
-// Counts reps from wrist motion while a set or rest screen is up, and offers
+// Counts reps from wrist motion between START and finish, and offers
 // the count on the set screen. A port of tools/reps.mjs, which explains the
 // method and is where it gets tuned (against tools/repsim.mjs). Keep the two
 // in step: same constants, same steps, same order.
@@ -57,6 +57,8 @@ module Reps {
     const PREVIEW_EVERY = 3;  // sensor batches between in-set estimates
     const PAIR_BUDGET = 256;   // maximum correlation pairs per timer callback
     const SAMPLE_BUDGET = 128; // maximum filter samples per timer callback
+    const SETTLED_MS = 30;     // work per 50 ms timer period once the wrist is still
+    const SETTLED_STEPS = 40;
 
     // --- live state -------------------------------------------------------
     var bx = [];
@@ -72,9 +74,12 @@ module Reps {
     var sawMotion = false;
     var interrupted = false;
     var lastBatch = null;
+    var listenerAt = null;
     var lastSample = null;
     var revision = 0;
     var jobRevision = 0;
+    var jobSettled = false;    // the running analysis began with the wrist still
+    var countSettled = false;  // `count` came from such an analysis
     var offeredRevision = 0;
     var batches = 0;
     var lastResult = null;
@@ -99,6 +104,7 @@ module Reps {
     function setEnabled(on) {
         Store.put("rc", on);
         if (!on) { stop(); clearMotion(); }
+        if (Workout.setRunning()) { takeOver(); }
     }
 
     // A new set: forget the motion so far.
@@ -113,6 +119,8 @@ module Reps {
         bx = []; by = []; bz = []; bs = [];
         carry = null;
         count = null;
+        countSettled = false;
+        jobSettled = false;
         dirty = false;
         movingBatches = 0;
         sawMotion = false;
@@ -127,7 +135,7 @@ module Reps {
     }
 
     function takeOver() {
-        cancelAnalysis();
+        stop();
         manual = true;
     }
 
@@ -137,6 +145,7 @@ module Reps {
             System.println("reps: " + reason + " (" + detail + ") after " + batches + " batches");
         }
         clearMotion();
+        if (interrupted) { stop(); }
         sensorStatus = reason;
     }
 
@@ -148,7 +157,7 @@ module Reps {
     }
 
     function start() {
-        if (listening || (Config.DEMO_DATA && Config.TOUR) || !enabled()) { return; }
+        if (listening || manual || interrupted || (Config.DEMO_DATA && Config.TOUR) || !enabled()) { return; }
         try {
             if (!(Sensor has :registerSensorDataListener)) {
                 sensorStatus = "unavailable";
@@ -167,6 +176,7 @@ module Reps {
                 :accelerometer => { :enabled => true, :sampleRate => RATE, :includeTimestamps => true }
             });
             listening = true;
+            listenerAt = System.getTimer();
             sensorStatus = "waiting";
             System.println("reps: listening at " + RATE + " Hz (max " + maxRate + ")");
         } catch (e) {
@@ -178,11 +188,24 @@ module Reps {
 
     function stop() {
         cancelAnalysis();
+        listenerAt = null;
         if (!listening) { return; }
         System.println("reps: stopped" + diagnostics());
         listening = false;
         sensorStatus = "idle";
         try { Sensor.unregisterSensorDataListener(); } catch (e) { }
+    }
+
+    // A listener can stop delivering without issuing another callback. Allow
+    // delayed delivery, but retire an estimate when its stream goes silent.
+    function checkDelivery(now) {
+        if (!listening || interrupted || manual) { return; }
+        var last = lastBatch == null ? listenerAt : lastBatch;
+        if (last == null || now - last <= 6 * BATCH_MS) { return; }
+        inputGap("sensor timeout", now - last);
+        interrupted = true;
+        stop();
+        sensorStatus = "sensor timeout";
     }
 
     function stepsNow() {
@@ -230,6 +253,13 @@ module Reps {
         // The classifier expects 25 Hz before pair averaging. Suppress
         // counts when the reported cadence is substantially different.
         if (time != null) {
+            for (var j = 1; j < n; j++) {
+                var spacing = time[j] - time[j - 1];
+                if (spacing <= 0 || spacing > 200) {
+                    inputGap("invalid sample interval", spacing);
+                    return;
+                }
+            }
             var averageMs = (time[n - 1] - time[0]).toFloat() / (n - 1);
             if (averageMs < 32.0 || averageMs > 50.0) {
                 inputGap("unexpected sample spacing", averageMs);
@@ -265,8 +295,15 @@ module Reps {
             if (movingBatches >= 2 && revision - offeredRevision >= PREVIEW_EVERY) { count = null; }
             if (revision % PREVIEW_EVERY == 0) { update(); }
         } else {
-            if (movingBatches > 0 && job != null && revision - jobRevision >= PREVIEW_EVERY) {
-                cancelAnalysis();
+            if (movingBatches > 0) {
+                // Analyze the settled endpoint. A preview taken during the
+                // lift can omit its last rep, even when its rhythm is clear.
+                // A settled count survives a glance at the watch (one or two
+                // moving batches) while the re-check runs, so raising the
+                // wrist to read the number never blanks it.
+                if (job != null) { cancelAnalysis(); }
+                dirty = true;
+                if (!countSettled || movingBatches > 2) { count = null; }
             }
             movingBatches = 0;
             update();
@@ -313,6 +350,7 @@ module Reps {
         if (manual || interrupted || job != null || !dirty || !listening || bx.size() < 48) { return; }
         dirty = false;
         jobRevision = revision;
+        jobSettled = movingBatches == 0;
         // The sensor keeps appending while this snapshot is being analyzed.
         job = new RepAnalysis(ordered(bx), ordered(by), ordered(bz), ordered(bs), clipped);
         worker = new Timer.Timer();
@@ -321,13 +359,22 @@ module Reps {
 
     function advanceAnalysis() {
         if (manual || !listening || job == null) { cancelAnalysis(); return; }
+        // Once the wrist is still, the settled count is what the user is
+        // waiting to read: spend most of each timer period on it. A step is
+        // a few milliseconds of bounded work, so a callback stays far below
+        // the watchdog. Mid-lift previews take one step per period.
+        var startMs = System.getTimer();
         var result = job.step();
+        for (var i = 1; result == null && movingBatches == 0 && i < SETTLED_STEPS
+                && System.getTimer() - startMs < SETTLED_MS; i++) {
+            result = job.step();
+        }
         if (result == null) { return; }
         lastResult = result;
         cancelAnalysis();
         var fresh = revision - jobRevision < PREVIEW_EVERY;
         var offered = result[1] && fresh ? result[0] : null;
-        if (offered != null) { offeredRevision = jobRevision; }
+        if (offered != null) { offeredRevision = jobRevision; countSettled = jobSettled; }
         if (count != offered) {
             count = offered;
             WatchUi.requestUpdate();
@@ -680,8 +727,8 @@ module Reps {
     }
 }
 
-// Each step returns to the event loop before the next filter or correlation
-// batch. Even a full motion buffer cannot monopolize a sensor callback.
+// Each step processes a bounded part of a filter or correlation. The timer
+// worker checks how long it has run between steps.
 class RepAnalysis {
     var x; var y; var z; var steps;
     var ranges; var index = 0; var all = [];

@@ -73,7 +73,7 @@ module Hr {
     function advance(t) {
         var age = t - pend["t"];
         if (!pend["pkDone"]) {
-            if (now > pend["pk"]) { pend["pk"] = now; }
+            if (age <= 20 && now > pend["pk"]) { pend["pk"] = now; }
             if (age >= 20) {
                 pend["pkDone"] = true;
                 lastPeak = pend["pk"];
@@ -81,14 +81,19 @@ module Hr {
             }
         }
         if (age >= 60) {
-            patchSet(pend["i"], "hd", pend["pk"] - now);
+            if (age < 60 + Config.HR_STEP) { patchSet(pend["i"], "hd", pend["pk"] - now); }
             pend = null;
         }
     }
 
+    function closeRecovery() {
+        if (pend != null && !pend["pkDone"]) { patchSet(pend["i"], "hp", pend["pk"]); }
+        pend = null;
+    }
+
     function onSetLogged(i, t) {
         if (sid == null) { return; }
-        if (pend != null && !pend["pkDone"]) { patchSet(pend["i"], "hp", pend["pk"]); }
+        closeRecovery();
         var j = idx(t);
         var pk = Logic.peakIn(trace, j - 60 / Config.HR_STEP, j);
         if (now != null && (pk == null || now > pk)) { pk = now; }
@@ -131,7 +136,7 @@ module Hr {
 
     // Save: keep the record for upload. Discard: Store.dropSession removes it.
     function end(keep) {
-        if (keep && pend != null && !pend["pkDone"]) { patchSet(pend["i"], "hp", pend["pk"]); }
+        if (keep) { closeRecovery(); }
         if (keep) { save(); }
         sid = null; trace = null; zs = null; pend = null; now = null;
     }

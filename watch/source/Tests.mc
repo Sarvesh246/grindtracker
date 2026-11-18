@@ -9,6 +9,16 @@ using Toybox.System;
 // Helpers live in a module: a bare (:test) function is run as a test.
 (:test)
 module T {
+    function completeSet() {
+        if (!Workout.setRunning()) { Workout.beginSet(); }
+        return Workout.logDisplayedSet(Reps.offer());
+    }
+
+    function startPress(rest) {
+        Workout.start({ "id" => "push", "name" => "Push", "unit" => "lbs", "ex" => [
+            { "id" => "e", "name" => "Press", "sets" => 2, "reps" => 10, "weight" => 95, "rest" => rest }
+        ] });
+    }
     function ck(logger, name, cond) {
         if (!cond) { logger.error("FAILED: " + name); }
         return cond;
@@ -210,14 +220,14 @@ function testWorkoutFlow(logger) {
     var sid = Workout.cur["sid"];
     var ok = T.ck(logger, "prefilled from target", Workout.cur["w"] == 135.0 && Workout.cur["r"] == 12 && Workout.cur["f"] == 0);
     ok = T.ck(logger, "total", Workout.totalSets() == 4 && Workout.progress() == 0.0) && ok;
-    Workout.adjust(1);
+    Workout.adjust(1, null);
     ok = T.ck(logger, "weight step", Workout.cur["w"] == 135.0 + Config.WEIGHT_STEP) && ok;
-    Workout.adjust(-1);
+    Workout.adjust(-1, null);
     Workout.setFocus(1);
-    Workout.adjust(1);
+    Workout.adjust(1, null);
     ok = T.ck(logger, "reps step", Workout.cur["r"] == 13) && ok;
 
-    ok = T.ck(logger, "first set not last", !Workout.logSet()) && ok;
+    ok = T.ck(logger, "first set not last", !T.completeSet()) && ok;
     // Simulate the set reaching storage before the cursor advance.
     Workout.cur["dn"][0] = 0; Workout.cur["sn"] = 1; Workout.saveCur();
     Workout.load();
@@ -237,7 +247,7 @@ function testWorkoutFlow(logger) {
     ok = T.ck(logger, "recovered", Workout.active() && Workout.cur["sid"].equals(sid) && Workout.sets.size() == 1
         && Workout.cur["sn"] == 2 && Workout.sets[0]["r"] == 13 && Workout.sets[0]["n"] == 1) && ok;
 
-    ok = T.ck(logger, "second set moves on", !Workout.logSet()) && ok;
+    ok = T.ck(logger, "second set moves on", !T.completeSet()) && ok;
     ok = T.ck(logger, "next exercise defaults", Workout.cur["ei"] == 1 && Workout.cur["sn"] == 1
         && Workout.cur["w"] == 0.0 && Workout.cur["r"] == 8 && Workout.cur["f"] == 0) && ok;
     ok = T.ck(logger, "rest from finished exercise", Workout.cur["rd"] == 60) && ok;
@@ -263,7 +273,7 @@ function testWorkoutFlow(logger) {
     Workout.start(plan);
     sid = Workout.cur["sid"];
     Workout.setFocus(1);
-    Workout.logSet();
+    T.completeSet();
     Workout.finish(false);
     ok = T.ck(logger, "discarded", !Workout.active() && Store.sets(sid).size() == 0 && Store.meta(sid) == null
         && Store.queue().indexOf(sid) < 0) && ok;
@@ -342,7 +352,7 @@ function testExerciseOrder(logger) {
     Workout.choose(2); // preacher curls before face pulls
     ok = T.ck(logger, "jumped", Workout.cur["ei"] == 2 && Workout.cur["sn"] == 1 && Workout.cur["r"] == 12 && Workout.cur["w"] == 50.0) && ok;
     Workout.setFocus(1);
-    Workout.logSet();
+    T.completeSet();
     ok = T.ck(logger, "wraps to first unfinished", Workout.cur["ei"] == 0 && Workout.cur["dn"][2] == 1) && ok;
     Workout.endRest();
 
@@ -354,19 +364,19 @@ function testExerciseOrder(logger) {
     ok = T.ck(logger, "undo skip", Workout.cur["ei"] == 0 && !Workout.isSkipped(0) && Workout.totalSets() == 4) && ok;
 
     Workout.setFocus(1);
-    Workout.logSet(); Workout.endRest();
+    T.completeSet(); Workout.endRest();
     ok = T.ck(logger, "same exercise next set", Workout.cur["ei"] == 0 && Workout.cur["sn"] == 2 && Workout.cur["f"] == 1) && ok;
-    Workout.logSet(); Workout.endRest();
+    T.completeSet(); Workout.endRest();
     ok = T.ck(logger, "then face pulls", Workout.cur["ei"] == 1) && ok;
     Workout.setFocus(1);
-    ok = T.ck(logger, "last set ends it", Workout.logSet() && Workout.atSummary() && Workout.progress() == 1.0) && ok;
+    ok = T.ck(logger, "last set ends it", T.completeSet() && Workout.atSummary() && Workout.progress() == 1.0) && ok;
     ok = T.ck(logger, "set numbers per exercise", Workout.sets[0]["n"] == 1 && Workout.sets[1]["n"] == 1
         && Workout.sets[2]["n"] == 2 && Workout.sets[3]["n"] == 1) && ok;
 
     // All remaining work is skipped and the current exercise is complete.
     Workout.finish(false);
     Workout.start(plan);
-    Workout.skipExercise(); Workout.skipExercise(); Workout.logSet();
+    Workout.skipExercise(); Workout.skipExercise(); T.completeSet();
     Workout.leaveSummary();
     ok = T.ck(logger, "resume selects unfinished exercise", !Workout.isDone(Workout.cur["ei"])
         && !Workout.isSkipped(Workout.cur["ei"])) && ok;
@@ -446,10 +456,10 @@ function testUndoSet(logger) {
     var sid = Workout.cur["sid"];
     var ok = T.ck(logger, "nothing to undo", !Workout.undoSet() && Workout.lastSetLabel() == null);
     Workout.setFocus(1);
-    Workout.logSet();
+    T.completeSet();
     Workout.endRest();
     Workout.cur["r"] = 6;
-    Workout.logSet(); // bench done -> resting before dips
+    T.completeSet(); // bench done -> resting before dips
     ok = T.ck(logger, "label", Workout.lastSetLabel().equals("135 x 6  Bench Press")) && ok;
     ok = T.ck(logger, "undo", Workout.undoSet()) && ok;
     ok = T.ck(logger, "back on bench set 2", Workout.cur["ei"] == 0 && Workout.cur["sn"] == 2 && Workout.cur["dn"][0] == 1
@@ -460,12 +470,12 @@ function testUndoSet(logger) {
     Workout.load();
     ok = T.ck(logger, "reloaded", Workout.sets.size() == 1 && Workout.cur["sn"] == 2 && Workout.cur["dn"][0] == 1) && ok;
     Workout.cur["r"] = 7;
-    Workout.logSet();
+    T.completeSet();
     ok = T.ck(logger, "re-logged with same number", Workout.sets.size() == 2 && Workout.sets[1]["n"] == 2 && Workout.sets[1]["r"] == 7) && ok;
     Workout.endRest();
     // Undo from the summary reopens the workout.
     Workout.cur["r"] = 10;
-    ok = T.ck(logger, "dips ends it", Workout.logSet() && Workout.atSummary()) && ok;
+    ok = T.ck(logger, "dips ends it", T.completeSet() && Workout.atSummary()) && ok;
     ok = T.ck(logger, "bodyweight label", Workout.lastSetLabel().equals("BW x 10  Dips")) && ok;
     Workout.undoSet();
     ok = T.ck(logger, "summary undone", !Workout.atSummary() && Workout.cur["ei"] == 1 && Workout.totalSets() == 3) && ok;
@@ -716,23 +726,77 @@ function testRepSensorCallbackFlow(logger) {
     return ok;
 }
 
+module GlanceFx {
+    // One 25 Hz batch, continuing the timestamps after `at` samples. `rise`
+    // turns the wrist toward the face across the batch; otherwise it holds.
+    function batch(at, rise, hold) {
+        var xs = []; var ys = []; var zs = []; var ts = [];
+        for (var i = 0; i < Reps.RATE; i++) {
+            var tilt = rise ? 1.3 * (i + 1) / Reps.RATE : hold;
+            xs.add((1000 * Math.sin(tilt)).toNumber());
+            ys.add(0);
+            zs.add((1000 * Math.cos(tilt)).toNumber());
+            ts.add((at + i) * 40);
+        }
+        Reps.onSamples(xs, ys, zs, ts, (at + Reps.RATE) * 40, 0);
+    }
+}
+
+(:test)
+function testSettledCountSurvivesGlance(logger) {
+    Reps.reset();
+    Reps.listening = true;
+    var data = RepFx.curl(8, false);
+    var samples = data[0].size() * 2;
+    for (var start = 0; start < samples; start += Reps.RATE) {
+        var xs = []; var ys = []; var zs = []; var ts = [];
+        for (var i = start; i < Reps.imin(samples, start + Reps.RATE); i++) {
+            xs.add((1000 * data[0][i / 2]).toNumber());
+            ys.add((1000 * data[1][i / 2]).toNumber());
+            zs.add((1000 * data[2][i / 2]).toNumber());
+            ts.add(i * 40);
+        }
+        Reps.onSamples(xs, ys, zs, ts, start * 40, 0);
+        for (var j = 0; j < 20 && Reps.job != null; j++) { Reps.advanceAnalysis(); }
+    }
+    for (var i = 0; i < 500 && Reps.job != null; i++) { Reps.advanceAnalysis(); }
+    var ok = T.ck(logger, "settled count offered", Reps.offer() == 8 && Reps.countSettled);
+    var at = samples;
+    GlanceFx.batch(at, true, 0.0);
+    ok = T.ck(logger, "count shown while raising the wrist", Reps.offer() == 8) && ok;
+    GlanceFx.batch(at + Reps.RATE, false, 1.3);
+    ok = T.ck(logger, "count still shown while the re-check runs", Reps.offer() == 8 && Reps.job != null) && ok;
+    for (var i = 0; i < 500 && Reps.job != null; i++) { Reps.advanceAnalysis(); }
+    ok = T.ck(logger, "re-check keeps eight", Reps.offer() == 8) && ok;
+    // A count from a mid-lift preview can miss the last rep: settling drops it.
+    Reps.cancelAnalysis();
+    Reps.count = 5; Reps.countSettled = false; Reps.movingBatches = 1;
+    GlanceFx.batch(at + 2 * Reps.RATE, false, 1.3);
+    ok = T.ck(logger, "preview count withdrawn at settle", Reps.offer() == null) && ok;
+    Reps.reset();
+    Reps.listening = false;
+    return ok;
+}
+
 (:test)
 function testRepOfferDoesNotCarryForward(logger) {
     Workout.start({ "id" => "push", "name" => "Push", "unit" => "lbs", "ex" => [
         { "id" => "e", "name" => "Bench", "sets" => 3, "reps" => 12, "weight" => 135.0, "rest" => 0 }
     ] });
     Workout.setFocus(1);
+    Workout.beginSet();
     Reps.count = 8;
-    Workout.logSet();
+    T.completeSet();
     var ok = T.ck(logger, "offer saved, next set keeps planned reps, no rest screen",
         Workout.sets[0]["r"] == 8 && Workout.cur["r"] == 12 && !Workout.inRest());
     Workout.cur["dn"][0] = 0; Workout.cur["sn"] = 1; Workout.saveCur();
     Workout.load();
     ok = T.ck(logger, "recovery retains fallback reps", Workout.cur["sn"] == 2 && Workout.cur["r"] == 12) && ok;
+    Workout.beginSet();
     Reps.count = 9;
-    Workout.adjust(1);
+    Workout.adjust(1, 9);
     ok = T.ck(logger, "manual adjustment starts from the offer", Workout.cur["r"] == 10 && Reps.offer() == null) && ok;
-    Workout.logSet();
+    T.completeSet();
     Workout.undoSet();
     Reps.count = 7;
     ok = T.ck(logger, "undo retains reps for correction", Workout.cur["r"] == 10 && Reps.offer() == null) && ok;
@@ -742,10 +806,8 @@ function testRepOfferDoesNotCarryForward(logger) {
 
 (:test)
 function testExplicitSetWindow(logger) {
-    Workout.start({ "id" => "push", "name" => "Push", "unit" => "lbs", "ex" => [
-        { "id" => "e", "name" => "Press", "sets" => 2, "reps" => 10, "weight" => 95, "rest" => 60 }
-    ] });
-    var input = new SetDelegate();
+    T.startPress(60);
+    var input = new TestSetDelegate();
     input.onSelect();
     var ok = T.ck(logger, "weight confirmation only focuses reps", !Workout.setRunning() && Workout.cur["f"] == 1);
     input.onSelect();
@@ -759,10 +821,186 @@ function testExplicitSetWindow(logger) {
     Workout.beginSet();
     Workout.load(); Workout.resume();
     ok = T.ck(logger, "recovered open set uses manual reps", Workout.setRunning() && Reps.manual) && ok;
-    Workout.logSet();
+    T.completeSet();
     ok = T.ck(logger, "last finish opens summary", Workout.atSummary() && Workout.sets.size() == 2) && ok;
     Workout.finish(false);
     return ok;
+}
+
+(:test)
+class TestSetDelegate extends SetDelegate {
+    var view;
+    function initialize() { SetDelegate.initialize(); view = new SetView(); }
+    function current() { return view; }
+}
+
+(:test)
+function testDisplayedRepCorrections(logger) {
+    T.startPress(0);
+    Workout.beginSet();
+    var input = new TestSetDelegate();
+    input.view.displayedOffer = 8;
+    Reps.count = 10;
+    input.bump(1);
+    var ok = T.ck(logger, "corrects visible eight to nine", Workout.cur["r"] == 9 && Reps.manual && !Reps.listening);
+    input.bump(1);
+    ok = T.ck(logger, "second press before redraw increments again", Workout.cur["r"] == 10) && ok;
+    Workout.logDisplayedSet(8);
+    ok = T.ck(logger, "finish before redraw saves latest manual edit", Workout.sets[0]["r"] == 10) && ok;
+    Workout.logDisplayedSet(8);
+    ok = T.ck(logger, "duplicate finish cannot log the next zero-rest set", Workout.sets.size() == 1) && ok;
+    Workout.beginSet();
+    input.view.displayedOffer = null;
+    Reps.count = 6;
+    input.bump(-1);
+    ok = T.ck(logger, "unseen estimate cannot replace the visible fallback", Workout.cur["r"] == 9) && ok;
+    Workout.finish(false);
+    return ok;
+}
+
+(:test)
+function testRestRecoveryAndStrayInput(logger) {
+    T.startPress(60);
+    T.completeSet();
+    var input = new SetDelegate();
+    input.onSelect();
+    Workout.cur["r0"] = Workout.now() - 3600;
+    Workout.cur["re"] = Workout.cur["r0"] + 60;
+    Workout.saveCur();
+    Workout.load(); Workout.resume();
+    var ok = T.ck(logger, "expired rest restores next setup and records only the scheduled minute",
+        !Workout.inRest() && !Workout.setRunning() && Workout.cur["rs"] == 60 && Workout.sets.size() == 1);
+    Workout.endRest(); Workout.adjustRest(15);
+    ok = T.ck(logger, "stray rest actions leave the next setup intact", Workout.cur["rs"] == 60 && !Workout.inRest()) && ok;
+    T.completeSet();
+    input.onSelect();
+    Workout.finish(false);
+    input.onSelect();
+    return T.ck(logger, "stale set inputs after finish do not restart a workout", !Workout.active()) && ok;
+}
+
+(:test)
+function testRepSettingsDuringSet(logger) {
+    var previous = Reps.enabled();
+    T.startPress(0);
+    Workout.beginSet();
+    Reps.count = 6;
+    Reps.setEnabled(false); Reps.setEnabled(true);
+    Reps.start();
+    var ok = T.ck(logger, "partial set stays manual after off then on", Reps.manual && !Reps.listening && Reps.offer() == null);
+    T.completeSet(); Workout.beginSet();
+    ok = T.ck(logger, "next full set is eligible for counting", !Reps.manual && !Reps.interrupted && Reps.enabled()) && ok;
+    Workout.finish(false); Reps.setEnabled(previous);
+    return ok;
+}
+
+(:test)
+function testSensorDeliveryFailures(logger) {
+    var a = []; var ts = [];
+    for (var i = 0; i < Reps.RATE; i++) { a.add(100); ts.add(40 * i + (i >= 12 ? 180 : 0)); }
+    Reps.reset(); Reps.listening = true; Reps.sawMotion = true; Reps.count = 8;
+    Reps.onSamples(a, a, a, ts, 2000, 0);
+    var ok = T.ck(logger, "internal 220ms dropout despite valid mean interval", Reps.interrupted && Reps.count == null && !Reps.listening);
+    Reps.reset(); Reps.listening = true; Reps.lastBatch = 1000; Reps.sawMotion = true; Reps.count = 7;
+    Reps.checkDelivery(6000);
+    ok = T.ck(logger, "late callbacks have a grace period", Reps.offer() == 7) && ok;
+    Reps.checkDelivery(9000);
+    ok = T.ck(logger, "silent stream retires stale count without another callback", Reps.offer() == null && Reps.interrupted && !Reps.listening) && ok;
+    Reps.reset(); Reps.listening = true; Reps.listenerAt = 5000;
+    Reps.checkDelivery(12000);
+    ok = T.ck(logger, "listener with no first sample leaves waiting", Reps.interrupted && !Reps.listening) && ok;
+    Reps.reset();
+    return ok;
+}
+
+(:test)
+function testMalformedPlanKeepsCache(logger) {
+    var data = { "date" => Logic.localDate(), "unit" => "lbs", "workout" => {
+        "id" => "audit", "name" => "Push", "exercises" => [
+            { "id" => "p", "name" => "Press", "sets" => 2, "weight" => 42.5 }
+        ] }, "body" => { "charge" => {} }, "days" => [null, { "id" => "audit", "name" => "Push" }] };
+    var ok = T.ck(logger, "valid workout survives malformed optional fields", Store.cacheToday(data)
+        && Store.charge() == null && Store.days().size() == 1);
+    data["workout"]["exercises"][0]["weight"] = "heavy";
+    ok = T.ck(logger, "bad numeric field preserves cached plan", !Store.cacheDay(data)
+        && Store.planFor("audit")["ex"][0]["weight"] == 42.5) && ok;
+    data["workout"]["exercises"] = [null];
+    ok = T.ck(logger, "invalid exercise cannot overwrite the default", !Store.cacheToday(data)
+        && Store.today()["ex"][0]["id"].equals("p")) && ok;
+    data["workout"]["exercises"] = [
+        { "id" => "z", "name" => "Dropped", "sets" => 0 },
+        { "id" => "q", "name" => "Row", "sets" => 3, "reps" => 10, "weight" => 95, "rest" => 90 }
+    ];
+    ok = T.ck(logger, "zero-set exercise is left out, not the whole day", Store.cacheDay(data)
+        && Store.get("wk_audit")["ex"].size() == 1 && Store.get("wk_audit")["ex"][0]["id"].equals("q")) && ok;
+    Store.del("wk"); Store.del("wk_audit"); Store.del("wkAt");
+    return ok;
+}
+
+(:test)
+function testMissingUploadAcknowledgment(logger) {
+    var net = new Net();
+    var rows = [T.sampleSet("pending", 1, 8, 95, 0)];
+    var savedSync = Store.get("ls");
+    var ok = true;
+    for (var i = 1; i <= 3; i++) {
+        net.upSid = "edge"; net.upSets = rows;
+        net.onUpload(200, { "sets" => { "accepted" => ["unrelated"] } });
+        ok = T.ck(logger, "backoff after empty acknowledgment " + i, net.fails == i
+            && net.nextAt - net.now() >= Logic.backoffSecs(i) - 1 && rows[0]["y"] == 0) && ok;
+    }
+    return T.ck(logger, "empty acknowledgments did not advance last sync", Store.get("ls") == savedSync) && ok;
+}
+
+(:test)
+function testRecoveryEndsAtNextSet(logger) {
+    T.startPress(0);
+    Workout.beginSet(); Hr.now = 150; Workout.logDisplayedSet(null);
+    Workout.beginSet();
+    var ok = T.ck(logger, "new effort ends previous recovery at its observed peak", Hr.pend == null
+        && Workout.sets[0]["hp"] == 150 && Workout.sets[0]["hd"] == null);
+    Workout.logDisplayedSet(null);
+    Hr.now = 190; Hr.advance(Hr.pend["t"] + 90);
+    ok = T.ck(logger, "late HR cannot become a 20-second peak or 60-second drop",
+        Workout.sets[1]["hp"] == 150 && Workout.sets[1]["hd"] == null) && ok;
+    Workout.finish(false);
+    return ok;
+}
+
+(:test)
+function testInterruptedUndoAndCorrection(logger) {
+    T.startPress(60);
+    T.completeSet();
+    var sid = Workout.cur["sid"];
+    var row = Workout.sets[0];
+    row["t"] -= 35;
+    row["hp"] = 140;
+    Store.putSet(sid, 0, row);
+    Workout.undoSet();
+    // Restore the durable midpoint between recording intent and removing the row.
+    Store.putSet(sid, 0, row);
+    Workout.cur["removeAt"] = 0; Workout.saveCur();
+    Workout.load(); Workout.resume();
+    var ok = T.ck(logger, "interrupted undo restores exactly one editable row", Workout.sets.size() == 0
+        && Store.sets(sid).size() == 0 && Workout.cur["editRow"]["id"].equals(row["id"]));
+    Workout.adjust(1, null); Workout.logDisplayedSet(null);
+    var updated = Store.sets(sid)[0];
+    ok = T.ck(logger, "correction retains ID time and measured heart rate",
+        updated["id"].equals(row["id"]) && updated["t"] == row["t"] && updated["hp"] == 140 && updated["r"] == 11
+        && Workout.restLeft() <= 25 && Workout.restLeft() >= 20) && ok;
+    Workout.finish(false);
+    return ok;
+}
+
+(:test)
+function testInterruptedDiscard(logger) {
+    T.startPress(0); T.completeSet(); T.completeSet();
+    var sid = Workout.cur["sid"];
+    Workout.meta["discard"] = true; Store.putMeta(Workout.meta);
+    Store.del("t_" + sid + "_1");
+    Workout.load();
+    return T.ck(logger, "discard resumes cleanup and cannot enqueue a partial workout", !Workout.active()
+        && Store.meta(sid) == null && Store.sets(sid).size() == 0 && Store.queue().indexOf(sid) < 0);
 }
 
 (:test)
