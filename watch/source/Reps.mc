@@ -38,7 +38,7 @@ module Reps {
     const GAP_LO = 0.6;
     const GAP_HI = 1.6;
     const CORE_LO = 0.72;
-    const CORE_HI = 1.4;
+    const CORE_HI = 1.6;
     const DUR_LO = 0.6;
     const DUR_HI = 1.7;
     const DIR_COS = 0.85;
@@ -47,7 +47,15 @@ module Reps {
     const EDGE_DUR_HI = 1.6;
     const TRAIL_DUR_HI = 2.2;
     const EDGE_COS = 0.88;
-    const CLOSE = 0.4;
+    const CLOSE = 0.5;
+    const TRIM_LEAD = 31;      // samples (2.5 s): START wrist movement to hold still
+    const TRIM_TRAIL = 19;     // samples (1.5 s): finish wrist movement to hold still
+    const TRIM_STEP = 3;
+    const BRIDGE_GAP = 0.25;   // a bridged rep's gaps vs the period
+    const BRIDGE_MIN = 4;      // strict reps a bridged chain needs
+    const TRAIL_CLOSE = 0.12;  // a disputed last rep counts when it closes this cleanly,
+    const TRAIL_GAP = 1.3;     // keeps this beat
+    const TRAIL_SIZE = 0.65;   // and is this size on the way back
     const WALK_STEPS = 5;
     const WALK_WIN = 4;
 
@@ -80,6 +88,8 @@ module Reps {
     var jobRevision = 0;
     var jobSettled = false;    // the running analysis began with the wrist still
     var countSettled = false;  // `count` came from such an analysis
+    var glanceNext = false;    // the next analysis follows a glance at a settled count
+    var jobGlance = false;     // the running analysis is that re-check
     var offeredRevision = 0;
     var batches = 0;
     var lastResult = null;
@@ -121,6 +131,8 @@ module Reps {
         count = null;
         countSettled = false;
         jobSettled = false;
+        glanceNext = false;
+        jobGlance = false;
         dirty = false;
         movingBatches = 0;
         sawMotion = false;
@@ -303,7 +315,8 @@ module Reps {
                 // wrist to read the number never blanks it.
                 if (job != null) { cancelAnalysis(); }
                 dirty = true;
-                if (!countSettled || movingBatches > 2) { count = null; }
+                glanceNext = countSettled && count != null && movingBatches <= 2;
+                if (!glanceNext) { count = null; }
             }
             movingBatches = 0;
             update();
@@ -351,6 +364,8 @@ module Reps {
         dirty = false;
         jobRevision = revision;
         jobSettled = movingBatches == 0;
+        jobGlance = glanceNext && jobSettled;
+        glanceNext = false;
         // The sensor keeps appending while this snapshot is being analyzed.
         job = new RepAnalysis(ordered(bx), ordered(by), ordered(bz), ordered(bs), clipped);
         worker = new Timer.Timer();
@@ -374,6 +389,10 @@ module Reps {
         cancelAnalysis();
         var fresh = revision - jobRevision < PREVIEW_EVERY;
         var offered = result[1] && fresh ? result[0] : null;
+        // Raising the wrist to read the count turns the watch about 90
+        // degrees, a gravity shift far larger than the reps. A re-check after
+        // such a glance can add a rep done since, never take the count away.
+        if (jobGlance && count != null && (offered == null || offered < count)) { offered = count; jobSettled = true; }
         if (offered != null) { offeredRevision = jobRevision; countSettled = jobSettled; }
         if (count != offered) {
             count = offered;
@@ -570,6 +589,67 @@ module Reps {
         return [bestLen, bestLo];
     }
 
+    // The longest chain of pairs that keeps the beat, allowing a single
+    // non-strict but rep-like pair between strict ones: [t0, t1, strict] or
+    // null. Uses the fingerprints countCycles has set.
+    function bridgeRun(pairs, keep, at, T) {
+        var ct = [];
+        var cs = [];
+        for (var j = 0; j < pairs.size(); j++) {
+            var k = pairs[j];
+            var st = keep[k] && keep[k + 1];
+            if (st || (loose(k) && loose(k + 1))) { ct.add(at[k]); cs.add(st); }
+        }
+        var best = null;
+        var i = 0;
+        while (i < ct.size()) {
+            if (!cs[i]) { i++; continue; }
+            var j = i;
+            var lastStrict = i;
+            var n = 1;
+            while (j + 1 < ct.size()) {
+                var g = ct[j + 1] - ct[j];
+                if (g < GAP_LO * T || g > GAP_HI * T) { break; }
+                if (!cs[j + 1] && !cs[j]) { break; }
+                if ((!cs[j + 1] || !cs[j]) && (g < (1 - BRIDGE_GAP) * T || g > (1 + BRIDGE_GAP) * T)) { break; }
+                j++;
+                if (cs[j]) { lastStrict = j; n++; }
+            }
+            if (n >= BRIDGE_MIN && (best == null || n > best[2])) { best = [ct[i], ct[lastStrict], n]; }
+            i = lastStrict + 1;
+        }
+        return best;
+    }
+
+    function stillBlock(x, y, z, b) {
+        var v = 0.0;
+        var axes = [x, y, z];
+        for (var k = 0; k < 3; k++) {
+            var a = axes[k];
+            var m = mean(a, b, b + BLOCK);
+            for (var i = b; i < b + BLOCK; i++) { v += (a[i] - m) * (a[i] - m); }
+        }
+        return Math.sqrt(v / BLOCK) <= MIN_MOTION;
+    }
+
+    // Hold the START wrist movements still: everything before the first
+    // still second within TRIM_LEAD of the start, and after the last still
+    // second within TRIM_TRAIL of the end. In place; bounded work.
+    function trimWindow(x, y, z) {
+        var n = x.size();
+        if (n < 2 * BLOCK) { return; }
+        for (var b = 0; b <= imin(TRIM_LEAD, n - BLOCK); b += TRIM_STEP) {
+            if (!stillBlock(x, y, z, b)) { continue; }
+            for (var i = 0; i < b; i++) { x[i] = x[b]; y[i] = y[b]; z[i] = z[b]; }
+            break;
+        }
+        for (var e = n; e - BLOCK >= imax(0, n - TRIM_TRAIL - BLOCK); e -= TRIM_STEP) {
+            if (!stillBlock(x, y, z, e - BLOCK)) { continue; }
+            for (var i = e; i < n; i++) { x[i] = x[e - 1]; y[i] = y[e - 1]; z[i] = z[e - 1]; }
+            break;
+        }
+    }
+
     function spread(t) {
         if (t.size() < 3) { return 0.0; }
         var m = 0.0;
@@ -658,12 +738,15 @@ module Reps {
                 if (keep[k] && keep[k + 1]) { strict.add(at[k]); }
             }
             var run = rhythmRun(strict, T);
+            var t0 = run[0] > 0 ? strict[run[1]] : 0;
+            var t1 = run[0] > 0 ? strict[run[1] + run[0] - 1] : 0;
+            // One off-size or off-speed rep must not split a set in two.
+            var bridged = bridgeRun(pairs, keep, at, T);
+            if (bridged != null && bridged[2] > run[0]) { t0 = bridged[0]; t1 = bridged[1]; run[0] = bridged[2]; }
             if (run[0] < 2) {
                 if (run[0] > bestN) { bestN = run[0]; bestCv = 1.0; bestT = strict.slice(run[1], run[1] + 1); bestAgree = false; }
                 continue;
             }
-            var t0 = strict[run[1]];
-            var t1 = strict[run[1] + run[0] - 1];
             var times = [];
             var first = -1;
             var last = -1;
@@ -695,6 +778,23 @@ module Reps {
                 grown.add(tt);
             }
             var agree = grown[0].size() == grown[1].size();
+            // The readings differ by one trailing rep: a slow last rep or
+            // something done after the set. A last rep closes cleanly.
+            if (!agree && grown[1].size() == grown[0].size() + 1 && grown[1][0] == grown[0][0]) {
+                var tk = -1;
+                var tEnd = grown[1][grown[1].size() - 1];
+                for (var j = 0; j < pairs.size(); j++) { if (at[pairs[j]] == tEnd) { tk = pairs[j]; break; } }
+                if (tk >= 0) {
+                    var tgap = (tEnd - grown[0][grown[0].size() - 1]) / cg.toFloat();
+                    var den = fabs(raw[ei[tk + 1]] - raw[ei[tk]]);
+                    if (den == 0) { den = 1.0; }
+                    var tcl = fabs(raw[ei[tk + 2]] - raw[ei[tk]]) / den;
+                    if (tcl <= TRAIL_CLOSE && tgap <= TRAIL_GAP && mag[tk + 1] >= TRAIL_SIZE * mm2[dI(tk + 1)]) {
+                        grown[0] = grown[1];
+                        agree = true;
+                    }
+                }
+            }
             var cnt = grown[0];
             var cv = spread(cnt);
             if (cnt.size() > bestN || (cnt.size() == bestN && cv < bestCv)) {
@@ -749,6 +849,9 @@ class RepAnalysis {
     function initialize(xs, ys, zs, walking, wasClipped) {
         x = xs; y = ys; z = zs; steps = walking;
         clipped = wasClipped;
+        // A clipped buffer no longer starts at START; leave its edge alone so
+        // a set cut by the rolling window is still withdrawn.
+        if (!clipped) { Reps.trimWindow(x, y, z); }
         if (!clipped && x.size() > 0) {
             x = withStartPosition(x); y = withStartPosition(y);
             z = withStartPosition(z); steps = withStartPosition(steps);

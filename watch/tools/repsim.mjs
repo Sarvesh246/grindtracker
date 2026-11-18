@@ -1,11 +1,25 @@
 // Synthetic wrist-accelerometer sessions for tuning the rep counter.
 //   node watch/tools/repsim.mjs            accuracy report
-//   node watch/tools/repsim.mjs --seed 7   one session, verbose
+//   node watch/tools/repsim.mjs --seed 7   one session, verbose (--whole: old timeline)
 //
 // Each session: things people do before a set (stand still, fidget, check the
 // watch, sip water, pick the weight up, walk over), the set itself with
 // per-rep tempo/size jitter, fatigue and sometimes a failed last rep, then
-// what comes after (re-rack, walk off). The watch sits at a random angle on
+// what comes after (re-rack, walk off).
+//
+// Two timelines. "START window" is what the watch analyzes now: the buffer
+// opens at START (the wrist coming down from the screen), may hold an unrack
+// or a short walk, then the set, then a re-rack or partial, and ends once the
+// wrist has been still for a second, when the settled count is computed.
+// "Whole buffer" is the older free-running timeline with everything around
+// the set, kept as a stress test for stray motion.
+//
+// Two timelines. "window" is what the watch analyzes now: the buffer opens
+// at START (the wrist coming down from the screen), may hold an unrack or a
+// short walk, then the set, then a re-rack or partial, and ends once the
+// wrist has been still for a second, which is when the settled count is
+// computed. "whole" is the older free-running buffer with everything around
+// the set, kept as a stress test for stray motion. The watch sits at a random angle on
 // the wrist. Physics: the accelerometer reads specific force (gravity + the
 // limb's linear acceleration) in the watch's rotating frame, plus noise.
 //
@@ -82,9 +96,18 @@ function session(r, liftName, reps, opts = {}) {
   const oneWay = (u) => smooth(u);
   const events = [];
 
+  const win = opts.window === true;
   // --- before the set
-  const pre = opts.pre ?? ['still', 'fidget', 'watch', 'drink', 'pickup', 'walk', 'still'].filter(() => r() < 0.45);
-  pushHold(uni(r, 1, 3));
+  const pre = opts.pre ?? (win
+    ? ['pickup', 'still', 'walk'].filter((p) => r() < (p === 'walk' ? 0.12 : 0.45))
+    : ['still', 'fidget', 'watch', 'drink', 'pickup', 'walk', 'still'].filter(() => r() < 0.45));
+  if (win) {
+    // START was just pressed while looking at the watch.
+    pushMotion(uni(r, 0.5, 1.2), 80 * Math.PI / 180, (u) => 1 - smooth(u), [0, 1, 0], [0, 0, 1], 0.3, 'lower');
+    pushHold(uni(r, 0.2, 2));
+  } else {
+    pushHold(uni(r, 1, 3));
+  }
   for (const p of pre) {
     if (p === 'still') pushHold(uni(r, 1, 4));
     if (p === 'fidget') for (let k = 0; k < 3; k++) pushMotion(uni(r, 0.3, 0.8), uni(r, 5, 20) * Math.PI / 180, bump, norm([r() - 0.5, r() - 0.5, r() - 0.5]), [0, 0, 1], uni(r, 0, 0.05), 'fidget');
@@ -123,7 +146,9 @@ function session(r, liftName, reps, opts = {}) {
 
   // --- after the set
   pushHold(uni(r, 0.3, 2));
-  const post = opts.post ?? ['rerack', 'partial', 'watch', 'walk'].filter(() => r() < 0.4);
+  const post = opts.post ?? (win
+    ? ['rerack', 'partial'].filter((p) => r() < (p === 'partial' ? 0.15 : 0.5))
+    : ['rerack', 'partial', 'watch', 'walk'].filter(() => r() < 0.4));
   for (const p of post) {
     if (p === 'rerack') pushMotion(uni(r, 1.2, 2.2), L.rot * uni(r, 0.4, 1.0) * Math.PI / 180, oneWay, L.axis, [0, 0, 1], 0.4, 'rerack');
     // Worst case: a half-size rep-like motion right after the set.
@@ -131,6 +156,11 @@ function session(r, liftName, reps, opts = {}) {
     if (p === 'watch') pushMotion(uni(r, 2.5, 5), 80 * Math.PI / 180, glance, [0, 1, 0], [0, 0, 1], 0.3, 'watch');
     if (p === 'walk') segs.push({ d: uni(r, 4, 10), walk: true });
     pushHold(uni(r, 0.5, 1.5));
+  }
+  if (win) {
+    // The settled count is computed after a still second.
+    pushHold(uni(r, 1.0, 2.0));
+    return { segs, real, detect: L.detect, pre, post, failed: segs.failedRep };
   }
   // START is pressed while looking at the watch: the counter's buffer ends
   // in the middle of the first post-set glance.
@@ -223,15 +253,15 @@ function noise(r) {
   return segs;
 }
 
-function report() {
+function lifts(window) {
   const rows = [];
-  let tot = { n: 0, exact: 0, one: 0, abst: 0, wrong: 0 };
+  const tot = { n: 0, exact: 0, one: 0, abst: 0, wrong: 0 };
   for (const name of Object.keys(LIFTS)) {
     const s = { n: 0, exact: 0, one: 0, abst: 0, wrong: 0, over: 0 };
     for (let seed = 1; seed <= 150; seed++) {
       const r = rng(seed * 7919 + name.length * 31);
       const reps = 3 + Math.floor(r() * 13); // 3..15
-      const ses = session(r, name, reps);
+      const ses = session(r, name, reps, { window });
       const d = render(r, ses.segs);
       const a = analyze(d.x, d.y, d.z, d.steps);
       s.n++;
@@ -248,6 +278,12 @@ function report() {
     rows.push(`${name.padEnd(18)} ${det ? 'see ' : 'hide'}  exact ${pct(s.exact, s.n)}  shown-wrong ${pct(s.wrong, s.n)} (±1 ${s.one}, over ${s.over})  silent ${pct(s.abst, s.n)}`);
     if (det) { tot.n += s.n; tot.exact += s.exact; tot.wrong += s.wrong; tot.abst += s.abst; }
   }
+  return { rows, tot };
+}
+
+function report() {
+  const { rows, tot } = lifts(true);
+  const whole = lifts(false).tot;
   let fp = 0;
   const N = 400;
   for (let seed = 1; seed <= N; seed++) {
@@ -257,7 +293,8 @@ function report() {
     if (a.ok) { fp++; if (process.env.DIAG === 'noise') console.log(seed, 'amp', a.amp.toFixed(3), 'got', a.reps, 'counted', a.times.map((t) => d.lab[t]).join(' '), 'ac', a.ac.toFixed(2), 'cv', a.cv.toFixed(2), 'T', a.T.toFixed(0)); }
   }
   console.log(rows.join('\n'));
-  console.log(`\nwrist-visible lifts: exact ${pct(tot.exact, tot.n)}, shown wrong ${pct(tot.wrong, tot.n)}, silent ${pct(tot.abst, tot.n)}`);
+  console.log(`\nwrist-visible lifts, START window: exact ${pct(tot.exact, tot.n)}, shown wrong ${pct(tot.wrong, tot.n)}, silent ${pct(tot.abst, tot.n)}`);
+  console.log(`wrist-visible lifts, whole buffer: exact ${pct(whole.exact, whole.n)}, shown wrong ${pct(whole.wrong, whole.n)}, silent ${pct(whole.abst, whole.n)}`);
   console.log(`no-set sessions (walk, fidget, drink, phone, stretch): count shown ${pct(fp, N)}`);
 }
 const pct = (a, b) => `${((100 * a) / b).toFixed(1).padStart(5)}%`;
@@ -268,7 +305,7 @@ if (si > 0) {
   const name = process.argv[si + 2] || 'curl';
   const r = rng(seed * 7919 + name.length * 31);
   const reps = 3 + Math.floor(r() * 13);
-  const ses = session(r, name, reps);
+  const ses = session(r, name, reps, { window: !process.argv.includes('--whole') });
   const d = render(r, ses.segs);
   const a = analyze(d.x, d.y, d.z, d.steps);
   console.log({ name, real: ses.real, got: a.reps, ok: a.ok, bouts: a.bouts.map((b) => ({ lo: b.lo, hi: b.hi, reps: b.reps, ac: +b.ac.toFixed(2), cv: +b.cv.toFixed(2), T: +b.T.toFixed(1), amp: +(b.amp || 0).toFixed(3), ok: b.ok })) });

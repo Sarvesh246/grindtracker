@@ -726,6 +726,36 @@ function testRepSensorCallbackFlow(logger) {
     return ok;
 }
 
+class FakeRepJob {
+    var result;
+    function initialize(r) { result = r; }
+    function step() { return result; }
+}
+
+(:test)
+function testTrimWindow(logger) {
+    // 3 s of wrist coming down from the screen, 1.5 s still, a set, 1.2 s
+    // still, then 1 s of the wrist rising to press START.
+    var x = []; var y = []; var z = [];
+    for (var i = 0; i < 38; i++) { var t = 1.3 * (1.0 - i / 37.0); x.add(Math.sin(t)); y.add(0.0); z.add(Math.cos(t)); }
+    for (var i = 0; i < 19; i++) { x.add(0.0); y.add(0.0); z.add(1.0); }
+    for (var i = 0; i < 100; i++) { x.add(0.0); y.add(0.4 * Math.sin(i / 4.0)); z.add(1.0); }
+    for (var i = 0; i < 15; i++) { x.add(0.0); y.add(0.4 * Math.sin(100 / 4.0)); z.add(1.0); }
+    for (var i = 0; i < 12; i++) { var t = 1.3 * (i + 1) / 12.0; x.add(Math.sin(t)); y.add(0.4 * Math.sin(100 / 4.0)); z.add(Math.cos(t)); }
+    var n = x.size();
+    var setStart = y[60];
+    Reps.trimWindow(x, y, z);
+    var ok = T.ck(logger, "a drop longer than 2.5 s is left alone", x[0] > 0.9);
+    // Shorten the drop to 1.5 s: now it is held still.
+    var x2 = x.slice(19, null); var y2 = y.slice(19, null); var z2 = z.slice(19, null);
+    for (var i = 0; i < 19; i++) { var t = 1.3 * (1.0 - i / 18.0); x2[i] = Math.sin(t); z2[i] = Math.cos(t); }
+    Reps.trimWindow(x2, y2, z2);
+    ok = T.ck(logger, "START drop held still", Reps.fabs(x2[0]) < 0.01 && Reps.fabs(z2[0] - 1.0) < 0.01) && ok;
+    ok = T.ck(logger, "the set is untouched", y[60] == setStart && y2[41] == y[60]) && ok;
+    ok = T.ck(logger, "finish raise held still", Reps.fabs(x[n - 1]) < 0.01 && Reps.fabs(x2[x2.size() - 1]) < 0.01) && ok;
+    return ok;
+}
+
 module GlanceFx {
     // One 25 Hz batch, continuing the timestamps after `at` samples. `rise`
     // turns the wrist toward the face across the batch; otherwise it holds.
@@ -768,6 +798,19 @@ function testSettledCountSurvivesGlance(logger) {
     ok = T.ck(logger, "count still shown while the re-check runs", Reps.offer() == 8 && Reps.job != null) && ok;
     for (var i = 0; i < 500 && Reps.job != null; i++) { Reps.advanceAnalysis(); }
     ok = T.ck(logger, "re-check keeps eight", Reps.offer() == 8) && ok;
+    // The re-check after a glance sees the wrist turned ~90 degrees. It may
+    // add a rep done since, but never lower or clear the settled count.
+    var outcomes = [[5, true], [0, false], [9, true]];
+    var expect = [8, 8, 9];
+    for (var i = 0; i < outcomes.size(); i++) {
+        at += 2 * Reps.RATE;
+        GlanceFx.batch(at, true, 0.0);
+        GlanceFx.batch(at + Reps.RATE, false, 1.3);
+        ok = T.ck(logger, "glance re-check scheduled " + i, Reps.job != null && Reps.jobGlance) && ok;
+        Reps.job = new FakeRepJob(outcomes[i]);
+        Reps.advanceAnalysis();
+        ok = T.ck(logger, "glance re-check " + outcomes[i] + " shows " + expect[i], Reps.offer() == expect[i]) && ok;
+    }
     // A count from a mid-lift preview can miss the last rep: settling drops it.
     Reps.cancelAnalysis();
     Reps.count = 5; Reps.countSettled = false; Reps.movingBatches = 1;

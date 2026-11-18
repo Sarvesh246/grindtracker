@@ -24,6 +24,55 @@ November 17, 2026. The watch ran firmware 29.05. Simulator and release builds ta
 
 ## Rep accuracy
 
+### Accuracy pass (night of November 17)
+
+The synthetic benchmark still scored the counter on a free-running buffer full of walking, drinking and pickups. Since the explicit START flow, the watch analyzes a window that opens with the wrist coming down from the screen and settles a second after the set. `tools/repsim.mjs` now models that timeline ("START window") and keeps the old one ("whole buffer") as a stress test. Changes were tuned on simulator seeds 151 to 300 and the RecoFit development split, then checked on seeds 1 to 150 and the RecoFit held-out split.
+
+What changed in the counter (`tools/reps.mjs`, ported to `source/Reps.mc`):
+
+- **START wrist movements are held still.** If a still second follows within 2.5 s of the window opening, everything before it is held at that position. Likewise, a still second within 1.5 s of the end holds the rest still. The wrist dropping from the screen had been merging into rep one, and the wrist rising to the screen into the last rep. A buffer cut by the 75 s rolling window is left alone, so a clipped set is still withdrawn.
+- **One off-size rep no longer splits a set.** A single rep 1.5 to 1.8 times the usual size broke the rhythm chain in two, and only the longer half counted. A chain may now pass through one rep-like pair that misses the strict fingerprint, if it lands within 25% of the beat on both sides and the chain has at least four strict reps. Without that minimum, phantom three-rep chains appeared in no-set sessions.
+- **A disputed last rep is settled instead of hidden.** When the normal and lenient edge rules differ by exactly one trailing rep, it counts if it returns within 12% of where it began, keeps within 1.3 beats, and is at least 0.65 of the usual size on the way back. Fatigued final reps pass. Failed reps, partials and reracks mostly don't.
+- **Thresholds.** A rep must return within 50% of its size (was 40%), and core reps may be up to 1.6 times the median size (was 1.4). Both reduced wrong counts on the simulator and on RecoFit.
+- **A glance can't take the count away.** Raising the wrist to read the screen turns the watch about 90 degrees, a gravity shift several times larger than a rep. In the simulator, recounting after such a glance dropped exact counts to about 50%. The re-check that follows a short movement (one or two moving seconds) after a settled count can now raise the count, never lower or clear it. This rule lives in the app, not the classifier. `testSettledCountSurvivesGlance` drives it with forced lower, absent and higher results.
+
+Held-out simulator results, START window, wrist-visible lifts (150 sessions each):
+
+| Lift | Exact | Shown wrong | Silent |
+| --- | --- | --- | --- |
+| curl | 84.7% → 90.7% | 3.3% → 2.7% | 12.0% → 6.7% |
+| hammer curl | 84.7% → 92.0% | 2.7% → 3.3% | 12.7% → 4.7% |
+| lateral raise | 88.0% → 91.3% | 5.3% → 3.3% | 6.7% → 5.3% |
+| tricep pushdown | 71.3% → 80.7% | 2.7% → 3.3% | 26.0% → 16.0% |
+| shoulder press | 53.3% → 74.7% | 15.3% → 8.0% | 31.3% → 17.3% |
+| bench press | 36.0% → 59.3% | 13.3% → 9.3% | 50.7% → 31.3% |
+| push-up | 62.0% → 72.0% | 4.7% → 2.7% | 33.3% → 25.3% |
+| row | 58.7% → 66.0% | 9.3% → 6.7% | 32.0% → 27.3% |
+| lat pulldown | 75.3% → 84.7% | 8.0% → 6.0% | 16.7% → 9.3% |
+| pull-up | 60.7% → 74.0% | 3.3% → 2.7% | 36.0% → 23.3% |
+| squat | 51.3% → 76.7% | 10.7% → 2.0% | 38.0% → 21.3% |
+| deadlift | 57.3% → 68.0% | 9.3% → 5.3% | 33.3% → 26.7% |
+| goblet lunge | 48.7% → 70.0% | 8.7% → 5.3% | 42.7% → 24.7% |
+| crunch | 68.7% → 78.7% | 1.3% → 2.0% | 30.0% → 19.3% |
+| sit-up | 84.7% → 88.7% | 6.0% → 6.0% | 9.3% → 5.3% |
+| cable crunch | 76.0% → 84.7% | 4.7% → 4.0% | 19.3% → 11.3% |
+| **All** | **66.3% → 78.3%** | **6.8% → 4.5%** | **26.9% → 17.2%** |
+
+On the old whole-buffer timeline, exact counts went from 56.0% to 58.7%, wrong counts from 5.6% to 5.8%, and counts shown in no-set sessions from 1.8% to 2.0% (7 to 8 of 400). Leg press, leg extension and hanging leg raise remain correctly silent, since the wrist doesn't move.
+
+RecoFit held-out (47 sets): exact 15 → 17, wrong 19 → 16. Most remaining RecoFit errors are one short, and the clips show it: each has 2R−1 complete half-swings, because the labeled boundary cuts half a rep off one end. The START window starts and ends with the arm at rest, so this cut can't happen in real use.
+
+Port checks: the native `RepAnalysis` and `tools/reps.mjs` agree on count and confidence for all 36 RecoFit development traces and for 60 simulator sessions where the old and new counters disagree (so every new path is exercised). The longest single analysis step stayed 16 ms in the simulator, the same as before. The window trim runs once per analysis, about two thousand operations, and bridging adds a linear pass over the pairs. Streaming the 36 RecoFit traces through the live sensor path gave the same counts as before and a median wait of 1.93 s after the last rep.
+
+Tried and rejected:
+
+- Showing a count when the edge rules disagree in general: exact +2.4 points, wrong +4.3 points.
+- Lowering the periodicity floor (0.60 → 0.50): those sets would be right only about 82% of the time, against about 93% for counts shown today.
+- Crediting a truncated first half-rep: it fit RecoFit's clip boundaries but added phantom reps in the simulator.
+- Trimming motion after a still second when the window ends still: no gain.
+
+What still needs your wrist: the simulator's motions are idealized, and RecoFit is forearm data. Bench press stays the hardest, because the wrist barely rotates; it is silent on about a third of sets and wrong on about one in eleven.
+
 ### Follow-up pass (late November 17)
 
 The watch's own log showed `auto=null` for every set logged on the evening's builds. Two causes were found and fixed in the native app. The classifier's counting rules were left unchanged.
@@ -72,7 +121,7 @@ Each scenario is an automated simulator test unless noted. All pass on this buil
 | Rep press before the screen redraws | Each press counts; finish saves the newest manual edit | `testDisplayedRepCorrections` |
 | Double-press finish on a zero-rest exercise | Logs one set, not two | `testDisplayedRepCorrections` |
 | New estimate arrives just before finish | The number on screen is saved, not the unseen one | `testDisplayedRepCorrections` |
-| Glance at the watch after the set | AUTO number stays visible during the re-check | `testSettledCountSurvivesGlance` |
+| Glance at the watch after the set | AUTO number stays visible during the re-check; the re-check can add a rep but never lower or clear the count | `testSettledCountSurvivesGlance` |
 | Counting switched off then on mid-set | That set stays manual; the next set counts | `testRepSettingsDuringSet` |
 | Sensor drops a batch, delivers late, goes silent, or never starts | Late batches get a grace period; a gap withdraws the count; silence retires it; the label never sticks on WAITING | `testRepSensorGap`, `testSensorDeliveryFailures`, `testRepSensorCallbackFlow` |
 | Glance, fidget, too little data, full 75 s buffer | A glance isn't a rep; fidgeting and short data give no count; long sets still count with bounded steps | `testRepsGlanceIsNotARep`, `testRepsFidgetSaysNothing`, `testRepsTooLittleData`, `testRepsFullBufferTime`, `testRepsRollingWindow` |
@@ -85,12 +134,14 @@ Each scenario is an automated simulator test unless noted. All pass on this buil
 | Upload returns 2xx but acknowledges nothing | Backs off and keeps the sets pending | `testMissingUploadAcknowledgment` |
 | 12-hour workout heart-rate trace | Stored in chunks, restored, deleted with the workout | `testLongHeartTrace` |
 | Next set starts during recovery | Recovery closes at its observed peak | `testRecoveryEndsAtNextSet` |
+| START wrist drop and finish wrist raise inside the window | Held still before analysis; the set itself untouched; a drop longer than 2.5 s left alone | `testTrimWindow` |
 | Five sets, menus, skipped and adjusted rest, Save, Home | Completes with no errors | Simulator demo tour (`TOUR`) |
 
 Not testable off the wrist: haptics, rep counting on your own wrist, Garmin Connect activity creation, a phone-mediated upload of this build, and a background wake.
 
 ## Verification
 
+- Accuracy pass: all 41 native simulator tests passed, the demo tour completed with no failures, all 620 repository tests passed, and native and JS counters agreed on 96 of 96 parity traces.
 - Follow-up pass: all 40 native simulator tests passed, the demo tour completed with no failures, and all 620 repository tests passed. The watch's crash log has no entries after 7:54 PM; all seven watchdog crashes predate the commit that bounded the analysis.
 - First pass: all 30 native simulator tests passed, including set start and finish, correction and undo, interrupted workout recovery, storage and upload payloads, rest, summary, heart-rate math, the 12-hour trace round trip, rolling motion windows, missing samples and timer limits.
 - The offline simulator tour exercised five sets across three exercises, button input, a workout menu, adjusted and skipped rest, the summary, Save, and return to Home.

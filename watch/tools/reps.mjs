@@ -9,6 +9,9 @@
 // the counter isn't sure it says nothing and the set screen keeps the target.
 //
 // Pipeline:
+//   0. The window runs from START to the finish press, so it opens with the
+//      wrist coming down from the screen and may close with it rising. A
+//      one-way move bounded by a still second near either end is held still.
 //   1. Motion bouts: 1 s blocks with real movement, pauses up to 3 s kept
 //      inside, walking (step counter climbing fast) cut out.
 //   2. Per bout, the principal axis of motion (PCA by power iteration), so
@@ -24,10 +27,12 @@
 //      signal. So a half motion (raising the wrist to press START) or a
 //      one-way move (setting the weight down) can never be a rep.
 //   7. Where the set is: the longest rhythmic chain of pairs whose swings
-//      match the set's fingerprint closely. Inside it every normal-sized pair
-//      counts; the edges grow one rep at a time only while the next pair
-//      keeps the set's own rhythm and fingerprint.
-//   8. Trust: edges grown again with lenient rules must agree; periodicity
+//      match the set's fingerprint closely; one off-size rep that keeps the
+//      beat may sit inside it. Inside it every normal-sized pair counts; the
+//      edges grow one rep at a time only while the next pair keeps the set's
+//      own rhythm and fingerprint.
+//   8. Trust: edges grown again with lenient rules must agree (a disputed
+//      last rep counts when it closes cleanly on the beat); periodicity
 //      measured over the counted reps; steady rhythm; a set the watch only
 //      sees in pieces says nothing; 3-4 rep sets need a cleaner rhythm.
 //
@@ -55,7 +60,7 @@ export const MIN_AMP = 0.06; // g: median swing below this is tremor, not reps
 const GAP_LO = 0.6;        // core rep gap vs period
 const GAP_HI = 1.6;
 const CORE_LO = 0.72;      // core swing size vs the median swing
-const CORE_HI = 1.4;
+const CORE_HI = 1.6;
 const DUR_LO = 0.6;        // core swing duration vs the median
 const DUR_HI = 1.7;
 const DIR_COS = 0.85;      // core swing direction vs the mean direction
@@ -64,7 +69,7 @@ const EDGE_DUR_LO = 0.6;
 const EDGE_DUR_HI = 1.6;
 const TRAIL_DUR_HI = 2.2;  // last reps grind slower
 const EDGE_COS = 0.88;
-const CLOSE = 0.4;         // pair must return within this share of its size
+const CLOSE = 0.5;         // pair must return within this share of its size
 // Edge growth, normal / lenient: size floor, gap window vs the set's median
 // gap (lo, leading hi, trailing hi), and whether a slow swing's size is
 // duration-compensated. The two must agree.
@@ -72,6 +77,21 @@ const EDGE_RULES = [
   { size: 0.75, lo: 0.8, hi: 1.25, trail: 1.7, comp: true },
   { size: 0.6, lo: 0.6, hi: 1.6, trail: 2.0, comp: false },
 ];
+// The window opens with the wrist coming down from START and closes with
+// it rising to press START again. A one-way move followed (or preceded) by a
+// still second within these spans is held still before analysis.
+const TRIM_LEAD = 31;      // samples (2.5 s)
+const TRIM_TRAIL = 19;     // samples (1.5 s)
+const TRIM_STEP = 3;
+// One off-size rep may sit inside a chain whose reps on both sides keep the
+// beat, when the chain has at least this many strict reps.
+const BRIDGE_GAP = 0.25;   // the bridged rep's gaps, vs the period
+const BRIDGE_MIN = 4;
+// The two edge readings differ by one trailing rep: count it when it closes
+// this cleanly, keeps this beat and is this size on the way back.
+const TRAIL_CLOSE = 0.12;
+const TRAIL_GAP = 1.3;
+const TRAIL_SIZE = 0.65;
 const WALK_STEPS = 5;      // steps within WALK_WIN blocks = walking
 const WALK_WIN = 4;
 
@@ -336,8 +356,13 @@ export function countCycles(y, T, ax, ay, az, raw) {
     const strictT = [];
     for (const k of pairs) if (keep[k] && keep[k + 1]) strictT.push(at[k]);
     const run = rhythmRun(strictT, T);
+    let t0 = strictT[run.lo], t1 = strictT[run.lo + run.len - 1];
+    // One rep that is off-size or off-speed must not split a set in two: a
+    // chain may pass through a single rep-like pair that misses the strict
+    // fingerprint, when it sits on the beat on both sides.
+    const bridged = bridgeRun(pairs, keep, loose, at, T);
+    if (bridged && bridged.strict > run.len) { t0 = bridged.t0; t1 = bridged.t1; run.len = bridged.strict; }
     if (run.len < 2) { if (run.len > best.reps) best = { reps: run.len, cv: 1, times: strictT.slice(run.lo, run.lo + 1) }; continue; }
-    const t0 = strictT[run.lo], t1 = strictT[run.lo + run.len - 1];
     // Inside the span every normal-sized pair counts: one jittery swing in
     // the middle of a set is the set, not a stray motion.
     const times = [];
@@ -376,7 +401,15 @@ export function countCycles(y, T, ax, ay, az, raw) {
       }
       grown.push(tt);
     }
-    const agree = grown[0].length === grown[1].length;
+    let agree = grown[0].length === grown[1].length;
+    // The readings differ by one trailing rep: a slow last rep, or something
+    // done after the set. A last rep returns cleanly to where it began.
+    if (!agree && grown[1].length === grown[0].length + 1 && grown[1][0] === grown[0][0]) {
+      const k = pairs.find((q) => at[q] === grown[1][grown[1].length - 1]);
+      const gap = (at[k] - grown[0][grown[0].length - 1]) / cg;
+      const cl = Math.abs(raw[ei[k + 2]] - raw[ei[k]]) / (Math.abs(raw[ei[k + 1]] - raw[ei[k]]) || 1);
+      if (cl <= TRAIL_CLOSE && gap <= TRAIL_GAP && mag[k + 1] >= TRAIL_SIZE * mmD[di(k + 1)]) { grown[0] = grown[1]; agree = true; }
+    }
     times.length = 0;
     for (const t of grown[0]) times.push(t);
     let cv = 0;
@@ -391,6 +424,59 @@ export function countCycles(y, T, ax, ay, az, raw) {
     if (times.length > best.reps || (times.length === best.reps && cv < best.cv)) best = { reps: times.length, cv, times, agree };
   }
   return { reps: best.reps, cv: best.cv, amp: Math.min(mmD[0] || 0, mmD[1] || 0), times: best.times, agree: best.agree === true };
+}
+
+// The longest chain of pairs that keeps the beat, allowing single non-strict
+// (but rep-like) pairs between strict ones. { t0, t1, strict } or null.
+function bridgeRun(pairs, keep, loose, at, T) {
+  const cand = [];
+  for (const k of pairs) {
+    const st = keep[k] && keep[k + 1];
+    if (st || (loose(k) && loose(k + 1))) cand.push({ t: at[k], st });
+  }
+  let best = null;
+  for (let i = 0; i < cand.length; i++) {
+    if (!cand[i].st) continue;
+    let j = i, lastStrict = i, n = 1;
+    while (j + 1 < cand.length) {
+      const g = cand[j + 1].t - cand[j].t;
+      if (g < GAP_LO * T || g > GAP_HI * T) break;
+      if (!cand[j + 1].st && !cand[j].st) break;
+      if ((!cand[j + 1].st || !cand[j].st) && (g < (1 - BRIDGE_GAP) * T || g > (1 + BRIDGE_GAP) * T)) break;
+      j++;
+      if (cand[j].st) { lastStrict = j; n++; }
+    }
+    if (n >= BRIDGE_MIN && (!best || n > best.strict)) best = { t0: cand[i].t, t1: cand[lastStrict].t, strict: n };
+    i = lastStrict;
+  }
+  return best;
+}
+
+function stillBlock(x, y, z, b) {
+  let v = 0;
+  for (const a of [x, y, z]) {
+    const m = mean(a, b, b + BLOCK);
+    for (let i = b; i < b + BLOCK; i++) v += (a[i] - m) * (a[i] - m);
+  }
+  return Math.sqrt(v / BLOCK) <= MIN_MOTION;
+}
+
+// Hold the START wrist movements still: everything before the first still
+// second within TRIM_LEAD of the start, and after the last still second
+// within TRIM_TRAIL of the end. Modifies the arrays in place.
+export function trimWindow(x, y, z) {
+  const n = x.length;
+  if (n < 2 * BLOCK) return;
+  for (let b = 0; b <= Math.min(TRIM_LEAD, n - BLOCK); b += TRIM_STEP) {
+    if (!stillBlock(x, y, z, b)) continue;
+    for (let i = 0; i < b; i++) { x[i] = x[b]; y[i] = y[b]; z[i] = z[b]; }
+    break;
+  }
+  for (let e = n; e - BLOCK >= Math.max(0, n - TRIM_TRAIL - BLOCK); e -= TRIM_STEP) {
+    if (!stillBlock(x, y, z, e - BLOCK)) continue;
+    for (let i = e; i < n; i++) { x[i] = x[e - 1]; y[i] = y[e - 1]; z[i] = z[e - 1]; }
+    break;
+  }
 }
 
 // Longest run in sorted crossing times whose gaps fit the rhythm.
@@ -489,6 +575,8 @@ export function analyzeBout(x, y, z, lo, hi) {
 // The whole buffer -> { reps, ok, ac, cv, T, bouts }. The set is the bout
 // with the best reps x periodicity score; ties go to the later bout.
 export function analyze(x, y, z, steps) {
+  x = x.slice(); y = y.slice(); z = z.slice();
+  trimWindow(x, y, z);
   if (x.length) {
     const pad = a => Array(BLOCK).fill(a[0]).concat(a);
     x = pad(x); y = pad(y); z = pad(z); steps = pad(steps);
