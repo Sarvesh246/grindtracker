@@ -20,6 +20,7 @@ module Workout {
     var meta = null;
     var sets = null;
     var saved = false;   // summary screen: already saved this session
+    var awaitingResume = false;
     var last = null;     // summary numbers, kept after cur is cleared
 
     function now() { return Time.now().value(); }
@@ -28,6 +29,7 @@ module Workout {
     // On launch: pick up an unfinished workout, or clean up half a one.
     function load() {
         cur = Store.get("cur");
+        awaitingResume = cur != null;
         if (cur == null) { return; }
         plan = Store.get("pl");
         meta = Store.meta(cur["sid"]);
@@ -84,6 +86,7 @@ module Workout {
     }
 
     function clear() {
+        awaitingResume = false;
         cur = null; plan = null; meta = null; sets = null;
         Store.del("cur");
         Store.del("pl");
@@ -92,6 +95,7 @@ module Workout {
     function saveCur() { Store.put("cur", cur); }
 
     function start(wk) {
+        awaitingResume = false;
         var sid = Logic.uuid4();
         meta = {
             "id" => sid, "wid" => wk["id"], "nm" => wk["name"], "st" => now(), "en" => null,
@@ -117,8 +121,28 @@ module Workout {
     }
 
     function resume() {
+        awaitingResume = false;
         saved = false;
         Recorder.start();
+        Reps.reset();
+        // The motion recorded before the interruption cannot be recovered.
+        if (setRunning()) { Reps.takeOver(); }
+    }
+
+    function setRunning() { return cur != null && cur["setAt"] != null; }
+
+    function beginSet() {
+        if (cur == null || inRest() || atSummary() || setRunning()) { return; }
+        cur["setAt"] = now();
+        cur["f"] = 1;
+        saveCur();
+        Reps.reset();
+        Reps.start();
+    }
+
+    function closeSetWindow() {
+        cur["setAt"] = null;
+        Reps.stop();
         Reps.reset();
     }
 
@@ -167,6 +191,7 @@ module Workout {
             cur["r"] = Logic.clamp(reps + dir, 0, 1000);
             Reps.takeOver(); // your number wins for the rest of this set
         }
+        saveCur();
     }
 
     function setFocus(f) {
@@ -176,8 +201,12 @@ module Workout {
 
     // Returns true when that was the last set of the workout.
     function logSet() {
+        return logDisplayedSet(Reps.offer());
+    }
+
+    function logDisplayedSet(offered) {
         var e = ex();
-        var offered = Reps.offer();
+        if (Reps.manual) { offered = null; }
         var reps = offered == null ? cur["r"] : offered;
         // `ra`: what the rep counter made of this set (null: no confident
         // count). Kept on the watch only, to measure the counter against
@@ -191,11 +220,11 @@ module Workout {
         Store.putSet(cur["sid"], sets.size(), s);
         sets.add(s);
         Hr.onSetLogged(sets.size() - 1, s["t"]);
-        Reps.reset();
         return advanceAfterSet(e, s["t"]);
     }
 
     function advanceAfterSet(e, loggedAt) {
+        closeSetWindow();
         cur["rs"] = null;
         cur["dn"][cur["ei"]] += 1;
 
@@ -249,7 +278,9 @@ module Workout {
         Store.del("t_" + cur["sid"] + "_" + k);
         sets = sets.slice(0, k);
         Hr.onSetUndone(k);
-        Reps.reset();
+        closeSetWindow();
+        // The set already happened. START can save the corrected numbers.
+        cur["setAt"] = now();
         Reps.takeOver();
         cur["dn"][i] -= 1;
         if (cur["dn"][i] < 0) { cur["dn"][i] = 0; }
@@ -286,14 +317,14 @@ module Workout {
     // one). Ends any rest in progress, since you've moved on.
     function choose(i) {
         if (cur["re"] != null) { endRest(); }
-        Reps.reset();
+        closeSetWindow();
         if (cur["sum"] == true) { cur["sum"] = false; }
         jumpTo(i);
         saveCur();
     }
 
     function skipExercise() {
-        Reps.reset();
+        closeSetWindow();
         cur["sk"][cur["ei"]] = 1;
         cur["re"] = null;
         cur["rs"] = null;
@@ -341,6 +372,7 @@ module Workout {
     }
 
     function toSummary() {
+        closeSetWindow();
         cur["re"] = null;
         cur["sum"] = true;
         cur["sumAt"] = now();

@@ -24,7 +24,7 @@ module Reps {
     const LAG_MIN = 8;
     const LAG_MAX = 40;
     const PICK = 0.85;
-    const MIN_AC = 0.45;
+    const MIN_AC = 0.60;
     const MAX_CV = 0.32;
     const MIN_REPS = 3;
     const SHORT_REPS = 4;
@@ -75,6 +75,7 @@ module Reps {
     var lastSample = null;
     var revision = 0;
     var jobRevision = 0;
+    var offeredRevision = 0;
     var batches = 0;
     var lastResult = null;
     var sensorStatus = "idle";
@@ -118,6 +119,7 @@ module Reps {
         lastBatch = null;
         lastSample = null;
         revision = 0;
+        offeredRevision = 0;
         batches = 0;
         lastResult = null;
         head = 0;
@@ -260,7 +262,7 @@ module Reps {
             sawMotion = true;
             movingBatches++;
             revision++;
-            if (movingBatches == 2) { count = null; }
+            if (movingBatches >= 2 && revision - offeredRevision >= PREVIEW_EVERY) { count = null; }
             if (revision % PREVIEW_EVERY == 0) { update(); }
         } else {
             if (movingBatches > 0 && job != null && revision - jobRevision >= PREVIEW_EVERY) {
@@ -324,7 +326,8 @@ module Reps {
         lastResult = result;
         cancelAnalysis();
         var fresh = revision - jobRevision < PREVIEW_EVERY;
-        var offered = result[1] && fresh ? result[0] : (result[0] < 0 ? null : count);
+        var offered = result[1] && fresh ? result[0] : null;
+        if (offered != null) { offeredRevision = jobRevision; }
         if (count != offered) {
             count = offered;
             WatchUi.requestUpdate();
@@ -332,11 +335,12 @@ module Reps {
         if (movingBatches == 0) { update(); }
     }
 
-    function hint() {
-        if (manual) { return null; }
-        if (interrupted || sensorStatus.equals("unavailable")) { return "Enter reps manually"; }
-        if (job != null && count == null) { return "Checking wrist motion"; }
-        return null;
+    function repLabel() {
+        if (offer() != null) { return "AUTO"; }
+        if (!Workout.setRunning()) { return "REPS"; }
+        if (manual || interrupted || !listening) { return "MANUAL"; }
+        if (job != null) { return "CHECKING"; }
+        return batches == 0 ? "WAITING" : "TRACKING";
     }
 
     function diagnostics() {
@@ -698,7 +702,20 @@ class RepAnalysis {
     function initialize(xs, ys, zs, walking, wasClipped) {
         x = xs; y = ys; z = zs; steps = walking;
         clipped = wasClipped;
+        if (!clipped && x.size() > 0) {
+            x = withStartPosition(x); y = withStartPosition(y);
+            z = withStartPosition(z); steps = withStartPosition(steps);
+        }
         motion = new [x.size() / Reps.BLOCK];
+    }
+
+    // Extend the initial position by one block to give the centred filters
+    // a baseline when the first repetition starts immediately.
+    function withStartPosition(values) {
+        var result = new [Reps.BLOCK];
+        for (var i = 0; i < result.size(); i++) { result[i] = values[0]; }
+        result.addAll(values);
+        return result;
     }
 
     function beginLag(at) {
@@ -874,6 +891,7 @@ class RepAnalysis {
         case :finish:
             var few = cycles[0] <= Reps.SHORT_REPS;
             var ok = ac >= (few ? Reps.SHORT_AC : Reps.MIN_AC)
+                && hi - lo <= (cycles[0] + 3) * period * 1.3
                 && cycles[1] <= (few ? Reps.SHORT_CV : Reps.MAX_CV)
                 && cycles[0] >= Reps.MIN_REPS && cycles[2] >= Reps.MIN_AMP && cycles[4];
             all.add([cycles[0], ac, cycles[1], period, ok]);

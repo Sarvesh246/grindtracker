@@ -20,6 +20,7 @@ module Hr {
     var lastPeak = null;  // peak of the most recent set, for smart rest
     var buzzed = false;   // smart rest already announced this rest
     var unsaved = 0;
+    var sealed = 0;
 
     function begin(meta) {
         sid = meta["id"];
@@ -27,10 +28,12 @@ module Hr {
         pend = null;
         lastPeak = null;
         buzzed = false;
-        var rec = Store.get("h_" + sid);
+        var rec = Store.heart(sid);
+        sealed = 0;
         trace = null; zs = null; zones = null; now = null; unsaved = 0;
         if (rec instanceof Lang.Dictionary) {
             trace = rec["tr"];
+            if (trace != null && rec["chunks"] != null) { sealed = rec["chunks"]; }
             zs = rec["zs"];
             zones = rec["hz"];
         }
@@ -59,7 +62,7 @@ module Hr {
         now = Recorder.sampleHr();
         if (now == null) { return; }
         var i = idx(t);
-        Logic.traceSet(trace, i, now);
+        if (i >= sealed * Store.TRACE_CHUNK) { Logic.traceSet(trace, i, now); }
         var z = Logic.zoneOf(now, zones);
         if (z > 0) { zs[z - 1] += Config.HR_STEP; }
         if (pend != null) { advance(t); }
@@ -122,7 +125,7 @@ module Hr {
 
     function save() {
         if (sid == null) { return; }
-        Store.put("h_" + sid, { "tr" => trace, "zs" => zs, "hz" => zones });
+        sealed = Store.putHeart(sid, trace, zs, zones, sealed);
         unsaved = 0;
     }
 

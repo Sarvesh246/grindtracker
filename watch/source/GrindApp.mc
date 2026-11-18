@@ -64,7 +64,9 @@ class GrindApp extends Application.AppBase {
         ticks += 1;
         var v = Clock.view;
         if (v != null) { v.onSecond(); }
-        if (ticks % Config.HR_STEP == 0 && Workout.active() && !Workout.atSummary()) { Hr.sample(Time.now().value()); }
+        if (ticks % Config.HR_STEP == 0 && Workout.active() && !Workout.awaitingResume && !Workout.atSummary()) {
+            Hr.sample(Time.now().value());
+        }
         if (ticks % Config.SYNC_EVERY_TICKS != 0) { return; }
         if (ticks % 900 == 0) { Probe.log("tick"); } // every 15 min while open
         gNet.tick();
@@ -73,7 +75,7 @@ class GrindApp extends Application.AppBase {
 
     function onTour() {
         Tour.next();
-        if (Tour.step >= 12) { tour.stop(); }
+        if (Tour.step >= 16) { tour.stop(); }
     }
 
     function onStop(state) {

@@ -42,18 +42,22 @@ class GrindService extends System.ServiceDelegate {
     function onTemporalEvent() {
         var last = Storage.getValue("dl");
         var now = Time.now().value();
-        if (!System.getDeviceSettings().phoneConnected || (last != null && now - last < Bg.MIN_GAP)) {
+        if (!System.getDeviceSettings().phoneConnected || (last != null && now >= last && now - last < Bg.MIN_GAP)) {
             Background.exit(null);
             return;
         }
-        Communications.makeWebRequest(Secrets.API_BASE + "/daily", Body.snapshot(), {
-            :method => Communications.HTTP_REQUEST_METHOD_POST,
-            :headers => {
-                "Authorization" => "Bearer " + Secrets.TOKEN,
-                "Content-Type" => Communications.REQUEST_CONTENT_TYPE_JSON
-            },
-            :responseType => Communications.HTTP_RESPONSE_CONTENT_TYPE_JSON
-        }, method(:onDone));
+        try {
+            Communications.makeWebRequest(Secrets.API_BASE + "/daily", Body.snapshot(), {
+                :method => Communications.HTTP_REQUEST_METHOD_POST,
+                :headers => {
+                    "Authorization" => "Bearer " + Secrets.TOKEN,
+                    "Content-Type" => Communications.REQUEST_CONTENT_TYPE_JSON
+                },
+                :responseType => Communications.HTTP_RESPONSE_CONTENT_TYPE_JSON
+            }, method(:onDone));
+        } catch (e) {
+            onDone(-1, null);
+        }
     }
 
     // Storage is writable from the background on this watch (CIQ 3.2+).

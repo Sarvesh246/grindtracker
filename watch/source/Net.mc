@@ -12,6 +12,7 @@ class Net {
     var fails = 0;       // upload failures in a row
     var nextAt = 0;      // epoch secs before which we don't retry uploads
     var todayAt = 0;     // same, for re-fetching a missing workout
+    var dailyRetryAt = 0;
     var dayWant = null;  // day id being fetched for the picker
     var upSid = null;
     var upSets = null;
@@ -36,11 +37,16 @@ class Net {
 
     function request(path, params, post, cb) {
         busy = true;
-        Communications.makeWebRequest(Secrets.API_BASE + path, params, {
-            :method => post ? Communications.HTTP_REQUEST_METHOD_POST : Communications.HTTP_REQUEST_METHOD_GET,
-            :headers => headers(),
-            :responseType => Communications.HTTP_RESPONSE_CONTENT_TYPE_JSON
-        }, cb);
+        try {
+            Communications.makeWebRequest(Secrets.API_BASE + path, params, {
+                :method => post ? Communications.HTTP_REQUEST_METHOD_POST : Communications.HTTP_REQUEST_METHOD_GET,
+                :headers => headers(),
+                :responseType => Communications.HTTP_RESPONSE_CONTENT_TYPE_JSON
+            }, cb);
+        } catch (e) {
+            System.println("request " + path + " failed: " + e.getErrorMessage());
+            cb.invoke(-1, null);
+        }
     }
 
     function errCode(data) {
@@ -137,16 +143,17 @@ class Net {
     // mid-workout: reading a day of sensor history is slow. Fire and forget:
     // a failure just waits for the next one.
     function daily() {
-        if (busy || authError || !connected()) { return; }
+        if (busy || authError || !connected() || now() < dailyRetryAt) { return; }
         var last = Store.get("dl");
-        if (last != null && now() - last < Config.DAILY_EVERY) { return; }
-        Store.put("dl", now());
+        if (last != null && last <= now() && now() - last < Config.DAILY_EVERY) { return; }
+        dailyRetryAt = now() + 120;
         request("/daily", Body.snapshot(), true, method(:onDaily));
     }
 
     function onDaily(code, data) {
         System.println("daily -> " + code + " " + errCode(data));
         busy = false;
+        if (code == 200 || code == 201) { Store.put("dl", now()); }
         if (code == 401) { authError = true; }
         flush();
     }
@@ -167,12 +174,14 @@ class Net {
         if (meta == null || Logic.pendingCount(sets) == 0) {
             // Nothing left to send for this one.
             retire(sid, sets);
-            flush();
+            // Drain another item on the next sync tick. A long queue of
+            // interrupted cleanups must not exhaust the call stack.
             return;
         }
         upSid = sid;
         upSets = sets;
-        request("/sessions", Logic.buildPayload(meta, sets, Config.SYNC_BATCH, Store.get("h_" + sid)), true, method(:onUpload));
+        var heart = Logic.pendingCount(sets) <= Config.SYNC_BATCH ? Store.heart(sid) : null;
+        request("/sessions", Logic.buildPayload(meta, sets, Config.SYNC_BATCH, heart), true, method(:onUpload));
     }
 
     function retire(sid, sets) {

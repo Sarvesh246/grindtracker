@@ -20,9 +20,7 @@ class TickView extends WatchUi.View {
 
     function onShow() {
         Clock.view = self;
-        // Rep counting runs on the set and rest screens (a set started
-        // before the rest timer ran out still counts). Nav.show stops it.
-        Reps.start();
+        if (Workout.setRunning() && !Reps.manual) { Reps.start(); }
     }
 
     function onHide() {
@@ -30,7 +28,7 @@ class TickView extends WatchUi.View {
     }
 
     function onSecond() {
-        hr = Recorder.sampleHr();
+        hr = Recorder.readHr();
         WatchUi.requestUpdate();
     }
 }
@@ -40,6 +38,7 @@ class TickView extends WatchUi.View {
 // ---------------------------------------------------------------------------
 
 class SetView extends TickView {
+    var displayedOffer = null;
     function initialize() { TickView.initialize(); }
 
     function onUpdate(dc) {
@@ -50,6 +49,7 @@ class SetView extends TickView {
         // The rep counter's number, once it is sure, unless you've set reps
         // yourself this set. Not saved until the set is logged.
         var auto = Reps.offer();
+        displayedOffer = auto;
         Draw.clear(dc);
         Draw.status(dc, hr);
         Draw.name(dc, e["name"], Config.FG);
@@ -87,7 +87,7 @@ class SetView extends TickView {
         dc.setColor(c["f"] == 0 ? Config.ACCENT : Config.DIM, Graphics.COLOR_TRANSPARENT);
         dc.drawText(left + ww / 2, ly, lf, c["w"].toFloat() == 0.0 ? "BODYWEIGHT" : unit.toUpper(), Draw.C);
         dc.setColor(c["f"] == 1 ? Config.ACCENT : Config.DIM, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(rx + rw / 2, ly, lf, auto != null ? "AUTO" : "REPS", Draw.C);
+        dc.drawText(rx + rw / 2, ly, lf, Reps.repLabel(), Draw.C);
 
         // Tap columns.
         dc.setColor(Config.DIM, Graphics.COLOR_TRANSPARENT);
@@ -97,18 +97,17 @@ class SetView extends TickView {
         // Set count and the whole rep target on one line; the target is
         // never cut off (shorter forms drop words, never numbers).
         var sn = "Set " + c["sn"] + "/" + e["sets"];
+        if (Workout.setRunning()) {
+            sn += "  " + Logic.fmtDuration(Logic.clamp(Workout.now() - c["setAt"], 0, 86400));
+        }
         var bare = Logic.bareTarget(e);
         Draw.fit(dc, 0.755, [Graphics.FONT_SMALL, Graphics.FONT_TINY],
             [sn + "  ·  " + Logic.repsText(e), sn + "  ·  " + bare, sn], Config.FG);
         // Below it: the planned weight when you're off it, else what START does
         // while that's not obvious.
-        if (e["weight"] != null && e["weight"].toFloat() != c["w"].toFloat()) {
-            Draw.line(dc, 0.845, [Graphics.FONT_XTINY], "Goal " + Logic.fmtLoad(e["weight"]) + " " + unit, Config.DIM);
-        } else if (auto == null && Reps.hint() != null) {
-            Draw.line(dc, 0.845, [Graphics.FONT_XTINY], Reps.hint(), Config.DIM);
-        } else if (c["f"] == 0) {
-            Draw.line(dc, 0.845, [Graphics.FONT_XTINY], "START for reps", Config.DIM);
-        }
+        var action = Workout.setRunning() ? "START to finish set"
+            : (c["f"] == 0 ? "START for reps" : "START to begin set");
+        Draw.line(dc, 0.845, [Graphics.FONT_XTINY], action, Config.DIM);
         Draw.segments(dc, Workout.sets.size(), Workout.totalSets(), Config.ACCENT);
         Draw.startCue(dc, Config.FG);
         Draw.debug(dc);
@@ -124,15 +123,22 @@ class SetDelegate extends WatchUi.BehaviorDelegate {
         return true;
     }
 
-    // START: weight -> reps -> log. A new exercise starts on weight; later
-    // sets start on reps, so they take one press.
+    // START confirms weight, begins the set, then logs the finished set.
     function onSelect() {
-        if (Workout.cur["f"] == 0) {
+        if (!Workout.setRunning() && Workout.cur["f"] == 0) {
             Workout.setFocus(1);
             WatchUi.requestUpdate();
             return true;
         }
-        Workout.logSet();
+        if (!Workout.setRunning()) {
+            Workout.beginSet();
+            Nav.buzz(55);
+            WatchUi.requestUpdate();
+            return true;
+        }
+        var view = WatchUi.getCurrentView()[0];
+        if (!(view instanceof SetView)) { return true; }
+        Workout.logDisplayedSet(view.displayedOffer);
         Nav.buzz(120);
         Nav.show();
         return true;

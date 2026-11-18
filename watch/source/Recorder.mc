@@ -30,7 +30,7 @@ module Recorder {
 
     // Current heart rate or null. Also feeds our own average, used when the
     // activity doesn't report one (recording failed, or resumed after a crash).
-    function sampleHr() {
+    function readHr() {
         var hr = null;
         try {
             var info = Activity.getActivityInfo();
@@ -38,7 +38,12 @@ module Recorder {
         } catch (e) {
             hr = null;
         }
-        if (hr != null && hr > 0) {
+        return Logic.validHr(hr) ? hr : null;
+    }
+
+    function sampleHr() {
+        var hr = readHr();
+        if (hr != null) {
             hrSum += hr; hrN += 1;
             if (hr > hrMax) { hrMax = hr; }
             return hr;

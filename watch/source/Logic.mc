@@ -92,7 +92,7 @@ module Logic {
     function classify(code, errCode) {
         if (code == 200 || code == 201) { return R_OK; }
         if (code == 401) { return R_AUTH; }
-        if (code < 0 || code == 429 || code >= 500) { return R_RETRY; }
+        if (code < 0 || code == 408 || code == 429 || code >= 500) { return R_RETRY; }
         if (code == 409 && errCode != null && errCode.equals("open_session_conflict")) { return R_RETRY; }
         if (code >= 400) { return R_DEAD; }
         return R_RETRY;

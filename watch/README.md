@@ -56,7 +56,7 @@ it as a different app and your stored data is gone.
 
 | Button | Does |
 | --- | --- |
-| START | Start the workout, confirm weight, log the set, skip rest |
+| START | Confirm weight, begin the set, finish and log it, or skip rest |
 | UP / DOWN | Change the highlighted number, or add/remove 15 s of rest |
 | BACK, or hold UP | Workout menu: resume, undo last set, change weight, switch or skip exercise, end, discard |
 | MENU on Home | Refresh, turn rep counting on or off, clear failed uploads |
@@ -64,9 +64,10 @@ it as a different app and your stored data is gone.
 A short white arc beside the START button means START does something on that
 screen, the same cue Garmin's own apps use.
 
-A new exercise starts with the weight highlighted: START moves to reps, START
-again logs it. Later sets of the same exercise start on reps, so they're one
-press. Touch works too: tap the left or right edge to step the number, tap the
+A new exercise starts with the weight highlighted. Press START to select
+reps, START to begin lifting, and START to finish the set and begin rest.
+Later sets of the same exercise open on reps. The final set opens the summary.
+Touch works too: tap the left or right edge to step the number, tap the
 numbers to switch between weight and reps, swipe up or down to adjust.
 
 Reps prefill to the top of the target range (8-12 starts at 12), and the full
@@ -74,7 +75,8 @@ target is always shown next to the set count. The ring on the set screen has
 one segment per planned set, so you can count what's left at a glance. A
 weight of 0 shows as BW (bodyweight).
 
-**Rep counting.** On the set and rest screens, the watch reads wrist motion.
+**Rep counting.** The watch reads wrist motion between starting and finishing
+a set. TRACKING means samples are arriving. CHECKING means analysis is running.
 An estimate can appear during the lift and update after movement settles.
 **AUTO** under the reps means the watch found a count. Check the number before
 pressing START. UP/DOWN adjusts

@@ -254,7 +254,7 @@ function testWorkoutFlow(logger) {
     var m = Store.meta(sid);
     ok = T.ck(logger, "saved + queued", !Workout.active() && Workout.saved && Store.get("cur") == null
         && Store.queue().indexOf(sid) >= 0 && m["en"] != null && Store.sets(sid).size() == 2) && ok;
-    var p = Logic.buildPayload(m, Store.sets(sid), Config.SYNC_BATCH, Store.get("h_" + sid));
+    var p = Logic.buildPayload(m, Store.sets(sid), Config.SYNC_BATCH, Store.heart(sid));
     ok = T.ck(logger, "payload", p.hasKey("ended_at") && p["sets"].size() == 2 && p["sets"][1]["set_number"] == 2) && ok;
     Store.dequeue(sid);
     Store.dropSession(sid);
@@ -392,6 +392,8 @@ function testHrMath(logger) {
     var ok = T.ck(logger, "zones", Logic.zoneOf(100, z) == 0 && Logic.zoneOf(130, z) == 2
         && Logic.zoneOf(170, z) == 4 && Logic.zoneOf(195, z) == 5 && Logic.zoneOf(150, null) == 0 && Logic.zoneOf(null, z) == 0);
     var tr = [];
+    var midnightGap = Logic.buckets([[999, 87]], 1000);
+    ok = T.ck(logger, "previous day's last second cannot enter today's first bucket", midnightGap[0] == null) && ok;
     Logic.traceSet(tr, 0, 90);
     Logic.traceSet(tr, 3, 120);
     ok = T.ck(logger, "trace pads gaps", tr.size() == 4 && tr[1] == 0 && tr[3] == 120) && ok;
@@ -417,6 +419,20 @@ function testHrMath(logger) {
     ok = T.ck(logger, "next pending wraps", Logic.nextPending(2, [0, 1, 0], [0, 0, 0], one) == 0
         && Logic.nextPending(0, [1, 1, 0], [0, 0, 1], one) == -1) && ok;
     return ok;
+}
+
+(:test)
+function testLongHeartTrace(logger) {
+    var id = "test-long-trace";
+    var trace = [];
+    for (var i = 0; i < Config.MAX_TRACE; i++) { trace.add(i % 171); }
+    var sealed = Store.putHeart(id, trace, null, null, 0);
+    var restored = Store.heart(id)["tr"];
+    var ok = T.ck(logger, "long trace restored across chunk boundary", sealed > 1
+        && restored.size() == trace.size() && restored[1024] == trace[1024]
+        && restored[trace.size()-1] == trace[trace.size()-1]);
+    Store.dropSession(id);
+    return T.ck(logger, "chunks removed with workout", Store.get("hc_" + id + "_0") == null) && ok;
 }
 
 (:test)
@@ -720,6 +736,31 @@ function testRepOfferDoesNotCarryForward(logger) {
     Workout.undoSet();
     Reps.count = 7;
     ok = T.ck(logger, "undo retains reps for correction", Workout.cur["r"] == 10 && Reps.offer() == null) && ok;
+    Workout.finish(false);
+    return ok;
+}
+
+(:test)
+function testExplicitSetWindow(logger) {
+    Workout.start({ "id" => "push", "name" => "Push", "unit" => "lbs", "ex" => [
+        { "id" => "e", "name" => "Press", "sets" => 2, "reps" => 10, "weight" => 95, "rest" => 60 }
+    ] });
+    var input = new SetDelegate();
+    input.onSelect();
+    var ok = T.ck(logger, "weight confirmation only focuses reps", !Workout.setRunning() && Workout.cur["f"] == 1);
+    input.onSelect();
+    ok = T.ck(logger, "start opens a persisted window without logging", Workout.setRunning()
+        && Store.get("cur")["setAt"] != null && Workout.sets.size() == 0 && !Workout.inRest()) && ok;
+    Reps.count = 9;
+    Workout.logDisplayedSet(8);
+    ok = T.ck(logger, "finish saves the display and stops sampling at rest", Workout.sets[0]["r"] == 8
+        && !Workout.setRunning() && !Reps.listening && Workout.inRest()) && ok;
+    Workout.endRest();
+    Workout.beginSet();
+    Workout.load(); Workout.resume();
+    ok = T.ck(logger, "recovered open set uses manual reps", Workout.setRunning() && Reps.manual) && ok;
+    Workout.logSet();
+    ok = T.ck(logger, "last finish opens summary", Workout.atSummary() && Workout.sets.size() == 2) && ok;
     Workout.finish(false);
     return ok;
 }

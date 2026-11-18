@@ -137,6 +137,36 @@ module Store {
 
     function putSet(sid, i, s) { put("t_" + sid + "_" + i, s); }
 
+    // Each storage value is limited to 32 KB. Only completed chunks are
+    // immutable; h_<sid> holds the latest tail and its committed chunk count.
+    const TRACE_CHUNK = 1024;
+
+    function heart(sid) {
+        var record = get("h_" + sid);
+        if (record == null || record["chunks"] == null) { return record; }
+        var trace = [];
+        for (var i = 0; i < record["chunks"]; i++) {
+            var chunk = get("hc_" + sid + "_" + i);
+            if (!(chunk instanceof Lang.Array) || chunk.size() != TRACE_CHUNK) {
+                record["tr"] = null;
+                return record;
+            }
+            trace.addAll(chunk);
+        }
+        trace.addAll(record["tr"]);
+        record["tr"] = trace;
+        return record;
+    }
+
+    function putHeart(sid, trace, zs, hz, sealed) {
+        var chunks = trace.size() / TRACE_CHUNK;
+        for (var i = sealed; i < chunks; i++) {
+            put("hc_" + sid + "_" + i, trace.slice(i * TRACE_CHUNK, (i + 1) * TRACE_CHUNK));
+        }
+        put("h_" + sid, { "tr" => trace.slice(chunks * TRACE_CHUNK, null), "zs" => zs, "hz" => hz, "chunks" => chunks });
+        return chunks;
+    }
+
     // No stored count: read until the first gap. A crash between writing a
     // set and writing anything else can therefore never orphan it.
     function sets(sid) {
@@ -156,6 +186,7 @@ module Store {
             del(k);
         }
         del("m_" + sid);
+        for (var i = 0; get("hc_" + sid + "_" + i) != null; i++) { del("hc_" + sid + "_" + i); }
         del("h_" + sid);
     }
 

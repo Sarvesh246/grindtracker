@@ -26,7 +26,7 @@ module Body {
     // One sample into 96 fifteen-minute buckets from midnight; the latest
     // sample in a bucket wins. `at` holds each bucket's sample time.
     function bucket(out, at, t, v, midnight) {
-        if (v == null) { return; }
+        if (v == null || t < midnight) { return; }
         var b = (t - midnight) / 900;
         if (b < 0 || b > 95) { return; }
         if (at[b] == null || t > at[b]) { at[b] = t; out[b] = v.toNumber(); }
@@ -53,7 +53,7 @@ module Body {
             var last = null;
             var s = it.next();
             while (s != null) {
-                if (s.data != null && s.when != null && s.data >= 0 && s.data <= 100) {
+                if (s.data != null && s.when != null && s.when.value() >= since && s.data >= 0 && s.data <= 100) {
                     bucket(out, at, s.when.value(), s.data, since);
                     last = s.data;
                 }

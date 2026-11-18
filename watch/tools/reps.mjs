@@ -41,7 +41,7 @@ const MIN_MOTION = 0.03;   // g: a block quieter than this is still
 const LAG_MIN = 8;         // at 6.25 Hz: 1.28 s, the fastest rep we trust
 const LAG_MAX = 40;        // 6.4 s, the slowest
 const PICK = 0.85;         // fraction of the best AC peak a shorter lag needs
-export const MIN_AC = 0.45;
+export const MIN_AC = 0.60;
 export const MAX_CV = 0.32;
 export const MIN_REPS = 3;
 const SHORT_REPS = 4;
@@ -481,6 +481,7 @@ export function analyzeBout(x, y, z, lo, hi) {
   const short = c.reps <= SHORT_REPS;
   res.why = c.reps < MIN_REPS ? 'few' : !c.agree ? 'edge' : res.ac < (short ? SHORT_AC : MIN_AC) ? 'ac' : c.cv > (short ? SHORT_CV : MAX_CV) ? 'cv' : c.amp < MIN_AMP ? 'amp' : '';
   res.ok = res.ac >= (short ? SHORT_AC : MIN_AC) && c.cv <= (short ? SHORT_CV : MAX_CV)
+    && n <= (c.reps + 3) * T * 1.3
     && c.reps >= MIN_REPS && c.amp >= MIN_AMP && c.agree;
   return res;
 }
@@ -488,6 +489,10 @@ export function analyzeBout(x, y, z, lo, hi) {
 // The whole buffer -> { reps, ok, ac, cv, T, bouts }. The set is the bout
 // with the best reps x periodicity score; ties go to the later bout.
 export function analyze(x, y, z, steps) {
+  if (x.length) {
+    const pad = a => Array(BLOCK).fill(a[0]).concat(a);
+    x = pad(x); y = pad(y); z = pad(z); steps = pad(steps);
+  }
   const bs = bouts(x, y, z, steps);
   let best = null, bestScore = 0;
   const all = [];
@@ -506,5 +511,5 @@ export function analyze(x, y, z, steps) {
     if (r === best || r.reps < 2 || r.ac < FRAG_AC) continue;
     if (Math.abs(r.T - best.T) <= FRAG_T * best.T) return { reps: 0, ok: false, bouts: all, frag: true };
   }
-  return { reps: best.reps, ok: true, amp: best.amp, ac: best.ac, cv: best.cv, T: best.T, bouts: all, times: best.times };
+  return { reps: best.reps, ok: true, amp: best.amp, ac: best.ac, cv: best.cv, T: best.T, bouts: all, times: best.times.map(t => Math.max(0, t - BLOCK)) };
 }
