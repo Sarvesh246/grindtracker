@@ -150,6 +150,25 @@ Two switches in `source/Config.mc`:
 
 `UNIT`, the weight step and the default rest are in the same file.
 
+## Rep lab: tuning the counter on real sets
+
+With Rep lab on (Home → MENU, on by default), every set you finish records
+the motion window the counter analyzed, what AUTO showed and when, and the
+reps you saved. The recordings upload after the workout syncs. To see them:
+
+```bash
+npm run replab                 # last 7 days; add -- --days 30 for more
+```
+
+It prints each set (logged vs AUTO vs what the current `tools/reps.mjs` makes
+of the same motion, and the wait from the wrist settling to the count) and
+saves them to `watch/lab-data/` (gitignored) for replaying while tuning.
+
+**The saved number is the truth**, so if AUTO is wrong, fix it before you
+finish the set, or Undo and save it again. A later Undo correction updates the
+recording too. Gotcha: the table comes from `docs/sql/66-rep-lab.sql`; until
+it's applied the watch keeps its recordings and retries.
+
 ## Reading logs off the watch
 
 `System.println` only reaches the watch's disk if

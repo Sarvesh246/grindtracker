@@ -16,6 +16,9 @@ class Net {
     var dayWant = null;  // day id being fetched for the picker
     var upSid = null;
     var upSets = null;
+    var labKey = null;
+    var labFails = 0;
+    var labNextAt = 0;
 
     function initialize() {
     }
@@ -131,6 +134,8 @@ class Net {
             flush();
         } else if (Store.today() == null && now() >= todayAt) {
             refresh();
+        } else if (labDue()) {
+            lab();
         } else if (!Workout.active()) {
             daily();
         }
@@ -166,7 +171,10 @@ class Net {
     function flush() {
         if (busy || authError || !connected() || now() < nextAt) { return; }
         var q = Store.queue();
-        if (q.size() == 0) { return; }
+        if (q.size() == 0) {
+            if (labDue()) { lab(); }
+            return;
+        }
         var sid = q[0];
         var meta = Store.meta(sid);
         var sets = meta == null ? [] : Store.sets(sid);
@@ -239,6 +247,47 @@ class Net {
             nextAt = now() + Logic.backoffSecs(fails);
         }
         WatchUi.requestUpdate();
+    }
+
+    // --- POST /rep-lab ------------------------------------------------------
+
+    // Rep lab recordings go after every workout upload, one per request,
+    // with their own backoff so a problem here never delays a workout.
+    function labDue() {
+        return !busy && !authError && connected() && now() >= labNextAt && Lab.next() != null;
+    }
+
+    function lab() {
+        var key = Lab.next();
+        if (key == null) { return; }
+        var r = Store.get(key);
+        labKey = key;
+        request("/rep-lab", r["body"], true, method(:onLab));
+    }
+
+    function onLab(code, data) {
+        var err = errCode(data);
+        System.println("lab " + labKey + " -> " + code + " " + err);
+        busy = false;
+        var key = labKey;
+        labKey = null;
+        var r = Logic.classify(code, err);
+        if (r == Logic.R_OK || r == Logic.R_DEAD) {
+            // Stored, or never storable as sent (its workout was refused):
+            // either way it must not block the records behind it.
+            Lab.drop(key);
+            labFails = 0;
+            labNextAt = 0;
+            if (labDue()) { lab(); }
+        } else if (r == Logic.R_AUTH) {
+            authError = true;
+        } else {
+            labFails += 1;
+            labNextAt = now() + Logic.backoffSecs(labFails);
+            // A record the phone keeps failing to carry (too large for the
+            // bridge, say) must not hold up the ones behind it for ever.
+            if (labFails >= 8) { Lab.drop(key); labFails = 0; labNextAt = 0; }
+        }
     }
 
     // The XP and streak a finished upload earned, for the summary screen.

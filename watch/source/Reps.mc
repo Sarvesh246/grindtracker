@@ -100,6 +100,37 @@ module Reps {
     var job = null;
     var worker = null;
 
+    // Rep lab timeline for the current set: [ms since START, kind, values...].
+    // 1 first batch (samples, timestamped) · 2 count shown (n, -1 = none) ·
+    // 3 analysis done (reps, ok, wall ms, steps) · 4 input gap (code) ·
+    // 5 wrist settled (moving batches) · 6 glance kept count (count, re-check
+    // result) · 7 taken over by hand.
+    const MAX_EVENTS = 110;
+    var events = [];
+    var t0 = 0;
+    var jobStartMs = 0;
+    var jobSteps = 0;
+    var analyses = 0;
+    var analysisMs = 0;
+    var longestStep = 0;
+
+    function ev(kind, a, b, c, d) {
+        if (events.size() >= MAX_EVENTS) { return; }
+        var e = [System.getTimer() - t0, kind];
+        if (a != null) { e.add(a); }
+        if (b != null) { e.add(b); }
+        if (c != null) { e.add(c); }
+        if (d != null) { e.add(d); }
+        events.add(e);
+    }
+
+    function gapCode(reason) {
+        var codes = ["sample gap", "invalid sample count", "unexpected sample count", "invalid sample interval",
+            "unexpected sample spacing", "missing accelerometer", "sensor timeout"];
+        for (var i = 0; i < codes.size(); i++) { if (codes[i].equals(reason)) { return i + 1; } }
+        return 0;
+    }
+
     function cancelAnalysis() {
         if (worker != null) { worker.stop(); worker = null; }
         job = null;
@@ -122,6 +153,39 @@ module Reps {
         clearMotion();
         manual = false;
         interrupted = false;
+        events = [];
+        t0 = System.getTimer();
+        analyses = 0; analysisMs = 0; longestStep = 0;
+    }
+
+    // The set's motion window and timeline for the rep lab, in the units the
+    // server stores: milli-g at 12.5 Hz and step-counter deltas.
+    function snapshot() {
+        var axes = [ordered(bx), ordered(by), ordered(bz)];
+        var out = [];
+        for (var k = 0; k < 3; k++) {
+            var a = axes[k];
+            var m = new [a.size()];
+            for (var i = 0; i < a.size(); i++) {
+                var v = a[i] * 1000.0;
+                m[i] = (v >= 0 ? v + 0.5 : v - 0.5).toNumber();
+            }
+            out.add(m);
+        }
+        var st = ordered(bs);
+        var steps = new [st.size()];
+        for (var i = 0; i < st.size(); i++) { steps[i] = imax(0, st[i] - st[0]); }
+        return {
+            "x" => out[0], "y" => out[1], "z" => out[2], "steps" => steps, "clipped" => clipped,
+            "events" => events,
+            "diag" => {
+                "sensor" => sensorStatus, "batches" => batches, "motion" => revision,
+                "result" => lastResult == null ? null : lastResult[0] + (lastResult[1] ? "" : "?"),
+                "interrupted" => interrupted, "listening" => listening, "manual" => manual,
+                "analyses" => analyses, "analysis_ms" => analysisMs, "longest_callback_ms" => longestStep,
+                "set_ms" => System.getTimer() - t0
+            }
+        };
     }
 
     function clearMotion() {
@@ -148,10 +212,12 @@ module Reps {
 
     function takeOver() {
         stop();
+        if (!manual) { ev(7, null, null, null, null); }
         manual = true;
     }
 
     function inputGap(reason, detail) {
+        ev(4, gapCode(reason), null, null, null);
         interrupted = sawMotion;
         if (interrupted || !sensorStatus.equals(reason)) {
             System.println("reps: " + reason + " (" + detail + ") after " + batches + " batches");
@@ -278,6 +344,7 @@ module Reps {
                 return;
             }
         }
+        if (batches == 0) { ev(1, n, time != null ? 1 : 0, null, null); }
         if (!sensorStatus.equals("receiving")) {
             System.println("reps: received " + n + " samples, timestamps=" + (time != null));
             sensorStatus = "receiving";
@@ -304,7 +371,10 @@ module Reps {
             sawMotion = true;
             movingBatches++;
             revision++;
-            if (movingBatches >= 2 && revision - offeredRevision >= PREVIEW_EVERY) { count = null; }
+            if (movingBatches >= 2 && revision - offeredRevision >= PREVIEW_EVERY && count != null) {
+                count = null;
+                ev(2, -1, null, null, null);
+            }
             if (revision % PREVIEW_EVERY == 0) { update(); }
         } else {
             if (movingBatches > 0) {
@@ -315,8 +385,9 @@ module Reps {
                 // wrist to read the number never blanks it.
                 if (job != null) { cancelAnalysis(); }
                 dirty = true;
+                ev(5, movingBatches, null, null, null);
                 glanceNext = countSettled && count != null && movingBatches <= 2;
-                if (!glanceNext) { count = null; }
+                if (!glanceNext && count != null) { count = null; ev(2, -1, null, null, null); }
             }
             movingBatches = 0;
             update();
@@ -366,6 +437,8 @@ module Reps {
         jobSettled = movingBatches == 0;
         jobGlance = glanceNext && jobSettled;
         glanceNext = false;
+        jobStartMs = System.getTimer();
+        jobSteps = 0;
         // The sensor keeps appending while this snapshot is being analyzed.
         job = new RepAnalysis(ordered(bx), ordered(by), ordered(bz), ordered(bs), clipped);
         worker = new Timer.Timer();
@@ -380,11 +453,18 @@ module Reps {
         // the watchdog. Mid-lift previews take one step per period.
         var startMs = System.getTimer();
         var result = job.step();
+        jobSteps++;
         for (var i = 1; result == null && movingBatches == 0 && i < SETTLED_STEPS
                 && System.getTimer() - startMs < SETTLED_MS; i++) {
             result = job.step();
+            jobSteps++;
         }
+        var spent = System.getTimer() - startMs;
+        analysisMs += spent;
+        if (spent > longestStep) { longestStep = spent; }
         if (result == null) { return; }
+        analyses++;
+        ev(3, result[0], result[1] ? 1 : 0, System.getTimer() - jobStartMs, jobSteps);
         lastResult = result;
         cancelAnalysis();
         var fresh = revision - jobRevision < PREVIEW_EVERY;
@@ -392,10 +472,15 @@ module Reps {
         // Raising the wrist to read the count turns the watch about 90
         // degrees, a gravity shift far larger than the reps. A re-check after
         // such a glance can add a rep done since, never take the count away.
-        if (jobGlance && count != null && (offered == null || offered < count)) { offered = count; jobSettled = true; }
+        if (jobGlance && count != null && (offered == null || offered < count)) {
+            ev(6, count, offered == null ? -1 : offered, null, null);
+            offered = count;
+            jobSettled = true;
+        }
         if (offered != null) { offeredRevision = jobRevision; countSettled = jobSettled; }
         if (count != offered) {
             count = offered;
+            ev(2, offered == null ? -1 : offered, null, null, null);
             WatchUi.requestUpdate();
         }
         if (movingBatches == 0) { update(); }

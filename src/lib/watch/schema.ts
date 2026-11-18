@@ -134,6 +134,48 @@ export const watchDailySchema = z.strictObject({
 
 export type WatchDailyInput = z.infer<typeof watchDailySchema>
 
+/** The counter's rolling motion window: 75 s at 12.5 Hz. */
+export const MAX_REP_LAB_SAMPLES = 938
+const milliG = z.int().min(-16_000).max(16_000)
+
+/** POST /rep-lab: one set recorded for tuning the wrist rep counter
+ *  (migration 66). A full recording carries the motion arrays; a correction
+ *  made later through Undo carries only `id` and `logged_reps`. */
+export const watchRepLabSchema = z.union([
+  z.strictObject({
+    id: uuid,
+    session_id: uuid,
+    exercise_id: z.string().max(64).nullish(),
+    exercise_name: z.string().max(120).nullish(),
+    set_number: z.int().min(1).max(100).nullish(),
+    weight: z.number().min(0).max(2000).nullish(),
+    unit: z.enum(['lbs', 'kg']).nullish(),
+    logged_reps: z.int().min(0).max(1000),
+    auto_reps: z.int().min(0).max(1000).nullish(),
+    auto_shown: z.boolean(),
+    typed: z.boolean(),
+    started_at: isoUtc.nullish(),
+    finished_at: isoUtc.nullish(),
+    rate_hz: z.number().min(1).max(100),
+    clipped: z.boolean(),
+    x: z.array(milliG).max(MAX_REP_LAB_SAMPLES),
+    y: z.array(milliG).max(MAX_REP_LAB_SAMPLES),
+    z: z.array(milliG).max(MAX_REP_LAB_SAMPLES),
+    steps: z.array(z.int().min(0).max(10_000)).max(MAX_REP_LAB_SAMPLES).nullish(),
+    /** Counter timeline: [ms since START, kind, a, b, c, d]. */
+    events: z.array(z.array(z.number()).max(6)).max(120).nullish(),
+    diag: z.record(z.string().max(32), z.union([z.string().max(200), z.number(), z.boolean(), z.null()])).nullish(),
+    app_version: z.string().max(32).nullish(),
+  }).refine(v => v.x.length === v.y.length && v.y.length === v.z.length, { message: 'x, y and z must be the same length', path: ['x'] }),
+  z.strictObject({
+    id: uuid,
+    logged_reps: z.int().min(0).max(1000),
+    corrected: z.literal(true),
+  }),
+])
+
+export type WatchRepLabInput = z.infer<typeof watchRepLabSchema>
+
 /** Zod issues as `{ path, message }`, path dotted (`sets.2.reps`). */
 export function formatIssues(error: z.ZodError): { path: string; message: string }[] {
   return error.issues.map(issue => ({

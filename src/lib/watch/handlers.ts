@@ -9,6 +9,7 @@ import {
   timestampIssues,
   todayQuerySchema,
   watchDailySchema,
+  watchRepLabSchema,
   watchSessionSchema,
   type WatchSessionInput,
 } from './schema'
@@ -166,6 +167,36 @@ export function watchDaily(request: Request, deps: WatchDeps): Promise<Response>
       return watchError(503, 'service_unavailable', 'GRIND is temporarily unavailable. Retry later.', { headers: { 'Retry-After': '60' } })
     }
     return watchJson(data)
+  })
+}
+
+// ─── POST /rep-lab ─────────────────────────────────────────────────────────
+
+/** One set recorded for tuning the wrist rep counter. Never fatal to the
+ *  watch: a set the server can't place is answered 422 so the watch drops it. */
+export function watchRepLab(request: Request, deps: WatchDeps): Promise<Response> {
+  return guard(deps, async () => {
+    const auth = await authenticateWatch(request, deps)
+    if (!auth.ok) return auth.response
+
+    const read = await readJsonBody(request)
+    if (!read.ok) return read.response
+
+    const parsed = watchRepLabSchema.safeParse(read.body)
+    if (!parsed.success) {
+      const details = formatIssues(parsed.error)
+      return watchError(422, 'validation_failed', `${details[0].path}: ${details[0].message}`, { details })
+    }
+
+    const { data, error } = await deps.rpc('watch_store_rep_lab', { p_user: auth.userId, p_set: parsed.data })
+    if (error) {
+      if (error.message.includes('WATCH_SESSION_NOT_FOUND')) {
+        return watchError(422, 'session_not_found', 'session_id is not one of your uploaded sessions.')
+      }
+      deps.log('watch_store_rep_lab failed', error)
+      return watchError(503, 'service_unavailable', 'GRIND is temporarily unavailable. Retry later.', { headers: { 'Retry-After': '300' } })
+    }
+    return watchJson(data, 201)
   })
 }
 

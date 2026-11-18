@@ -18,6 +18,7 @@ export type WatchErrorCode =
   | 'session_id_conflict'
   | 'open_session_conflict'
   | 'day_already_logged'
+  | 'session_not_found'
   | 'collection_paused'
   | 'setup_required'
   | 'service_unavailable'

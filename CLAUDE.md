@@ -4,7 +4,7 @@
 Live and in daily use: workout logging, streaks/XP/badges, rest days, flex days,
 progress photos, onboarding, web push, offline set queue, Coach, friends and
 leaderboard, and a token-authenticated API for a Garmin watch app (`/api/watch/v1`).
-Schema migrations run through `docs/sql/65-*.sql`.
+Schema migrations run through `docs/sql/66-*.sql`.
 
 One developer, but a **multi-user app**: friends, a leaderboard and public
 usernames mean RLS and per-caller authorization are required everywhere.
@@ -91,7 +91,7 @@ file and are authoritative.
   `grind_migrations` (created by `00-migration-tracking.sql`); copy that line into
   any new migration, add its row to `docs/SQL.md`, and run
   `npm run migrations:check` against production after pasting. Apply the SQL
-  *before* deploying code that calls new RPCs. Next free number: `66`.
+  *before* deploying code that calls new RPCs. Next free number: `67`.
 - **Rotation pointer:** every write goes through `rotationStore.ts`, never a bare
   `user_rotation` upsert (WORKOUT-LOGIC).
 - **Offline sync is deliberately gentle:** no polling, no per-set requests

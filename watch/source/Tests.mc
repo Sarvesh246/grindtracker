@@ -848,6 +848,70 @@ function testRepOfferDoesNotCarryForward(logger) {
 }
 
 (:test)
+function testRepLabRecordsSets(logger) {
+    var savedQ = Store.get("labq");
+    Store.put("labq", []);
+    Lab.setEnabled(true);
+    T.startPress(0);
+    var sid = Workout.cur["sid"];
+    Workout.setFocus(1);
+    Workout.beginSet();
+    // A real sensor flow: eight curls through the live listener path.
+    Reps.listening = true;
+    var data = RepFx.curl(8, false);
+    var samples = data[0].size() * 2;
+    for (var start = 0; start < samples; start += Reps.RATE) {
+        var xs = []; var ys = []; var zs = []; var ts = [];
+        for (var i = start; i < Reps.imin(samples, start + Reps.RATE); i++) {
+            xs.add((1000 * data[0][i / 2]).toNumber());
+            ys.add((1000 * data[1][i / 2]).toNumber());
+            zs.add((1000 * data[2][i / 2]).toNumber());
+            ts.add(i * 40);
+        }
+        Reps.onSamples(xs, ys, zs, ts, start * 40, 0);
+        for (var j = 0; j < 20 && Reps.job != null; j++) { Reps.advanceAnalysis(); }
+    }
+    for (var i = 0; i < 500 && Reps.job != null; i++) { Reps.advanceAnalysis(); }
+    var shown = Reps.offer();
+    Workout.logDisplayedSet(shown);
+    var setId = Workout.sets[0]["id"];
+    var rec = Store.get("lb_" + setId);
+    var body = rec == null ? null : rec["body"];
+    var ok = T.ck(logger, "set recorded with its motion window", body != null && body["x"].size() == data[0].size()
+        && body["y"].size() == body["x"].size() && body["logged_reps"] == 8 && body["auto_reps"] == 8
+        && body["auto_shown"] == true && body["session_id"].equals(sid) && body["started_at"] != null);
+    var kinds = {};
+    for (var i = 0; i < body["events"].size(); i++) { kinds[body["events"][i][1]] = true; }
+    ok = T.ck(logger, "timeline has first batch, analysis and the shown count",
+        kinds[1] == true && kinds[3] == true && kinds[2] == true && body["diag"]["analyses"] > 0) && ok;
+    // Undo and save 9: the waiting recording takes the corrected number.
+    Workout.undoSet();
+    Workout.cur["r"] = 9;
+    Workout.logDisplayedSet(null);
+    ok = T.ck(logger, "correction folded into the waiting recording",
+        Store.get("lb_" + setId)["body"]["logged_reps"] == 9 && Lab.queue().size() == 1) && ok;
+    ok = T.ck(logger, "held while its workout is open", Lab.next() == null) && ok;
+    Workout.cur["sumAt"] = Workout.now();
+    Workout.finish(true);
+    ok = T.ck(logger, "held while its workout waits to upload", Store.queue().indexOf(sid) >= 0 && Lab.next() == null) && ok;
+    Store.dequeue(sid);
+    ok = T.ck(logger, "sent once the workout has synced", Lab.next() != null && Lab.next().equals("lb_" + setId)) && ok;
+    var net = new Net();
+    net.labKey = "lb_" + setId;
+    net.onLab(201, { "id" => setId, "stored" => true });
+    ok = T.ck(logger, "dropped after the server has it", Lab.queue().size() == 0 && Store.get("lb_" + setId) == null) && ok;
+    // A later correction for an uploaded set goes on its own.
+    Lab.correct(sid, setId, 10);
+    var c = Store.get("lc_" + setId);
+    ok = T.ck(logger, "late correction queued", c != null && c["body"]["corrected"] == true && c["body"]["logged_reps"] == 10) && ok;
+    Lab.dropSession(sid);
+    ok = T.ck(logger, "discarded workout drops its records", Lab.queue().size() == 0) && ok;
+    Store.dropSession(sid);
+    Store.put("labq", savedQ == null ? [] : savedQ);
+    return ok;
+}
+
+(:test)
 function testExplicitSetWindow(logger) {
     T.startPress(60);
     var input = new TestSetDelegate();

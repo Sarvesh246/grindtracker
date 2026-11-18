@@ -227,6 +227,7 @@ class HomeDelegate extends WatchUi.BehaviorDelegate {
         var m = new WatchUi.Menu2({ :title => "GRIND" });
         m.addItem(new WatchUi.MenuItem("Refresh", null, :refresh, null));
         m.addItem(Menus.repToggle());
+        m.addItem(Menus.labToggle());
         if (dead > 0) {
             m.addItem(new WatchUi.MenuItem("Clear failed (" + dead + ")", "Deletes unsynced workouts", :clear, null));
         }
@@ -260,6 +261,10 @@ class HomeMenuDelegate extends WatchUi.Menu2InputDelegate {
     function onSelect(item) {
         if (item.getId() == :reps) {
             Reps.setEnabled(item.isEnabled());
+            return;
+        }
+        if (item.getId() == :lab) {
+            Lab.setEnabled(item.isEnabled());
             return;
         }
         WatchUi.popView(WatchUi.SLIDE_IMMEDIATE);

@@ -31,6 +31,12 @@ module Menus {
             :reps, Reps.enabled(), null);
     }
 
+    // Rep lab: record each set's wrist motion and logged reps for tuning.
+    function labToggle() {
+        return new WatchUi.ToggleMenuItem("Rep lab", { :enabled => "Records sets to tune counting", :disabled => "Off" },
+            :lab, Lab.enabled(), null);
+    }
+
     function hasSkipped() {
         if (!Workout.active()) { return false; }
         for (var i = 0; i < Workout.exCount(); i++) {

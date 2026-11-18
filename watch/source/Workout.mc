@@ -38,6 +38,7 @@ module Workout {
             return;
         }
         if (meta["discard"] == true) {
+            Lab.dropSession(cur["sid"]);
             Store.dropSession(cur["sid"]);
             clear();
             return;
@@ -232,6 +233,12 @@ module Workout {
             + " " + e["name"] + Reps.diagnostics());
         Store.putSet(cur["sid"], sets.size(), s);
         sets.add(s);
+        // Rep lab: the live window is still open here; it closes below.
+        if (edit == null) {
+            Lab.capture(cur["sid"], s, e, offered != null, cur["setAt"], meta == null ? Config.UNIT : meta["u"]);
+        } else {
+            Lab.correct(cur["sid"], s["id"], reps);
+        }
         if (edit == null) { Hr.onSetLogged(sets.size() - 1, s["t"]); }
         return advanceAfterSet(e, s["t"]);
     }
@@ -468,6 +475,7 @@ module Workout {
         } else {
             meta["discard"] = true;
             Store.putMeta(meta);
+            Lab.dropSession(sid);
             Hr.end(false);
             Recorder.stop(false);
             Store.dropSession(sid);

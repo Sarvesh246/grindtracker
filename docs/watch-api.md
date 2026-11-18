@@ -357,6 +357,39 @@ the last 30 days. `200` returns `{ "local_date", "synced_at" }`.
 Respiration and SpO2 history are not sent: the Forerunner 165 Music leaves
 them empty (phase 0 probe, 2026-11-16).
 
+## POST /rep-lab
+
+One finished set recorded for tuning the wrist rep counter (migration `66`).
+The watch sends these one per request, only after the set's workout has
+synced, and deletes each once it gets `201`. A `4xx` other than `401` also
+drops it, so a set the server can't place never blocks the queue. Switch it
+off under Home → MENU → Rep lab.
+
+A full recording:
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | uuid | The set's id, the same as in `POST /sessions`. |
+| `session_id` | uuid | Must be one of the caller's sessions, else `422 session_not_found`. |
+| `exercise_id`, `exercise_name`, `set_number`, `weight`, `unit` | | Context, optional. |
+| `logged_reps` | int | What was saved. The truth for tuning. |
+| `auto_reps` | int or null | The counter's confident count at finish. |
+| `auto_shown`, `typed` | bool | The saved number was the AUTO one; reps were changed by hand during the set. |
+| `started_at`, `finished_at` | ISO 8601 | START press and finish press. |
+| `rate_hz` | number | 12.5. |
+| `clipped` | bool | The 75 s rolling window dropped the start of the set. |
+| `x`, `y`, `z` | int[] ≤ 938 | The analyzed motion window, milli-g, same length. |
+| `steps` | int[] | Step counter delta per sample. |
+| `events` | number[][] ≤ 120 | `[ms since START, kind, …]`: 1 first batch (samples, timestamped), 2 count shown (n, −1 none), 3 analysis done (reps, ok, wall ms, steps), 4 input gap (code), 5 wrist settled (moving batches), 6 glance kept count (count, re-check), 7 taken over by hand. |
+| `diag` | object | Sensor status, batch and analysis counts, longest worker callback, … |
+| `app_version` | string | |
+
+A correction, after the set was reopened with Undo and saved again:
+`{ "id", "logged_reps", "corrected": true }`. A recording sent again never
+undoes a correction. `201` returns `{ "id", "stored" }`.
+
+Read them with `npm run replab` (see `watch/README.md`).
+
 ## Rate limits and payload size
 
 - 60 requests per minute per device (all endpoints together). Over the limit:

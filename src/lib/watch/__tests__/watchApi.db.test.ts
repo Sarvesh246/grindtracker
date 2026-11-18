@@ -20,7 +20,7 @@ import { randomUUID } from 'node:crypto'
 import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { healthImportRequest } from '@/lib/health/importApi'
-import { watchPing, watchSessions, watchToday, type WatchDeps, type RpcResult } from '../handlers'
+import { watchPing, watchRepLab, watchSessions, watchToday, type WatchDeps, type RpcResult } from '../handlers'
 
 const ROOT = path.join(__dirname, '..', '..', '..', '..')
 const SQL_DIR = path.join(ROOT, 'docs', 'sql')
@@ -556,6 +556,44 @@ describe('watch API against the real schema', { skip: !baseUrl && 'set PARITY_DA
       }), deps)
       assert.equal(twice.status, 409)
       assert.equal(await codeOf(twice), 'day_already_logged')
+    })
+  })
+
+  describe('POST /rep-lab (migration 66)', () => {
+    const S1 = id('s1')
+    const LAB = id('lab1')
+    const wave = (n: number) => Array.from({ length: n }, (_, i) => Math.round(900 * Math.sin(i / 6)))
+    const recording = (extra: object = {}) => ({
+      id: LAB, session_id: S1, exercise_id: id('bench'), exercise_name: 'Bench', set_number: 1, weight: 135, unit: 'lbs',
+      logged_reps: 8, auto_reps: 7, auto_shown: false, typed: true, started_at: iso(56), finished_at: iso(55),
+      rate_hz: 12.5, clipped: false, x: wave(300), y: wave(300), z: wave(300), steps: new Array(300).fill(0),
+      events: [[1000, 1, 25], [30000, 3, 7, 1, 400, 90]], diag: { sensor: 'receiving' }, app_version: 'test',
+      ...extra,
+    })
+
+    it('stores a recording once, keeps a later correction, and is owner-only', async () => {
+      clock = new Date()
+      for (let i = 0; i < 2; i++) {
+        const res = await watchRepLab(request('/rep-lab', aliceToken, recording()), deps)
+        assert.equal(res.status, 201)
+      }
+      assert.equal(db(`select count(*) || ',' || array_length(motion_x, 1) || ',' || logged_reps from rep_lab_sets where id = '${LAB}' group by motion_x, logged_reps`), '1,300,8')
+
+      const fix = await watchRepLab(request('/rep-lab', aliceToken, { id: LAB, logged_reps: 9, corrected: true }), deps)
+      assert.equal(fix.status, 201)
+      // A re-sent recording must not undo the correction.
+      await watchRepLab(request('/rep-lab', aliceToken, recording()), deps)
+      assert.equal(db(`select logged_reps || ',' || corrected from rep_lab_sets where id = '${LAB}'`), '9,true')
+
+      assert.equal(asUser(ALICE, `select count(*) from rep_lab_sets where id = '${LAB}'`), '1')
+      assert.equal(asUser(BOB, `select count(*) from rep_lab_sets where id = '${LAB}'`), '0')
+    })
+
+    it("refuses another user's session and cannot be written by a signed-in client", async () => {
+      const res = await watchRepLab(request('/rep-lab', bobToken, recording({ id: id('lab2') })), deps)
+      assert.equal(res.status, 422)
+      assert.equal(await codeOf(res), 'session_not_found')
+      assert.throws(() => asUser(ALICE, `insert into rep_lab_sets (id, user_id, session_id, logged_reps) values ('${id('lab3')}', '${ALICE}', '${S1}', 1)`))
     })
   })
 })

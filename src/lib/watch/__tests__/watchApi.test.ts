@@ -8,7 +8,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { hashWatchToken, readBearerToken } from '../token'
 import { buildTodayPayload, parseRepsTarget, MAX_TODAY_EXERCISES, type TodayContext } from '../today'
-import { watchDaily, watchPing, watchSessions, watchToday, toSyncPayload, type WatchDeps, type RpcResult } from '../handlers'
+import { watchDaily, watchPing, watchRepLab, watchSessions, watchToday, toSyncPayload, type WatchDeps, type RpcResult } from '../handlers'
 import { watchSessionSchema } from '../schema'
 
 const TOKEN = 'gwt_' + 'a1'.repeat(32)
@@ -520,5 +520,60 @@ describe('/today body', () => {
     }))
     assert.equal(failed.status, 200)
     assert.equal(((await failed.json()) as { body: unknown }).body, null)
+  })
+})
+
+describe('POST /rep-lab', () => {
+  const motion = (n: number) => Array.from({ length: n }, (_, i) => Math.round(1000 * Math.sin(i / 5)))
+  const recording = (overrides: Record<string, unknown> = {}) => ({
+    id: SET1, session_id: SESSION, exercise_id: EX1, exercise_name: 'Bench', set_number: 1,
+    weight: 135, unit: 'lbs', logged_reps: 10, auto_reps: 9, auto_shown: false, typed: true,
+    started_at: '2026-11-16T17:04:00Z', finished_at: '2026-11-16T17:05:00Z', rate_hz: 12.5, clipped: false,
+    x: motion(500), y: motion(500), z: motion(500), steps: new Array(500).fill(0),
+    events: [[1200, 1, 25], [9800, 3, 9, 1, 410, 96]], diag: { sensor: 'receiving', batches: 40 }, app_version: '1.0',
+    ...overrides,
+  })
+
+  it('stores a full recording for the token owner', async () => {
+    const deps = fakeDeps({ watch_store_rep_lab: () => ({ data: { id: SET1, stored: true }, error: null }) })
+    const res = await watchRepLab(req('/rep-lab', { body: recording() }), deps)
+    assert.equal(res.status, 201)
+    const call = deps.calls.find(c => c.fn === 'watch_store_rep_lab')!
+    assert.equal(call.args.p_user, USER)
+    assert.equal((call.args.p_set as { logged_reps: number }).logged_reps, 10)
+  })
+
+  it('accepts a later correction without motion', async () => {
+    const deps = fakeDeps({ watch_store_rep_lab: () => ({ data: { id: SET1, stored: true }, error: null }) })
+    const res = await watchRepLab(req('/rep-lab', { body: { id: SET1, logged_reps: 11, corrected: true } }), deps)
+    assert.equal(res.status, 201)
+  })
+
+  it('rejects mismatched axes, oversized windows and stray fields', async () => {
+    for (const body of [
+      recording({ y: motion(499) }),
+      recording({ x: motion(939), y: motion(939), z: motion(939) }),
+      recording({ password: 'x' }),
+      { id: SET1, logged_reps: 11 },
+    ]) {
+      const res = await watchRepLab(req('/rep-lab', { body }), fakeDeps())
+      assert.equal(res.status, 422)
+      assert.equal((await errorOf(res)).code, 'validation_failed')
+    }
+  })
+
+  it('a full 75 s window fits the body limit', async () => {
+    const body = JSON.stringify(recording({ x: motion(938).map(v => v - 16000 + 16000), y: motion(938), z: motion(938), steps: new Array(938).fill(9999), events: Array.from({ length: 120 }, () => [99999, 3, 15, 1, 9999, 999]) }))
+    assert.ok(Buffer.byteLength(body) < 64 * 1024, `${Buffer.byteLength(body)} bytes`)
+  })
+
+  it('maps an unknown session to 422 and a database failure to 503', async () => {
+    const missing = fakeDeps({ watch_store_rep_lab: () => ({ data: null, error: { message: 'WATCH_SESSION_NOT_FOUND' } }) })
+    const r1 = await watchRepLab(req('/rep-lab', { body: recording() }), missing)
+    assert.equal(r1.status, 422)
+    assert.equal((await errorOf(r1)).code, 'session_not_found')
+    const down = fakeDeps({ watch_store_rep_lab: () => ({ data: null, error: { message: 'relation "rep_lab_sets" does not exist' } }) })
+    const r2 = await watchRepLab(req('/rep-lab', { body: recording() }), down)
+    assert.equal(r2.status, 503)
   })
 })

@@ -84,6 +84,12 @@ Moved out of [CLAUDE.md](../CLAUDE.md) to keep that file short; its text is unch
   steps, active_minutes, floors, spo2, vo2max, synced_at. Owner SELECT only;
   writes via the service-role `watch_upsert_daily`. Read by `src/lib/body`
   (Charge, the Today sheet), never by friend, leaderboard or share RPCs.
+- rep_lab_sets — id (the set id) PK, user_id, session_id (FK → sessions, ON
+  DELETE CASCADE), exercise, logged/auto reps, auto_shown, typed, corrected,
+  the analyzed motion window (motion_x/y/z smallint[] milli-g at 12.5 Hz,
+  steps), the counter's events timeline and diag (jsonb). Owner SELECT only;
+  writes via the service-role `watch_store_rep_lab`. Tuning data for the
+  watch rep counter; nothing in the app reads it (migration `66`).
 - body_prefs — user_id PK, coach_uses_body (default true), smart_rest (default
   false). Owner select/insert/update; toggled from Settings → Watch.
   `delete_body_data()` (authenticated) wipes the caller's daily_body rows and
