@@ -122,7 +122,9 @@ set fewer per lift. With Smart rest on (GRIND → Settings → Watch) the rest
 screen buzzes twice and says RECOVERED once your HR has come back down.
 
 Every set is written to storage the moment you log it. If the app dies
-mid-workout, the next launch offers to resume or discard.
+mid-workout, the next launch offers to resume or discard. Only Save on the
+summary writes a Garmin activity (and so a Strava post); closing mid-workout
+drops the recording, so a resumed workout's Garmin activity starts at the resume.
 
 ## Tests
 

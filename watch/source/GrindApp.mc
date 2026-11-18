@@ -79,11 +79,14 @@ class GrindApp extends Application.AppBase {
     function onStop(state) {
         if (!fg) { return; }
         if (timer != null) { timer.stop(); }
-        // If the system closes us mid-workout, keep the activity recorded so
-        // far. The sets are already in storage and resume on next launch.
+        // Closing mid-workout drops the Garmin recording instead of saving
+        // it. Resuming starts a new recording, so saving here posted one
+        // Garmin/Strava activity per close-and-resume. The sets and our own
+        // HR trace are in storage, and Save on the summary records the one
+        // activity that counts.
         Hr.save();
         Reps.stop();
-        Recorder.stop(true);
+        Recorder.stop(false);
     }
 
     function getInitialView() {
