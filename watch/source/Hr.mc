@@ -132,6 +132,7 @@ module Hr {
         if (sid == null) { return; }
         sealed = Store.putHeart(sid, trace, zs, zones, sealed);
         unsaved = 0;
+        Recorder.saveCounts();
     }
 
     // Save: keep the record for upload. Discard: Store.dropSession removes it.

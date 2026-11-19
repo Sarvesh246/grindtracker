@@ -32,6 +32,8 @@ export interface DailyBody {
   steps_series?: (number | null)[] | null
   active_series?: (number | null)[] | null
   floors_series?: (number | null)[] | null
+  /** Migration 71: breaths per minute at the bucket each sync arrived in. */
+  resp_series?: (number | null)[] | null
 }
 
 /** One stored watch snapshot (migration 69's body_sync_log). */

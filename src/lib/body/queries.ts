@@ -3,6 +3,7 @@ import { bodyExtras, computeCharge, type Charge } from './charge'
 import type { ReadinessCheck, ReadinessSummary } from './hrv'
 import { loadBalance, type LoadBalance } from './load'
 import type { StrengthLoad, StrengthSet } from './strength'
+import { hrRange, type HrRange } from './hrRange'
 import type { BodySync, DailyBody, LoadSession } from './types'
 
 /**
@@ -39,6 +40,9 @@ export interface BodySummary {
   /** Stored watch snapshots of the last 14 days, newest first (migration 69;
    *  empty before it). */
   syncs: BodySync[]
+  /** Today's lowest and highest raw heart-rate sample in each 15-min bucket
+   *  (migration 70's body_sync_log samples); null without them. */
+  todayHrRange: HrRange | null
 }
 
 const DAY_COLUMNS =
@@ -54,7 +58,7 @@ export function emptyBodySummary(today: string): BodySummary {
   return {
     available: false, hasWatch: false, today, days: [], todayRow: null, sessions: [],
     charge: null, load: null, readinessChecks: [], readiness: null, strengthSets: [], strength: null,
-    prefs: DEFAULT_BODY_PREFS, syncs: [],
+    prefs: DEFAULT_BODY_PREFS, syncs: [], todayHrRange: null,
   }
 }
 
@@ -73,6 +77,36 @@ async function readIntraday(supabase: SupabaseClient, userId: string, today: str
   if (error || !data) return out
   for (const r of data as unknown as Partial<DailyBody>[]) if (r.local_date) out.set(r.local_date, r)
   return out
+}
+
+/** Migration 71's respiration curve, read on its own like the intraday
+ *  columns so a database without it yet still shows everything else. */
+async function readRespiration(supabase: SupabaseClient, userId: string, today: string): Promise<Map<string, (number | null)[]>> {
+  const { data, error } = await supabase
+    .from('daily_body')
+    .select('local_date,resp_series')
+    .eq('user_id', userId)
+    .gte('local_date', shiftKey(today, -35))
+    .lte('local_date', today)
+  const out = new Map<string, (number | null)[]>()
+  if (error || !data) return out
+  for (const r of data as { local_date: string; resp_series: (number | null)[] | null }[]) {
+    if (r.resp_series) out.set(r.local_date, r.resp_series)
+  }
+  return out
+}
+
+/** Today's raw all-day heart-rate samples (migration 70), as a 15-min range. */
+async function readTodayHrRange(supabase: SupabaseClient, userId: string, today: string): Promise<HrRange | null> {
+  const { data, error } = await supabase
+    .from('body_sync_log')
+    .select('hr_t,hr_v')
+    .eq('user_id', userId)
+    .eq('local_date', today)
+    .not('hr_t', 'is', null)
+    .limit(200)
+  if (error || !data) return null
+  return hrRange(data as { hr_t: number[] | null; hr_v: number[] | null }[])
 }
 
 /** Watch snapshots as they arrived; an absent table reads as none. */
@@ -141,14 +175,20 @@ export async function getBodySummary(supabase: SupabaseClient, userId: string, t
         .lte('local_date', today),
       supabase.from('body_prefs').select('coach_uses_body,smart_rest').eq('user_id', userId).maybeSingle(),
     ])
-    const [readinessChecks, strengthSets, intraday, syncs] = await Promise.all([
+    const [readinessChecks, strengthSets, intraday, syncs, resp, todayHrRange] = await Promise.all([
       readReadiness(supabase, userId, today).catch(() => []),
       readStrengthSets(supabase, userId, today).catch(() => []),
       readIntraday(supabase, userId, today).catch(() => new Map<string, Partial<DailyBody>>()),
       readSyncs(supabase, userId).catch(() => []),
+      readRespiration(supabase, userId, today).catch(() => new Map<string, (number | null)[]>()),
+      readTodayHrRange(supabase, userId, today).catch(() => null),
     ])
     if (daysRes.error || sessRes.error) return emptyBodySummary(today)
-    const days = ((daysRes.data ?? []) as DailyBody[]).map(d => ({ ...d, ...intraday.get(d.local_date) }))
+    const days = ((daysRes.data ?? []) as DailyBody[]).map(d => ({
+      ...d,
+      ...intraday.get(d.local_date),
+      ...(resp.has(d.local_date) ? { resp_series: resp.get(d.local_date) } : {}),
+    }))
     const sessions = (sessRes.data ?? []) as LoadSession[]
     const hasWatch = days.length > 0 || sessions.some(s => s.zone_seconds != null) || readinessChecks.length > 0
     const extras = { readiness: readinessChecks, strength: strengthSets }
@@ -171,6 +211,7 @@ export async function getBodySummary(supabase: SupabaseClient, userId: string, t
       strength,
       // A failed consent read must never silently re-enable Coach health access.
       syncs,
+      todayHrRange,
       prefs: prefsRes.error ? { ...DEFAULT_BODY_PREFS, coach_uses_body: false } : (prefsRes.data as BodyPrefs | null) ?? DEFAULT_BODY_PREFS,
     }
   } catch {

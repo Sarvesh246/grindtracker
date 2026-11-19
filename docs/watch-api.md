@@ -354,6 +354,7 @@ forget: a failure waits for the next snapshot.
   "floors": 6,
   "spo2": 96,
   "vo2max": 60,
+  "respiration": 15,
   "heart_rate": ["… 96 buckets, average bpm or null …"],
   "bucket": 58,
   "source": "background"
@@ -387,15 +388,27 @@ in the app shows them, and `npm run watchreport` reads them back:
   code; a failed run stores nothing, so this is the only trace of it), and
   `probe`: per sensor value, `[value, age in minutes]` or a code (`-1` empty,
   `-2` threw, `-3` not on this firmware). Keys: `bb_h`, `stress_h`, `hr_h`,
-  `spo2_h`, `temp_h`, `press_h` (newest history sample), `resp`, `stress`,
-  `ttr`, `hr`, `spo2`, `temp`, `press`, `rhr`, `avg_rhr`, `vo2` (live).
+  `spo2_h`, `temp_h`, `press_h` (newest history sample with a value, looking
+  back up to six), `resp`, `stress`, `ttr`, `hr`, `spo2`, `temp`, `press`,
+  `rhr`, `avg_rhr`, `vo2` (live). `wk_hr`: the last watch workout's
+  heart-rate reads, `[reads, misses, from the recording, from the sensor
+  fallback]`.
 
 Both are stored per snapshot in `body_sync_log` (30 days). Before migration 70
 they are accepted and ignored.
 
-Respiration and SpO2 history are not sent as data: the Forerunner 165 Music
-leaves them empty (phase 0 probe, 2026-11-16). The probe in `diag` watches for
-that changing with a firmware update.
+`spo2` is the newest SpO2 *history* sample, sent only when it is under 30
+minutes old. The live sensor value it replaced held the last reading for hours
+once the watch stopped measuring (diagnostics, 2026-11-19); left out, the
+server keeps the day's last value.
+
+Migration `71` adds `respiration` (4–60 breaths/min): the live rate, which the
+server places at `bucket` on `resp_series` like the running totals.
+Respiration *history* is still empty on the Forerunner 165 Music, but the live
+rate is filled in on most snapshots. The overnight median is the resting
+respiration Charge compares with your usual. Each snapshot's `heart_rate` is
+also kept in `body_sync_log.hr_avg`, so `npm run watchreport` can see Garmin
+revise a finished bucket. Before migration 71 both are accepted and ignored.
 
 ## POST /rep-lab
 

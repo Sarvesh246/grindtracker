@@ -53,6 +53,7 @@ function summary(over: Partial<BodySummary> = {}, rise = 0, wake = 38): BodySumm
     available: true,
     hasWatch: true,
     syncs: [],
+    todayHrRange: null,
     today: TODAY,
     days: d,
     todayRow: d[d.length - 1]!,

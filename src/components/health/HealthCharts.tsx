@@ -341,8 +341,11 @@ export function SeriesPlot({
   let lo = 0
   let hi = maximum ?? 1
   if (maximum == null && stats) {
-    const mn = Math.min(stats.min, band?.low ?? Infinity)
-    const mx = Math.max(stats.max, band?.high ?? -Infinity)
+    // An envelope drawn without a fixed maximum (the HR range) must fit too.
+    const envLow = envelope ? envelope.low.filter((v): v is number => v != null) : []
+    const envHigh = envelope ? envelope.high.filter((v): v is number => v != null) : []
+    const mn = Math.min(stats.min, band?.low ?? Infinity, ...envLow)
+    const mx = Math.max(stats.max, band?.high ?? -Infinity, ...envHigh)
     const pad = Math.max((mx - mn) * 0.25, Math.abs(mx) * 0.03, 1)
     lo = Math.max(0, Math.floor(mn - pad))
     hi = Math.ceil(mx + pad)
@@ -542,12 +545,16 @@ export function DailyHealthTimeline({
   annotations = [],
   usual,
   hr = [],
+  hrRange = null,
   steps = []
 }: {
   bb: (number | null)[]
   stress: (number | null)[]
   /** All-day heart rate, bucket averages (migration 69). */
   hr?: (number | null)[]
+  /** Lowest and highest raw HR sample in each bucket (migration 70), shaded
+   *  around the averages so a short spike isn't flattened away. */
+  hrRange?: { low: (number | null)[]; high: (number | null)[] } | null
   /** The day's step total at the buckets syncs arrived in (migration 69). */
   steps?: (number | null)[]
   date: string
@@ -570,6 +577,7 @@ export function DailyHealthTimeline({
   const energy = observed(bb),
     strain = observed(stress),
     pulse = observed(hr),
+    pulseRange = hrRange ? { low: observed(hrRange.low), high: observed(hrRange.high), days: 0 } : null,
     walked = observed(stepCurve(steps))
   const hasPulse = pulse.some((v) => v != null),
     hasSteps = walked.some((v) => v != null)
@@ -590,7 +598,7 @@ export function DailyHealthTimeline({
         {([
           ['energy', 'Energy', energy[selected], usual?.bb],
           ['stress', 'Stress', strain[selected], usual?.stress],
-          ...(hasPulse ? ([['hr', 'Heart rate', pulse[selected], null]] as const) : []),
+          ...(hasPulse ? ([['hr', 'Heart rate', pulse[selected], pulseRange]] as const) : []),
           ...(hasSteps ? ([['steps', 'Steps', walked[selected], null]] as const) : [])
         ] as const).map(([key, label, value, range]) => {
           const low = range?.low[selected]
@@ -599,7 +607,9 @@ export function DailyHealthTimeline({
             <div key={key}>
               <span><i className={`health-dot-${key}`} aria-hidden="true" />{label}</span>
               <b>{value == null ? 'No reading' : key === 'steps' ? value.toLocaleString() : value}</b>
-              {low != null && high != null && <small>usual {Math.round(low)}–{Math.round(high)}</small>}
+              {low != null && high != null && (
+                <small>{key === 'hr' ? 'range' : 'usual'} {Math.round(low)}–{Math.round(high)}</small>
+              )}
             </div>
           )
         })}
@@ -654,13 +664,16 @@ export function DailyHealthTimeline({
       />
       {hasPulse && (
         <>
-          <p className="health-eyebrow health-plot-title">Heart rate</p>
+          <p className="health-eyebrow health-plot-title">
+            Heart rate{pulseRange && <> · shaded low–high per 15 min</>}
+          </p>
           <SeriesPlot
             values={pulse}
             label="Heart rate, beats per minute"
             selected={selected}
             onSelect={index => setPicked({ index, plot: 'hr' })}
             marks={annotations}
+            envelope={pulseRange}
             reading={activePlot === 'hr' ? reading : undefined}
           />
         </>

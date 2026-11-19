@@ -86,11 +86,18 @@ Moved out of [CLAUDE.md](../CLAUDE.md) to keep that file short; its text is unch
   (Charge, the Today sheet), never by friend, leaderboard or share RPCs.
   Migration `69` adds hr_series (bucket-average heart rate) and
   steps_series / active_series / floors_series (the day's running total at the
-  bucket each sync arrived in; gaps between syncs stay null).
+  bucket each sync arrived in; gaps between syncs stay null). Migration `71`
+  adds resp_series (breaths per minute at the bucket each sync arrived in;
+  the overnight median is the resting respiration Charge uses).
 - body_sync_log — one row per stored watch day snapshot: user_id, local_date,
   received_at, source (`app` or `background`). Kept 14 days. Owner SELECT only;
   written by `watch_upsert_daily` (migration `69`). The Health page reads it to
-  show when and how the last snapshot arrived.
+  show when and how the last snapshot arrived. Migration `70` adds the watch's
+  diagnostics (taken_at, battery, charging, free_mem, diag jsonb) and the raw
+  all-day HR samples hr_t / hr_v, kept 30 days; the Health page draws today's
+  raw samples as the 15-min range around the HR line. Migration `71` adds
+  hr_avg, the snapshot's own 15-min HR averages, to catch Garmin revising
+  history.
 - rep_lab_sets — id (the set id) PK, user_id, session_id (FK → sessions, ON
   DELETE CASCADE), exercise, logged/auto reps, auto_shown, typed, corrected,
   the analyzed motion window (motion_x/y/z smallint[] milli-g at 12.5 Hz,

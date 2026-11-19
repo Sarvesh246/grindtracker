@@ -135,6 +135,9 @@ export const watchDailySchema = z.strictObject({
   floors: z.int().min(0).max(2000).nullish(),
   spo2: z.int().min(50).max(100).nullish(),
   vo2max: z.int().min(10).max(100).nullish(),
+  /** Migration 71. The live respiration rate, breaths per minute, placed at
+   *  `bucket` on the day's curve. */
+  respiration: z.int().min(4).max(60).nullish(),
   /** All-day heart rate, bucket averages (migration 69). */
   heart_rate: z.array(z.int().min(25).max(250).nullable()).length(96).optional(),
   /** The 15-min bucket (0–95, local) this snapshot was taken in; the running
@@ -168,6 +171,9 @@ export const watchDailySchema = z.strictObject({
       prev_bg_code: z.int().min(-1000).max(1000).nullish(),
       /** The background event period, seconds. */
       period_s: z.int().min(0).max(86_400).nullish(),
+      /** The last workout's heart-rate reads: [reads, misses, from the
+       *  recording, from the sensor fallback]. */
+      wk_hr: z.tuple([z.int().min(0), z.int().min(0), z.int().min(0), z.int().min(0)]).nullish(),
       /** Per sensor value: [value, age in minutes], or a code: -1 empty,
        *  -2 threw, -3 not on this firmware. */
       probe: z

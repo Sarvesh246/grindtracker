@@ -1,5 +1,6 @@
 import { hrvScore, summarizeReadiness, type ReadinessCheck, type ReadinessSummary } from './hrv'
 import { clamp, daysBetween, loadBalance, loadScore } from './load'
+import { respirationBaseline, restingRespiration } from './respiration'
 import { strengthLoad, strengthScore, type RecoverySignals, type StrengthLoad, type StrengthSet } from './strength'
 import type { DailyBody, LoadSession } from './types'
 
@@ -10,6 +11,8 @@ import type { DailyBody, LoadSession } from './types'
  *   HRV check vs your usual     20%   at or above usual → 90–100, −1 SD → 60
  *   Recovery time left          20%   0 h → 100, 48 h → 0
  *   Resting HR vs 30-day usual  15%   −3 bpm or lower → 100, +7 → 0
+ *   Resting respiration vs      10%   at or under usual → 100, +3 breaths/min
+ *     30-night usual                  → 0. Overnight median (respiration.ts)
  *   Training load balance       15%   7 days vs 28, 0.8–1.3 → 100. Lifting
  *                                     load (strength.ts) when there is enough
  *                                     of it, else heart-rate load (load.ts)
@@ -18,7 +21,7 @@ import type { DailyBody, LoadSession } from './types'
  * means no score at all. A training guide, never a medical measure.
  */
 
-export type ChargeKey = 'body_battery' | 'hrv' | 'recovery' | 'resting_hr' | 'load'
+export type ChargeKey = 'body_battery' | 'hrv' | 'recovery' | 'resting_hr' | 'respiration' | 'load'
 export type ChargeBand = 'primed' | 'steady' | 'easy'
 
 export interface ChargeInput {
@@ -45,7 +48,9 @@ export interface Charge {
   shortAdvice: string
 }
 
-const WEIGHTS: Record<ChargeKey, number> = { body_battery: 0.3, hrv: 0.2, recovery: 0.2, resting_hr: 0.15, load: 0.15 }
+// Weights are relative: inputs that are missing drop out and the rest are
+// re-weighted, so respiration only dilutes the others when it is present.
+const WEIGHTS: Record<ChargeKey, number> = { body_battery: 0.3, hrv: 0.2, recovery: 0.2, resting_hr: 0.15, respiration: 0.1, load: 0.15 }
 
 /** Optional inputs beyond daily_body and sessions. */
 export interface ChargeExtras {
@@ -148,6 +153,26 @@ export function computeCharge(days: DailyBody[], sessions: LoadSession[], today:
           : delta < 0
             ? `resting heart rate is ${-delta} bpm under your usual`
             : 'resting heart rate is right at your usual',
+    })
+  }
+
+  // Breathing faster than usual at rest is one of the earliest signs of
+  // illness or strain, often a night before resting HR moves.
+  const breaths = restingRespiration(row)
+  const breathsUsual = respirationBaseline(days, today)
+  if (breaths != null && breathsUsual != null) {
+    const delta = Math.round((breaths - breathsUsual) * 10) / 10
+    raw.push({
+      key: 'respiration',
+      label: 'Resting breathing',
+      value: `${delta > 0 ? '+' : ''}${delta} /min`,
+      score: clamp(100 - (delta / 3) * 100, 0, 100),
+      phrase:
+        delta >= 1
+          ? `you breathed ${delta} breaths/min faster than usual overnight`
+          : delta <= -1
+            ? 'your overnight breathing was calmer than usual'
+            : 'your overnight breathing was at your usual',
     })
   }
 

@@ -12,8 +12,8 @@ using Toybox.UserProfile;
 // GRIND Body, phase 1: the day's snapshot for POST /daily. Only the values the
 // phase 0 probe saw this watch actually fill in: Body Battery, stress and
 // heart-rate history, resting HR, recovery time, steps, active minutes,
-// floors, live SpO2 and VO2 max. (Respiration and SpO2 history came back
-// empty.)
+// floors, SpO2 (the newest history sample, when recent), VO2 max and the
+// live respiration rate. (Respiration history comes back empty.)
 //
 // Also runs in the background service (Bg.mc), which has 64 KB in all, so
 // the history is bucketed as it is read: 96 slots per series whatever the
@@ -156,6 +156,8 @@ module Body {
             }
             var per = Background.getTemporalEventRegisteredTime();
             if (per instanceof Time.Duration) { d["period_s"] = per.value(); }
+            var wk = Storage.getValue("wkhr");
+            if (wk instanceof Lang.Array && wk.size() == 4) { d["wk_hr"] = wk; }
         } catch (e) {
         }
         d["probe"] = probe(now);
@@ -166,12 +168,16 @@ module Body {
         return d;
     }
 
-    // The newest sample of one SensorHistory series: [value, age in minutes],
-    // or -1 empty, -2 threw, -3 not on this firmware.
+    // The newest sample of one SensorHistory series that has a value:
+    // [value, age in minutes], or -1 empty, -2 threw, -3 not on this firmware.
+    // Looks back NEWEST_LOOK samples, because the newest is often blank
+    // (stress can't be read while you move) and reading only that one made a
+    // full stress history look 79% empty.
+    const NEWEST_LOOK = 6;
     function newest(kind, now) {
         if (!(Toybox has :SensorHistory)) { return -3; }
         try {
-            var opt = { :period => 1, :order => SensorHistory.ORDER_NEWEST_FIRST };
+            var opt = { :period => NEWEST_LOOK, :order => SensorHistory.ORDER_NEWEST_FIRST };
             var it = null;
             if (kind == 0) { if (!(SensorHistory has :getBodyBatteryHistory)) { return -3; } it = SensorHistory.getBodyBatteryHistory(opt); }
             else if (kind == 1) { if (!(SensorHistory has :getStressHistory)) { return -3; } it = SensorHistory.getStressHistory(opt); }
@@ -181,12 +187,18 @@ module Body {
             else { if (!(SensorHistory has :getPressureHistory)) { return -3; } it = SensorHistory.getPressureHistory(opt); }
             if (it == null) { return -1; }
             var s = it.next();
+            for (var i = 0; i < NEWEST_LOOK && s != null && s.data == null; i++) { s = it.next(); }
             if (s == null || s.data == null) { return -1; }
             return [s.data, s.when == null ? -1 : (now - s.when.value()) / 60];
         } catch (e) {
             return -2;
         }
     }
+
+    // A SpO2 history sample is worth sending when it is under SPO2_MAX_AGE
+    // minutes old (and its age is known).
+    const SPO2_MAX_AGE = 30;
+    function spo2Fresh(ageMin) { return ageMin != null && ageMin >= 0 && ageMin <= SPO2_MAX_AGE; }
 
     // A live value as a probe entry.
     function live(v) { return v == null ? -1 : [v, 0]; }
@@ -258,6 +270,9 @@ module Body {
                 if (a has :floorsClimbed) { day["floors"] = num(a.floorsClimbed, 0, 2000); }
                 if (a has :activeMinutesDay && a.activeMinutesDay != null) { day["active_minutes"] = num(a.activeMinutesDay.total, 0, 1440); }
                 if (a has :timeToRecovery) { day["recovery_hours"] = num(a.timeToRecovery, 0, 200); }
+                // Live only: the respiration history comes back empty on
+                // this watch, but the live rate is filled in most snapshots.
+                if (a has :respirationRate) { day["respiration"] = num(a.respirationRate, 4, 60); }
             }
         } catch (e) {
         }
@@ -269,11 +284,12 @@ module Body {
             }
         } catch (e) {
         }
-        try {
-            var s = Sensor.getInfo();
-            if (s != null && s has :oxygenSaturation) { day["spo2"] = num(s.oxygenSaturation, 50, 100); }
-        } catch (e) {
-        }
+        // SpO2 from the newest history sample, and only a recent one: the live
+        // Sensor value is the last reading the watch took, and the diagnostics
+        // showed it holding at one number for nine hours after the history
+        // had nothing newer. Left out, the server keeps the day's last value.
+        var ox = newest(3, now);
+        if (ox instanceof Lang.Array && spo2Fresh(ox[1])) { day["spo2"] = num(ox[0], 50, 100); }
         // The server is strict about shapes: leave nulls out entirely.
         var keys = day.keys();
         for (var i = 0; i < keys.size(); i++) {

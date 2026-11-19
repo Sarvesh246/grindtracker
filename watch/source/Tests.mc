@@ -3,6 +3,8 @@ using Toybox.Test;
 using Toybox.Math;
 using Toybox.System;
 using Toybox.StringUtil;
+using Toybox.Application.Storage;
+using Toybox.Time;
 
 // Run: build with --unit-test, then `monkeydo bin/grind-test.prg fr165m -t`.
 // (:test) code is stripped from normal builds.
@@ -1473,5 +1475,14 @@ function testDailyDiagnostics(logger) {
     var raw = d["hr_raw"];
     ok = T.ck(logger, "raw hr, when sent, is paired", raw == null || raw["t"].size() == raw["v"].size()) && ok;
     ok = T.ck(logger, "trace bytes", Logic.traceB64([90, 0, 120, 300, null]).equals("WgB4AAA=")) && ok;
+    ok = T.ck(logger, "spo2 only when recent", Body.spo2Fresh(0) && Body.spo2Fresh(30)
+        && !Body.spo2Fresh(31) && !Body.spo2Fresh(-1) && !Body.spo2Fresh(null)) && ok;
+    ok = T.ck(logger, "spo2, when sent, is in range", d["spo2"] == null || (d["spo2"] >= 50 && d["spo2"] <= 100)) && ok;
+    ok = T.ck(logger, "respiration, when sent, is in range", d["respiration"] == null || (d["respiration"] >= 4 && d["respiration"] <= 60)) && ok;
+    var prevWk = Storage.getValue("wkhr");
+    Storage.setValue("wkhr", [10, 2, 7, 1]);
+    var wk = Body.diag(Time.now().value())["wk_hr"];
+    ok = T.ck(logger, "diag carries the last workout's HR reads", wk instanceof Lang.Array && wk.size() == 4 && wk[1] == 2) && ok;
+    if (prevWk == null) { Storage.deleteValue("wkhr"); } else { Storage.setValue("wkhr", prevWk); }
     return ok;
 }

@@ -68,6 +68,8 @@ export function toDailyPayload(input: WatchDailyInput) {
     steps_series: atBucket(input.bucket, input.steps),
     active_series: atBucket(input.bucket, input.active_minutes),
     floors_series: atBucket(input.bucket, input.floors),
+    // Migration 71; earlier RPCs ignore it.
+    resp_series: atBucket(input.bucket, input.respiration),
     source: input.source ?? 'app',
     // Migration 70: stored in body_sync_log; earlier RPCs ignore them.
     hr_raw: input.hr_raw ?? null,

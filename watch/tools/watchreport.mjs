@@ -14,7 +14,10 @@
 //                    averages hide
 //   sensors          which values the watch fills in, how fresh, and whether
 //                    that changed with a firmware update
-//   workout HR       the one-second traces: dropouts and gaps
+//   HR revisions     whether Garmin rewrites finished 15-min buckets (71)
+//   respiration      how often the live rate is there, and its range
+//   workout HR       where the last workout's readings came from, and the
+//                    one-second traces: dropouts and gaps
 //
 // Needs NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (.env.local).
 // Reads only; covers every user with a watch, so run it as the developer.
@@ -100,31 +103,49 @@ function backgroundSync(rows) {
   }
 }
 
+// Battery reads in whole percent and drains well under 1%/h, so most 15-minute
+// pairs show no drop at all and a median of pair rates comes out 0. Instead,
+// split the readings into discharge stretches (broken by charging, a rise, or
+// a gap of over 2 h) and measure each stretch end to end.
+function dischargeStretches(list) {
+  const s = list.filter(r => r.taken_at && r.battery != null).sort((a, b) => t(a.taken_at) - t(b.taken_at))
+  const out = []
+  let cur = []
+  const close = () => {
+    if (cur.length > 1) out.push(cur)
+    cur = []
+  }
+  for (const r of s) {
+    if (r.charging) { close(); continue }
+    const prev = cur[cur.length - 1]
+    if (prev && (r.battery > prev.battery || t(r.taken_at) - t(prev.taken_at) > 2 * 3_600_000)) close()
+    cur.push(r)
+  }
+  close()
+  return out
+}
+
 function battery(rows) {
   head('battery')
-  const rates = []
-  const bgRates = []
+  let drop = 0, hours = 0, bgDrop = 0, bgHours = 0, n = 0
   for (const list of byUser(rows).values()) {
-    const s = list.filter(r => r.taken_at && r.battery != null).sort((a, b) => t(a.taken_at) - t(b.taken_at))
-    for (let i = 1; i < s.length; i++) {
-      const a = s[i - 1], b = s[i]
-      if (a.charging || b.charging) continue
-      const h = (t(b.taken_at) - t(a.taken_at)) / 3_600_000
-      if (h < 0.2 || h > 6) continue
-      const drop = a.battery - b.battery
-      if (drop < 0) continue // charged in between
-      rates.push(drop / h)
-      if (a.source === 'background' && b.source === 'background') bgRates.push(drop / h)
+    for (const st of dischargeStretches(list)) {
+      const h = (t(st[st.length - 1].taken_at) - t(st[0].taken_at)) / 3_600_000
+      if (h < 1) continue // too short to see a whole-percent drop
+      const d = st[0].battery - st[st.length - 1].battery
+      drop += d
+      hours += h
+      n++
+      if (st.every(r => r.source === 'background')) { bgDrop += d; bgHours += h }
     }
   }
-  if (!rates.length) {
-    console.log('No battery readings yet (needs migration 70 and the new watch build).')
+  if (!hours) {
+    console.log('No battery stretch of an hour or more yet (needs migration 70 and the new watch build).')
     return
   }
-  console.log(`off the charger: median ${f1(median(rates))}%/h, 90th ${f1(pct(rates, 0.9))}%/h  (≈ ${f1(median(rates) * 24)}%/day)`)
-  if (bgRates.length) console.log(`between two background snapshots (app closed): median ${f1(median(bgRates))}%/h over ${bgRates.length} stretches`)
+  console.log(`off the charger: ${f1(drop / hours)}%/h (≈ ${f1((24 * drop) / hours)}%/day), ${f1(drop)}% over ${f1(hours)} h in ${n} stretches`)
+  if (bgHours) console.log(`with only background snapshots (app closed): ${f1(bgDrop / bgHours)}%/h over ${f1(bgHours)} h`)
   console.log('  Compare with a day before the 15-minute build to see what background sync costs.')
-  console.log('  Readings are whole percent, so short stretches are noisy; the median settles over days.')
 }
 
 function memory(rows) {
@@ -151,18 +172,28 @@ function allDayHr(rows, daysRows) {
   const spread = []
   const diffs = []
   const daily = new Map(daysRows.map(d => [`${d.user_id} ${d.local_date}`, d.hr_series]))
+  // Each snapshot re-sends a minute of overlap, so merge a day's samples by
+  // time first; otherwise a bucket split across two snapshots is counted as
+  // two half-buckets and the overlap sample twice.
+  const perDay = new Map()
   for (const r of withRaw) {
-    for (let i = 1; i < r.hr_t.length; i++) {
-      const d = r.hr_t[i] - r.hr_t[i - 1]
-      if (d > 0) steps.push(d)
-    }
+    const k = `${r.user_id} ${r.local_date}`
+    if (!perDay.has(k)) perDay.set(k, new Map())
+    const m = perDay.get(k)
+    r.hr_t.forEach((s, i) => m.set(s, r.hr_v[i]))
+  }
+  let n = 0
+  for (const [k, m] of perDay) {
+    const ts = [...m.keys()].sort((a, b) => a - b)
+    n += ts.length
+    for (let i = 1; i < ts.length; i++) steps.push(ts[i] - ts[i - 1])
     const buckets = new Map()
-    r.hr_t.forEach((s, i) => {
+    for (const s of ts) {
       const b = Math.floor(s / 900)
       if (!buckets.has(b)) buckets.set(b, [])
-      buckets.get(b).push(r.hr_v[i])
-    })
-    const series = daily.get(`${r.user_id} ${r.local_date}`)
+      buckets.get(b).push(m.get(s))
+    }
+    const series = daily.get(k)
     for (const [b, v] of buckets) {
       if (v.length < 3) continue
       spread.push(Math.max(...v) - Math.min(...v))
@@ -170,12 +201,81 @@ function allDayHr(rows, daysRows) {
       if (series?.[b] != null) diffs.push(Math.abs(series[b] - mean))
     }
   }
-  const n = withRaw.reduce((a, r) => a + r.hr_t.length, 0)
-  console.log(`${n} samples in ${withRaw.length} snapshots`)
+  console.log(`${n} samples (overlap removed) in ${withRaw.length} snapshots`)
   console.log(`sample spacing: median ${f1(median(steps))} s, 10th ${f1(pct(steps, 0.1))} s, 90th ${f1(pct(steps, 0.9))} s`)
   console.log(`within one 15-min bucket, highest minus lowest: median ${f1(median(spread))} bpm, 90th ${f1(pct(spread, 0.9))} bpm`)
   console.log('  That spread is what the 15-minute average on the Health page flattens.')
   if (diffs.length) console.log(`stored bucket average vs raw mean: median off by ${f1(median(diffs))} bpm (should be ~0)`)
+}
+
+// Migration 71: every snapshot's own 15-min averages. A bucket that is
+// already complete (its 15 min ended before the earlier snapshot) and still
+// changes in a later snapshot means Garmin rewrote its HR history.
+function hrRevisions(rows) {
+  head('heart-rate history revisions')
+  const withAvg = rows.filter(r => r.hr_avg?.length === 96 && r.taken_at)
+  if (withAvg.length < 2) {
+    console.log('Not enough snapshots with their own averages yet (needs migration 71).')
+    return
+  }
+  let compared = 0
+  const moves = []
+  const late = new Map()
+  for (const list of byUser(withAvg).values()) {
+    const byDay = new Map()
+    for (const r of list) {
+      if (!byDay.has(r.local_date)) byDay.set(r.local_date, [])
+      byDay.get(r.local_date).push(r)
+    }
+    for (const snaps of byDay.values()) {
+      snaps.sort((a, b) => t(a.taken_at) - t(b.taken_at))
+      for (let i = 1; i < snaps.length; i++) {
+        const a = snaps[i - 1], b = snaps[i]
+        const midnight = t(`${a.local_date}T00:00:00`) // local wall clock, read as local
+        const done = Math.floor((t(a.taken_at) - midnight) / 900_000) - 1
+        for (let k = 0; k <= Math.min(done, 95); k++) {
+          if (a.hr_avg[k] == null || b.hr_avg[k] == null) continue
+          compared++
+          const d = Math.abs(b.hr_avg[k] - a.hr_avg[k])
+          if (d > 0) {
+            moves.push(d)
+            const hour = Math.floor(k / 4)
+            late.set(hour, (late.get(hour) ?? 0) + 1)
+          }
+        }
+      }
+    }
+  }
+  console.log(`${compared} complete buckets compared between consecutive snapshots; ${moves.length} changed (${share(moves.length, compared)})`)
+  if (moves.length) {
+    console.log(`  by how much: median ${f1(median(moves))} bpm, largest ${Math.max(...moves)} bpm`)
+    const hours = [...late].sort((x, y) => y[1] - x[1]).slice(0, 5).map(([h, n]) => `${String(h).padStart(2, '0')}:00 ×${n}`)
+    console.log(`  mostly in the hours ${hours.join(', ')} (local)`)
+  }
+}
+
+function respiration(rows) {
+  head('respiration')
+  const vals = rows.map(r => r.diag?.probe?.resp).filter(Array.isArray).map(v => v[0])
+  const probed = rows.filter(r => r.diag?.probe?.resp !== undefined).length
+  if (!probed) {
+    console.log('No respiration probes yet.')
+    return
+  }
+  console.log(`live rate filled in ${share(vals.length, probed)} of ${probed} snapshots; median ${f1(median(vals))}/min, 10th ${f1(pct(vals, 0.1))}, 90th ${f1(pct(vals, 0.9))}`)
+}
+
+function workoutReads(rows) {
+  head('workout heart-rate reads')
+  const last = [...rows].reverse().find(r => Array.isArray(r.diag?.wk_hr))
+  if (!last) {
+    console.log('No workout recorded on this build yet.')
+    return
+  }
+  const [n, miss, act, sens] = last.diag.wk_hr
+  console.log(`last workout (reported ${last.taken_at?.slice(0, 16)}): ${n} reads, ${miss} missed (${share(miss, n)})`)
+  console.log(`  from the Garmin recording ${act}, from the sensor fallback ${sens}`)
+  if (n && miss === n) console.log('  ! no reading at all: the sensor never delivered heart rate')
 }
 
 function sensors(rows) {
@@ -242,7 +342,9 @@ function workoutHr(sessions) {
 
 const iso = since.toISOString()
 const [syncs, daysRows, sessions] = await Promise.all([
-  fetchAll('body_sync_log', 'user_id,local_date,received_at,source,taken_at,battery,charging,free_mem,hr_t,hr_v,diag', `received_at=gte.${iso}&order=received_at.asc`),
+  // hr_avg is migration 71; before it, read the rest.
+  fetchAll('body_sync_log', 'user_id,local_date,received_at,source,taken_at,battery,charging,free_mem,hr_t,hr_v,hr_avg,diag', `received_at=gte.${iso}&order=received_at.asc`)
+    .catch(() => fetchAll('body_sync_log', 'user_id,local_date,received_at,source,taken_at,battery,charging,free_mem,hr_t,hr_v,diag', `received_at=gte.${iso}&order=received_at.asc`)),
   fetchAll('daily_body', 'user_id,local_date,hr_series', `local_date=gte.${iso.slice(0, 10)}`),
   fetchAll('sessions', 'id,user_id,started_at,hr_step,hr_trace', `started_at=gte.${iso}&hr_trace=not.is.null&order=started_at.asc`),
 ])
@@ -251,5 +353,8 @@ backgroundSync(syncs)
 battery(syncs)
 memory(syncs)
 allDayHr(syncs, daysRows)
+hrRevisions(syncs)
+respiration(syncs)
 sensors(syncs)
+workoutReads(syncs)
 workoutHr(sessions)

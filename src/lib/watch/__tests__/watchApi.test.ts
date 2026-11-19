@@ -506,6 +506,29 @@ describe('POST /daily', () => {
     assert.deepEqual((day as unknown as Record<string, unknown>).diag, diag)
   })
 
+  it('places respiration at the sync bucket and accepts the workout HR counts', async () => {
+    let day: Record<string, unknown> | null = null
+    const deps = fakeDeps({
+      watch_upsert_daily: args => {
+        day = args.p_day as Record<string, unknown>
+        return { data: { local_date: '2026-11-16' }, error: null }
+      },
+    })
+    const diag = { taken_at: '2026-11-16T19:14:03Z', wk_hr: [2400, 12, 2300, 100] }
+    const res = await watchDaily(req('/daily', { body: { date: '2026-11-16', bucket: 5, respiration: 14, diag } }), deps)
+    assert.equal(res.status, 200)
+    const resp = (day as unknown as Record<string, (number | null)[]>).resp_series
+    assert.equal(resp.length, 96)
+    assert.equal(resp[5], 14)
+    assert.equal(resp.filter(v => v != null).length, 1)
+    assert.deepEqual((day as unknown as Record<string, unknown>).diag, diag)
+  })
+
+  it('422 on a respiration rate no one breathes at', async () => {
+    const res = await watchDaily(req('/daily', { body: { date: '2026-11-16', bucket: 5, respiration: 90 } }), fakeDeps())
+    assert.equal(res.status, 422)
+  })
+
   it('422 when raw heart-rate times and values differ in length', async () => {
     const res = await watchDaily(req('/daily', { body: { date: '2026-11-16', hr_raw: { t: [1, 2], v: [60] } } }), fakeDeps())
     assert.equal(res.status, 422)

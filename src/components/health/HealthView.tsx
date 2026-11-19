@@ -1051,6 +1051,7 @@ export function HealthView({
                     bb={body.todayRow.bb_series ?? []}
                     stress={body.todayRow.stress_series ?? []}
                     hr={body.todayRow.hr_series ?? []}
+                    hrRange={date === body.today ? body.todayHrRange : null}
                     steps={body.todayRow.steps_series ?? []}
                     date={date}
                     today={today}

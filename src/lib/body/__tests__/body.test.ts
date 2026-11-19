@@ -5,9 +5,12 @@ import {
   dayStory,
   fitterLine,
   heartSentence,
+  hrRange,
   loadBalance,
   loadScore,
+  respirationBaseline,
   restingBaseline,
+  restingRespiration,
   sessionLoad,
   zoneOf,
   type DailyBody,
@@ -169,5 +172,55 @@ describe('day story', () => {
     assert.equal(lines[0].lead, 'Woke at 86')
     assert.match(lines[2].lead, /^Pull cost \d+ points$/)
     assert.equal(lines[3].lead, 'At 36')
+  })
+})
+
+describe('respiration', () => {
+  const night = (rate: number, n = 24) => Array.from({ length: 96 }, (_, i) => (i < n ? rate : null))
+
+  it('takes the overnight median, ignoring daytime readings', () => {
+    const series = night(14)
+    series[3] = 25 // one awake reading
+    series[60] = 30 // afternoon
+    assert.equal(restingRespiration({ resp_series: series }), 14)
+  })
+
+  it('needs two hours of the night', () => {
+    assert.equal(restingRespiration({ resp_series: night(14, 7) }), null)
+    assert.equal(restingRespiration({ resp_series: null }), null)
+  })
+
+  it('needs five nights before it has a usual', () => {
+    const four = [1, 2, 3, 4].map(n => day(daysAgo(n), { resp_series: night(14) }))
+    assert.equal(respirationBaseline(four, TODAY), null)
+    const five = [...four, day(daysAgo(5), { resp_series: night(16) })]
+    assert.equal(respirationBaseline(five, TODAY), 14.4)
+  })
+
+  it('counts in Charge only once there is a usual, lower when breathing is up', () => {
+    const usual = [1, 2, 3, 4, 5].map(n => day(daysAgo(n), { resp_series: night(14), resting_hr: 58 }))
+    const calm = computeCharge([...usual, day(TODAY, { bb_wake: 70, resting_hr: 58, resp_series: night(14) })], [], TODAY)
+    const fast = computeCharge([...usual, day(TODAY, { bb_wake: 70, resting_hr: 58, resp_series: night(17) })], [], TODAY)
+    assert.equal(calm?.inputs.find(i => i.key === 'respiration')?.score, 100)
+    assert.equal(fast?.inputs.find(i => i.key === 'respiration')?.score, 0)
+    assert.ok((fast?.score ?? 0) < (calm?.score ?? 0))
+    const early = computeCharge([day(TODAY, { bb_wake: 70, resp_series: night(17) }), day(daysAgo(1), { resting_hr: 58 })], [], TODAY)
+    assert.equal(early?.inputs.some(i => i.key === 'respiration') ?? false, false)
+  })
+})
+
+describe('hrRange', () => {
+  it('merges the overlap between snapshots and spans each bucket', () => {
+    const r = hrRange([
+      { hr_t: [0, 60, 120], hr_v: [60, 70, 65] },
+      { hr_t: [120, 180, 900, 960], hr_v: [65, 90, 80, 81] },
+    ])
+    assert.equal(r?.low[0], 60)
+    assert.equal(r?.high[0], 90)
+    assert.equal(r?.low[1], null) // two samples is no spread
+  })
+
+  it('is null with no samples', () => {
+    assert.equal(hrRange([{ hr_t: null, hr_v: null }]), null)
   })
 })
