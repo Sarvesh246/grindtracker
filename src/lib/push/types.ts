@@ -11,6 +11,8 @@ export interface NotificationPrefs {
   energy_alerts: boolean
   energy_kinds: string[]
   energy_lead_min: number
+  /** Morning push when body signals are strong (migration 72). */
+  body_signal_alerts: boolean
   updated_at?: string
 }
 
@@ -25,6 +27,7 @@ export const DEFAULT_NOTIFICATION_PREFS: Omit<NotificationPrefs, 'user_id' | 'up
   energy_alerts: false,
   energy_kinds: ['morning_peak', 'afternoon_dip', 'evening_peak', 'wind_down'],
   energy_lead_min: 20,
+  body_signal_alerts: true,
 }
 
 export type ScheduleAction =

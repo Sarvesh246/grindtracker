@@ -34,6 +34,9 @@ export interface DailyBody {
   floors_series?: (number | null)[] | null
   /** Migration 71: breaths per minute at the bucket each sync arrived in. */
   resp_series?: (number | null)[] | null
+  /** Migration 72: wrist temperature, tenths of a °C, at the bucket each sync
+   *  arrived in. */
+  temp_series?: (number | null)[] | null
 }
 
 /** One stored watch snapshot (migration 69's body_sync_log). */

@@ -4,7 +4,7 @@ import { ALGO_VERSION, cleanParams } from '../../../watch/tools/reps.mjs'
 import { watchError, watchJson } from './http'
 import { hashWatchToken, readBearerToken } from './token'
 import { buildTodayPayload, type TodayContext } from './today'
-import { toBodyPayload, toDailyPayload, todayBody, type BodyContext, type TodayBody } from './body'
+import { contextSignals, PUSH_FROM_BUCKET, PUSH_UNTIL_BUCKET, signalPush, toBodyPayload, toDailyPayload, todayBody, type BodyContext, type TodayBody } from './body'
 import {
   MAX_BODY_BYTES,
   formatIssues,
@@ -181,8 +181,26 @@ export function watchDaily(request: Request, deps: WatchDeps): Promise<Response>
       deps.log('watch_upsert_daily failed', error)
       return watchError(503, 'service_unavailable', 'GRIND is temporarily unavailable. Retry later.', { headers: { 'Retry-After': '60' } })
     }
+    await queueSignalPush(auth.userId, parsed.data.date, parsed.data.bucket, deps)
     return watchJson(data)
   })
+}
+
+/** A morning snapshot finishes the night: if last night's body signals are
+ *  strong, queue one push (watch_queue_body_signal keeps it to one a day and
+ *  honours the user's switch). Never fails the upload. */
+async function queueSignalPush(userId: string, date: string, bucket: number | undefined, deps: WatchDeps): Promise<void> {
+  if (bucket == null || bucket < PUSH_FROM_BUCKET || bucket > PUSH_UNTIL_BUCKET) return
+  try {
+    const ctx = await deps.rpc('watch_body_context', { p_user: userId, p_local_date: date })
+    if (ctx.error || !ctx.data) return
+    const push = signalPush(contextSignals(ctx.data as BodyContext, date))
+    if (!push) return
+    const queued = await deps.rpc('watch_queue_body_signal', { p_user: userId, p_local_date: date, p_payload: push })
+    if (queued.error) deps.log('watch_queue_body_signal failed', queued.error)
+  } catch (err) {
+    deps.log('body signal push crashed', err)
+  }
 }
 
 // ─── POST /rep-lab ─────────────────────────────────────────────────────────

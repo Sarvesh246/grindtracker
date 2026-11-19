@@ -88,7 +88,14 @@ Moved out of [CLAUDE.md](../CLAUDE.md) to keep that file short; its text is unch
   steps_series / active_series / floors_series (the day's running total at the
   bucket each sync arrived in; gaps between syncs stay null). Migration `71`
   adds resp_series (breaths per minute at the bucket each sync arrived in;
-  the overnight median is the resting respiration Charge uses).
+  the overnight median is the resting respiration Charge uses). Migration `72`
+  adds temp_series (wrist °C × 10) and derives bb_high / bb_low / bb_wake /
+  bb_latest from the series after `grind_clean_bb` drops readings that move
+  faster than Body Battery can; nothing merges them separately any more.
+- body_signal_labels — (user_id, local_date) PK, tags text[] (sick, alcohol,
+  poor_sleep, hard_training, stress, travel, fine): what the user said a
+  morning was, so body signals can show how often a warning was right. Owner
+  select/insert/update/delete; wiped by `delete_health_history` (migration `72`).
 - body_sync_log — one row per stored watch day snapshot: user_id, local_date,
   received_at, source (`app` or `background`). Kept 14 days. Owner SELECT only;
   written by `watch_upsert_daily` (migration `69`). The Health page reads it to

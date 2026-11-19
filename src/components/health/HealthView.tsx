@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import Link from 'next/link'
+import { BodySignalsPanel } from './BodySignalsPanel'
 import type { BodySummary } from '@/lib/body/queries'
 import { receivedText } from '@/lib/health/intraday'
 import type { HealthSummary } from '@/lib/health/queries'
@@ -1034,6 +1035,11 @@ export function HealthView({
                 <SleepSummary data={data} date={date} today={today} />
                 <RecoveryBreakdown body={data.body} />
               </div>
+              {body?.hasWatch && body.signals && date === body.today && (
+                <Panel title="Body signals" id="signals" index={4}>
+                  <BodySignalsPanel signals={body.signals} record={body.signalRecord} />
+                </Panel>
+              )}
               {body?.hasWatch && (
                 <Panel title="Readiness" id="readiness" index={4}>
                   <ReadinessTrend checks={body.readinessChecks} date={date} />

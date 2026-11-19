@@ -92,3 +92,13 @@ Settings shows a hint when not installed.
   goes through `upsert_push_subscription` so account switch can transfer the row.
 - **DST / streak hour:** spring-forward may skip the reminder hour; fall-back may
   hit twice — `unique(dedupe_key)` prevents double-send.
+
+## Body signals (migration 72)
+
+`body_signal` is queued by the watch API, not a cron: the first morning
+snapshot (06:00–noon local) after a night whose body signals are **strong**
+(`src/lib/body/signals.ts`) calls `watch_queue_body_signal`, which inserts one
+row per user per local date (`dedupe_key body_signal:<user>:<date>`) unless
+`notification_prefs.body_signal_alerts` is off (on by default; Settings →
+Alerts → Body signals). The 5-minute energy cron sends it. It links to
+`/progress/health`, where the Body signals card explains the night.

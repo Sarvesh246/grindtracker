@@ -1,4 +1,4 @@
-import { bodyExtras, computeCharge, type ChargeBand, type DailyBody, type LoadSession, type ReadinessCheck, type StrengthSet } from '@/lib/body'
+import { bodyExtras, computeCharge, computeSignals, type BodySignals, type ChargeBand, type DailyBody, type LoadSession, type ReadinessCheck, type SignalLabel, type StrengthSet } from '@/lib/body'
 import type { WatchDailyInput, WatchSessionInput } from './schema'
 
 /**
@@ -70,6 +70,8 @@ export function toDailyPayload(input: WatchDailyInput) {
     floors_series: atBucket(input.bucket, input.floors),
     // Migration 71; earlier RPCs ignore it.
     resp_series: atBucket(input.bucket, input.respiration),
+    // Migration 72, tenths of a °C; earlier RPCs ignore it.
+    temp_series: atBucket(input.bucket, input.temperature == null ? null : Math.round(input.temperature * 10)),
     source: input.source ?? 'app',
     // Migration 70: stored in body_sync_log; earlier RPCs ignore them.
     hr_raw: input.hr_raw ?? null,
@@ -92,6 +94,8 @@ export interface BodyContext {
   /** Migration 68; absent before it. */
   readiness?: ReadinessCheck[] | null
   strength?: StrengthSet[] | null
+  /** Migration 72; absent before it. */
+  labels?: SignalLabel[] | null
   prefs: { coach_uses_body: boolean; smart_rest: boolean } | null
 }
 
@@ -103,6 +107,17 @@ export interface TodayBody {
   hrv: { low: number; high: number; days: number; today: number | null; status: 'below' | 'within' | 'above' | null } | null
   /** Lifting advice when it fired: Go lighter / Room to push. */
   lift: { advice: 'deload' | 'push'; headline: string; percent: number } | null
+  /** Body signals when they flag strain (mild or strong), for Home. */
+  signals: { level: 'mild' | 'strong'; short: string } | null
+}
+
+/** Last night's body signals from the watch's context. */
+export function contextSignals(ctx: BodyContext, localDate: string): BodySignals {
+  return computeSignals(ctx.days ?? [], localDate, {
+    readiness: ctx.readiness ?? [],
+    sessions: ctx.sessions ?? [],
+    labels: ctx.labels ?? [],
+  })
 }
 
 export function todayBody(ctx: BodyContext, localDate: string): TodayBody {
@@ -116,5 +131,20 @@ export function todayBody(ctx: BodyContext, localDate: string): TodayBody {
     smart_rest: ctx.prefs?.smart_rest ?? false,
     hrv: b ? { low: b.lowMs, high: b.highMs, days: b.days, today: readiness?.today ? Math.round(readiness.today.rmssd) : null, status: readiness?.status ?? null } : null,
     lift: strength?.advice ? { advice: strength.advice, headline: strength.headline, percent: strength.percent } : null,
+    signals: watchSignals(contextSignals(ctx, localDate)),
   }
+}
+
+function watchSignals(s: BodySignals): TodayBody['signals'] {
+  return (s.level === 'mild' || s.level === 'strong') && s.short ? { level: s.level, short: s.short } : null
+}
+
+/** The morning push, once the night is over (06:00–noon local) and only for a
+ *  strong signal. */
+export const PUSH_FROM_BUCKET = 24
+export const PUSH_UNTIL_BUCKET = 47
+
+export function signalPush(s: BodySignals): { title: string; body: string; url: string; tag: string } | null {
+  if (s.level !== 'strong') return null
+  return { title: s.headline, body: s.advice, url: '/progress/health', tag: 'grind-body-signal' }
 }

@@ -524,6 +524,57 @@ describe('POST /daily', () => {
     assert.deepEqual((day as unknown as Record<string, unknown>).diag, diag)
   })
 
+  it('queues one push on a morning snapshot after a strong night, and none outside the morning', async () => {
+    const shift = (d: number) => {
+      const t = new Date('2026-11-16T12:00:00')
+      t.setDate(t.getDate() + d)
+      return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`
+    }
+    const flat = (v: number) => Array.from({ length: 96 }, (_, i) => (i < 24 ? v : null))
+    const bb = (gain: number) => Array.from({ length: 96 }, (_, i) => (i < 32 ? Math.round(20 + (gain * i) / 31) : null))
+    const days = [...Array.from({ length: 10 }, (_, k) => {
+      const w = k % 3 - 1
+      return { local_date: shift(k - 10), hr_series: flat(58 + w), stress_series: flat(12 + 2 * w), bb_series: bb(50 + 4 * w) }
+    }), { local_date: '2026-11-16', hr_series: flat(70), stress_series: flat(35), bb_series: bb(10) }]
+    const queued: unknown[] = []
+    const deps = fakeDeps({
+      watch_upsert_daily: () => ({ data: { local_date: '2026-11-16' }, error: null }),
+      watch_body_context: () => ({ data: { days, sessions: [], readiness: [], strength: [], labels: [], prefs: null }, error: null }),
+      watch_queue_body_signal: args => {
+        queued.push(args)
+        return { data: true, error: null }
+      },
+    })
+    assert.equal((await watchDaily(req('/daily', { body: { date: '2026-11-16', bucket: 30 } }), deps)).status, 200)
+    assert.equal(queued.length, 1)
+    const payload = (queued[0] as { p_payload: { title: string; url: string } }).p_payload
+    assert.match(payload.title, /fighting something/)
+    assert.equal(payload.url, '/progress/health')
+    assert.equal((await watchDaily(req('/daily', { body: { date: '2026-11-16', bucket: 70 } }), deps)).status, 200)
+    assert.equal(queued.length, 1)
+  })
+
+  it('a failed signal check never fails the upload', async () => {
+    const deps = fakeDeps({
+      watch_upsert_daily: () => ({ data: { local_date: '2026-11-16' }, error: null }),
+      watch_body_context: () => ({ data: null, error: { message: 'boom' } }),
+    })
+    assert.equal((await watchDaily(req('/daily', { body: { date: '2026-11-16', bucket: 30 } }), deps)).status, 200)
+  })
+
+  it('places wrist temperature at the bucket in tenths of a degree', async () => {
+    let day: Record<string, unknown> | null = null
+    const deps = fakeDeps({
+      watch_upsert_daily: args => {
+        day = args.p_day as Record<string, unknown>
+        return { data: { local_date: '2026-11-16' }, error: null }
+      },
+    })
+    const res = await watchDaily(req('/daily', { body: { date: '2026-11-16', bucket: 70, temperature: 33.47 } }), deps)
+    assert.equal(res.status, 200)
+    assert.equal((day as unknown as Record<string, (number | null)[]>).temp_series[70], 335)
+  })
+
   it('422 on a respiration rate no one breathes at', async () => {
     const res = await watchDaily(req('/daily', { body: { date: '2026-11-16', bucket: 5, respiration: 90 } }), fakeDeps())
     assert.equal(res.status, 422)

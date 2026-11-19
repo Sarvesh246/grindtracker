@@ -402,6 +402,14 @@ minutes old. The live sensor value it replaced held the last reading for hours
 once the watch stopped measuring (diagnostics, 2026-11-19); left out, the
 server keeps the day's last value.
 
+Migration `72` adds `temperature` (°C, the wrist sensor; stored ×10 on
+`temp_series`) and stops trusting the Body Battery aggregates the server used to
+merge: high, low, wake and latest come from the cleaned series. A morning
+snapshot (bucket 24–47) also checks last night's body signals and, when they
+are strong, queues one push for the day (`watch_queue_body_signal`).
+`GET /today`'s `body` gains `signals`: `{ "level": "mild" | "strong",
+"short": "Signs of strain" }` when last night flagged strain, else null.
+
 Migration `71` adds `respiration` (4–60 breaths/min): the live rate, which the
 server places at `bucket` on `resp_series` like the running totals.
 Respiration *history* is still empty on the Forerunner 165 Music, but the live

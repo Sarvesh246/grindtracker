@@ -20,6 +20,7 @@ export type NotificationPrefsPatch = {
   energy_alerts?: boolean
   energy_kinds?: string[]
   energy_lead_min?: number
+  body_signal_alerts?: boolean
 }
 
 const BOOL_KEYS = [
@@ -29,6 +30,7 @@ const BOOL_KEYS = [
   'workout_status',
   'streak_reminder',
   'energy_alerts',
+  'body_signal_alerts',
 ] as const
 
 export function validateNotificationPrefsPatch(

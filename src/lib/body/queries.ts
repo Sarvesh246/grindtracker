@@ -4,6 +4,7 @@ import type { ReadinessCheck, ReadinessSummary } from './hrv'
 import { loadBalance, type LoadBalance } from './load'
 import type { StrengthLoad, StrengthSet } from './strength'
 import { hrRange, type HrRange } from './hrRange'
+import { computeSignals, signalTrackRecord, type BodySignals, type SignalLabel } from './signals'
 import type { BodySync, DailyBody, LoadSession } from './types'
 
 /**
@@ -43,6 +44,10 @@ export interface BodySummary {
   /** Today's lowest and highest raw heart-rate sample in each 15-min bucket
    *  (migration 70's body_sync_log samples); null without them. */
   todayHrRange: HrRange | null
+  /** Last night against your usual nights (signals.ts). */
+  signals: BodySignals | null
+  /** Flagged mornings in the last 90 days, and how you labelled them. */
+  signalRecord: { flagged: number; labelled: number; sick: number } | null
 }
 
 const DAY_COLUMNS =
@@ -58,7 +63,7 @@ export function emptyBodySummary(today: string): BodySummary {
   return {
     available: false, hasWatch: false, today, days: [], todayRow: null, sessions: [],
     charge: null, load: null, readinessChecks: [], readiness: null, strengthSets: [], strength: null,
-    prefs: DEFAULT_BODY_PREFS, syncs: [], todayHrRange: null,
+    prefs: DEFAULT_BODY_PREFS, syncs: [], todayHrRange: null, signals: null, signalRecord: null,
   }
 }
 
@@ -79,20 +84,53 @@ async function readIntraday(supabase: SupabaseClient, userId: string, today: str
   return out
 }
 
-/** Migration 71's respiration curve, read on its own like the intraday
- *  columns so a database without it yet still shows everything else. */
-async function readRespiration(supabase: SupabaseClient, userId: string, today: string): Promise<Map<string, (number | null)[]>> {
-  const { data, error } = await supabase
+type NightSeries = Pick<DailyBody, 'resp_series' | 'temp_series'>
+
+/** Migrations 71 and 72's night curves (respiration, temperature), read on
+ *  their own like the intraday columns so a database without them yet still
+ *  shows everything else. */
+async function readNightSeries(supabase: SupabaseClient, userId: string, today: string): Promise<Map<string, NightSeries>> {
+  const read = (cols: string) => supabase
     .from('daily_body')
-    .select('local_date,resp_series')
+    .select(cols)
     .eq('user_id', userId)
     .gte('local_date', shiftKey(today, -35))
     .lte('local_date', today)
-  const out = new Map<string, (number | null)[]>()
-  if (error || !data) return out
-  for (const r of data as { local_date: string; resp_series: (number | null)[] | null }[]) {
-    if (r.resp_series) out.set(r.local_date, r.resp_series)
+  let res = await read('local_date,resp_series,temp_series')
+  if (res.error) res = await read('local_date,resp_series')
+  const out = new Map<string, NightSeries>()
+  if (res.error || !res.data) return out
+  for (const r of res.data as unknown as (NightSeries & { local_date: string })[]) {
+    out.set(r.local_date, { resp_series: r.resp_series ?? null, temp_series: r.temp_series ?? null })
   }
+  return out
+}
+
+/** What you said flagged mornings were (migration 72); none before it. */
+async function readSignalLabels(supabase: SupabaseClient, userId: string, today: string): Promise<SignalLabel[]> {
+  const { data, error } = await supabase
+    .from('body_signal_labels')
+    .select('local_date,tags')
+    .eq('user_id', userId)
+    .gte('local_date', shiftKey(today, -120))
+    .lte('local_date', today)
+  return error || !data ? [] : (data as SignalLabel[])
+}
+
+/** Overnight HRV from an imported sleep source (the Garmin export), by wake
+ *  date. The watch can't read HRV overnight itself. */
+async function readOvernightHrv(supabase: SupabaseClient, userId: string, today: string): Promise<Map<string, number>> {
+  const { data, error } = await supabase
+    .from('sleep_sessions')
+    .select('wake_date,overnight_hrv,kind')
+    .eq('user_id', userId)
+    .eq('kind', 'main')
+    .not('overnight_hrv', 'is', null)
+    .gte('wake_date', shiftKey(today, -120))
+    .lte('wake_date', today)
+  const out = new Map<string, number>()
+  if (error || !data) return out
+  for (const r of data as { wake_date: string; overnight_hrv: number }[]) out.set(r.wake_date, Number(r.overnight_hrv))
   return out
 }
 
@@ -175,24 +213,27 @@ export async function getBodySummary(supabase: SupabaseClient, userId: string, t
         .lte('local_date', today),
       supabase.from('body_prefs').select('coach_uses_body,smart_rest').eq('user_id', userId).maybeSingle(),
     ])
-    const [readinessChecks, strengthSets, intraday, syncs, resp, todayHrRange] = await Promise.all([
+    const [readinessChecks, strengthSets, intraday, syncs, night, todayHrRange, labels, overnightHrv] = await Promise.all([
       readReadiness(supabase, userId, today).catch(() => []),
       readStrengthSets(supabase, userId, today).catch(() => []),
       readIntraday(supabase, userId, today).catch(() => new Map<string, Partial<DailyBody>>()),
       readSyncs(supabase, userId).catch(() => []),
-      readRespiration(supabase, userId, today).catch(() => new Map<string, (number | null)[]>()),
+      readNightSeries(supabase, userId, today).catch(() => new Map<string, NightSeries>()),
       readTodayHrRange(supabase, userId, today).catch(() => null),
+      readSignalLabels(supabase, userId, today).catch(() => [] as SignalLabel[]),
+      readOvernightHrv(supabase, userId, today).catch(() => new Map<string, number>()),
     ])
     if (daysRes.error || sessRes.error) return emptyBodySummary(today)
     const days = ((daysRes.data ?? []) as DailyBody[]).map(d => ({
       ...d,
       ...intraday.get(d.local_date),
-      ...(resp.has(d.local_date) ? { resp_series: resp.get(d.local_date) } : {}),
+      ...night.get(d.local_date),
     }))
     const sessions = (sessRes.data ?? []) as LoadSession[]
     const hasWatch = days.length > 0 || sessions.some(s => s.zone_seconds != null) || readinessChecks.length > 0
     const extras = { readiness: readinessChecks, strength: strengthSets }
     const { readiness, strength } = bodyExtras(days, today, extras)
+    const signalExtras = { readiness: readinessChecks, sessions, labels, overnightHrv }
     return {
       available: true,
       hasWatch,
@@ -212,6 +253,8 @@ export async function getBodySummary(supabase: SupabaseClient, userId: string, t
       // A failed consent read must never silently re-enable Coach health access.
       syncs,
       todayHrRange,
+      signals: hasWatch ? computeSignals(days, today, signalExtras) : null,
+      signalRecord: hasWatch ? signalTrackRecord(days, today, signalExtras) : null,
       prefs: prefsRes.error ? { ...DEFAULT_BODY_PREFS, coach_uses_body: false } : (prefsRes.data as BodyPrefs | null) ?? DEFAULT_BODY_PREFS,
     }
   } catch {

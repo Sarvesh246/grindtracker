@@ -692,5 +692,24 @@ describe('watch API against the real schema', { skip: !baseUrl && 'set PARITY_DA
       await watchTelemetry(request('/telemetry', bobToken, { id: CRASH, kind: 'session', data: {} }), deps)
       assert.equal(db(`select kind from watch_telemetry where id = '${CRASH}'`), 'unclean_exit')
     })
+
+    it('drops Body Battery readings that move faster than it can, and re-anchors after a bad first one', () => {
+      // Nov 17's real tail: 31, a drop to the floor, then 15 → 65 → 93 in 30 minutes.
+      assert.equal(db(`select array_to_string(grind_clean_bb(array[31,5,5,5,15,65,93]::smallint[]), ' ', '.')`), '31 . 5 5 15 . .')
+      assert.equal(db(`select array_to_string(grind_clean_bb(array[90,20,21,22,23,24]::smallint[]), ' ', '.')`), '90 . . . 23 24')
+      assert.equal(db(`select grind_clean_bb(null::smallint[]) is null`), 't')
+    })
+
+    it('derives the Body Battery numbers from the cleaned series, and lets each user label only their own mornings', () => {
+      const D = '2026-11-10'
+      db(`insert into daily_body (user_id, local_date, bb_series) values ('${ALICE}', '${D}', array[20,24,28,32,93]::smallint[] || array_fill(null::smallint, array[91]))
+          on conflict (user_id, local_date) do update set bb_series = excluded.bb_series, bb_high = 93, bb_wake = 93`)
+      db(`select grind_refresh_bb('${ALICE}', '${D}')`)
+      assert.equal(db(`select bb_high || ',' || bb_low || ',' || bb_wake || ',' || bb_latest from daily_body where user_id = '${ALICE}' and local_date = '${D}'`), '32,20,32,32')
+      asUser(ALICE, `insert into body_signal_labels (user_id, local_date, tags) values ('${ALICE}', '${D}', array['alcohol'])`)
+      assert.throws(() => asUser(ALICE, `insert into body_signal_labels (user_id, local_date, tags) values ('${BOB}', '${D}', array['sick'])`))
+      assert.throws(() => asUser(ALICE, `insert into body_signal_labels (user_id, local_date, tags) values ('${ALICE}', '2026-11-11', array['made_up'])`))
+      assert.equal(asUser(BOB, `select count(*) from body_signal_labels where user_id = '${ALICE}'`), '0')
+    })
   })
 })

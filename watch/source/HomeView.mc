@@ -142,10 +142,16 @@ class HomeView extends WatchUi.View {
             }
             if (charge != null) {
                 Draw.line(dc, 0.675, sub, "Charge " + charge["s"] + "  ·  " + charge["l"], chargeColor(charge));
-                // Lifting advice, when it fired, says more than the band's.
+                // Strain seen overnight outranks lifting advice, which says
+                // more than the band's.
+                var sig = Store.bodySignal();
                 var lift = Store.liftAdvice();
-                var advice = lift != null ? lift : charge["a"];
-                if (advice != null) { Draw.line(dc, 0.755, small, advice, lift != null ? Config.FG : Config.DIM); }
+                if (sig != null) {
+                    Draw.line(dc, 0.755, small, sig["t"], sig["lv"] == 2 ? Config.WARN : Config.FG);
+                } else {
+                    var advice = lift != null ? lift : charge["a"];
+                    if (advice != null) { Draw.line(dc, 0.755, small, advice, lift != null ? Config.FG : Config.DIM); }
+                }
             }
             if (days != null && (days.size() > 1 || did == null)) { Draw.scrollArrows(dc); }
         }

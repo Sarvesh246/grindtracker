@@ -352,6 +352,17 @@ function testDayPicker(logger) {
     Store.cacheToday({ "date" => d, "unit" => "lbs", "workout" => { "id" => "pull", "name" => "Pull", "exercises" => [] } });
     ok = T.ck(logger, "no days: no picker", Store.days() == null && !Pick.step(1)) && ok;
 
+    // Body signals ride on /today's body: kept when they flag strain,
+    // dropped when the server sends none.
+    var charge = { "score" => 48, "band" => "easy", "label" => "Easy", "advice" => "Trim a set per lift" };
+    Store.cacheToday({ "date" => d, "unit" => "lbs", "workout" => { "id" => "pull", "name" => "Pull", "exercises" => [] },
+        "body" => { "charge" => charge, "signals" => { "level" => "strong", "short" => "Rest: strain signs" } } });
+    var sg = Store.bodySignal();
+    ok = T.ck(logger, "strong body signal kept", sg != null && sg["lv"] == 2 && sg["t"].equals("Rest: strain signs")) && ok;
+    Store.cacheToday({ "date" => d, "unit" => "lbs", "workout" => { "id" => "pull", "name" => "Pull", "exercises" => [] },
+        "body" => { "charge" => charge, "signals" => null } });
+    ok = T.ck(logger, "no signal, no line", Store.bodySignal() == null) && ok;
+
     Pick.id = null; Pick.want = false;
     Store.del("wk"); Store.del("wk_pull"); Store.del("wk_push"); Store.del("wk_legs"); Store.del("wkAt");
     return ok;

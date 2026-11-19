@@ -138,6 +138,8 @@ export const watchDailySchema = z.strictObject({
   /** Migration 71. The live respiration rate, breaths per minute, placed at
    *  `bucket` on the day's curve. */
   respiration: z.int().min(4).max(60).nullish(),
+  /** Migration 72. The watch's wrist temperature, °C, placed at `bucket`. */
+  temperature: z.number().min(0).max(50).nullish(),
   /** All-day heart rate, bucket averages (migration 69). */
   heart_rate: z.array(z.int().min(25).max(250).nullable()).length(96).optional(),
   /** The 15-min bucket (0–95, local) this snapshot was taken in; the running

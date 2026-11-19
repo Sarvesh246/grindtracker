@@ -113,6 +113,11 @@ module Store {
                 && hv["low"] > 0 && hv["high"] >= hv["low"] && hv["high"] < 1000) {
                 out["hv"] = { "lo" => hv["low"], "hi" => hv["high"] };
             }
+            // Body signals: strain seen overnight, for Home (mild or strong).
+            var sg = b["signals"];
+            if (sg instanceof Lang.Dictionary && sg["short"] instanceof Lang.String && sg["short"].length() <= 24) {
+                out["sg"] = { "lv" => "strong".equals(sg["level"]) ? 2 : 1, "t" => sg["short"] };
+            }
             var lf = b["lift"];
             if (lf instanceof Lang.Dictionary && lf["headline"] instanceof Lang.String && lf["headline"].length() <= 40) {
                 out["lf"] = lf["headline"];
@@ -168,6 +173,12 @@ module Store {
     function hrvRange() {
         var w = today();
         return w == null ? null : w["hv"];
+    }
+
+    // { lv 1 mild / 2 strong, t text } when body signals flag strain, or null.
+    function bodySignal() {
+        var w = today();
+        return w == null ? null : w["sg"];
     }
 
     // "Go lighter" / "Room to push", or null.

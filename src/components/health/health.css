@@ -1957,3 +1957,138 @@ html.reduce-motion .health-refresh-btn svg[data-spin='true'] {
   font-family: var(--font-mono);
   color: var(--text-primary);
 }
+
+/* ───────── Body signals (signals.ts) ─────────
+   One level colour per state: lime clear, amber strain, red strong. Each row
+   reads value, then where it sits against your usual: the track's centre is
+   usual, the shaded band ±2 spreads; a dot past it is "off". */
+.body-signals {
+  --signal: var(--accent-text);
+  display: grid;
+  gap: 18px;
+}
+.body-signals.is-mild { --signal: var(--warning); }
+.body-signals.is-strong { --signal: var(--danger); }
+.body-signals.is-learning { --signal: var(--text-muted); }
+.body-signals-head {
+  display: grid;
+  gap: 6px;
+  padding-left: 14px;
+  border-left: 3px solid var(--signal);
+}
+.body-signals-level {
+  justify-self: start;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.11em;
+  color: var(--signal);
+}
+.body-signals-head h3 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 0;
+}
+.body-signals-head p {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+.body-signal-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+}
+.body-signal-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) 6.5rem minmax(72px, 1fr) 8.5rem;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 0;
+  border-top: 1px solid var(--border);
+  font-size: 0.875rem;
+}
+.body-signal-list li:first-child { border-top: 0; }
+.body-signal-name { color: var(--text-secondary); }
+.body-signal-list strong {
+  font: 600 0.9375rem var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.body-signal-list li.is-off strong { color: var(--signal); }
+.body-signal-list small {
+  font: 0.75rem var(--font-mono);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.body-signal-track {
+  position: relative;
+  display: block;
+  height: 8px;
+  border-radius: 9999px;
+  background: var(--surface-elevated);
+}
+.body-signal-band {
+  position: absolute;
+  inset: 0 16.67%;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--text-muted) 22%, transparent);
+}
+.body-signal-dot {
+  position: absolute;
+  top: 50%;
+  left: var(--x);
+  width: 10px;
+  height: 10px;
+  border-radius: 9999px;
+  background: var(--text-primary);
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+.body-signal-track.is-off .body-signal-dot { background: var(--signal); }
+.body-signal-tags {
+  display: grid;
+  gap: 10px;
+}
+.body-signal-tags [role='group'] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.body-signal-tags button {
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 9999px;
+  border: 1px solid var(--border);
+  background: var(--surface-elevated);
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+.body-signal-tags button:hover:not(:disabled) { border-color: var(--border-strong); color: var(--text-primary); }
+.body-signal-tags button[aria-pressed='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0f0f0f;
+}
+.body-signal-tags button:disabled { opacity: 0.6; }
+.body-signal-tags button:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 2px; }
+.body-signal-error {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--danger);
+}
+.body-signal-record { margin: 0; }
+@media (max-width: 520px) {
+  .body-signal-list li {
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: 8px;
+  }
+  .body-signal-track { grid-column: 1 / -1; order: 3; }
+  .body-signal-list small { grid-column: 1 / -1; order: 4; margin-top: -2px; }
+}

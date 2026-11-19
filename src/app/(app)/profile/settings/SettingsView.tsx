@@ -1237,6 +1237,7 @@ export default function SettingsView({
             ['workout_status', 'Workout status', 'One card while the app is in the background'] as const,
             ['streak_reminder', 'Streak reminder', 'Evening nudge if you have not trained'] as const,
             ['energy_alerts', 'Energy heads-ups', 'Before your peaks, dip and wind-down. Tune them on Health → Energy.'] as const,
+            ['body_signal_alerts', 'Body signals', 'A morning ping when your watch sees strong signs of strain overnight'] as const,
           ] as const
         ).map(([key, label, hint], i) => (
           <Fragment key={key}>

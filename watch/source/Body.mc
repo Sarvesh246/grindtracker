@@ -284,6 +284,16 @@ module Body {
             }
         } catch (e) {
         }
+        // Wrist temperature, one decimal: a weak signal on its own (skin and
+        // room together), used by body signals only to back up others.
+        try {
+            var si = Sensor.getInfo();
+            if (si != null && si.temperature != null) {
+                var tc = si.temperature.toFloat();
+                if (tc > 0 && tc < 50) { day["temperature"] = (tc * 10).toNumber() / 10.0; }
+            }
+        } catch (e) {
+        }
         // SpO2 from the newest history sample, and only a recent one: the live
         // Sensor value is the last reading the watch took, and the diagnostics
         // showed it holding at one number for nine hours after the history

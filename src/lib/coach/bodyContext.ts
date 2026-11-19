@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { computeCharge, restingBaseline } from '@/lib/body/charge'
+import { labelText } from '@/lib/body/signals'
 import { fitterLine, type DatedHrSet } from '@/lib/body/cardioCost'
 import { heartSentence } from '@/lib/body/workout'
 import type { BodySummary } from '@/lib/body/queries'
@@ -53,6 +54,16 @@ export interface CoachBodyBlock {
     days_in_a_row_5plus_over: number
   }
   load?: { percent: number; band: string; headline: string }
+  /** Last night against the user's usual nights: early signs of strain or
+   *  illness (src/lib/body/signals.ts). A strain signal, never a diagnosis:
+   *  don't tell the user they are sick. */
+  body_signals?: {
+    level: 'clear' | 'mild' | 'strong'
+    headline: string
+    off: { signal: string; last_night: string; usual: string }[]
+    possible_causes: string[]
+    user_noted: string[]
+  }
   /** Morning HRV check (watch, 1 min seated): today vs the 60-day usual range. */
   hrv_check?: {
     today_ms: number | null
@@ -435,6 +446,16 @@ export function summarizeCoachBody(input: {
 
   if (summary.load) {
     block.load = { percent: summary.load.percent, band: summary.load.band, headline: summary.load.headline }
+  }
+  const sg = summary.signals
+  if (sg && sg.level !== 'learning') {
+    block.body_signals = {
+      level: sg.level,
+      headline: sg.headline,
+      off: sg.signals.filter(x => x.off).map(x => ({ signal: x.label, last_night: x.value, usual: x.usual })),
+      possible_causes: sg.explanations,
+      user_noted: sg.labels.map(labelText),
+    }
   }
   const r = summary.readiness
   if (r && (r.today || r.baseline)) {
