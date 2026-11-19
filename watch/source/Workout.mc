@@ -242,9 +242,14 @@ module Workout {
         } else {
             Lab.correct(cur["sid"], s["id"], reps);
         }
-        if (edit == null) { Hr.onSetLogged(sets.size() - 1, s["t"]); }
+        if (edit == null) {
+            Hr.onSetLogged(sets.size() - 1, s["t"]);
+        }
         Health.mark("logged");
-        return advanceAfterSet(e, s["t"]);
+        var done = advanceAfterSet(e, s["t"]);
+        // No lap after the last set: it would leave an empty one in Connect.
+        if (edit == null && !done) { Recorder.setLogged(); }
+        return done;
     }
 
     function advanceAfterSet(e, loggedAt) {

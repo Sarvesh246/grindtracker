@@ -82,6 +82,19 @@ module Recorder {
         return null;
     }
 
+    // Garmin's own strength screen ("Set 1") numbers sets by lap, and a
+    // Connect IQ session has no other way to tell it a set ended. One lap
+    // per logged set keeps its count in step; each lap in Garmin Connect is
+    // then that set plus the rest after it.
+    function setLogged() {
+        if (session == null) { return; }
+        try {
+            if (session.isRecording()) { session.addLap(); }
+        } catch (e) {
+            System.println("rec lap failed: " + e.getErrorMessage());
+        }
+    }
+
     function stop(save) {
         if (session == null) { return; }
         try {
