@@ -154,7 +154,7 @@ function testPayload(logger) {
     p = Logic.buildPayload(meta, sets, 2, { "tr" => [90, 0, 120], "zs" => [5, 10, 0, 0, 0], "hz" => [106, 127, 148, 169, 190, 211] });
     ok = T.ck(logger, "set hr", p["sets"][0]["hr_peak"] == 150 && p["sets"][0]["hr_end"] == 140
         && p["sets"][0]["hr_rest_drop_60"] == 30 && !p["sets"][1].hasKey("hr_peak")) && ok;
-    ok = T.ck(logger, "session hr", p["hr"]["trace"].size() == 3 && p["hr"]["step"] == Config.HR_STEP
+    ok = T.ck(logger, "session hr", p["hr"]["trace_b64"].equals("WgB4") && p["hr"]["step"] == Config.HR_STEP
         && p["hr"]["zone_seconds"][1] == 10 && p["hr"]["zones"].size() == 6) && ok;
     ok = T.ck(logger, "final batch completes session", p["ended_at"].equals("2026-11-16T17:52:30Z")) && ok;
     p = Logic.buildPayload(meta, sets, 1, null);
@@ -1443,5 +1443,35 @@ function testRepTuningSettings(logger) {
     ] } });
     ok = T.ck(logger, "plan keeps a valid tune and drops a junk one", plan != null && plan["ex"].size() == 2
         && plan["ex"][0]["tune"]["lag"] == 7 && plan["ex"][1]["tune"] == null) && ok;
+    return ok;
+}
+
+// The day snapshot carries the watch's own diagnostics in the shape POST
+// /daily accepts: a UTC timestamp, a probe entry for every sensor value, and
+// no nulls (the server is strict).
+(:test)
+function testDailyDiagnostics(logger) {
+    var d = Body.snapshot("app");
+    var g = d["diag"];
+    var ok = T.ck(logger, "diag present", g instanceof Lang.Dictionary && g["taken_at"].length() == 20
+        && g["taken_at"].substring(19, 20).equals("Z"));
+    var p = g["probe"];
+    ok = T.ck(logger, "probe covers history and live values", p != null && p.hasKey("hr_h") && p.hasKey("spo2_h")
+        && p.hasKey("resp") && p.hasKey("vo2") && p.size() <= 24) && ok;
+    var keys = p.keys();
+    var shaped = true;
+    for (var i = 0; i < keys.size(); i++) {
+        var v = p[keys[i]];
+        if (v instanceof Lang.Array) { shaped = shaped && v.size() == 2; }
+        else { shaped = shaped && v instanceof Lang.Number && v >= -3 && v <= -1; }
+    }
+    ok = T.ck(logger, "each probe is [value, age] or a code", shaped) && ok;
+    var nulls = false;
+    var gk = g.keys();
+    for (var i = 0; i < gk.size(); i++) { if (g[gk[i]] == null) { nulls = true; } }
+    ok = T.ck(logger, "no nulls in diag", !nulls) && ok;
+    var raw = d["hr_raw"];
+    ok = T.ck(logger, "raw hr, when sent, is paired", raw == null || raw["t"].size() == raw["v"].size()) && ok;
+    ok = T.ck(logger, "trace bytes", Logic.traceB64([90, 0, 120, 300, null]).equals("WgB4AAA=")) && ok;
     return ok;
 }

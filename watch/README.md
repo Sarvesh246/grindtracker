@@ -185,6 +185,18 @@ npm run replab -- --offline             # did it help? lists sets fixed and brok
 npm run replab -- --offline --set 3f2a  # one set's timeline and diagnostics
 ```
 
+### Watch report
+
+`npm run watchreport` (`-- --days 30` for longer) reads what the watch says
+about itself: how often the 15-minute background sync really fires and how
+late, background runs that failed, battery drain per hour off the charger,
+memory headroom in the 64 KB background process, the watch's own all-day
+heart-rate sample rate and what the 15-minute averages hide, which sensor
+values it fills in (and whether a firmware update changed that), and
+dropouts in the one-second workout traces. Needs migration 70 and the same
+`.env.local` keys as `replab`.
+
+
 It shows each set (logged vs AUTO vs what the current `tools/reps.mjs` makes
 of the same motion), accuracy per exercise, the kinds of miss, how fast the
 count appears, and the watch's health. Recordings are saved to

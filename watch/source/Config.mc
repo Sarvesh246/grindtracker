@@ -31,10 +31,11 @@ module Config {
     const SYNC_EVERY_TICKS = 30;
 
     // GRIND Body. One heart-rate reading per HR_STEP seconds; a trace stops
-    // growing after 12 hours. The daily snapshot is sent at most every
-    // DAILY_EVERY seconds while the app is open.
-    const HR_STEP = 5;
-    const MAX_TRACE = 8640;
+    // growing after 4 hours (the server takes 12; this bounds the watch's
+    // memory). Uploaded one byte a reading. The daily snapshot is sent at most
+    // every DAILY_EVERY seconds while the app is open.
+    const HR_STEP = 1;
+    const MAX_TRACE = 14400;
     const DAILY_EVERY = 900;
     // Smart rest: "recovered" once HR is this far below the set's peak.
     const SMART_REST_DROP = 25;

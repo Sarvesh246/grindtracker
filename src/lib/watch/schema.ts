@@ -33,12 +33,17 @@ export const watchSetSchema = z.strictObject({
   hr_rest_drop_60: z.int().min(-100).max(200).nullish(),
 })
 
-/** 2 hours at one sample per 5 s is 1,440; this allows a 12-hour session. */
-export const MAX_HR_TRACE = 8640
+/** 12 hours at one reading a second (migration 70; 59 allowed 8,640). */
+export const MAX_HR_TRACE = 43_200
+/** Base64 of MAX_HR_TRACE bytes. */
+const MAX_TRACE_B64 = Math.ceil(MAX_HR_TRACE / 3) * 4
 
 export const watchHrSchema = z.strictObject({
   /** One reading every `step` seconds from started_at; 0 = no reading. */
   trace: z.array(z.int().min(0).max(250)).max(MAX_HR_TRACE).optional(),
+  /** The same trace as one byte a reading, base64: a 1 s trace as JSON
+   *  numbers is too big a request for the watch. Wins over `trace`. */
+  trace_b64: z.string().max(MAX_TRACE_B64).regex(/^[A-Za-z0-9+/]*={0,2}$/).optional(),
   step: z.int().min(1).max(60).optional(),
   /** Zone floors z1..z5 and max, from the user's watch profile. */
   zones: z.array(z.int().min(20).max(250)).min(5).max(6).optional(),
@@ -137,6 +142,40 @@ export const watchDailySchema = z.strictObject({
   bucket: z.int().min(0).max(95).optional(),
   /** `background`: sent by the watch's background service with the app closed. */
   source: z.enum(['app', 'background']).optional(),
+  /** Migration 70. Every all-day HR sample the watch stored since its last
+   *  sync, unaveraged: seconds from local midnight and bpm, same length. */
+  hr_raw: z
+    .strictObject({
+      t: z.array(z.int().min(-86_400).max(86_400)).max(480),
+      v: z.array(z.int().min(25).max(250)).max(480),
+    })
+    .refine(r => r.t.length === r.v.length, { message: 't and v must be the same length' })
+    .optional(),
+  /** Migration 70. The watch itself, for understanding it: never shown. */
+  diag: z
+    .strictObject({
+      taken_at: isoUtc,
+      battery: z.int().min(0).max(100).nullish(),
+      charging: z.boolean().nullish(),
+      free_mem: z.int().min(0).max(100_000_000).nullish(),
+      total_mem: z.int().min(0).max(100_000_000).nullish(),
+      part: z.string().max(32).nullish(),
+      fw: z.string().max(32).nullish(),
+      ciq: z.string().max(32).nullish(),
+      app_version: z.string().max(32).nullish(),
+      /** The previous background run: when, and its HTTP code (-1: threw, 0: skipped). */
+      prev_bg_at: isoUtc.nullish(),
+      prev_bg_code: z.int().min(-1000).max(1000).nullish(),
+      /** The background event period, seconds. */
+      period_s: z.int().min(0).max(86_400).nullish(),
+      /** Per sensor value: [value, age in minutes], or a code: -1 empty,
+       *  -2 threw, -3 not on this firmware. */
+      probe: z
+        .record(z.string().max(16), z.union([z.tuple([z.number(), z.int().min(-1).max(100_000)]), z.int().min(-3).max(-1)]))
+        .refine(r => Object.keys(r).length <= 24, { message: 'at most 24 probes' })
+        .optional(),
+    })
+    .optional(),
 })
 
 export type WatchDailyInput = z.infer<typeof watchDailySchema>

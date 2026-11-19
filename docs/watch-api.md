@@ -221,7 +221,8 @@ Content-Type: application/json
 | `sets[].is_warmup` | no | default false. Warm-ups don't count for XP or PRs |
 | `sets[].hr_peak`, `.hr_end` | no | int 20–250. Peak HR around the set, and HR when it was logged |
 | `sets[].hr_rest_drop_60` | no | int −100–200. How far HR fell 60 s into the following rest |
-| `hr.trace` | no | Up to 8640 ints 0–250, one reading per `hr.step` s from `started_at`; 0 = no reading |
+| `hr.trace` | no | Up to 43,200 ints 0–250, one reading per `hr.step` s from `started_at`; 0 = no reading |
+| `hr.trace_b64` | no | The same trace as one byte a reading, base64 (a byte over 250 = no reading). Wins over `trace`. Builds from 2026-11-18 send this at `step` 1; a 1 s trace as JSON numbers is too big a request for the watch. Over 8,640 readings needs migration 70 |
 | `hr.step` | no | int 1–60, default 5 |
 | `hr.zones` | no | 5–6 ints: zone 1–5 floors (+ max) from the watch's profile |
 | `hr.zone_seconds` | no | exactly 5 ints, seconds spent in zones 1–5 |
@@ -374,8 +375,27 @@ logged in `body_sync_log` with it, so the Health page can show when and how
 the last one arrived. Before migration 69 these fields are accepted and
 ignored.
 
-Respiration and SpO2 history are not sent: the Forerunner 165 Music leaves
-them empty (phase 0 probe, 2026-11-16).
+Migration `70` adds two keys that exist only to understand the watch; nothing
+in the app shows them, and `npm run watchreport` reads them back:
+
+- `hr_raw`: `{ "t": [...], "v": [...] }`, every all-day heart-rate sample the
+  watch stored since its last stored snapshot (a minute of overlap, at most 4
+  hours back, at most 480), unaveraged. `t` is seconds from local midnight.
+- `diag`: `taken_at` (the watch's clock), `battery`, `charging`, `free_mem`,
+  `total_mem`, `part`, `fw`, `ciq`, `period_s` (the background period),
+  `prev_bg_at` / `prev_bg_code` (the previous background run and its HTTP
+  code; a failed run stores nothing, so this is the only trace of it), and
+  `probe`: per sensor value, `[value, age in minutes]` or a code (`-1` empty,
+  `-2` threw, `-3` not on this firmware). Keys: `bb_h`, `stress_h`, `hr_h`,
+  `spo2_h`, `temp_h`, `press_h` (newest history sample), `resp`, `stress`,
+  `ttr`, `hr`, `spo2`, `temp`, `press`, `rhr`, `avg_rhr`, `vo2` (live).
+
+Both are stored per snapshot in `body_sync_log` (30 days). Before migration 70
+they are accepted and ignored.
+
+Respiration and SpO2 history are not sent as data: the Forerunner 165 Music
+leaves them empty (phase 0 probe, 2026-11-16). The probe in `diag` watches for
+that changing with a firmware update.
 
 ## POST /rep-lab
 

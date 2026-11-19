@@ -444,8 +444,34 @@ describe('GRIND Body uploads', () => {
   })
 
   it('rejects an oversized trace', async () => {
-    const res = await watchSessions(req('/sessions', { body: session({ hr: { trace: Array(9000).fill(100) } }) }), fakeDeps())
+    const res = await watchSessions(req('/sessions', { body: session({ hr: { trace_b64: 'A'.repeat(57_604) } }) }), fakeDeps())
     assert.equal(res.status, 422)
+  })
+
+  it('decodes a one-byte-a-reading trace, a byte over 250 as no reading', async () => {
+    let body: Record<string, unknown> | null = null
+    const deps = fakeDeps({
+      watch_sync_session: synced,
+      watch_store_session_body: args => {
+        body = args.p_body as Record<string, unknown>
+        return { data: { sets_updated: 0 }, error: null }
+      },
+    })
+    const b64 = Buffer.from([90, 0, 120, 255]).toString('base64')
+    const res = await watchSessions(req('/sessions', { body: session({ hr: { trace_b64: b64, step: 1 } }) }), deps)
+    assert.equal(res.status, 201)
+    assert.deepEqual((body as unknown as Record<string, unknown>).trace, [90, 0, 120, 0])
+    assert.equal((body as unknown as Record<string, unknown>).step, 1)
+  })
+
+  it('a 2-hour one-second trace with 40 sets fits the 64 KB body limit', () => {
+    const sets = Array.from({ length: 40 }, (_, i) => ({
+      id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`, exercise_id: EX1, set_number: i + 1, reps: 12,
+      weight: 1234.5, unit: 'lbs', completed_at: '2026-11-16T17:05:00Z', rest_seconds: 300, hr_peak: 199, hr_end: 180, hr_rest_drop_60: 45,
+    }))
+    const trace_b64 = Buffer.alloc(7200, 188).toString('base64')
+    const bytes = Buffer.byteLength(JSON.stringify(session({ sets, hr: { trace_b64, step: 1, zone_seconds: [1, 2, 3, 4, 5] } })))
+    assert.ok(bytes < 64 * 1024, `payload is ${bytes} bytes`)
   })
 
   it('a 2-hour trace with 40 sets fits the 64 KB body limit', () => {
@@ -460,6 +486,30 @@ describe('GRIND Body uploads', () => {
 
 describe('POST /daily', () => {
   const series = (f: (i: number) => number | null) => Array.from({ length: 96 }, (_, i) => f(i))
+
+  it('passes the raw heart rate and the watch diagnostics through', async () => {
+    let day: Record<string, unknown> | null = null
+    const deps = fakeDeps({
+      watch_upsert_daily: args => {
+        day = args.p_day as Record<string, unknown>
+        return { data: { local_date: '2026-11-16' }, error: null }
+      },
+    })
+    const diag = {
+      taken_at: '2026-11-16T19:14:03Z', battery: 61, charging: false, free_mem: 21000, total_mem: 65536,
+      part: '006-B4766-00', fw: '21.19', ciq: '5.1.1', prev_bg_at: '2026-11-16T18:59:10Z', prev_bg_code: 200, period_s: 900,
+      probe: { bb: [36, 4], spo2_h: -1, temp_h: -3 },
+    }
+    const res = await watchDaily(req('/daily', { body: { date: '2026-11-16', source: 'background', hr_raw: { t: [69000, 69120], v: [62, 64] }, diag } }), deps)
+    assert.equal(res.status, 200)
+    assert.deepEqual((day as unknown as Record<string, unknown>).hr_raw, { t: [69000, 69120], v: [62, 64] })
+    assert.deepEqual((day as unknown as Record<string, unknown>).diag, diag)
+  })
+
+  it('422 when raw heart-rate times and values differ in length', async () => {
+    const res = await watchDaily(req('/daily', { body: { date: '2026-11-16', hr_raw: { t: [1, 2], v: [60] } } }), fakeDeps())
+    assert.equal(res.status, 422)
+  })
 
   it('derives the aggregates from the series', async () => {
     let day: Record<string, unknown> | null = null

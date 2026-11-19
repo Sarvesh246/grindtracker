@@ -1,7 +1,7 @@
 using Toybox.Lang;
 using Toybox.UserProfile;
 
-// GRIND Body, phase 1: the workout's heart rate. Driven by the app's 5 s
+// GRIND Body, phase 1: the workout's heart rate. Driven by the app's 1 s
 // tick while a workout is open. Keeps
 //   - a trace, one reading per HR_STEP seconds from the session start,
 //   - seconds in each of the user's zones,
@@ -67,7 +67,7 @@ module Hr {
         if (z > 0) { zs[z - 1] += Config.HR_STEP; }
         if (pend != null) { advance(t); }
         unsaved += 1;
-        if (unsaved >= 24) { save(); }
+        if (unsaved * Config.HR_STEP >= 120) { save(); } // flash write every 2 min
     }
 
     function advance(t) {

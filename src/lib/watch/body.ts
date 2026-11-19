@@ -13,17 +13,23 @@ export function toBodyPayload(input: WatchSessionInput) {
     .filter(s => s.hr_peak != null || s.hr_end != null || s.hr_rest_drop_60 != null)
     .map(s => ({ id: s.id, hr_peak: s.hr_peak ?? null, hr_end: s.hr_end ?? null, hr_rest_drop_60: s.hr_rest_drop_60 ?? null }))
   const hr = input.hr
-  const hasHr = hr && (hr.trace?.length || hr.zone_seconds || hr.training_effect != null || hr.zones)
+  const trace = hr?.trace_b64 ? decodeTrace(hr.trace_b64) : hr?.trace
+  const hasHr = hr && (trace?.length || hr.zone_seconds || hr.training_effect != null || hr.zones)
   if (!hasHr && sets.length === 0) return null
   return {
     session_id: input.id,
-    trace: hr?.trace?.length ? hr.trace : null,
-    step: hr?.step ?? (hr?.trace?.length ? 5 : null),
+    trace: trace?.length ? trace : null,
+    step: hr?.step ?? (trace?.length ? 5 : null),
     zones: hr?.zones ?? null,
     zone_seconds: hr?.zone_seconds ?? null,
     training_effect: hr?.training_effect != null ? Math.round(hr.training_effect * 10) / 10 : null,
     sets,
   }
+}
+
+/** One byte a reading, base64 → readings. A byte over 250 is no reading. */
+export function decodeTrace(b64: string): number[] {
+  return Array.from(Buffer.from(b64, 'base64'), v => (v > 250 ? 0 : v))
 }
 
 const NOON_BUCKET = 48
@@ -63,6 +69,9 @@ export function toDailyPayload(input: WatchDailyInput) {
     active_series: atBucket(input.bucket, input.active_minutes),
     floors_series: atBucket(input.bucket, input.floors),
     source: input.source ?? 'app',
+    // Migration 70: stored in body_sync_log; earlier RPCs ignore them.
+    hr_raw: input.hr_raw ?? null,
+    diag: input.diag ?? null,
   }
 }
 

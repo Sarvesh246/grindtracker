@@ -4,6 +4,7 @@ using Toybox.System;
 using Toybox.Time;
 using Toybox.Time.Gregorian;
 using Toybox.Cryptography;
+using Toybox.StringUtil;
 
 // Pure logic: no UI, no storage, no network. Everything here is unit-tested.
 //
@@ -158,7 +159,7 @@ module Logic {
         if (finalBatch && body != null) {
             var b = {};
             var tr = body["tr"];
-            if (tr instanceof Lang.Array && tr.size() > 1) { b["trace"] = tr; b["step"] = Config.HR_STEP; }
+            if (tr instanceof Lang.Array && tr.size() > 1) { b["trace_b64"] = traceB64(tr); b["step"] = Config.HR_STEP; }
             var hz = body["hz"];
             if (hz instanceof Lang.Array && hz.size() >= 5 && hz.size() <= 6 && validHr(hz[0])) { b["zones"] = hz; }
             var zs = body["zs"];
@@ -167,6 +168,20 @@ module Logic {
             if (b.size() > 0) { p["hr"] = b; }
         }
         return p;
+    }
+
+    // The trace as one byte a reading, base64. As a JSON number list a long
+    // one-second trace is too big a request to get through the phone.
+    function traceB64(tr) {
+        var ba = new [tr.size()]b;
+        for (var i = 0; i < tr.size(); i++) {
+            var v = tr[i];
+            ba[i] = v == null || v < 0 || v > 250 ? 0 : v.toNumber();
+        }
+        return StringUtil.convertEncodedString(ba, {
+            :fromRepresentation => StringUtil.REPRESENTATION_BYTE_ARRAY,
+            :toRepresentation => StringUtil.REPRESENTATION_STRING_BASE64
+        });
     }
 
     function validHr(v) {
