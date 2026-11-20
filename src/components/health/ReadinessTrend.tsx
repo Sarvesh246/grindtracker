@@ -23,7 +23,16 @@ function weekSentence(z: number | null): string | null {
   return 'Your 7-day average is in your usual range.'
 }
 
-export default function ReadinessTrend({ checks, date }: { checks: ReadinessCheck[]; date: string }) {
+export default function ReadinessTrend({
+  checks,
+  date,
+  failed = false
+}: {
+  checks: ReadinessCheck[]
+  date: string
+  /** The read failed, so an empty list means "unknown", not "no checks". */
+  failed?: boolean
+}) {
   const [window, setWindow] = useState<(typeof WINDOWS)[number]>(30)
   const [picked, setPicked] = useState<{ key: string; index: number } | null>(null)
 
@@ -43,6 +52,12 @@ export default function ReadinessTrend({ checks, date }: { checks: ReadinessChec
   const total = [...days.keys()].filter(d => d <= date).length
 
   if (days.size === 0) {
+    if (failed)
+      return (
+        <div className="health-readiness">
+          <p className="health-muted" role="alert">Couldn’t load your readiness checks.</p>
+        </div>
+      )
     return (
       <div className="health-readiness">
         <p className="health-muted">

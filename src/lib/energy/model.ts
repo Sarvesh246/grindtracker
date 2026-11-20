@@ -7,6 +7,17 @@ import type { Confidence, EnergyCheckin, Night } from './types'
 
 export const MODEL_VERSION = 3
 
+/** How far back to look for nights; shared by the page read and the cron read. */
+export const LOOKBACK_DAYS = 28
+
+/**
+ * Sleep lengths GRIND trusts (exclusive bounds). Outside this is a tracking error
+ * or a doze, not a night, and every consumer (need, debt, nights) applies it alike.
+ */
+export const MIN_NIGHT_H = 2
+export const MAX_NIGHT_H = 14
+export const isPlausibleSleep = (h: number) => h > MIN_NIGHT_H && h < MAX_NIGHT_H
+
 // ── Sleep debt: a running 14-night balance ───────────────────────────────────
 
 export const DEBT_NIGHTS = 14
@@ -22,7 +33,8 @@ export const MAX_DEBT_H = 20
  * last night 2.1× its real shortfall.
  */
 export function sleepDebt(nights: Night[], needH: number): number {
-  const window = nights.slice(0, DEBT_NIGHTS)
+  // Same plausibility rule as sleepNeed: a 14h "night" or a 1h doze isn't debt evidence.
+  const window = nights.filter((n) => isPlausibleSleep(n.sleepH)).slice(0, DEBT_NIGHTS)
   let balance = 0
   for (let i = window.length - 1; i >= 0; i--) {
     const n = window[i]
@@ -91,7 +103,7 @@ export function circadianPhase(nights: Night[], checkins: EnergyCheckin[] = []):
 }
 
 /** Where the dip centre sits relative to DLMO (≈15:00 for a 21:00 DLMO). */
-export const DIP_BEFORE_DLMO = 6
+const DIP_BEFORE_DLMO = 6
 
 /**
  * GRIND's edge over RISE: learn from how the user actually felt. Every "tired"
@@ -192,7 +204,7 @@ export function startS(day: Pick<DayModel, 'debtH' | 'lastSleepH'>): number {
 }
 
 /** Default inertia decay (Åkerstedt–Folkard); waking from deep sleep uses the slower one. */
-export const INERTIA_RATE = 1.51
+const INERTIA_RATE = 1.51
 export const DEEP_WAKE_INERTIA_RATE = 1.0
 
 /** True while `h` falls inside one of today's naps. */
@@ -262,7 +274,7 @@ export function activeRange(day: DayModel): [number, number] {
 // ── Turning the curve into named phases ──────────────────────────────────────
 
 /** Sleep inertia is "over" once W has recovered 90% (≈1.5h; RISE says ~90 min; ≈2.3h from deep sleep). */
-export function groggyHours(day: Pick<DayModel, 'inertiaRate'>): number {
+function groggyHours(day: Pick<DayModel, 'inertiaRate'>): number {
   return Math.log(10) / (day.inertiaRate ?? INERTIA_RATE)
 }
 const STEP = 5 / 60

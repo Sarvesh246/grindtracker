@@ -68,7 +68,7 @@ export default function FitterLine({ exerciseId }: { exerciseId: string }) {
 }
 
 /** The card itself, from an already-computed fitterLine(). */
-export function FitterLineView({ line }: { line: FitterLineData }) {
+function FitterLineView({ line }: { line: FitterLineData }) {
   const easier = line.deltaBpm > 0
   // Tiny two-point picture: then on the left, now on the right, higher = harder.
   const W = 120
@@ -112,7 +112,7 @@ export function FitterLineView({ line }: { line: FitterLineData }) {
           <circle cx={14} cy={y(line.earlierAvg)} r={5} fill="var(--text-muted)" />
           <circle cx={W - 14} cy={y(line.recentAvg)} r={6} fill={easier ? 'var(--accent)' : 'var(--text-primary)'} />
         </svg>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--text-muted)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text-muted)' }}>
           <span>{Math.round(line.earlierAvg)}</span>
           <span style={{ color: 'var(--text-primary)' }}>{Math.round(line.recentAvg)}</span>
         </div>

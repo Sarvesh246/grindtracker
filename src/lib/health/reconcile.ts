@@ -26,7 +26,7 @@ export type HealthSource =
  * Garmin export, which beats Apple Health's coarser copy; the watch app is last
  * because it supplies no sleep. Lower sources still fill fields the winner lacks.
  */
-export const SOURCE_RANK: Record<HealthSource, number> = {
+const SOURCE_RANK: Record<HealthSource, number> = {
   garmin_business: 6,
   garmin_personal: 5,
   garmin_unofficial: 4,
@@ -76,13 +76,17 @@ const FIELD: Record<string, HealthMetric> = {
   stress: 'stress_avg'
 }
 
-/** YYYY-MM-DD of an instant in an IANA timezone (the viewer's by default). */
-export function localDateIn(iso: string, timeZone?: string): string {
+/**
+ * YYYY-MM-DD of an instant in an IANA timezone. The zone is required: with none,
+ * Intl falls back to the server's zone (UTC on Vercel), which dates a 07:00 local
+ * reading onto the previous day for anyone east of Greenwich's offset.
+ */
+export function localDateIn(iso: string, timeZone: string): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
     year: 'numeric',
     month: '2-digit',
-    day: '2-digit',
-    ...(timeZone ? { timeZone } : {})
+    day: '2-digit'
   }).formatToParts(new Date(iso))
   const part = (t: string) => parts.find((p) => p.type === t)?.value
   return `${part('year')}-${part('month')}-${part('day')}`
@@ -106,7 +110,7 @@ export function compareSamples(a: SampleRow, b: SampleRow): number {
 export function mergeSamplesIntoHistory(
   history: HealthHistoryDay[],
   samples: SampleRow[],
-  timeZone?: string
+  timeZone: string
 ): { history: HealthHistoryDay[]; provenance: Record<string, DayProvenance> } {
   const best = new Map<string, SampleRow>()
   for (const s of samples) {

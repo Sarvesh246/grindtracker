@@ -56,6 +56,8 @@ function summary(over: Partial<BodySummary> = {}, rise = 0, wake = 38): BodySumm
     todayHrRange: null,
     signals: null,
     signalRecord: null,
+    readinessError: false,
+    labelsError: false,
     today: TODAY,
     days: d,
     todayRow: d[d.length - 1]!,
@@ -109,7 +111,7 @@ describe('summarizeCoachBody', () => {
   it("carries today's Charge with its inputs", () => {
     assert.ok(block.charge_today)
     assert.equal(block.charge_today!.band, 'Steady')
-    assert.ok(block.charge_today!.inputs.some(i => i.label === 'Body Battery' && i.value === '38'))
+    assert.ok(block.charge_today!.inputs.some(i => i.label === 'Waking Body Battery' && i.value === '38'))
   })
 
   it('has seven days of Charge and resting HR, today last', () => {

@@ -26,31 +26,53 @@ export async function GET(request: Request) {
   return run()
 }
 
+/** Users refreshed at once; enough to overlap database round trips without flooding the pool. */
+const CONCURRENCY = 8
+/** Stop starting new users after this, so the run ends before maxDuration does. */
+const BUDGET_MS = 40_000
+
 async function run() {
+  const started = Date.now()
   try {
     const supabase = createServiceClient()
+    // Due heads-ups go out first: a slow schedule refresh below must never hold back an alert already queued.
+    const sent = await sendDueNotifications(supabase)
+
     const { data: prefs, error } = await supabase
       .from('notification_prefs')
       .select('user_id,timezone,energy_kinds,energy_lead_min')
       .eq('enabled', true)
       .eq('energy_alerts', true)
+      .order('user_id')
       .limit(1000)
     if (error) throw error
+    const users = prefs ?? []
 
     let queued = 0
     let failed = 0
-    for (const pref of prefs ?? []) {
-      try {
-        queued += await refreshUserSchedule(supabase, pref)
-      } catch (err) {
-        // One user's bad data must not stop everyone else's alerts.
-        failed++
-        reportError(err, { operation: 'energy-refresh', route: '/api/cron/energy' })
+    let attempted = 0
+    const worker = async () => {
+      while (attempted < users.length && Date.now() - started < BUDGET_MS) {
+        const pref = users[attempted++]
+        try {
+          queued += await refreshUserSchedule(supabase, pref)
+        } catch (err) {
+          // One user's bad data must not stop everyone else's alerts.
+          failed++
+          reportError(err, { operation: 'energy-refresh', route: '/api/cron/energy' })
+        }
       }
     }
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, users.length) }, worker))
 
-    const sent = await sendDueNotifications(supabase)
-    return NextResponse.json({ ok: true, users: prefs?.length ?? 0, queued, failed, ...sent })
+    return NextResponse.json({
+      ok: true,
+      users: users.length,
+      queued,
+      failed,
+      deferred: users.length - attempted,
+      ...sent,
+    })
   } catch (err) {
     reportError(err, { operation: 'cron-energy', route: '/api/cron/energy' })
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Cron failed' }, { status: 500 })

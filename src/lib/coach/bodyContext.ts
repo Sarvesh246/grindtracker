@@ -7,6 +7,7 @@ import type { BodySummary } from '@/lib/body/queries'
 import type { HrSet } from '@/lib/body/types'
 import { LBS_PER_KG } from '@/lib/utils/units'
 import { getHealthSummary } from '@/lib/health/queries'
+import { validZone } from '@/lib/health/importers'
 import { sourceLabel } from '@/lib/health/reconcile'
 import {
   baseline,
@@ -50,6 +51,7 @@ export interface CoachBodyBlock {
   resting_hr: {
     baseline_30d: number | null
     latest: number | null
+    latest_date: string | null
     /** Consecutive days, up to the latest reading, at 5+ bpm over baseline. */
     days_in_a_row_5plus_over: number
   }
@@ -420,7 +422,8 @@ export function summarizeCoachBody(input: {
   })
 
   const baseline = restingBaseline(days, today)
-  const latestRhr = [...days].reverse().find(d => d.resting_hr != null)?.resting_hr ?? null
+  const latestRow = [...days].reverse().find(d => d.resting_hr != null)
+  const latestRhr = latestRow?.resting_hr ?? null
   const streak = restingRiseStreak(summary)
 
   const block: CoachBodyBlock = {
@@ -440,6 +443,9 @@ export function summarizeCoachBody(input: {
     resting_hr: {
       baseline_30d: baseline != null ? Math.round(baseline) : null,
       latest: latestRhr,
+      // A watch left off for days would otherwise put an old reading beside
+      // today's baseline as if it were this morning's.
+      latest_date: latestRow?.local_date ?? null,
       days_in_a_row_5plus_over: streak,
     },
   }
@@ -630,7 +636,10 @@ export async function loadCoachBody(
   timeZone?: string | null,
 ): Promise<CoachBodyBlock | null> {
   try {
-    const health = await getHealthSummary(supabase, userId, today, timeZone ?? undefined)
+    // The zone decides which day each reading lands on. With none supplied, fall back
+    // to UTC explicitly rather than letting the date helpers take the server's zone.
+    const zone = validZone(timeZone) ? timeZone : 'UTC'
+    const health = await getHealthSummary(supabase, userId, today, zone)
     const summary = health.body
     const imported = health.sleeps.length > 0 || health.history.length > 0
     if (!summary.available || summary.prefs.coach_uses_body === false) return null

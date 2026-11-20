@@ -1,8 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { shiftDate, type SleepSession } from '@/lib/health/model'
 import { ALERT_KIND_TO_NOTIFICATION, alertCopy } from './copy'
-import { MODEL_VERSION } from './model'
-import { LOOKBACK_DAYS, buildEnergySchedule } from './schedule'
+import { LOOKBACK_DAYS, MODEL_VERSION } from './model'
+import { buildEnergySchedule } from './schedule'
 import { todayIn, validZone } from './time'
 import {
   ALERT_KINDS,
@@ -27,8 +27,11 @@ export interface EnergyInputs {
   sleepSeenAt: string | null
 }
 
-/** Throws on a failed read: a failed read is not an empty account. */
-export async function loadEnergyInputs(
+/**
+ * Throws on a failed read: a failed read is not an empty account. Every read is
+ * newest-first, so when a limit bites it drops the oldest rows, never the latest.
+ */
+async function loadEnergyInputs(
   client: SupabaseClient,
   userId: string,
   date: string,
@@ -40,13 +43,15 @@ export async function loadEnergyInputs(
       .eq('user_id', userId)
       .gte('wake_date', shiftDate(date, -LOOKBACK_DAYS))
       .lte('wake_date', date)
-      .order('wake_date')
+      .order('wake_date', { ascending: false })
+      .order('start_at')
       .limit(200),
     client
       .from('energy_checkins')
       .select('local_date,local_hour,feeling')
       .eq('user_id', userId)
       .gte('local_date', shiftDate(date, -CHECKIN_DAYS))
+      .order('local_date', { ascending: false })
       .limit(500),
     client
       .from('daily_body')
@@ -54,6 +59,7 @@ export async function loadEnergyInputs(
       .eq('user_id', userId)
       .gte('local_date', shiftDate(date, -LOOKBACK_DAYS))
       .lte('local_date', date)
+      .order('local_date', { ascending: false })
       .limit(60),
   ])
   if (sleep.error) throw sleep.error
@@ -85,7 +91,7 @@ export async function loadEnergyInputs(
 }
 
 /** The zone to read a user's day in: their push timezone, else their newest night's. */
-export function resolveZone(prefZone: string | null | undefined, sessions: SleepSession[]): string {
+function resolveZone(prefZone: string | null | undefined, sessions: SleepSession[]): string {
   if (validZone(prefZone) && prefZone !== 'UTC') return prefZone
   const newest = [...sessions].sort((a, b) => b.wake_date.localeCompare(a.wake_date))[0]
   if (validZone(newest?.timezone)) return newest.timezone
@@ -159,6 +165,19 @@ export async function refreshUserSchedule(
       (existing.sleep_seen_at && Date.parse(existing.sleep_seen_at) >= Date.parse(inputs.sleepSeenAt)))
   if (fresh) return 0
 
+  // Replace today's unsent heads-ups; anything already sent stays sent. Runs even
+  // when no schedule can be built, so a heads-up for a schedule that has since
+  // disappeared (say, the sleep row was deleted) isn't still sent later.
+  const prefix = `energy:${pref.user_id}:${date}:`
+  const clearUnsent = async () => {
+    const { error } = await service
+      .from('scheduled_notifications')
+      .delete()
+      .like('dedupe_key', `${prefix}%`)
+      .is('sent_at', null)
+    if (error) throw error
+  }
+
   const schedule = buildEnergySchedule({
     date,
     timezone,
@@ -166,7 +185,10 @@ export async function refreshUserSchedule(
     checkins: inputs.checkins,
     daily: inputs.daily,
   })
-  if (!schedule) return 0
+  if (!schedule) {
+    await clearUnsent()
+    return 0
+  }
 
   const { error: upsertErr } = await service.from('energy_schedules').upsert(
     {
@@ -188,14 +210,7 @@ export async function refreshUserSchedule(
   )
   if (upsertErr) throw upsertErr
 
-  // Replace today's unsent heads-ups; anything already sent stays sent.
-  const prefix = `energy:${pref.user_id}:${date}:`
-  const { error: delErr } = await service
-    .from('scheduled_notifications')
-    .delete()
-    .like('dedupe_key', `${prefix}%`)
-    .is('sent_at', null)
-  if (delErr) throw delErr
+  await clearUnsent()
 
   const wanted = new Set(kinds)
   const rows = schedule.events

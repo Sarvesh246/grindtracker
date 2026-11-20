@@ -80,7 +80,7 @@ export default function HeartbeatRibbon({ sessionId }: { sessionId: string }) {
 }
 
 /** The ribbon itself, from an already-computed workoutHeart(). */
-export function HeartbeatRibbonView({ heart }: { heart: WorkoutHeart }) {
+function HeartbeatRibbonView({ heart }: { heart: WorkoutHeart }) {
   const { fmt, unitLabel } = useUnit()
   const [picked, setPicked] = useState<number | null>(null)
   const traceEnd = heart.points.length ? heart.points[heart.points.length - 1][0] : 0

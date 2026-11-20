@@ -1,4 +1,4 @@
-import { localToIso } from '@/lib/health/importers'
+import { localToIso, validZone } from '@/lib/health/importers'
 import { localDateIn } from '@/lib/health/reconcile'
 import { shiftDate } from '@/lib/health/model'
 
@@ -50,13 +50,4 @@ export function todayIn(zone: string, now: Date = new Date()): string {
   return localDateIn(now.toISOString(), zone)
 }
 
-/** True when `zone` is an IANA name this runtime understands. */
-export function validZone(zone: string | null | undefined): zone is string {
-  if (!zone) return false
-  try {
-    Intl.DateTimeFormat('en-US', { timeZone: zone })
-    return true
-  } catch {
-    return false
-  }
-}
+export { validZone }

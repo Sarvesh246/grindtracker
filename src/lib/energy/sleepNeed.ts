@@ -1,4 +1,4 @@
-import { sleepDebt } from './model'
+import { isPlausibleSleep, sleepDebt } from './model'
 import type { Night } from './types'
 
 /**
@@ -7,18 +7,18 @@ import type { Night } from './types'
  */
 
 /** Population median need: RISE's ~2M users; lab extension studies land at 8.4h (Kitamura 2016). */
-export const PRIOR_NEED_H = 8
+const PRIOR_NEED_H = 8
 /** Nights of evidence it takes to pull the estimate halfway off the prior. */
-export const PRIOR_WEIGHT = 5
-export const MIN_NEED_H = 6
-export const MAX_NEED_H = 10
+const PRIOR_WEIGHT = 5
+const MIN_NEED_H = 6
+const MAX_NEED_H = 10
 
 /**
  * Share of carried-in debt a free night repays. Kitamura 2016: with unlimited
  * sleep opportunity, 1h of debt took ~4 nights to clear, i.e. about a quarter of
  * what remains comes back per night.
  */
-export const REPAY_PER_NIGHT = 0.25
+const REPAY_PER_NIGHT = 0.25
 /**
  * A night this much LONGER than your usual reads as one nothing cut short. Duration,
  * not wake time: MCTQ defines free days by oversleep (Roenneberg), and a shifted
@@ -27,8 +27,6 @@ export const REPAY_PER_NIGHT = 0.25
 const FREE_EXTRA_H = 0.5
 /** Nights older than this count half as much: need is a trait, but people change. */
 const HALF_LIFE_NIGHTS = 14
-/** Usable sleep lengths; outside this is a tracking error, not a night. */
-const VALID: [number, number] = [2, 14]
 
 function weightedMedian(items: { v: number; w: number }[]): number {
   const sorted = [...items].sort((a, b) => a.v - b.v)
@@ -61,7 +59,7 @@ function carriedDebt(nights: Night[], need: number): number[] {
  * debt in step 1 depends on the need being estimated.
  */
 export function sleepNeed(nights: Night[]): number {
-  const valid = nights.filter((n) => n.sleepH > VALID[0] && n.sleepH < VALID[1])
+  const valid = nights.filter((n) => isPlausibleSleep(n.sleepH))
   if (!valid.length) return PRIOR_NEED_H
   const usualSleep = weightedMedian(valid.map((n) => ({ v: n.sleepH, w: 1 })))
 

@@ -1,5 +1,4 @@
 import { summarizeReadiness, type ReadinessCheck } from './hrv'
-import { daysBetween } from './load'
 import { restingRespiration } from './respiration'
 import type { DailyBody, LoadSession } from './types'
 
@@ -275,9 +274,17 @@ export function computeSignals(daysList: DailyBody[], date: string, extras: Sign
   let headline: string
   let advice: string
   let short: string | null = null
-  if (level === 'learning') {
+  if (level === 'learning' && nights < MIN_BASELINE_NIGHTS) {
     headline = 'Learning your usual nights'
-    advice = `Body signals start after ${MIN_BASELINE_NIGHTS} nights of wearing the watch to bed (${Math.min(nights, MIN_BASELINE_NIGHTS)} so far).`
+    advice = `Body signals start after ${MIN_BASELINE_NIGHTS} nights of wearing the watch to bed (${nights} so far).`
+  } else if (level === 'learning') {
+    // Enough nights for some reading (often an imported overnight HRV with a
+    // long history), but a warning compares two or more, and the rest either
+    // has no usual yet or nothing from last night.
+    headline = 'Not enough from last night yet'
+    advice = signals.length
+      ? `Only one reading (${signals[0].label}) could be compared with your usual. Body signals need two, so keep the watch on overnight.`
+      : "None of last night's readings could be compared with your usual yet. Keep the watch on overnight."
   } else if (level === 'clear') {
     headline = 'Nothing unusual overnight'
     advice = signals.some(s => s.off)
@@ -315,14 +322,18 @@ function computeSignalOne(days: Map<string, DailyBody>, date: string, key: Signa
   return (spec.worse * (now - center)) / spread
 }
 
+/** Mornings the track record looks back over. The body read holds 35 days and
+ *  a morning needs 7 usual nights before it, so older mornings could never be
+ *  flagged; looking further back would only promise a longer record. */
+export const RECORD_DAYS = 28
+
 /** How often the warnings were right: flagged mornings you labelled, and
  *  how many of those you said you were sick within two days. */
 export function signalTrackRecord(daysList: DailyBody[], until: string, extras: SignalExtras = {}): { flagged: number; labelled: number; sick: number } {
   let flagged = 0, labelled = 0, sick = 0
   const labels = new Map((extras.labels ?? []).map(l => [l.local_date, l.tags]))
-  for (let i = 0; i < 90; i++) {
+  for (let i = 0; i < RECORD_DAYS; i++) {
     const date = shiftDate(until, -i)
-    if (daysBetween(date, until) > 90) break
     const s = computeSignals(daysList, date, extras)
     if (s.level !== 'mild' && s.level !== 'strong') continue
     flagged++

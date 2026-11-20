@@ -192,7 +192,7 @@ export default function DayTide({
               left: `${((b as number) / BUCKETS_PER_DAY) * 100}%`,
               transform: 'translateX(-50%)',
               fontFamily: 'var(--font-mono)',
-              fontSize: '10px',
+              fontSize: '11px',
               color: 'var(--text-muted)',
               letterSpacing: '0.5px',
             }}

@@ -10,7 +10,6 @@ export function useHealthSummary(date: string | null) {
   const [state, setState] = useState<{ date: string; data: HealthSummary } | null>(null)
   const [error, setError] = useState(false)
   const [updating, setUpdating] = useState(false)
-  const generation = useRef(0)
   const owner = useRef<string | null>(null)
   const [retry, setRetry] = useState(0)
   const refresh = useCallback(() => setRetry((n) => n + 1), [])
@@ -18,14 +17,17 @@ export function useHealthSummary(date: string | null) {
   useEffect(() => {
     let disposed = false
     let running = false
+    // Bumped by cleanup and by an account switch, so a read that started
+    // before either can never land.
+    let generation = 0
     async function load() {
       if (!date || demoMode || disposed || running) return
       running = true
-      const request = ++generation.current
+      const request = ++generation
       setUpdating(true)
       try {
         const user = await getClientUser(client)
-        if (disposed || request !== generation.current) return
+        if (disposed || request !== generation) return
         if (owner.current !== user?.id) {
           setState(null)
           owner.current = user?.id ?? null
@@ -40,15 +42,15 @@ export function useHealthSummary(date: string | null) {
           date,
           Intl.DateTimeFormat().resolvedOptions().timeZone
         )
-        if (!disposed && request === generation.current) {
+        if (!disposed && request === generation) {
           if (data.body.available) setState({ date, data })
           setError(!data.body.available)
         }
       } catch {
-        if (!disposed && request === generation.current) setError(true)
+        if (!disposed && request === generation) setError(true)
       } finally {
         running = false
-        if (!disposed && request === generation.current) setUpdating(false)
+        if (!disposed && request === generation) setUpdating(false)
       }
     }
     const onVisible = () => {
@@ -56,7 +58,7 @@ export function useHealthSummary(date: string | null) {
     }
     const auth = client.auth.onAuthStateChange((_event, session) => {
       if (session?.user.id !== owner.current) {
-        ++generation.current
+        ++generation
         owner.current = session?.user.id ?? null
         setState(null)
         setError(false)
@@ -73,7 +75,7 @@ export function useHealthSummary(date: string | null) {
     document.addEventListener('visibilitychange', onVisible)
     return () => {
       disposed = true
-      ++generation.current
+      ++generation
       auth.data.subscription.unsubscribe()
       window.removeEventListener('focus', onVisible)
       window.removeEventListener('online', onVisible)

@@ -161,10 +161,6 @@ html.light {
   font: 3.25rem/1.05 var(--font-display);
   letter-spacing: 0.02em;
 }
-.health-date-caption {
-  color: var(--text-secondary);
-  font-size: 0.875rem;
-}
 .health-date-controls {
   display: flex;
   gap: 8px;
@@ -970,22 +966,6 @@ html.light {
 .health-plot-title {
   margin: 14px 0 6px;
 }
-.health-scrubber {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-bottom: 12px;
-  font-size: 0.8125rem;
-  color: var(--text-secondary);
-}
-.health-page .health-scrubber input {
-  width: 100%;
-  min-height: 44px;
-  padding: 0;
-  background: transparent;
-  border: 0;
-  accent-color: var(--accent);
-}
 .health-chips {
   display: flex;
   flex-wrap: wrap;
@@ -1240,17 +1220,6 @@ html.light .health-segment button[aria-pressed='true'] {
 html.reduce-motion .health-skeleton > div {
   animation: none;
 }
-.health-sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
 
 /* ───────── Date dialog ───────── */
 .health-calendar {
@@ -1398,11 +1367,6 @@ html.reduce-motion .health-skeleton > div {
   user-select: none;
   -webkit-touch-callout: none;
 }
-.health-hint {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  margin: 4px 0 12px;
-}
 .health-trend-reading {
   justify-content: flex-start;
   gap: 16px;
@@ -1530,9 +1494,6 @@ html.reduce-motion .health-skeleton > div {
 /* Header */
 .health-title-row {
   align-items: flex-end;
-}
-.health-date-caption {
-  display: none;
 }
 .health-date-controls {
   align-items: stretch;
@@ -1726,16 +1687,6 @@ html.reduce-motion .health-skeleton > div {
 }
 .health-stage-plot {
   background: linear-gradient(180deg, transparent, transparent);
-}
-.health-badge {
-  font-style: normal;
-  font-size: 0.625rem;
-  letter-spacing: 0.1em;
-  padding: 2px 7px;
-  margin-left: 6px;
-  border-radius: 999px;
-  border: 1px solid var(--border-strong);
-  vertical-align: 1px;
 }
 
 /* Day */

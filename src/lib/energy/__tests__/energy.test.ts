@@ -197,6 +197,49 @@ describe('phaseAt', () => {
   })
 })
 
+describe('night merging and plausibility', () => {
+  const at = (date: string, hhmm: string) => localToIso(`${date}T${hhmm}:00`, ZONE)!
+  const rec = (
+    start: string,
+    end: string,
+    hours: number,
+    kind: 'main' | 'nap',
+    source: SleepSession['source'],
+  ): SleepSession => ({
+    ...session(TODAY, '23:00', '07:00', hours),
+    provider_id: `${start}-${source}`,
+    source,
+    start_at: start,
+    end_at: end,
+    kind,
+  })
+
+  it('counts the time two overlapping sources jointly cover, not the longer one alone', () => {
+    // Garmin 23:00–03:00 and Apple 02:30–07:00 are one night of 8h, not 4.5h.
+    const garmin = rec(at(shiftDate(TODAY, -1), '23:00'), at(TODAY, '03:00'), 4, 'main', 'garmin_export')
+    const apple = rec(at(TODAY, '02:30'), at(TODAY, '07:00'), 4.5, 'main', 'apple_health')
+    const [n] = buildNights([garmin, apple], TODAY).nights
+    assert.ok(Math.abs(n.sleepH - 8) < 0.01, `slept ${n.sleepH}`)
+    assert.equal(n.pieces, 1)
+  })
+
+  it('a day whose only record is tagged nap still gives a night when it is long enough', () => {
+    const block = rec(at(shiftDate(TODAY, -1), '23:30'), at(TODAY, '02:00'), 2.5, 'nap', 'apple_health')
+    const { nights, naps } = buildNights([block], TODAY)
+    assert.equal(nights.length, 1)
+    assert.ok(Math.abs(nights[0].sleepH - 2.5) < 0.01)
+    assert.equal(naps.length, 0)
+  })
+
+  it('ignores implausible records in sleep debt, as sleep need does', () => {
+    const rest = Array.from({ length: 13 }, (_, i) => ({ wakeDate: shiftDate(TODAY, -i - 1), onset: -1, wake: 7, sleepH: 8 }))
+    const withLong = [{ wakeDate: TODAY, onset: -9, wake: 6, sleepH: 15 }, ...rest]
+    const withDoze = [{ wakeDate: TODAY, onset: 0, wake: 1, sleepH: 1 }, ...rest]
+    assert.equal(sleepDebt(withLong, 8), 0)
+    assert.equal(sleepDebt(withDoze, 8), 0)
+  })
+})
+
 describe('watch signals', () => {
   const at = (date: string, hhmm: string) => localToIso(`${date}T${hhmm}:00`, ZONE)!
   const piece = (

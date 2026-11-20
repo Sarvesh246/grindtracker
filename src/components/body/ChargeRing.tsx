@@ -13,14 +13,12 @@ export function Ring({
   score,
   size = 52,
   stroke = 5,
-  showScore = true,
   muted = false,
 }: {
   /** 0–100, or null for an empty track. */
   score: number | null
   size?: number
   stroke?: number
-  showScore?: boolean
   /** Dim the arc (e.g. a past day in the week strip). */
   muted?: boolean
 }) {
@@ -51,24 +49,22 @@ export function Ring({
           />
         )}
       </svg>
-      {showScore && (
-        <span
-          style={{
-            position: 'absolute',
-            inset: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontFamily: 'var(--font-mono)',
-            fontSize: `${Math.max(11, Math.round(size * 0.3))}px`,
-            fontWeight: 600,
-            color: score == null ? 'var(--text-muted)' : 'var(--text-primary)',
-            letterSpacing: '-0.5px',
-          }}
-        >
-          {score ?? '–'}
-        </span>
-      )}
+      <span
+        style={{
+          position: 'absolute',
+          inset: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontFamily: 'var(--font-mono)',
+          fontSize: `${Math.max(11, Math.round(size * 0.3))}px`,
+          fontWeight: 600,
+          color: score == null ? 'var(--text-muted)' : 'var(--text-primary)',
+          letterSpacing: '-0.5px',
+        }}
+      >
+        {score ?? '–'}
+      </span>
     </span>
   )
 }

@@ -1,5 +1,6 @@
 'use client'
-import { useMemo, useState, type PointerEvent } from 'react'
+import { useMemo, useRef, useState, type PointerEvent } from 'react'
+import { clockHoursFrom, instantAt } from '@/lib/energy/time'
 import type { EnergySchedule } from '@/lib/energy/types'
 
 /**
@@ -12,7 +13,8 @@ import type { EnergySchedule } from '@/lib/energy/types'
 
 const H = 120
 const PAD_TOP = 8
-const BUCKET_MS = 15 * 60_000
+/** Quarter-hour buckets across the local day. */
+const BUCKETS = 96
 
 const yOf = (v: number) => H - (Math.max(0, Math.min(100, v)) / 100) * (H - PAD_TOP)
 
@@ -50,9 +52,12 @@ export default function EnergyCurve({
   now: number | null
   timeLabel: (ms: number) => string
 }) {
-  const start = Date.parse(schedule.dayStartAt)
-  const x = (ms: number) => Math.max(0, Math.min(96, (ms - start) / BUCKET_MS))
+  // Position by wall-clock hours in the schedule's zone, the same axis the points use.
+  // Elapsed time would sit an hour off on a DST day, where the local clock skips or repeats.
+  const x = (ms: number) =>
+    Math.max(0, Math.min(BUCKETS, clockHoursFrom(schedule.date, new Date(ms).toISOString(), schedule.timezone) * 4))
   const [read, setRead] = useState<number | null>(null)
+  const gesture = useRef<{ x: number; y: number; dragging: boolean } | null>(null)
 
   const { area, line } = useMemo(() => {
     let a = ''
@@ -70,12 +75,12 @@ export default function EnergyCurve({
     .map((e) => ({ kind: e.kind, x0: x(Date.parse(e.start)), x1: x(Date.parse(e.end!)) }))
 
   const nowX = now != null ? x(now) : null
-  const showNow = nowX != null && nowX > 0 && nowX < 96
+  const showNow = nowX != null && nowX > 0 && nowX < BUCKETS
 
   const pick = (ev: PointerEvent<HTMLDivElement>) => {
     const box = ev.currentTarget.getBoundingClientRect()
-    const i = Math.floor(((ev.clientX - box.left) / box.width) * 96)
-    setRead(Math.max(0, Math.min(95, i)))
+    const i = Math.floor(((ev.clientX - box.left) / box.width) * BUCKETS)
+    setRead(Math.max(0, Math.min(BUCKETS - 1, i)))
   }
   const reading = read != null ? schedule.curve[read] : null
 
@@ -87,14 +92,36 @@ export default function EnergyCurve({
         role="img"
         aria-label="Predicted energy through the day. The timeline below lists every phase."
         onPointerDown={(e) => {
-          e.currentTarget.setPointerCapture(e.pointerId)
+          // A tap reads at once; a horizontal drag scrubs; a vertical drag is left to the page.
+          gesture.current = { x: e.clientX, y: e.clientY, dragging: e.pointerType === 'mouse' }
+          if (e.pointerType === 'mouse') e.currentTarget.setPointerCapture(e.pointerId)
           pick(e)
         }}
         onPointerMove={(e) => {
-          if (e.currentTarget.hasPointerCapture(e.pointerId)) pick(e)
+          const g = gesture.current
+          if (!g) return
+          if (!g.dragging) {
+            const dx = Math.abs(e.clientX - g.x)
+            const dy = Math.abs(e.clientY - g.y)
+            if (dy > 8 && dy > dx) {
+              gesture.current = null
+              setRead(null)
+              return
+            }
+            if (dx <= 4) return
+            g.dragging = true
+            e.currentTarget.setPointerCapture(e.pointerId)
+          }
+          pick(e)
         }}
-        onPointerUp={() => setRead(null)}
-        onPointerCancel={() => setRead(null)}
+        onPointerUp={() => {
+          gesture.current = null
+          setRead(null)
+        }}
+        onPointerCancel={() => {
+          gesture.current = null
+          setRead(null)
+        }}
       >
         <svg viewBox={`0 0 96 ${H}`} preserveAspectRatio="none" aria-hidden="true">
           <defs>
@@ -138,7 +165,7 @@ export default function EnergyCurve({
             style={{ left: `${Math.min(80, Math.max(20, ((read + 0.5) / 96) * 100))}%` }}
           >
             <b>{reading != null ? reading : 'Asleep'}</b>
-            <small>{timeLabel(start + read * BUCKET_MS)}</small>
+            <small>{timeLabel(Date.parse(instantAt(schedule.date, read / 4, schedule.timezone)))}</small>
           </span>
         )}
       </div>

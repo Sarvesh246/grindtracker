@@ -14,6 +14,8 @@ const stage = z
   .object({ stage: z.enum(['awake', 'rem', 'light', 'deep']), start: timestamp, end: timestamp })
   .strict()
 const date = z.string().refine(validDate, 'Expected a real calendar date')
+/** Most stage intervals a night may carry; importers drop a longer timeline and keep the totals. */
+export const MAX_STAGE_INTERVALS = 1500
 const nullableNumber = (min: number, max: number) =>
   z.number().finite().min(min).max(max).nullable()
 const units = {
@@ -27,7 +29,7 @@ const units = {
   spo2: ['percent', 50, 100],
   recovery_hours: ['hours', 0, 200]
 } as const
-export const sampleSchema = z
+const sampleSchema = z
   .object({
     provider_id: z.string().min(1).max(160),
     metric: z.enum(Object.keys(units) as [keyof typeof units, ...(keyof typeof units)[]]),
@@ -59,7 +61,7 @@ export const sleepSchema = z
     kind: z.enum(['main', 'nap']),
     duration_seconds: z.number().int().min(0).max(86400),
     score: nullableNumber(0, 100),
-    stages: z.array(stage).max(1500).nullable(),
+    stages: z.array(stage).max(MAX_STAGE_INTERVALS).nullable(),
     stage_totals: z
       .object({
         awake: z.number().int().min(0).max(86400).optional(),
@@ -109,7 +111,7 @@ export const sleepSchema = z
     if (total * 1000 > end - start)
       ctx.addIssue({ code: 'custom', message: 'Stage totals exceed time in bed' })
   })
-export const healthBatchSchema = z
+const healthBatchSchema = z
   .object({
     version: z.literal(1),
     batch_id: z.uuid(),

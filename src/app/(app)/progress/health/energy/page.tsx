@@ -14,23 +14,27 @@ export default async function Page() {
   } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const { data: prefs } = await supabase
+  const { data: prefs, error: prefsError } = await supabase
     .from('notification_prefs')
     .select('enabled,timezone,energy_alerts,energy_kinds,energy_lead_min')
     .eq('user_id', user.id)
     .maybeSingle()
 
+  // A failed prefs read is not "no prefs": without it we'd show the wrong zone and
+  // "Turn on notifications first" to someone who already has them on. Show the retry state.
   let loaded: Awaited<ReturnType<typeof getEnergySchedule>> | null = null
-  try {
-    loaded = await getEnergySchedule(supabase, user.id, prefs?.timezone ?? null)
-  } catch {
-    loaded = null
+  if (!prefsError) {
+    try {
+      loaded = await getEnergySchedule(supabase, user.id, prefs?.timezone ?? null)
+    } catch {
+      loaded = null
+    }
   }
 
   return (
     <EnergyView
       schedule={loaded?.schedule ?? null}
-      failed={!loaded}
+      failed={!!prefsError || !loaded}
       userId={user.id}
       alerts={{
         pushEnabled: prefs?.enabled ?? false,

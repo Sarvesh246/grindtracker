@@ -7,13 +7,13 @@ import type { DailyBody, LoadSession } from './types'
 /**
  * Charge: how ready you are to train today, 0–100, with its working shown.
  *
- *   Body Battery morning peak   30%   the value itself
- *   HRV check vs your usual     20%   at or above usual → 90–100, −1 SD → 60
- *   Recovery time left          20%   0 h → 100, 48 h → 0
- *   Resting HR vs 30-day usual  15%   −3 bpm or lower → 100, +7 → 0
+ *   Body Battery morning peak   27%   the value itself
+ *   HRV check vs your usual     18%   at or above usual → 90–100, −1 SD → 60
+ *   Recovery time left          18%   0 h → 100, 48 h → 0
+ *   Resting HR vs 30-day usual  13.5% −3 bpm or lower → 100, +7 → 0
  *   Resting respiration vs      10%   at or under usual → 100, +3 breaths/min
  *     30-night usual                  → 0. Overnight median (respiration.ts)
- *   Training load balance       15%   7 days vs 28, 0.8–1.3 → 100. Lifting
+ *   Training load balance       13.5% 7 days vs 28, 0.8–1.3 → 100. Lifting
  *                                     load (strength.ts) when there is enough
  *                                     of it, else heart-rate load (load.ts)
  *
@@ -48,9 +48,10 @@ export interface Charge {
   shortAdvice: string
 }
 
-// Weights are relative: inputs that are missing drop out and the rest are
-// re-weighted, so respiration only dilutes the others when it is present.
-const WEIGHTS: Record<ChargeKey, number> = { body_battery: 0.3, hrv: 0.2, recovery: 0.2, resting_hr: 0.15, respiration: 0.1, load: 0.15 }
+// Sums to 1 with every input present. Missing inputs drop out and the rest are
+// re-weighted, so without respiration the other five keep their old 30/20/20/
+// 15/15 balance and respiration only takes its 10% when it is there.
+const WEIGHTS: Record<ChargeKey, number> = { body_battery: 0.27, hrv: 0.18, recovery: 0.18, resting_hr: 0.135, respiration: 0.1, load: 0.135 }
 
 /** Optional inputs beyond daily_body and sessions. */
 export interface ChargeExtras {
@@ -93,13 +94,18 @@ export function chargeBand(score: number): ChargeBand {
   return score >= 75 ? 'primed' : score >= 50 ? 'steady' : 'easy'
 }
 
-/** Mean resting HR over the 30 days before `today`, or null with too few days. */
+/** Median resting HR over the 30 days before `today`, or null with too few
+ *  days. A median, not a mean, so a week of elevated mornings (the strain this
+ *  input exists to catch) can't drag "usual" up with it, the same reason
+ *  signals.ts uses one. */
 export function restingBaseline(days: DailyBody[], today: string): number | null {
   const vals = days
     .filter(d => d.resting_hr != null && d.local_date < today && daysBetween(d.local_date, today) <= 30)
     .map(d => d.resting_hr as number)
+    .sort((a, b) => a - b)
   if (vals.length < MIN_BASELINE_DAYS) return null
-  return vals.reduce((a, b) => a + b, 0) / vals.length
+  const m = vals.length >> 1
+  return vals.length % 2 ? vals[m] : (vals[m - 1] + vals[m]) / 2
 }
 
 export function computeCharge(days: DailyBody[], sessions: LoadSession[], today: string, extras: ChargeExtras = {}): Charge | null {
@@ -109,7 +115,17 @@ export function computeCharge(days: DailyBody[], sessions: LoadSession[], today:
 
   const bb = row?.bb_wake ?? row?.bb_high ?? null
   if (bb != null) {
-    raw.push({ key: 'body_battery', label: 'Body Battery', value: String(bb), score: clamp(bb, 0, 100), phrase: `Body Battery ${bb}` })
+    // Named for which reading it is: the Health page shows the current Body
+    // Battery right beside it, and two different "Body Battery" numbers read
+    // as a bug.
+    const waking = row?.bb_wake != null
+    raw.push({
+      key: 'body_battery',
+      label: waking ? 'Waking Body Battery' : 'Peak Body Battery',
+      value: String(bb),
+      score: clamp(bb, 0, 100),
+      phrase: waking ? `you woke with Body Battery at ${bb}` : `Body Battery peaked at ${bb}`,
+    })
   }
 
   if (readiness?.today && readiness.z != null && readiness.baseline) {

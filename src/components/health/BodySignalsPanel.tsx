@@ -45,16 +45,20 @@ function Deviation({ signal }: { signal: Signal }) {
 export function BodySignalsPanel({
   signals,
   record,
+  labelsError = false,
 }: {
   signals: BodySignals
   record: { flagged: number; labelled: number; sick: number } | null
+  /** The saved tags failed to load. They would show as unset, and the next
+   *  tap would overwrite the real set, so tagging stays off until a reload. */
+  labelsError?: boolean
 }) {
   const [tags, setTags] = useState<string[]>(signals.labels)
   const [saving, setSaving] = useState(false)
   const [failed, setFailed] = useState(false)
 
   async function toggle(id: string) {
-    if (saving) return
+    if (saving || labelsError) return
     const next = tags.includes(id) ? tags.filter(t => t !== id) : [...tags.filter(t => !(id === 'fine' || t === 'fine')), id]
     const prev = tags
     setTags(next)
@@ -102,6 +106,9 @@ export function BodySignalsPanel({
       {signals.level !== 'learning' && (
         <div className="body-signal-tags">
           <p className="health-eyebrow">How was this morning?</p>
+          {labelsError && (
+            <p className="body-signal-error" role="alert">Couldn&apos;t load your tags. Reload to change them.</p>
+          )}
           <div role="group" aria-label="How was this morning?">
             {TAGS.map(t => (
               <button
@@ -109,7 +116,7 @@ export function BodySignalsPanel({
                 type="button"
                 className="press"
                 aria-pressed={tags.includes(t.id)}
-                disabled={saving}
+                disabled={saving || labelsError}
                 onClick={() => toggle(t.id)}
               >
                 {t.label}
@@ -122,7 +129,7 @@ export function BodySignalsPanel({
 
       {record && record.flagged > 0 && (
         <p className="health-muted body-signal-record">
-          {record.flagged} {record.flagged === 1 ? 'morning' : 'mornings'} flagged in 90 days
+          {record.flagged} {record.flagged === 1 ? 'morning' : 'mornings'} flagged in 4 weeks
           {record.labelled > 0 ? ` · you marked ${record.sick} as sickness` : ' · tag them to see how often it was right'}
         </p>
       )}

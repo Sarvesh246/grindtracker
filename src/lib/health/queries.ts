@@ -42,7 +42,7 @@ export async function getHealthSummary(
   client: SupabaseClient,
   userId: string,
   date: string,
-  timeZone?: string
+  timeZone: string
 ) {
   const [body, sleep, history, samples, connections, workouts] = await Promise.all([
     getBodySummary(client, userId, date),
@@ -54,7 +54,8 @@ export async function getHealthSummary(
       .eq('user_id', userId)
       .gte('wake_date', shiftDate(date, -89))
       .lte('wake_date', date)
-      .order('wake_date')
+      // Newest first so the limit drops the oldest rows; flipped back to ascending below.
+      .order('wake_date', { ascending: false })
       .limit(400),
     client
       .from('daily_body')
@@ -95,7 +96,7 @@ export async function getHealthSummary(
     : ['42P01', 'PGRST205'].includes(sleep.error.code)
       ? 'not_enabled'
       : 'error'
-  const sleeps = (sleep.data ?? []) as SleepSession[]
+  const sleeps = ((sleep.data ?? []) as SleepSession[]).reverse()
   const links = (connections.error ? [] : (connections.data ?? [])) as HealthConnection[]
   const sourceOf = new Map(links.map((c) => [c.id, c.source]))
   const sampleRows: SampleRow[] = samples.error

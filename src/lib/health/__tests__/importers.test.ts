@@ -12,7 +12,8 @@ import {
   parseGarminHealthStatusText,
   parseGarminNight,
   toIso,
-  withExportHrv
+  withExportHrv,
+  zoneForOffset
 } from '../importers'
 import { mainSleep, type SleepSession } from '../model'
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate'
@@ -54,6 +55,54 @@ const exportNight = {
   averageRespiration: 14,
   sleepScores: { overallScore: 79 }
 }
+
+describe('half-hour offsets and long Garmin timelines', () => {
+  it('names an IANA zone for a non-whole-hour offset, and nothing for a wrong one', () => {
+    assert.equal(zoneForOffset(330, '2026-11-16T17:30:00Z'), 'Asia/Kolkata')
+    assert.equal(zoneForOffset(-210, '2026-11-16T17:30:00Z'), 'America/St_Johns')
+    assert.equal(zoneForOffset(337, '2026-11-16T17:30:00Z'), null)
+  })
+
+  it('dates an India sleep by its own wall clock, not UTC (wake 05:00 IST is the day before in UTC)', () => {
+    const r = parseGarminNight(
+      {
+        calendarDate: '2026-11-17',
+        sleepStartTimestampGMT: Date.parse('2026-11-16T17:30:00Z'), // 23:00 IST
+        sleepEndTimestampGMT: Date.parse('2026-11-16T23:30:00Z'), // 05:00 IST on the 17th
+        sleepStartTimestampLocal: Date.parse('2026-11-16T23:00:00Z'), // local-as-UTC: +5:30
+        sleepTimeSeconds: 6 * 3600
+      },
+      'garmin_export',
+      { now: NOW }
+    )
+    assert.equal(r.ok, true)
+    if (!r.ok) return
+    assert.equal(r.night.timezone, 'Asia/Kolkata')
+    assert.equal(r.night.wake_date, '2026-11-17')
+    assert.equal(r.night.kind, 'main')
+  })
+
+  it('keeps a night with more stage intervals than ingestion accepts, dropping only the timeline', () => {
+    const levels = Array.from({ length: 1600 }, (_, i) => {
+      const from = Date.parse('2026-11-16T22:00:00Z') + i * 10_000
+      return {
+        startGMT: new Date(from).toISOString(),
+        endGMT: new Date(from + 10_000).toISOString(),
+        activityLevel: i % 2 ? 1 : 2 // alternate light and REM so nothing merges
+      }
+    })
+    const r = parseGarminNight(
+      { calendarDate: '2026-11-16', sleepStartTimestampGMT: '2026-11-16T22:00:00Z', sleepEndTimestampGMT: '2026-11-17T02:26:40Z', sleepTimeSeconds: 16000, sleepLevels: levels },
+      'garmin_export',
+      { now: NOW }
+    )
+    assert.equal(r.ok, true)
+    if (!r.ok) return
+    assert.equal(r.night.stages, null)
+    assert.ok(r.night.stage_totals && (r.night.stage_totals.light ?? 0) > 0)
+    assert.equal(buildBatches([r.night], 'garmin_export', NOW).accepted, 1)
+  })
+})
 
 describe('Garmin sleep parsing', () => {
   it('maps a Connect response: totals, stages, score, HRV, respiration and SpO2', () => {

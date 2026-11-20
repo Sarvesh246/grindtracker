@@ -148,7 +148,13 @@ export default function HealthImportSettings() {
     () => window.location.origin,
     () => 'https://YOUR-GRIND-DOMAIN'
   )
-  const zone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, [])
+  // Null on the server and first client render, so the markup matches; the
+  // real zone fills in after hydration.
+  const zone = useSyncExternalStore(
+    () => () => {},
+    () => Intl.DateTimeFormat().resolvedOptions().timeZone,
+    () => null
+  )
 
   const [reload, setReload] = useState(0)
   useEffect(() => {
@@ -214,7 +220,7 @@ export default function HealthImportSettings() {
       const nights = new Map<string, ImportedNight>()
       const skipped: { key: string; reason: string }[] = []
       for (const text of texts) {
-        const r = parseGarminExportText(text, { fallbackZone: zone })
+        const r = parseGarminExportText(text, { fallbackZone: zone ?? undefined })
         for (const n of withExportHrv(r.nights, hrvByDate)) nights.set(n.provider_id, n)
         skipped.push(...r.skipped)
       }
@@ -274,7 +280,7 @@ export default function HealthImportSettings() {
 
   const shortcutJson = `{
   "kind": "apple_health",
-  "timezone": "${zone}",
+  "timezone": "${zone ?? 'Area/City'}",
   "token": "gwt_…",
   "samples": "2026-11-15T23:40:00-06:00 | 2026-11-16T01:10:00-06:00 | Core\\n2026-11-16T01:10:00-06:00 | 2026-11-16T02:10:00-06:00 | Deep"
 }`
@@ -395,7 +401,7 @@ python3 garmin-sleep-sync.py --days 14`
           </li>
           <li>
             Add <b>Get Contents of URL</b>: URL <code>{origin + ENDPOINT_PATH}</code>, method POST,
-            request body JSON with <code>kind</code> = apple_health, <code>timezone</code> = {zone},{' '}
+            request body JSON with <code>kind</code> = apple_health, <code>timezone</code> = {zone ?? 'your time zone'},{' '}
             <code>token</code> = your token, and <code>samples</code> = the combined text. A header
             is optional.
           </li>
@@ -410,9 +416,9 @@ python3 garmin-sleep-sync.py --days 14`
         <p className="hi-note">What the Shortcut must send:</p>
         <CopyBlock text={shortcutJson} label="Example request body" />
         <p className="hi-note">
-          Apple Health sleep gives times and stages only. GRIND deliberately ignores Apple’s HRV (a
-          different measure from Garmin’s) and never invents stages from untyped “Asleep” entries. I
-          can’t test Shortcuts on a device, so adjust step names if your iOS words them differently.
+          Apple Health sleep gives times and stages only. GRIND ignores Apple’s HRV, which is measured
+          differently from Garmin’s, and doesn’t infer stages from untyped “Asleep” entries. Action
+          names can differ between iOS versions; use the closest match.
         </p>
       </details>
 

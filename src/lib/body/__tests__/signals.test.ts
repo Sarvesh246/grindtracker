@@ -126,3 +126,20 @@ describe('bbGain', () => {
     assert.equal(bbGain(row, undefined), null)
   })
 })
+
+describe('learning copy', () => {
+  it('never says the night count is met while still learning', () => {
+    // A long imported overnight HRV history, but no watch curves: one signal at most.
+    const overnightHrv = new Map<string, number>()
+    for (let i = 0; i <= 20; i++) overnightHrv.set(shift(TODAY, -i), 40 + (i % 3))
+    const s = computeSignals([], TODAY, { overnightHrv })
+    assert.equal(s.level, 'learning')
+    assert.equal(s.headline, 'Not enough from last night yet')
+    assert.match(s.advice, /^Only one reading \(Overnight HRV\) could be compared/)
+  })
+  it('counts nights up to the baseline while there are too few', () => {
+    const s = computeSignals([night(shift(TODAY, -1)), night(shift(TODAY, -2)), night(TODAY)], TODAY)
+    assert.equal(s.level, 'learning')
+    assert.match(s.advice, /\(2 so far\)/)
+  })
+})

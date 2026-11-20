@@ -13,7 +13,7 @@ import type { DailyRecovery, Night } from './types'
  *    equivalent, capped at ±1.5h). It never moves the clock or the phase times.
  */
 
-export const MIN_BASELINE = 7
+const MIN_BASELINE = 7
 const Z_CAP = 2
 /** Hours of debt-equivalent per unit z: a z of −2 reads like 1.5h more debt. */
 const DEBT_PER_Z = 0.75
@@ -39,7 +39,7 @@ function median(xs: number[]): number {
 }
 
 /** Robust z of `value` against `history`; null without enough history. */
-export function robustZ(value: number, history: number[]): { z: number; usual: number } | null {
+function robustZ(value: number, history: number[]): { z: number; usual: number } | null {
   const clean = history.filter((v) => Number.isFinite(v))
   if (clean.length < MIN_BASELINE || !Number.isFinite(value)) return null
   const usual = median(clean)

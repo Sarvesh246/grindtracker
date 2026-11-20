@@ -46,8 +46,13 @@ export interface BodySummary {
   todayHrRange: HrRange | null
   /** Last night against your usual nights (signals.ts). */
   signals: BodySignals | null
-  /** Flagged mornings in the last 90 days, and how you labelled them. */
+  /** Flagged mornings in the last 4 weeks (signals.ts RECORD_DAYS), and how
+   *  you labelled them. */
   signalRecord: { flagged: number; labelled: number; sick: number } | null
+  /** The readiness read failed. `readinessChecks` is then empty but unknown. */
+  readinessError: boolean
+  /** The signal-tag read failed. `signals.labels` is then empty but unknown. */
+  labelsError: boolean
 }
 
 const DAY_COLUMNS =
@@ -64,7 +69,13 @@ export function emptyBodySummary(today: string): BodySummary {
     available: false, hasWatch: false, today, days: [], todayRow: null, sessions: [],
     charge: null, load: null, readinessChecks: [], readiness: null, strengthSets: [], strength: null,
     prefs: DEFAULT_BODY_PREFS, syncs: [], todayHrRange: null, signals: null, signalRecord: null,
+    readinessError: false, labelsError: false,
   }
+}
+
+/** A table a migration hasn't created yet reads as "none"; any other error is a failed read. */
+function absentTable(error: { code?: string } | null): boolean {
+  return !!error && ['42P01', 'PGRST205'].includes(error.code ?? '')
 }
 
 const INTRADAY_COLUMNS = 'local_date,hr_series,steps_series,active_series,floors_series'
@@ -106,15 +117,16 @@ async function readNightSeries(supabase: SupabaseClient, userId: string, today: 
   return out
 }
 
-/** What you said flagged mornings were (migration 72); none before it. */
-async function readSignalLabels(supabase: SupabaseClient, userId: string, today: string): Promise<SignalLabel[]> {
+/** What you said flagged mornings were (migration 72); none before it. Null on a failed read. */
+async function readSignalLabels(supabase: SupabaseClient, userId: string, today: string): Promise<SignalLabel[] | null> {
   const { data, error } = await supabase
     .from('body_signal_labels')
     .select('local_date,tags')
     .eq('user_id', userId)
     .gte('local_date', shiftKey(today, -120))
     .lte('local_date', today)
-  return error || !data ? [] : (data as SignalLabel[])
+  if (error) return absentTable(error) ? [] : null
+  return (data ?? []) as SignalLabel[]
 }
 
 /** Overnight HRV from an imported sleep source (the Garmin export), by wake
@@ -142,6 +154,7 @@ async function readTodayHrRange(supabase: SupabaseClient, userId: string, today:
     .eq('user_id', userId)
     .eq('local_date', today)
     .not('hr_t', 'is', null)
+    .order('received_at', { ascending: false })
     .limit(200)
   if (error || !data) return null
   return hrRange(data as { hr_t: number[] | null; hr_v: number[] | null }[])
@@ -158,8 +171,8 @@ async function readSyncs(supabase: SupabaseClient, userId: string): Promise<Body
   return error || !data ? [] : (data as BodySync[])
 }
 
-/** Readiness checks; an absent table (migration 68 not applied) reads as none. */
-async function readReadiness(supabase: SupabaseClient, userId: string, today: string): Promise<ReadinessCheck[]> {
+/** Readiness checks; an absent table (migration 68 not applied) reads as none. Null on a failed read. */
+async function readReadiness(supabase: SupabaseClient, userId: string, today: string): Promise<ReadinessCheck[] | null> {
   const { data, error } = await supabase
     .from('readiness_checks')
     .select('local_date,measured_at,rmssd,ln_rmssd,mean_hr,quality')
@@ -167,7 +180,8 @@ async function readReadiness(supabase: SupabaseClient, userId: string, today: st
     .gte('local_date', shiftKey(today, -60))
     .lte('local_date', today)
     .order('measured_at')
-  return error || !data ? [] : (data as ReadinessCheck[])
+  if (error) return absentTable(error) ? [] : null
+  return (data ?? []) as ReadinessCheck[]
 }
 
 /** Working sets for lifting load: completed sessions, no warm-ups or skips. */
@@ -209,20 +223,24 @@ export async function getBodySummary(supabase: SupabaseClient, userId: string, t
         .select('local_date,started_at,completed_at,zone_seconds')
         .eq('user_id', userId)
         .not('completed_at', 'is', null)
-        .gte('local_date', shiftKey(today, -28))
+        // 28 days of chronic load for each of the last 7 days (the Coach's
+        // Charge strip recomputes them), not just for today.
+        .gte('local_date', shiftKey(today, -35))
         .lte('local_date', today),
       supabase.from('body_prefs').select('coach_uses_body,smart_rest').eq('user_id', userId).maybeSingle(),
     ])
-    const [readinessChecks, strengthSets, intraday, syncs, night, todayHrRange, labels, overnightHrv] = await Promise.all([
-      readReadiness(supabase, userId, today).catch(() => []),
+    const [readinessRead, strengthSets, intraday, syncs, night, todayHrRange, labelsRead, overnightHrv] = await Promise.all([
+      readReadiness(supabase, userId, today).catch(() => null),
       readStrengthSets(supabase, userId, today).catch(() => []),
       readIntraday(supabase, userId, today).catch(() => new Map<string, Partial<DailyBody>>()),
       readSyncs(supabase, userId).catch(() => []),
       readNightSeries(supabase, userId, today).catch(() => new Map<string, NightSeries>()),
       readTodayHrRange(supabase, userId, today).catch(() => null),
-      readSignalLabels(supabase, userId, today).catch(() => [] as SignalLabel[]),
+      readSignalLabels(supabase, userId, today).catch(() => null),
       readOvernightHrv(supabase, userId, today).catch(() => new Map<string, number>()),
     ])
+    const readinessChecks = readinessRead ?? []
+    const labels = labelsRead ?? []
     if (daysRes.error || sessRes.error) return emptyBodySummary(today)
     const days = ((daysRes.data ?? []) as DailyBody[]).map(d => ({
       ...d,
@@ -255,6 +273,8 @@ export async function getBodySummary(supabase: SupabaseClient, userId: string, t
       todayHrRange,
       signals: hasWatch ? computeSignals(days, today, signalExtras) : null,
       signalRecord: hasWatch ? signalTrackRecord(days, today, signalExtras) : null,
+      readinessError: readinessRead === null,
+      labelsError: labelsRead === null,
       prefs: prefsRes.error ? { ...DEFAULT_BODY_PREFS, coach_uses_body: false } : (prefsRes.data as BodyPrefs | null) ?? DEFAULT_BODY_PREFS,
     }
   } catch {

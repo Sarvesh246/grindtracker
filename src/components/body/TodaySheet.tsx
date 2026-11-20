@@ -105,7 +105,7 @@ export default function TodaySheet({
     if (scored.length === 1) return `One day scored so far: ${avg}.`
     const best = scored.reduce((a, b) => ((b.charge?.score ?? 0) > (a.charge?.score ?? 0) ? b : a))
     const bestDay = best.date === today ? 'today' : `on ${weekdayLong(best.date)}`
-    return `Your Charge averaged ${avg} over the last ${scored.length} days, highest ${bestDay}.`
+    return `Your Charge averaged ${avg} over ${scored.length} scored days, highest ${bestDay}.`
   }, [week, today])
 
   // Horizontal swipe between the two panes. Vertical drags scroll as usual.

@@ -64,8 +64,11 @@ export function workoutHeart(w: WorkoutHeartInput): WorkoutHeart | null {
   const avg =
     w.avg_heart_rate ??
     (points.length ? Math.round(points.reduce((s, p) => s + p[1], 0) / points.length) : null)
-  const minutesHard = w.zone_seconds ? Math.round((w.zone_seconds[2] + w.zone_seconds[3] + w.zone_seconds[4]) / 60) : null
-  return { beads, points, avg, minutesHard, sentence: heartSentence(w.sets), zoneSeconds: w.zone_seconds }
+  // Zones 3–5. A malformed row (not five numbers) shows no zone figures rather
+  // than NaN minutes or a broken zone bar.
+  const zones = w.zone_seconds?.length === 5 && w.zone_seconds.every(Number.isFinite) ? w.zone_seconds : null
+  const minutesHard = zones ? Math.round((zones[2] + zones[3] + zones[4]) / 60) : null
+  return { beads, points, avg, minutesHard, sentence: heartSentence(w.sets), zoneSeconds: zones }
 }
 
 /** "Hardest set: squat set 3 at 171 bpm. You recovered fastest between leg press sets." */

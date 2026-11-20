@@ -84,8 +84,8 @@ describe('charge', () => {
   })
   it('re-weights the inputs it has', () => {
     const c = computeCharge([day(TODAY, { bb_wake: 80, recovery_hours: 0 })], [], TODAY)!
-    // 80 * 0.4/0.65 + 100 * 0.25/0.65
-    assert.equal(c.score, Math.round((80 * 0.4 + 100 * 0.25) / 0.65))
+    // Body Battery 0.27 and recovery 0.18, re-weighted over 0.45.
+    assert.equal(c.score, Math.round((80 * 0.27 + 100 * 0.18) / 0.45))
     assert.equal(c.band, 'primed')
     assert.match(c.advice, /^Primed\. /)
     assert.ok(Math.abs(c.inputs.reduce((s, i) => s + i.weight, 0) - 1) < 1e-9)
@@ -98,11 +98,17 @@ describe('charge', () => {
     assert.match(c.advice, /^Easy\. Resting heart rate is 6 bpm over your usual/)
     assert.equal(c.shortAdvice, 'Trim a set per lift')
   })
+  it('keeps the resting HR baseline from following a week of strain', () => {
+    const days = []
+    for (let i = 8; i <= 30; i++) days.push(day(daysAgo(i), { resting_hr: 55 }))
+    for (let i = 1; i <= 7; i++) days.push(day(daysAgo(i), { resting_hr: 70 }))
+    assert.equal(restingBaseline(days, TODAY), 55)
+  })
   it('needs five days for a resting HR baseline', () => {
     const days = [1, 2, 3, 4].map(i => day(daysAgo(i), { resting_hr: 60 }))
     assert.equal(restingBaseline(days, TODAY), null)
     days.push(day(daysAgo(5), { resting_hr: 55 }))
-    assert.equal(restingBaseline(days, TODAY), 59)
+    assert.equal(restingBaseline(days, TODAY), 60)
   })
 })
 

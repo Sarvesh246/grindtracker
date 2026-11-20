@@ -24,6 +24,7 @@ import {
   type HealthMetric
 } from '@/lib/health/model'
 import { Ring } from '@/components/body/ChargeRing'
+import { useMotionPref } from '@/lib/contexts/MotionContext'
 import {
   connectionErrorText,
   relativeTime,
@@ -247,7 +248,7 @@ function useNow() {
   return now
 }
 
-export function sourceSummary(data: HealthSummary, date: string, now: number): string {
+function sourceSummary(data: HealthSummary, date: string, now: number): string {
   const { body, connections } = data
   const row = body.days.find((d) => d.local_date === date)
   const lastSync = latestSync(connections, body.days)
@@ -256,7 +257,7 @@ export function sourceSummary(data: HealthSummary, date: string, now: number): s
   return `Garmin${body.hasWatch ? ' watch' : ''}${synced ? ` · synced ${synced}` : row ? ` · snapshot ${dateLabel(date)}` : ' · no snapshot'}`
 }
 
-export function HealthSourceStatus({
+function HealthSourceStatus({
   data,
   date,
   id
@@ -374,7 +375,7 @@ function CoachIcon() {
   )
 }
 
-export function DailyHealthBrief({ data, date }: { data: HealthSummary; date: string }) {
+function DailyHealthBrief({ data, date }: { data: HealthSummary; date: string }) {
   const row = data.body.todayRow
   const sleep = mainSleep(data.sleeps, date)
   const brief = dailyBrief(row, sleep, data.sleeps)
@@ -440,7 +441,7 @@ const FIELD_NAME = {
   spo2: 'Oxygen'
 } as const
 /** "Garmin data export · stage timeline from Apple Health": where this night's numbers came from. */
-export function sleepSourcesNote(sleep: NonNullable<ReturnType<typeof mainSleep>>): string {
+function sleepSourcesNote(sleep: NonNullable<ReturnType<typeof mainSleep>>): string {
   const borrowed = Object.entries(sleep.fields_from ?? {}) as [keyof typeof FIELD_NAME, string][]
   if (!borrowed.length) return sourceLabel(sleep.source)
   const bySource = new Map<string, string[]>()
@@ -449,7 +450,7 @@ export function sleepSourcesNote(sleep: NonNullable<ReturnType<typeof mainSleep>
   return `${sourceLabel(sleep.source)} · ${[...bySource].map(([src, fields]) => `${fields.join(' and ')} from ${sourceLabel(src)}`).join(' · ')}`
 }
 
-export function SleepSummary({
+function SleepSummary({
   data,
   date,
   today,
@@ -498,12 +499,17 @@ export function SleepSummary({
               <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" />
             </svg>
           </span>
-          <h3>{naps.length ? 'Nap only' : 'No sleep recorded'}</h3>
-          {data.sleepState === 'error' && <p>Couldn’t load sleep.</p>}
-          <Link href="/profile/settings#health-import">
-            Add sleep data
-            <ChevronRight size={14} />
-          </Link>
+          {data.sleepState === 'error' ? (
+            <h3>Couldn’t load sleep</h3>
+          ) : (
+            <>
+              <h3>{naps.length ? 'Nap only' : 'No sleep recorded'}</h3>
+              <Link href="/profile/settings#health-import">
+                Add sleep data
+                <ChevronRight size={14} />
+              </Link>
+            </>
+          )}
         </div>
       ) : (
         <>
@@ -586,7 +592,7 @@ export function SleepSummary({
   )
 }
 
-export function RecoveryBreakdown({ body }: { body: BodySummary }) {
+function RecoveryBreakdown({ body }: { body: BodySummary }) {
   const charge = body.charge
   return (
     <Panel title="Recovery" id="recovery" index={3}>
@@ -638,7 +644,7 @@ function standing(value: number | null, base: Baseline | null, metric: HealthMet
   return { key: 'in', text: 'Usual' }
 }
 
-export function MetricTile({
+function MetricTile({
   metric,
   data,
   date
@@ -677,7 +683,7 @@ export function MetricTile({
   )
 }
 
-export function HealthTrend({
+function HealthTrend({
   data,
   date,
   initialMetric = 'resting_hr',
@@ -692,6 +698,7 @@ export function HealthTrend({
   const [requestedMetric, setMetric] = useState<HealthMetric>(initialMetric)
   const [picked, setPicked] = useState<{ key: string; index: number } | null>(null)
   const chipsRef = useRef<HTMLDivElement>(null)
+  const { reduceMotion } = useMotionPref()
   const available = (Object.keys(METRICS) as HealthMetric[]).filter((key) =>
     data.history.some((d) => metricValue(d, key) != null)
   )
@@ -706,9 +713,9 @@ export function HealthTrend({
     if (row && on)
       row.scrollTo({
         left: on.offsetLeft - (row.clientWidth - on.clientWidth) / 2,
-        behavior: 'smooth'
+        behavior: reduceMotion ? 'auto' : 'smooth'
       })
-  }, [metric])
+  }, [metric, reduceMotion])
   const rows = Array.from({ length: window }, (_, i) => {
     const key = shiftDate(date, i - window + 1)
     return {
@@ -727,7 +734,11 @@ export function HealthTrend({
   if (!fixed && !available.length)
     return (
       <div id="trends">
-        <p className="health-muted">No data yet</p>
+        {data.historyError ? (
+          <p className="health-muted" role="alert">Couldn’t load measurements.</p>
+        ) : (
+          <p className="health-muted">No data yet</p>
+        )}
       </div>
     )
   return (
@@ -997,7 +1008,7 @@ export function HealthView({
                   <ChevronRight size={20} className="health-arrow" />
                 </Link>
               )}
-              {!body?.hasWatch && !data.sleeps.length && (
+              {!body?.hasWatch && !data.sleeps.length && data.sleepState !== 'error' && (
                 <Panel title="Connect a watch" index={1}>
                   <p>Sleep, recovery and daily activity from your Garmin.</p>
                   <Link className="health-primary" href="/profile/settings#health">
@@ -1026,7 +1037,15 @@ export function HealthView({
                   )}
                 </section>
               )}
-              {!data.history.length && body?.hasWatch && (
+              {!data.history.length && data.historyError && (
+                <Panel title="Your metrics" index={1}>
+                  <p className="health-muted" role="alert">Couldn’t load measurements.</p>
+                  <button type="button" className="health-text-button" data-haptic="light" onClick={onRefresh}>
+                    Retry
+                  </button>
+                </Panel>
+              )}
+              {!data.history.length && !data.historyError && body?.hasWatch && (
                 <Panel title="Your metrics" index={1}>
                   <p className="health-muted">No data yet</p>
                 </Panel>
@@ -1035,14 +1054,23 @@ export function HealthView({
                 <SleepSummary data={data} date={date} today={today} />
                 <RecoveryBreakdown body={data.body} />
               </div>
-              {body?.hasWatch && body.signals && date === body.today && (
+              {body?.hasWatch && body.signals && date === today && (
                 <Panel title="Body signals" id="signals" index={4}>
-                  <BodySignalsPanel signals={body.signals} record={body.signalRecord} />
+                  <BodySignalsPanel
+                    key={body.signals.date}
+                    signals={body.signals}
+                    record={body.signalRecord}
+                    labelsError={body.labelsError}
+                  />
                 </Panel>
               )}
               {body?.hasWatch && (
                 <Panel title="Readiness" id="readiness" index={4}>
-                  <ReadinessTrend checks={body.readinessChecks} date={date} />
+                  <ReadinessTrend
+                    checks={body.readinessChecks}
+                    date={date}
+                    failed={body.readinessError}
+                  />
                 </Panel>
               )}
               <Panel title="Your day" id="day" index={5}>
@@ -1057,7 +1085,7 @@ export function HealthView({
                     bb={body.todayRow.bb_series ?? []}
                     stress={body.todayRow.stress_series ?? []}
                     hr={body.todayRow.hr_series ?? []}
-                    hrRange={date === body.today ? body.todayHrRange : null}
+                    hrRange={date === today ? body.todayHrRange : null}
                     steps={body.todayRow.steps_series ?? []}
                     date={date}
                     today={today}

@@ -1,4 +1,4 @@
-import type { SleepSession } from '@/lib/health/model'
+import { shiftDate, type SleepSession } from '@/lib/health/model'
 import {
   DEEP_WAKE_INERTIA_RATE,
   MODEL_VERSION,
@@ -28,9 +28,6 @@ import type {
   Nap,
   Night,
 } from './types'
-
-/** How far back to look for nights. */
-export const LOOKBACK_DAYS = 28
 
 /** Model nights only (newest first); see `buildNights` for how pieces and sources merge. */
 export function nightsFrom(sessions: SleepSession[], beforeOrOn: string): Night[] {
@@ -66,11 +63,14 @@ export function buildEnergySchedule({
   const recovery = recoveryFor(date, nights, daily)
   const today = nights[0]?.wakeDate === date ? nights[0] : null
   const wake = today ? today.wake : phase.habitualWake
-  // Last night acts through this morning's sleep pressure; only earlier nights
-  // count as chronic debt, so a short night isn't charged twice.
-  const chronicH = sleepDebt(today ? nights.slice(1) : nights, needH)
+  // The newest night (today's, or yesterday's when today's isn't imported yet) acts
+  // through this morning's sleep pressure, and only earlier nights count as chronic
+  // debt, so a short night is charged once, the same way either way. With no recent
+  // night at all, the usual sleep stands in for pressure and every night is debt.
+  const lastNight = nights[0] && nights[0].wakeDate >= shiftDate(date, -1) ? nights[0] : null
+  const chronicH = sleepDebt(lastNight ? nights.slice(1) : nights, needH)
   const recent = nights.slice(0, 7).map((n) => n.sleepH).sort((a, b) => a - b)
-  const lastSleepH = today ? today.sleepH : recent[Math.floor(recent.length / 2)]
+  const lastSleepH = lastNight ? lastNight.sleepH : recent[Math.floor(recent.length / 2)]
   const todayNaps = naps.filter((n) => n.date === date && n.start >= wake)
   const day: DayModel = {
     wake,

@@ -1,4 +1,4 @@
-import { sleepSchema, validateHealthBatch } from './ingestion'
+import { MAX_STAGE_INTERVALS, sleepSchema, validateHealthBatch } from './ingestion'
 import { validDate, type SleepStage, type SleepStageName } from './model'
 
 /**
@@ -111,6 +111,50 @@ export function etcZone(offsetMinutes: number): string | null {
   return hours === 0 ? 'UTC' : `Etc/GMT${hours > 0 ? '-' : '+'}${Math.abs(hours)}`
 }
 
+/**
+ * Zones whose offset isn't a whole hour (India, Nepal, Adelaide, Newfoundland…).
+ * Etc/GMT names can't express them, so one of these must match the offset at the
+ * instant in question; any zone with that offset gives the same wall clock.
+ */
+const PART_HOUR_ZONES = [
+  'Asia/Kolkata',
+  'Asia/Kathmandu',
+  'Asia/Colombo',
+  'Asia/Tehran',
+  'Asia/Kabul',
+  'Asia/Yangon',
+  'Australia/Adelaide',
+  'Australia/Darwin',
+  'Australia/Lord_Howe',
+  'Pacific/Chatham',
+  'Pacific/Marquesas',
+  'America/St_Johns',
+]
+
+/**
+ * An IANA zone that reads `offsetMinutes` from UTC at the instant `atIso`, or null.
+ * Used for both the sleep's own offset (Garmin's local-vs-GMT fields) and Apple's
+ * ISO offsets, so a sleep at 05:30 IST is dated in India, not in UTC.
+ */
+export function zoneForOffset(offsetMinutes: number, atIso: string): string | null {
+  if (!Number.isFinite(offsetMinutes)) return null
+  if (offsetMinutes % 60 === 0) return etcZone(offsetMinutes)
+  const at = Date.parse(atIso)
+  if (!Number.isFinite(at)) return null
+  return PART_HOUR_ZONES.find((z) => offsetMs(z, at) === offsetMinutes * 60000) ?? null
+}
+
+/** True when `zone` is an IANA name this runtime understands. */
+export function validZone(zone: string | null | undefined): zone is string {
+  if (!zone) return false
+  try {
+    Intl.DateTimeFormat('en-US', { timeZone: zone })
+    return true
+  } catch {
+    return false
+  }
+}
+
 /** First candidate zone whose calendar date for the wake time matches the source's own date. */
 export function chooseZone(
   endIso: string,
@@ -125,7 +169,7 @@ export function chooseZone(
 const GARMIN_LEVEL: Record<number, SleepStageName> = { 0: 'deep', 1: 'light', 2: 'rem', 3: 'awake' }
 
 /** Clip, order and de-overlap a stage timeline so it always satisfies the schema. */
-export function cleanStages(raw: SleepStage[], startIso: string, endIso: string): SleepStage[] {
+function cleanStages(raw: SleepStage[], startIso: string, endIso: string): SleepStage[] {
   const lo = Date.parse(startIso),
     hi = Date.parse(endIso)
   const out: SleepStage[] = []
@@ -174,7 +218,7 @@ export function parseGarminNight(
   const gmtStart = num(d.sleepStartTimestampGMT)
   const offsetZone =
     localStart != null && gmtStart != null && gmtStart > 1e11
-      ? etcZone(Math.round((localStart - gmtStart) / 60000))
+      ? zoneForOffset(Math.round((localStart - gmtStart) / 60000), start)
       : null
   const timezone = chooseZone(end, calendarDate, [offsetZone, opts.fallbackZone])
   const wake = dateInZone(end, timezone)
@@ -202,6 +246,8 @@ export function parseGarminNight(
     start,
     end
   )
+  // Ingestion refuses a timeline past MAX_STAGE_INTERVALS, so keep the totals and drop it.
+  const timeline = stages.length <= MAX_STAGE_INTERVALS ? stages : []
   const stageTotals = Object.keys(totals).length
     ? totals
     : stages.length
@@ -233,7 +279,7 @@ export function parseGarminNight(
         Math.floor((Date.parse(end) - Date.parse(start)) / 1000)
       ),
       score: score != null && score >= 0 && score <= 100 ? Math.round(score) : null,
-      stages: stages.length ? stages : null,
+      stages: timeline.length ? timeline : null,
       stage_totals: stageTotals,
       overnight_hrv: inRange(num(root.avgOvernightHrv) ?? num(d.avgOvernightHrv), 1, 500),
       respiration: inRange(num(d.averageRespirationValue) ?? num(d.averageRespiration), 1, 80),
@@ -253,7 +299,7 @@ const inRange = (v: number | null, lo: number, hi: number) =>
   v != null && v >= lo && v <= hi ? v : null
 
 /** One entry of an export day's `napList`. Naps carry no stages, score or vitals. */
-export function parseGarminNap(
+function parseGarminNap(
   input: unknown,
   opts: { now?: Date; fallbackZone?: string } = {}
 ): Parsed {
@@ -384,18 +430,12 @@ const APPLE_STAGE = (value: string): SleepStageName | 'asleep' | 'inbed' | null 
 const GAP_MS = 60 * 60000
 
 function zoneFromOffsets(samples: AppleSample[]): string | null {
-  const m = /([+-])(\d{2}):?(\d{2})$/.exec(samples.at(-1)?.end ?? '')
-  if (!m) return /Z$/.test(samples.at(-1)?.end ?? '') ? 'UTC' : null
-  return etcZone((m[1] === '-' ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3])))
-}
-const validZone = (z?: string) => {
-  if (!z) return undefined
-  try {
-    new Intl.DateTimeFormat('en-US', { timeZone: z })
-    return z
-  } catch {
-    return undefined
-  }
+  const end = samples.at(-1)?.end ?? ''
+  const m = /([+-])(\d{2}):?(\d{2})$/.exec(end)
+  if (!m) return /Z$/.test(end) ? 'UTC' : null
+  const iso = toIso(end)
+  if (!iso) return null
+  return zoneForOffset((m[1] === '-' ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3])), iso)
 }
 
 /**
@@ -408,7 +448,7 @@ export function parseAppleSamples(
   opts: { timezone?: string; now?: Date } = {}
 ): { nights: ImportedNight[]; skipped: { key: string; reason: string }[] } {
   const skipped: { key: string; reason: string }[] = []
-  const given = validZone(opts.timezone)
+  const given = validZone(opts.timezone) ? opts.timezone : undefined
   // A time with no offset means the person's wall clock, not UTC.
   const at = (v: string) =>
     given && typeof v === 'string' && !/(Z|[+-]\d{2}:?\d{2})$/.test(v.trim())
@@ -438,9 +478,7 @@ export function parseAppleSamples(
     else groups.push([s])
   }
   const zone =
-    validZone(opts.timezone) ??
-    zoneFromOffsets(samples.filter((s) => typeof s.end === 'string')) ??
-    'UTC'
+    given ?? zoneFromOffsets(samples.filter((s) => typeof s.end === 'string')) ?? 'UTC'
   const now = opts.now ?? new Date()
   const nights: ImportedNight[] = []
   for (const g of groups) {
@@ -470,7 +508,7 @@ export function parseAppleSamples(
     const covered = stages.reduce((n, s) => n + (Date.parse(s.end) - Date.parse(s.start)), 0)
     // Ingestion caps a night at 1,500 intervals; past that keep the totals and drop the timeline.
     const useTotals = stages.length > 0 && covered >= 0.8 * (endMs - startMs)
-    const useStages = useTotals && stages.length <= 1500
+    const useStages = useTotals && stages.length <= MAX_STAGE_INTERVALS
     nights.push({
       provider_id: `apple_health:${Math.floor(startMs / 1000)}`,
       wake_date: wake,
@@ -502,8 +540,7 @@ export function parseAppleSamples(
 }
 
 // ───────── Batching ─────────
-export const MAX_NIGHTS_PER_BATCH = 14
-export type ImportBatch = ReturnType<typeof buildBatches>['batches'][number]
+const MAX_NIGHTS_PER_BATCH = 14
 
 /** Validate every night, drop what ingestion would refuse, and chunk into batches. */
 export function buildBatches(

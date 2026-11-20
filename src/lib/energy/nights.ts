@@ -1,4 +1,5 @@
 import { mainSleep, shiftDate, type SleepSession } from '@/lib/health/model'
+import { LOOKBACK_DAYS, MIN_NIGHT_H } from './model'
 import { clockHoursFrom } from './time'
 import type { Nap, Night } from './types'
 
@@ -9,18 +10,16 @@ import type { Nap, Night } from './types'
  * Two real-data problems this exists for:
  *  - The same sleep arrives from several sources (Garmin export AND Apple Health),
  *    sometimes labelled differently ("main" in one, "nap" in the other). Overlapping
- *    records are one block; the block counts its longest record's sleep, never the sum.
+ *    records are one block; the block counts the time they jointly cover, never the sum.
  *  - A broken night (awake 04:00–05:15, back to sleep) can arrive as two records,
  *    and a source may only export one half. Blocks within 2h of the main block are
  *    chained into the same night, so onset and total sleep stay right.
  */
 
 /** Pieces closer than this are one night with a wake-up in the middle. */
-export const SPLIT_GAP_H = 2
+const SPLIT_GAP_H = 2
 /** Shorter daytime sleep is noise (a doze on the couch the watch half-saw). */
 const MIN_NAP_H = 10 / 60
-/** Window before the wake date's midnight that can still belong to its night. */
-const LOOKBACK_DAYS = 28
 
 interface Piece {
   start: number
@@ -42,10 +41,14 @@ function blocksOf(pieces: Piece[]): Block[] {
   const out: Block[] = []
   for (const p of sorted) {
     const last = out[out.length - 1]
-    // Overlap means the same sleep seen twice: keep the longer reading, don't add.
     if (last && p.start < last.end) {
+      // Overlap means the same sleep seen twice (or a nap that runs into the main sleep).
+      // Count only the part of this record past what is already covered, at this
+      // record's own sleep fraction, so 23:00–03:00 + 02:30–07:00 is 8h, not 4.5h.
+      const span = p.end - p.start
+      const fresh = Math.max(0, p.end - Math.max(p.start, last.end))
+      if (span > 0) last.sleepH += (p.sleepH / span) * fresh
       last.end = Math.max(last.end, p.end)
-      last.sleepH = Math.max(last.sleepH, p.sleepH)
       last.main ||= p.main
       last.sessions.push(p.session)
     } else {
@@ -93,16 +96,18 @@ export function buildNights(
     const blocks = blocksOf(pieces)
     if (!blocks.length) continue
 
-    // Anchor on the longest block that some source called the main sleep. A day
-    // with only naps on record has no night to anchor; its naps still count.
+    // Anchor on the longest block some source called the main sleep. With no main
+    // on record, a long-enough block is still the night (sources tag a 2.5h sleep
+    // "nap" too); only blocks that are short even by that measure stay naps.
     const mains = blocks.filter((b) => b.main)
-    if (!mains.length) {
+    const candidates = mains.length ? mains : blocks.filter((b) => b.sleepH > MIN_NIGHT_H)
+    if (!candidates.length) {
       for (const b of blocks) {
         if (b.sleepH >= MIN_NAP_H) naps.push({ date, start: b.start, end: b.end, sleepH: b.sleepH })
       }
       continue
     }
-    const anchor = mains.reduce((a, b) => (b.sleepH > a.sleepH ? b : a))
+    const anchor = candidates.reduce((a, b) => (b.sleepH > a.sleepH ? b : a))
     let lo = blocks.indexOf(anchor)
     let hi = lo
     while (lo > 0 && blocks[lo].start - blocks[lo - 1].end <= SPLIT_GAP_H) lo--
