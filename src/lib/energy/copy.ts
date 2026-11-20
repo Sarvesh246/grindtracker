@@ -1,7 +1,7 @@
 import type { AlertKind, EnergyEvent, EnergyKind } from './types'
 
 /** Labels and the one-line "what to do with this" for each phase. */
-export const PHASES: Record<EnergyKind, { name: string; hint: string }> = {
+export const PHASES: Record<EnergyKind, { name: string; hint: string; alertHint?: string }> = {
   grogginess_end: {
     name: 'Grogginess',
     hint: 'Sleep inertia is clearing. Get daylight and hold the caffeine 60–90 min.',
@@ -9,18 +9,22 @@ export const PHASES: Record<EnergyKind, { name: string; hint: string }> = {
   morning_peak: {
     name: 'Morning peak',
     hint: 'Sharpest focus of the day. Put the hard thinking or heavy lifts here.',
+    alertHint: 'A good window to tackle something that takes focus.',
   },
   afternoon_dip: {
     name: 'Afternoon dip',
     hint: 'Energy sags. Easy walk, light work, or a 20-min nap. Not a PR attempt.',
+    alertHint: 'Energy dipping? It’s okay to take things a little easier for a bit.',
   },
   evening_peak: {
     name: 'Evening peak',
     hint: 'Your second wind. Strength and power peak around now. Good training window.',
+    alertHint: 'Feeling a second wind? This could be a good time to train.',
   },
   wind_down: {
     name: 'Wind-down',
     hint: 'Melatonin is rising. Dim the lights, drop screens, start your routine.',
+    alertHint: 'A little time to slow down. Softer lights or a break from screens might help.',
   },
   bedtime: {
     name: 'Bedtime',
@@ -51,6 +55,6 @@ export function alertCopy(
   const phase = PHASES[event.kind]
   return {
     title: `${phase.name} in ${leadMin} min`,
-    body: `${range}. ${phase.hint}`,
+    body: `${range}. ${phase.alertHint ?? phase.hint}`,
   }
 }
