@@ -33,15 +33,28 @@ module Lab {
         return q instanceof Lang.Array ? q : [];
     }
 
+    // Record key -> its session id, "" for a health record. Kept beside the
+    // queue so next() and dropSession() can tell where a record belongs
+    // without loading every body (labDue asks every 30 s). Records queued
+    // before this index existed are filled in as they are met (sidOf).
+    function index() {
+        var m = Store.get("labs");
+        return m instanceof Lang.Dictionary ? m : {};
+    }
+
     function push(key, record) {
         var q = queue();
+        var idx = index();
         while (q.size() >= MAX_RECORDS) {
             Store.del(q[0]);
+            idx.remove(q[0]);
             q = q.slice(1, null);
         }
         Store.put(key, record);
+        idx[key] = record["sid"] == null ? "" : record["sid"];
         q.add(key);
         Store.put("labq", q);
+        Store.put("labs", idx);
     }
 
     function drop(key) {
@@ -50,6 +63,20 @@ module Lab {
         var out = [];
         for (var i = 0; i < q.size(); i++) { if (!q[i].equals(key)) { out.add(q[i]); } }
         Store.put("labq", out);
+        var idx = index();
+        idx.remove(key);
+        Store.put("labs", idx);
+    }
+
+    // The session a queued record belongs to ("" for none), or null if its
+    // body is gone. Reads the body only for an entry the index doesn't know.
+    function sidOf(idx, key) {
+        if (idx.hasKey(key)) { return idx[key]; }
+        var r = Store.get(key);
+        if (!(r instanceof Lang.Dictionary)) { return null; }
+        var s = r["sid"] == null ? "" : r["sid"];
+        idx[key] = s;
+        return s;
     }
 
     // A discarded workout never reaches the server: its recordings can't either.
@@ -68,15 +95,10 @@ module Lab {
 
     function dropSession(sid) {
         var q = queue();
+        var idx = index();
         for (var i = 0; i < q.size(); i++) {
-            var r = Store.get(q[i]);
-            if (r instanceof Lang.Dictionary && sid.equals(r["sid"])) { drop(q[i]); }
+            if (sid.equals(sidOf(idx, q[i]))) { drop(q[i]); }
         }
-    }
-
-    function iso(epoch) {
-        if (epoch == null) { return null; }
-        return Logic.isoUtc(epoch);
     }
 
     // A set was just logged from a live window. Call before the window closes.
@@ -89,7 +111,8 @@ module Lab {
             body["exercise_id"] = ex["id"]; body["exercise_name"] = ex["name"];
             body["set_number"] = set["n"]; body["weight"] = set["w"]; body["unit"] = unit;
             body["logged_reps"] = set["r"]; body["auto_reps"] = Reps.count; body["auto_shown"] = autoShown;
-            body["typed"] = Reps.manual; body["started_at"] = iso(startedAt); body["finished_at"] = iso(set["t"]);
+            body["typed"] = Reps.manual; body["started_at"] = startedAt == null ? null : Logic.isoUtc(startedAt);
+            body["finished_at"] = Logic.isoUtc(set["t"]);
             body["rate_hz"] = 12.5;
             body["events"] = m["events"]; body["diag"] = m["diag"]; body["app_version"] = VERSION;
             push("lb_" + set["id"], { "sid" => sid, "body" => body });
@@ -117,19 +140,23 @@ module Lab {
     // Records of the open workout or one still queued wait for it.
     function next() {
         var q = queue();
+        var idx = index();
         var active = Workout.active() ? Workout.cur["sid"] : null;
         var waiting = Store.queue();
+        var before = idx.size();
+        var found = null;
         for (var i = 0; i < q.size(); i++) {
-            var r = Store.get(q[i]);
-            if (!(r instanceof Lang.Dictionary)) { drop(q[i]); return null; }
-            var sid = r["sid"];
-            if (sid == null) { return q[i]; } // health records wait for nothing
+            var sid = sidOf(idx, q[i]);
+            if (sid == null) { drop(q[i]); break; }
+            if (sid.equals("")) { found = q[i]; break; } // health records wait for nothing
             if (active != null && active.equals(sid)) { continue; }
             var queued = false;
             for (var j = 0; j < waiting.size(); j++) { if (waiting[j].equals(sid)) { queued = true; } }
             if (queued) { continue; }
-            return q[i];
+            found = q[i];
+            break;
         }
-        return null;
+        if (idx.size() != before) { Store.put("labs", idx); }
+        return found;
     }
 }

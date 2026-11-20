@@ -72,10 +72,13 @@ module Body {
     // (HR history comes every minute or two, so "latest wins" would be a
     // single beat-rate). Null when the watch has none.
     //
-    // Also fills `raw` ({ "t", "v" }) with every sample at or after `rawFrom`,
-    // unaveraged: seconds from midnight and bpm, at most RAW_MAX of them.
+    // Also fills `raw` ({ "t", "v", "h" }) with every sample at or after
+    // `rawFrom`, unaveraged: seconds from midnight and bpm. At most `rawMax`
+    // of them, the newest (see rawAdd). The background process gets a smaller
+    // cap than the app: it has 64 KB in all.
     const RAW_MAX = 480;
-    function heartRate(since, rawFrom, raw) {
+    const RAW_BG = 120;
+    function heartRate(since, rawFrom, raw, rawMax) {
         try {
             if (!(Toybox has :SensorHistory) || !(SensorHistory has :getHeartRateHistory)) { return null; }
             var it = SensorHistory.getHeartRateHistory({ :period => new Time.Duration(Time.now().value() - since + 60), :order => SensorHistory.ORDER_OLDEST_FIRST });
@@ -86,10 +89,7 @@ module Body {
             var s = it.next();
             while (s != null) {
                 if (s.data != null && s.when != null && s.data >= 25 && s.data <= 250) {
-                    if (s.when.value() >= rawFrom && raw["t"].size() < RAW_MAX) {
-                        raw["t"].add(s.when.value() - since);
-                        raw["v"].add(s.data.toNumber());
-                    }
+                    if (s.when.value() >= rawFrom) { rawAdd(raw, s.when.value() - since, s.data.toNumber(), rawMax); }
                     var b = (s.when.value() - since) / 900;
                     if (b >= 0 && b <= 95) {
                         sum[b] = (sum[b] == null ? 0 : sum[b]) + s.data.toNumber();
@@ -107,6 +107,26 @@ module Body {
         } catch (e) {
         }
         return null;
+    }
+
+    // Keeps the newest `max` raw samples. The history arrives oldest first,
+    // so once full the oldest slot is overwritten and "h" marks the next one.
+    function rawAdd(raw, t, v, max) {
+        if (raw["t"].size() < max) { raw["t"].add(t); raw["v"].add(v); return; }
+        var h = raw["h"];
+        raw["t"][h] = t;
+        raw["v"][h] = v;
+        raw["h"] = (h + 1) % max;
+    }
+
+    // Puts the ring back in time order and drops the cursor.
+    function rawOrder(raw) {
+        var h = raw["h"];
+        if (h != null && h > 0) {
+            var t = raw["t"].slice(h, null); t.addAll(raw["t"].slice(0, h)); raw["t"] = t;
+            var v = raw["v"].slice(h, null); v.addAll(raw["v"].slice(0, h)); raw["v"] = v;
+        }
+        raw.remove("h");
     }
 
     function num(v, lo, hi) {
@@ -189,7 +209,11 @@ module Body {
             var s = it.next();
             for (var i = 0; i < NEWEST_LOOK && s != null && s.data == null; i++) { s = it.next(); }
             if (s == null || s.data == null) { return -1; }
-            return [s.data, s.when == null ? -1 : (now - s.when.value()) / 60];
+            if (s.when == null) { return [s.data, -1]; }
+            // A sample stamped after `now` gives a negative age; the server
+            // rejects a negative age and so the whole snapshot. Clamp it.
+            var age = (now - s.when.value()) / 60;
+            return [s.data, age < 0 ? 0 : age];
         } catch (e) {
             return -2;
         }
@@ -258,9 +282,9 @@ module Body {
         var now = Time.now().value();
         var rawFrom = dl instanceof Lang.Number ? dl - 60 : 0;
         if (rawFrom < now - 4 * 3600) { rawFrom = now - 4 * 3600; }
-        var raw = { "t" => [], "v" => [] };
-        day["heart_rate"] = heartRate(m, rawFrom, raw);
-        if (raw["t"].size() > 0) { day["hr_raw"] = raw; }
+        var raw = { "t" => [], "v" => [], "h" => 0 };
+        day["heart_rate"] = heartRate(m, rawFrom, raw, source.equals("background") ? RAW_BG : RAW_MAX);
+        if (raw["t"].size() > 0) { rawOrder(raw); day["hr_raw"] = raw; }
         raw = null;
         day["diag"] = diag(now);
         try {

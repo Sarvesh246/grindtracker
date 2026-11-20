@@ -191,12 +191,6 @@ module Workout {
         return Logic.plannedSets(plan["ex"], cur["dn"], cur["sk"]);
     }
 
-    function progress() {
-        var t = totalSets();
-        if (t <= 0) { return 1.0; }
-        return Logic.clamp(sets.size().toFloat() / t, 0.0, 1.0);
-    }
-
     function adjust(dir, displayedOffer) {
         if (cur["f"] == 0) {
             cur["w"] = Logic.clamp(cur["w"] + dir * Config.WEIGHT_STEP, 0.0, 2000.0);
@@ -451,8 +445,10 @@ module Workout {
     function summary() {
         if (cur == null) { return last; }
         var st = Recorder.stats();
+        // sumAt is set when the summary is reached; before that, now.
+        var end = cur["sumAt"] == null ? now() : cur["sumAt"];
         last = {
-            "dur" => cur["sumAt"] - meta["st"],
+            "dur" => end - meta["st"],
             "sets" => sets.size(),
             "vol" => Logic.volume(sets),
             "hr" => st["ha"],

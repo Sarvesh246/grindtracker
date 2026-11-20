@@ -239,7 +239,7 @@ function testWorkoutFlow(logger) {
     Workout.start(plan);
     var sid = Workout.cur["sid"];
     var ok = T.ck(logger, "prefilled from target", Workout.cur["w"] == 135.0 && Workout.cur["r"] == 12 && Workout.cur["f"] == 0);
-    ok = T.ck(logger, "total", Workout.totalSets() == 4 && Workout.progress() == 0.0) && ok;
+    ok = T.ck(logger, "total", Workout.totalSets() == 4) && ok;
     Workout.adjust(1, null);
     ok = T.ck(logger, "weight step", Workout.cur["w"] == 135.0 + Config.WEIGHT_STEP) && ok;
     Workout.adjust(-1, null);
@@ -275,7 +275,7 @@ function testWorkoutFlow(logger) {
     Workout.endRest();
 
     Workout.skipExercise();
-    ok = T.ck(logger, "skip last -> summary", Workout.atSummary() && Workout.totalSets() == 2 && Workout.progress() == 1.0) && ok;
+    ok = T.ck(logger, "skip last -> summary", Workout.atSummary() && Workout.totalSets() == 2) && ok;
     ok = T.ck(logger, "a skip can still be undone from the summary", Workout.canLeaveSummary()) && ok;
     var s = Workout.summary();
     ok = T.ck(logger, "summary", s["sets"] == 2 && s["vol"] == 3510.0 && s["dur"] >= 0) && ok;
@@ -400,7 +400,7 @@ function testExerciseOrder(logger) {
     T.completeSet(); Workout.endRest();
     ok = T.ck(logger, "then face pulls", Workout.cur["ei"] == 1) && ok;
     Workout.setFocus(1);
-    ok = T.ck(logger, "last set ends it", T.completeSet() && Workout.atSummary() && Workout.progress() == 1.0) && ok;
+    ok = T.ck(logger, "last set ends it", T.completeSet() && Workout.atSummary()) && ok;
     ok = T.ck(logger, "set numbers per exercise", Workout.sets[0]["n"] == 1 && Workout.sets[1]["n"] == 1
         && Workout.sets[2]["n"] == 2 && Workout.sets[3]["n"] == 1) && ok;
 
@@ -433,7 +433,9 @@ function testHrMath(logger) {
     var ok = T.ck(logger, "zones", Logic.zoneOf(100, z) == 0 && Logic.zoneOf(130, z) == 2
         && Logic.zoneOf(170, z) == 4 && Logic.zoneOf(195, z) == 5 && Logic.zoneOf(150, null) == 0 && Logic.zoneOf(null, z) == 0);
     var tr = [];
-    var midnightGap = Logic.buckets([[999, 87]], 1000);
+    var midnightGap = new [96];
+    var midnightAt = new [96];
+    Body.bucket(midnightGap, midnightAt, 999, 87, 1000);
     ok = T.ck(logger, "previous day's last second cannot enter today's first bucket", midnightGap[0] == null) && ok;
     Logic.traceSet(tr, 0, 90);
     Logic.traceSet(tr, 3, 120);
@@ -446,7 +448,10 @@ function testHrMath(logger) {
     ok = T.ck(logger, "recovered under z2", Logic.recovered(140, 125, 40, z) && !Logic.recovered(140, 130, 40, z)) && ok;
     ok = T.ck(logger, "no peak, no buzz", !Logic.recovered(null, 90, 90, z)) && ok;
 
-    var b = Logic.buckets([[1000, 50], [1000 + 899, 52], [1000 + 900, 60], [1000 + 95 * 900 + 10, 7], [500, 99]], 1000);
+    var b = new [96];
+    var bAt = new [96];
+    var samples = [[1000, 50], [1000 + 899, 52], [1000 + 900, 60], [1000 + 95 * 900 + 10, 7], [500, 99]];
+    for (var si = 0; si < samples.size(); si++) { Body.bucket(b, bAt, samples[si][0], samples[si][1], 1000); }
     ok = T.ck(logger, "buckets", b.size() == 96 && b[0] == 52 && b[1] == 60 && b[2] == null && b[95] == 7) && ok;
 
     var e = { "reps" => 10, "reps_max" => 12 };
@@ -1246,7 +1251,7 @@ function testTapeRecordsAfterTakeOver(logger) {
     for (var i = 0; i < Reps.RATE; i++) { tsb.add(1000 + i * 40); }
     Reps.onSamples(b[0], b[1], b[2], tsb, 1000, 3);
     var ok = T.ck(logger, "manual set keeps recording", Reps.manual && Reps.job == null && Reps.offer() == null
-        && Tape.total() == Reps.RATE && Reps.batches == 1);
+        && Tape.total() == Reps.RATE && Reps.batches == 2);
     Workout.finish(false);
     return ok;
 }
@@ -1495,5 +1500,129 @@ function testDailyDiagnostics(logger) {
     var wk = Body.diag(Time.now().value())["wk_hr"];
     ok = T.ck(logger, "diag carries the last workout's HR reads", wk instanceof Lang.Array && wk.size() == 4 && wk[1] == 2) && ok;
     if (prevWk == null) { Storage.deleteValue("wkhr"); } else { Storage.setValue("wkhr", prevWk); }
+    return ok;
+}
+
+// --- audit regressions ------------------------------------------------------
+
+class ReplySink {
+    var code = null;
+    var hits = 0;
+    function hit(c, d) { code = c; hits += 1; }
+}
+
+(:test)
+function testBatchesCountUnderManual(logger) {
+    // Taking over by hand stops the counting, not the bookkeeping: the batch
+    // is still delivered and counted, and a silent stream still retires.
+    Reps.reset();
+    Reps.listening = true;
+    Reps.takeOver();
+    var b = T.batch(100, Reps.RATE);
+    Reps.onSamples(b[0], b[1], b[2], null, 5000, 0);
+    var ok = T.ck(logger, "batch counted under manual", Reps.batches == 1 && Reps.lastBatch == 5000 && Reps.bx.size() == 0);
+    Reps.checkDelivery(12500);
+    ok = T.ck(logger, "silence still retires under manual", Reps.interrupted) && ok;
+    Reps.reset();
+    return ok;
+}
+
+(:test)
+function testRejectedBatchKeepsStream(logger) {
+    // Rejected batches are still a live stream: the 6 s watchdog must not
+    // fire on them, and real silence after them must still trip it.
+    Reps.reset();
+    Reps.listening = true;
+    Reps.listenerAt = 0;
+    Reps.onSamples([], [], [], null, 5000, 0);
+    Reps.checkDelivery(9000);
+    var ok = T.ck(logger, "rejected batch keeps the watchdog fed", !Reps.interrupted && Reps.listening);
+    Reps.onSamples([], [], [], null, 9500, 0);
+    Reps.checkDelivery(16000);
+    ok = T.ck(logger, "then real silence trips it", Reps.interrupted) && ok;
+    Reps.reset();
+    return ok;
+}
+
+(:test)
+function testNetRepliesAreGenerational(logger) {
+    var n = new Net();
+    var sink = new ReplySink();
+    n.busy = true; n.gen = 2;
+    n.onReply(1, new Lang.Method(sink, :hit), 200, null);
+    var ok = T.ck(logger, "late reply from an old request is ignored", n.busy && sink.hits == 0);
+    n.onReply(2, new Lang.Method(sink, :hit), 500, null);
+    ok = T.ck(logger, "current reply reaches its callback", sink.hits == 1 && sink.code == 500) && ok;
+    // A reply that never comes is given up after the timeout, as a -1.
+    n.busy = true; n.gen = 5; n.busyAt = Time.now().value() - (Config.REPLY_TIMEOUT_S + 5);
+    n.pendingCb = new Lang.Method(sink, :hit);
+    n.checkTimeout();
+    ok = T.ck(logger, "timeout frees the queue as a failure", !n.busy && sink.code == -1 && sink.hits == 2 && n.gen == 6) && ok;
+    n.busy = true; n.busyAt = Time.now().value();
+    n.pendingCb = new Lang.Method(sink, :hit);
+    n.checkTimeout();
+    ok = T.ck(logger, "a fresh request is left alone", n.busy && sink.hits == 2) && ok;
+    n.busy = false; n.pendingCb = null;
+    return ok;
+}
+
+(:test)
+function testFailedHeadRotates(logger) {
+    var savedQ = Store.queue();
+    var savedD = Store.dead();
+    var a = "rot-a-" + Logic.uuid4();
+    var b = "rot-b-" + Logic.uuid4();
+    var ma = T.sampleMeta(); ma["id"] = a; Store.putMeta(ma);
+    var mb = T.sampleMeta(); mb["id"] = b; Store.putMeta(mb);
+    Store.put("q", [a, b]);
+    Store.put("qd", []);
+    var n = new Net();
+    for (var i = 0; i < Config.UPLOAD_ROTATE_AFTER; i++) { n.failHead(a, false); }
+    var q = Store.queue();
+    var ok = T.ck(logger, "head goes to the back after repeated failures", q.size() == 2 && q[0].equals(b) && q[1].equals(a));
+    for (var i = 0; i < Config.UPLOAD_BURY_AFTER - Config.UPLOAD_ROTATE_AFTER; i++) { n.failHead(a, false); }
+    ok = T.ck(logger, "transport failures never bury", Store.dead().size() == 0 && Store.queue().indexOf(a) >= 0) && ok;
+    n.failHead(a, true);
+    ok = T.ck(logger, "server failures bury at the limit", Store.dead().indexOf(a) >= 0 && Store.queue().indexOf(a) < 0) && ok;
+    Store.dropSession(a);
+    Store.dropSession(b);
+    Store.put("q", savedQ);
+    Store.put("qd", savedD);
+    return ok;
+}
+
+(:test)
+function testRawRingKeepsNewest(logger) {
+    // Heart-rate history comes oldest first: the cap must keep the newest.
+    var raw = { "t" => [], "v" => [], "h" => 0 };
+    for (var i = 0; i < 10; i++) { Body.rawAdd(raw, i, 60 + i, 4); }
+    Body.rawOrder(raw);
+    return T.ck(logger, "newest four, in time order", raw["t"].size() == 4 && raw["t"][0] == 6 && raw["t"][3] == 9
+        && raw["v"][0] == 66 && raw["v"][3] == 69 && !raw.hasKey("h"));
+}
+
+(:test)
+function testSummaryBeforeSummaryScreen(logger) {
+    // Summary numbers before the summary screen (no end time yet) must not
+    // dereference the missing end.
+    T.startPress(0);
+    var s = Workout.summary();
+    var ok = T.ck(logger, "summary without an end time", s != null && s["dur"] >= 0 && s["sets"] == 0);
+    Workout.finish(false);
+    Workout.saved = false;
+    return ok;
+}
+
+(:test)
+function testDayPlansPruned(logger) {
+    var d = Logic.localDate();
+    var savedK = Store.get("wkk");
+    for (var i = 0; i < Store.DAY_KEEP + 2; i++) {
+        Store.cacheDay({ "date" => d, "unit" => "lbs", "workout" => { "id" => "p" + i, "name" => "P", "exercises" => [] } });
+    }
+    var ok = T.ck(logger, "oldest day plans removed", Store.get("wk_p0") == null && Store.get("wk_p1") == null);
+    ok = T.ck(logger, "newest day plan kept", Store.planFor("p" + (Store.DAY_KEEP + 1)) != null) && ok;
+    for (var i = 0; i < Store.DAY_KEEP + 2; i++) { Store.del("wk_p" + i); }
+    Store.put("wkk", savedK == null ? [] : savedK);
     return ok;
 }

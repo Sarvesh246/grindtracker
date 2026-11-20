@@ -117,8 +117,6 @@ module Hr {
         Store.putSet(sid, i, sets[i]);
     }
 
-    function zone() { return Logic.zoneOf(now, zones); }
-
     // Smart rest: true exactly once per rest, when HR has come back down.
     function justRecovered(elapsed) {
         if (buzzed || !Logic.recovered(lastPeak, now, elapsed, zones)) { return false; }

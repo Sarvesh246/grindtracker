@@ -4,10 +4,34 @@ using Toybox.System;
 using Toybox.Time;
 using Toybox.WatchUi;
 
+// Routes one reply to the request that asked for it. A reply that comes
+// back after its request was given up (timed out) is ignored: it belongs to
+// an older generation, and must not clear `busy` for the request in flight.
+class NetReply {
+    var net;
+    var gen;
+    var cb;
+
+    function initialize(n, g, c) {
+        net = n;
+        gen = g;
+        cb = c;
+    }
+
+    function onResponse(code, data) {
+        net.onReply(gen, cb, code, data);
+    }
+}
+
 // API client + sync queue. One request in flight at a time, nothing here
 // ever blocks or opens a dialog: the UI just reads status().
 class Net {
     var busy = false;
+    var gen = 0;             // request generation: bumped on every request
+    var busyAt = 0;          // epoch secs the request in flight was sent
+    var pendingCb = null;    // its callback, for a timeout
+    var headSid = null;      // the workout at the head of the queue, last failed
+    var headTries = 0;       // consecutive failures of headSid
     var authError = false;
     var fails = 0;       // upload failures in a row
     var nextAt = 0;      // epoch secs before which we don't retry uploads
@@ -43,16 +67,42 @@ class Net {
 
     function request(path, params, post, cb) {
         busy = true;
+        gen += 1;
+        busyAt = now();
+        pendingCb = cb;
         try {
             Communications.makeWebRequest(Secrets.API_BASE + path, params, {
                 :method => post ? Communications.HTTP_REQUEST_METHOD_POST : Communications.HTTP_REQUEST_METHOD_GET,
                 :headers => headers(),
                 :responseType => Communications.HTTP_RESPONSE_CONTENT_TYPE_JSON
-            }, cb);
+            }, new Lang.Method(new NetReply(self, gen, cb), :onResponse));
         } catch (e) {
             System.println("request " + path + " failed: " + e.getErrorMessage());
+            pendingCb = null;
             cb.invoke(-1, null);
         }
+    }
+
+    function onReply(g, cb, code, data) {
+        if (g != gen) {
+            System.println("late reply " + code + " ignored");
+            return;
+        }
+        pendingCb = null;
+        cb.invoke(code, data);
+    }
+
+    // A reply that never comes would hold `busy` for ever and stop all sync
+    // until relaunch. Past REPLY_TIMEOUT_S, give the request up as a
+    // transport failure (-1), which every callback already handles.
+    function checkTimeout() {
+        if (!busy || now() - busyAt <= Config.REPLY_TIMEOUT_S) { return; }
+        System.println("request timed out");
+        var cb = pendingCb;
+        pendingCb = null;
+        gen += 1;
+        busy = false;
+        if (cb != null) { cb.invoke(-1, null); }
     }
 
     function errCode(data) {
@@ -132,6 +182,7 @@ class Net {
 
     // Called every ~30 s while the app is open.
     function tick() {
+        checkTimeout();
         if (busy || authError || !connected()) { return; }
         if (Store.queue().size() > 0) {
             flush();
@@ -216,6 +267,7 @@ class Net {
             if (changed.size() == 0) {
                 // A 2xx without a matching set ID has made no progress.
                 fails += 1;
+                failHead(sid, true);
                 nextAt = now() + Logic.backoffSecs(fails);
                 WatchUi.requestUpdate();
                 return;
@@ -247,9 +299,42 @@ class Net {
             flush();
         } else {
             fails += 1;
+            // A 5xx is usually an outage or a deploy, not this workout: it
+            // rotates the queue but never buries a workout.
+            failHead(sid, false);
             nextAt = now() + Logic.backoffSecs(fails);
         }
         WatchUi.requestUpdate();
+    }
+
+    // One workout that keeps failing must not hold up the queue behind it:
+    // after UPLOAD_ROTATE_AFTER failures in a row it moves to the back, and
+    // each failure is counted on the session. Only a deterministic failure
+    // (a 2xx that acknowledges nothing) can bury it after UPLOAD_BURY_AFTER,
+    // and a buried workout stays on the watch.
+    function failHead(sid, deterministic) {
+        var m = Store.meta(sid);
+        var n = 1;
+        if (m != null) {
+            n = (m["fx"] == null ? 0 : m["fx"]) + 1;
+            m["fx"] = n;
+            Store.putMeta(m);
+        }
+        if (deterministic && n >= Config.UPLOAD_BURY_AFTER) {
+            Store.bury(sid);
+            headTries = 0;
+            return;
+        }
+        if (sid.equals(headSid)) { headTries += 1; } else { headSid = sid; headTries = 1; }
+        if (headTries < Config.UPLOAD_ROTATE_AFTER) { return; }
+        headTries = 0;
+        var q = Store.queue();
+        if (q.size() > 1 && q[0].equals(sid)) {
+            q = q.slice(1, null);
+            q.add(sid);
+            Store.put("q", q);
+            System.println("upload " + sid + " moved to the back after failures");
+        }
     }
 
     // --- POST /rep-lab ------------------------------------------------------

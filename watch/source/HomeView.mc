@@ -285,7 +285,10 @@ class HomeMenuDelegate extends WatchUi.Menu2InputDelegate {
         }
         if (item.getId() == :clear) {
             var d = Store.dead();
-            for (var i = 0; i < d.size(); i++) { Store.dropSession(d[i]); }
+            for (var i = 0; i < d.size(); i++) {
+                Store.dropSession(d[i]);
+                Lab.dropSession(d[i]);
+            }
             Store.put("qd", []);
         } else {
             gNet.refresh();

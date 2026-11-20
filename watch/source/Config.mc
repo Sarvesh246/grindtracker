@@ -24,6 +24,14 @@ module Config {
 
     // Sets per upload. Keeps the request dictionary small in memory.
     const SYNC_BATCH = 25;
+    // A workout that fails this many times in a row goes to the back of the
+    // queue, so the rest can upload (ROTATE), and after BURY_AFTER failures
+    // where the server answered 2xx but acknowledged nothing, it is kept on
+    // the watch and stops retrying. Transport failures and 5xx never bury.
+    const UPLOAD_ROTATE_AFTER = 3;
+    const UPLOAD_BURY_AFTER = 8;
+    // A request with no reply after this long is treated as failed.
+    const REPLY_TIMEOUT_S = 90;
     // The app clock ticks every second: it refreshes the workout screen,
     // samples heart rate every HR_STEP ticks and syncs every 30th tick. It is
     // the only always-on timer; the watch allows 3 running at once.

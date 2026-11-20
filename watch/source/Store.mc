@@ -125,7 +125,7 @@ module Store {
         }
         put("wk", out);
         put("wkAt", Time.now().value());
-        if (out["id"] != null) { put("wk_" + out["id"], out); }
+        if (out["id"] != null) { putDay(out["id"], out); }
         return true;
     }
 
@@ -133,8 +133,24 @@ module Store {
     function cacheDay(data) {
         var out = trimPlan(data);
         if (out == null || out["id"] == null) { return false; }
-        put("wk_" + out["id"], out);
+        putDay(out["id"], out);
         return true;
+    }
+
+    // Plans kept under wk_<day>, newest DAY_KEEP (list "wkk"). Older ones are
+    // removed here, so picking many days never grows storage without bound.
+    const DAY_KEEP = 8;
+    function putDay(id, out) {
+        put("wk_" + id, out);
+        var old = list("wkk");
+        var ks = [];
+        for (var i = 0; i < old.size(); i++) { if (!old[i].equals(id)) { ks.add(old[i]); } }
+        ks.add(id);
+        while (ks.size() > DAY_KEEP) {
+            del("wk_" + ks[0]);
+            ks = ks.slice(1, null);
+        }
+        put("wkk", ks);
     }
 
     function isToday(w) {

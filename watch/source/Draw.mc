@@ -192,10 +192,6 @@ module Draw {
         dc.drawText(x + lw, y, f, right, vc);
     }
 
-    function hint(dc, s) {
-        line(dc, 0.895, [Graphics.FONT_XTINY], s, Config.DIM);
-    }
-
     // Small up/down triangles just inside the bezel, level with the UP and
     // DOWN buttons on the left: Home uses them to scroll the workout days.
     function scrollArrows(dc) {

@@ -401,15 +401,4 @@ module Logic {
     }
 
     // --- daily snapshot ---------------------------------------------------
-
-    // [[epochSecs, value], ...] -> 96 buckets of 15 minutes from `midnight`,
-    // each the newest value that fell in it, null where none did.
-    function buckets(samples, midnight) {
-        var out = new [96];
-        var at = new [96];
-        for (var i = 0; i < samples.size(); i++) {
-            Body.bucket(out, at, samples[i][0], samples[i][1], midnight);
-        }
-        return out;
-    }
 }

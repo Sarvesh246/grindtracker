@@ -38,8 +38,6 @@ module Tape {
     var memPeak = 0;
     var bat0 = null;
     var batchesSeen = 0;
-    var magSeen = false;
-    var beatsSeen = false;
 
     function alloc() {
         if (acc != null) { return; }
@@ -55,7 +53,6 @@ module Tape {
         steps0 = null;
         memPeak = 0;
         batchesSeen = 0;
-        magSeen = false; beatsSeen = false;
         bat0 = battery();
     }
 
@@ -135,10 +132,9 @@ module Tape {
             if (data == null) { return; }
             if (acc == null) { reset(); }
             var m = data.magnetometerData;
-            if (m != null && m.x != null) { magSeen = true; mCarry = addPairs(mag, m.x, m.y, m.z, mCarry, true); }
+            if (m != null && m.x != null) { mCarry = addPairs(mag, m.x, m.y, m.z, mCarry, true); }
             var h = data.heartRateData;
             if (h != null && h.heartBeatIntervals != null) {
-                beatsSeen = true;
                 var b = h.heartBeatIntervals;
                 for (var i = 0; i < b.size(); i++) {
                     if (b[i] != null) { beats = keep(beats, b[i].toNumber(), MAX_BEATS); }

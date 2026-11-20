@@ -253,7 +253,10 @@ module Reps {
         if (interrupted || !sensorStatus.equals(reason)) {
             System.println("reps: " + reason + " (" + detail + ") after " + batches + " batches");
         }
+        // Dropping the motion must not forget that the stream is alive.
+        var seen = lastBatch;
         clearMotion();
+        lastBatch = seen;
         if (interrupted) { stop(); }
         sensorStatus = reason;
     }
@@ -329,7 +332,7 @@ module Reps {
     // A listener can stop delivering without issuing another callback. Allow
     // delayed delivery, but retire an estimate when its stream goes silent.
     function checkDelivery(now) {
-        if (!listening || interrupted || manual) { return; }
+        if (!listening || interrupted) { return; }
         var last = lastBatch == null ? listenerAt : lastBatch;
         if (last == null || now - last <= 6 * BATCH_MS) { return; }
         inputGap("sensor timeout", now - last);
@@ -352,8 +355,10 @@ module Reps {
         Tape.feedExtra(data);
         var a = data == null ? null : data.accelerometerData;
         if (a == null || a.x == null || a.y == null || a.z == null) {
-            // A batch carrying only the extra sensors is not a gap: a stream
-            // that really stops is caught by checkDelivery.
+            // Something arrived, so the stream is alive. A batch carrying only
+            // the extra sensors is not a gap: a stream that really stops is
+            // caught by checkDelivery.
+            lastBatch = System.getTimer();
             if (manual || (data != null && (data.magnetometerData != null || data.heartRateData != null))) { return; }
             inputGap("missing accelerometer", null);
             return;
@@ -363,8 +368,13 @@ module Reps {
 
     function onSamples(xs, ys, zs, timestamps, now, steps) {
         Tape.feed(xs, ys, zs, steps);
-        if (manual) { return; }
         var n = xs.size();
+        // Every delivered batch is stream activity, including one rejected
+        // below, so the delivery watchdog sees it. Taking over by hand stops
+        // only the counting, further down.
+        var seen = lastBatch;
+        var delay = seen == null ? 0 : now - seen;
+        lastBatch = now;
         if (n == 0 || n > 2 * RATE || ys.size() != n || zs.size() != n) {
             inputGap("invalid sample count", n);
             return;
@@ -374,7 +384,6 @@ module Reps {
         // Use sample time where the firmware supplies it. A late callback
         // can still carry contiguous samples.
         var gap = time != null && lastSample != null ? time[0] - lastSample : null;
-        var delay = lastBatch == null ? 0 : now - lastBatch;
         // Some firmware can report timestamps relative to each batch. Use
         // delivery time if the timestamp starts over.
         if ((gap != null && gap > 200)
@@ -407,9 +416,9 @@ module Reps {
             System.println("reps: received " + n + " samples, timestamps=" + (time != null));
             sensorStatus = "receiving";
         }
-        lastBatch = now;
         lastSample = time == null ? null : time[n - 1];
         batches++;
+        if (manual) { return; }
         for (var i = 0; i < n; i++) {
             var x = xs[i] / 1000.0;
             var y = ys[i] / 1000.0;
@@ -497,8 +506,11 @@ module Reps {
         glanceNext = false;
         jobStartMs = System.getTimer();
         jobSteps = 0;
-        // The sensor keeps appending while this snapshot is being analyzed.
-        job = new RepAnalysis(ordered(bx), ordered(by), ordered(bz), ordered(bs), clipped);
+        // The buffers are copied on the timer's first step, not here in the
+        // sensor callback. Both run on the main thread, so the copy is the
+        // buffer as it stands a few ms later: at most a batch newer, which the
+        // revision check already accounts for.
+        job = new RepAnalysis(null, null, null, null, clipped);
         worker = new Timer.Timer();
         worker.start(new Lang.Method(Reps, :advanceAnalysis), 50, true);
     }
@@ -906,10 +918,19 @@ module Reps {
             for (var ri = 0; ri < rules.size(); ri++) {
                 var rule = rules[ri];
                 var tt = times.slice(0, null);
+                // Leading reps are collected nearest-first and joined once;
+                // prepending each one copied the whole list (quadratic).
+                var lead = tt[0];
+                var front = [];
                 for (var j = first - 1; j >= 0; j--) {
                     var k = pairs[j];
-                    if (!okEdge(k, tt[0] - at[k], false, cg, rule)) { break; }
-                    var nt = [at[k]];
+                    if (!okEdge(k, lead - at[k], false, cg, rule)) { break; }
+                    front.add(at[k]);
+                    lead = at[k];
+                }
+                if (front.size() > 0) {
+                    var nt = [];
+                    for (var f = front.size() - 1; f >= 0; f--) { nt.add(front[f]); }
                     nt.addAll(tt);
                     tt = nt;
                 }
@@ -989,9 +1010,16 @@ class RepAnalysis {
     var filter = null;
     var extrema = null;
 
+    // Given no arrays, the analysis copies the live motion buffers on its
+    // first step (see :snapshot), so the sensor callback never does.
     function initialize(xs, ys, zs, walking, wasClipped) {
-        x = xs; y = ys; z = zs; steps = walking;
         clipped = wasClipped;
+        if (xs == null) { phase = :snapshot; return; }
+        prepare(xs, ys, zs, walking);
+    }
+
+    function prepare(xs, ys, zs, walking) {
+        x = xs; y = ys; z = zs; steps = walking;
         // A clipped buffer no longer starts at START; leave its edge alone so
         // a set cut by the rolling window is still withdrawn.
         if (!clipped) { Reps.trimWindow(x, y, z); }
@@ -1049,6 +1077,10 @@ class RepAnalysis {
     function step() {
         var end;
         switch (phase) {
+        case :snapshot:
+            prepare(Reps.ordered(Reps.bx), Reps.ordered(Reps.by), Reps.ordered(Reps.bz), Reps.ordered(Reps.bs));
+            phase = :motion;
+            break;
         case :motion:
             end = Reps.imin(motion.size(), cursor + 6);
             for (; cursor < end; cursor++) { motion[cursor] = Reps.motion(x, y, z, cursor); }

@@ -43,6 +43,9 @@ module Readiness {
         if (Workout.active() || Reps.listening) { fail("Finish the workout first"); return; }
         rr = []; moving = 0; result = null; reason = null; recentMove = false; hr = null;
         try {
+            // Recorder.stop turns the heart-rate sensor off after a workout,
+            // and nothing else turns it on again: this check needs it on.
+            Recorder.enableHr(true);
             Sensor.registerSensorDataListener(new Lang.Method(Readiness, :onData), {
                 :period => 1,
                 :accelerometer => { :enabled => true, :sampleRate => 25 },
@@ -62,6 +65,9 @@ module Readiness {
         if (!listening) { return; }
         listening = false;
         try { Sensor.unregisterSensorDataListener(); } catch (e) { }
+        // Back to the state it was in before the check: off, since no
+        // workout is open (the check never starts during one).
+        if (!Workout.active()) { Recorder.enableHr(false); }
     }
 
     function cancel() {
@@ -161,19 +167,6 @@ module Readiness {
 
     // --- the maths, as in src/lib/body/hrv.ts ---------------------------------
 
-    function median(a) {
-        var n = a.size();
-        var s = a.slice(0, null);
-        for (var i = 1; i < n; i++) {
-            var v = s[i];
-            var j = i - 1;
-            while (j >= 0 && s[j] > v) { s[j + 1] = s[j]; j--; }
-            s[j + 1] = v;
-        }
-        var m = n / 2;
-        return n % 2 == 1 ? s[m].toFloat() : (s[m - 1] + s[m]) / 2.0;
-    }
-
     function cleanMask(r) {
         var n = r.size();
         var inRange = new [n];
@@ -186,7 +179,7 @@ module Readiness {
             var hi = i + 5 > n - 1 ? n - 1 : i + 5;
             for (var j = lo; j <= hi; j++) { if (j != i && inRange[j]) { around.add(r[j]); } }
             if (around.size() < 4) { mask[i] = true; continue; }
-            var m = median(around);
+            var m = Reps.median(around);
             mask[i] = (r[i] - m).abs() <= 0.2 * m;
         }
         return mask;
