@@ -46,7 +46,9 @@ export async function completeSession(
 
   // Completion is a single server-side transaction: xp, level, streak and PR
   // flags are all derived in Postgres (docs/sql/11-server-side-xp.sql). We send
-  // only the local calendar date because streaks depend on the user's timezone.
+  // the local calendar date because streaks depend on the user's timezone, and
+  // the device's UTC offset so a workout left open and saved days later is
+  // booked to the day its last set was logged (docs/sql/75).
   // Retries are for transient failures only — a refusal won't change.
   let finishData: unknown = null
   let finishError: unknown = null
@@ -57,6 +59,7 @@ export async function completeSession(
         p_local_date: localDateKey(new Date()),
         p_note: note,
         p_start_hour: startHour,
+        p_utc_offset_minutes: -new Date().getTimezoneOffset(),
       })
       finishData = res.data
       finishError = res.error

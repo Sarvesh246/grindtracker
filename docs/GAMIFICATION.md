@@ -64,7 +64,7 @@ stored that isn't recomputable — and the client has **no UPDATE privilege on
 
 | RPC | Called from |
 | --- | --- |
-| `complete_session(session_id, local_date, note, start_hour)` | `ActiveWorkout.handleFinish` |
+| `complete_session(session_id, local_date, note, start_hour, utc_offset_minutes)` | `ActiveWorkout.handleFinish` |
 | `uncomplete_session(session_id, local_date)` | `ActiveWorkout.handleUndoFinish`, `FinishUndoBanner` |
 | `delete_session(session_id, local_date)` | `log/past` delete |
 | `refresh_stats(local_date)` | `log/past` save, `HomeDashboard` stale-streak lapse |

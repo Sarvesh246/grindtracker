@@ -2,8 +2,9 @@
 
 This implements the web destination and the ingestion foundation from
 [the research plan](HEALTH-RESEARCH-AND-PLAN.md). The complete health program
-is **not yet complete**: live cloud import, the watch background service,
-generated explanations and the 72-hour physical pilot remain gated.
+is **not yet complete**: live cloud import, generated explanations and the
+72-hour physical pilot remain gated. The watch background service shipped
+differently than planned; see the update at the end.
 
 ## Available
 
@@ -24,8 +25,10 @@ generated explanations and the 72-hour physical pilot remain gated.
   Migration 62 prevents deleting database records while private files remain.
 - Migration 61: owner RLS/grants, connection ownership, UTC samples, sleep
   revisions, atomic deduplication, revision ordering and generation checks.
-- A bounded authenticated watch health-batch endpoint; `HEALTH_WATCH_BATCHES_ENABLED`
-  defaults off. Old `/daily` and workout uploads remain compatible.
+- The watch sends its day through `POST /daily` (open app and background
+  service). The versioned health-batch endpoint planned here was never called
+  by a watch build and was removed on 2026-11-20; `watch_ingest_health_batch`
+  stays in SQL because the DB tests drive the shared ingest core through it.
 
 ## Source gates
 
@@ -103,11 +106,9 @@ This is not a claim of a complete application-wide security audit.
 ## Rollout and rollback
 
 Apply `docs/sql/61-health-foundation.sql` and `62-account-storage-cleanup.sql`
-before dependent code. Keep
-`HEALTH_WATCH_BATCHES_ENABLED` unset. Nothing changes the watch binary or adds
-cron jobs. Observe web read errors and new batch refusals without logging
-health payloads or secrets. Disable the batch flag to stop versioned uploads;
-pause collection to stop physiological ingestion while preserving workouts.
+before dependent code. Nothing changes the watch binary or adds cron jobs.
+Observe web read errors without logging health payloads or secrets. Pause
+collection to stop physiological ingestion while preserving workouts.
 Set `NEXT_PUBLIC_HEALTH_PAGE_ENABLED=false` and rebuild to hide the destination
 entry and stop Health page reads while keeping history and privacy controls.
 Roll back web code without dropping historical tables. Do not rerun migration
@@ -125,7 +126,7 @@ claimed beyond its evidence.
 | 1 | Garmin cloud connector, credential storage, token refresh, catch-up/backfill, business consent flow | **Not built.** Needs Garmin partner approval and real credentials. The schema (`health_connections`, `sync_cursor`, generation checks) is ready; no connector, credential store or poller is shipped, deliberately, rather than guessing provider payloads or storing someone's Garmin password. |
 | 2 | Import real sleep, HRV, respiration; confirm against Garmin Connect | **Partly.** Validation, revision-aware storage, naps, timezone/wake-date checks and DST-safe day assignment are implemented and tested (`reconcile.test.ts`, real-Postgres suite). Mapping real Garmin responses and matching Garmin Connect with the watch app closed needs a live connector and device. |
 | 3 | Reconcile sources, canonical summaries, UTC samples in the UI, retention | **Mostly.** Source precedence (current over partial, approved cloud over personal over watch, later measurement, later revision; never averaged) lives in `src/lib/health/reconcile.ts`. The web now reads `health_samples` and overlays them on the legacy `daily_body` snapshot with per-value provenance. Migration 63 + `/api/cron/health-retention` (daily) add scheduled retention. `health_daily_summaries` is still not populated by a background job. |
-| 4 | Connect IQ background service, durable upload queue | **Not built.** Needs the Connect IQ SDK, a watch and battery testing. The batch endpoint stays behind `HEALTH_WATCH_BATCHES_ENABLED` (off). |
+| 4 | Connect IQ background service, durable upload queue | **Shipped, smaller.** `watch/source/Bg.mc` wakes every 15 minutes with the app closed and posts the day snapshot to `POST /daily`. There is no separate health-batch queue; that endpoint was removed unused. |
 | 5 | Recovery interpretation, unified baselines and coverage | **Partly.** `metricBaseline` now backs every "usual range" shown on Health (tiles, trends, band) and the Coach's HRV range. Charge's own 30-day resting-HR baseline and weights are unchanged and still unvalidated; unifying them would change users' scores and needs a decision plus real data. |
 | 6 | Coach integration | **Partly.** The Coach's body block now carries imported sleep and overnight HRV with wake time, status, source, nights recorded and an HRV range, only when the user allowed body data (existing opt-out). Generated explanations, grounding checks, caching and a separate summary budget are not built, and the live `coach:eval` was not run (needs provider quota). |
 | 7 | Interface details | **Partly.** Day timeline shows workout and sleep annotations; the status panel shows each connection's state, freshness and a per-measurement source table. Charts are read by dragging (mouse and touch tested in Chromium). Sleep-aware Progress summaries, pre-workout observations and iPhone PWA/VoiceOver validation are not done. |
@@ -155,3 +156,12 @@ precedence, privacy decisions and exactly what is and is not verified. The
 official Garmin cloud connector (item 1), the Connect IQ background service
 (item 4) and the device pilot (item 8) are still not built.
 
+### Background sync (update, November 20, 2026)
+
+The paragraphs above that call the Connect IQ background service "not shipped"
+predate it. `watch/source/Bg.mc` registers a 15-minute temporal event and posts
+`Body.snapshot("background")` to `POST /daily`, sharing the `dl` timestamp with
+the open app so the two never double up (see [watch-api.md](watch-api.md)).
+"Today so far" is therefore at most about 15 minutes old while the phone is in
+range. The batch endpoint (`/api/watch/v1/health-batches`) and
+`HEALTH_WATCH_BATCHES_ENABLED` were removed because nothing ever called them.

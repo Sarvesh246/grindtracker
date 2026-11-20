@@ -749,4 +749,74 @@ describe('watch API against the real schema', { skip: !baseUrl && 'set PARITY_DA
       assert.equal((run.data as { more: boolean }).more, false)
     })
   })
+
+  // docs/sql/75: a workout left open and saved days later counts on the day
+  // it was lifted, not the day it was saved.
+  describe('complete_session books the day of the last set', () => {
+    const CAROL = id('carol')
+    const EX = id('carol-row')
+    // UTC-5. The last set is 3 days ago at 03:30 UTC, i.e. 22:30 local the
+    // evening before: the case the old code booked to "today".
+    const OFFSET = -300
+    const localToday = `((now() at time zone 'utc') - interval '5 hours')::date`
+    const openSession = (sid: string, lastSet: string) => {
+      db(`
+        insert into sessions (id, user_id, day_type, started_at)
+          values ('${sid}', '${CAROL}', 'pull', ${lastSet} - interval '40 minutes');
+        insert into session_logs (session_id, exercise_id, set_number, weight, reps, created_at)
+          values ('${sid}', '${EX}', 1, 100, 8, ${lastSet} - interval '30 minutes'),
+                 ('${sid}', '${EX}', 2, 100, 8, ${lastSet});
+      `)
+    }
+    const finish = (sid: string, offset: number | null) =>
+      JSON.parse(asUser(CAROL, `select complete_session('${sid}', ${localToday}, null, null, ${offset ?? 'null'})::text;`)) as { local_date: string }
+    const stored = (sid: string) => db(`select local_date from sessions where id = '${sid}'`)
+
+    before(() => {
+      db(`
+        insert into auth.users (id, email) values ('${CAROL}', 'carol@test');
+        insert into user_stats (user_id) values ('${CAROL}') on conflict (user_id) do nothing;
+        insert into exercises (id, user_id, name, day_type, sets_target, reps_target, sort_order)
+          values ('${EX}', '${CAROL}', 'Row', 'pull', 3, '8', 0);
+      `)
+    })
+
+    it('uses the device offset to find the local day of the last set', () => {
+      const sid = id('carol-stale')
+      const lastSet = `((date_trunc('day', now() at time zone 'utc') - interval '3 days' + interval '3 hours 30 minutes') at time zone 'utc')`
+      openSession(sid, lastSet)
+      const result = finish(sid, OFFSET)
+      const expected = db(`select ((${lastSet} at time zone 'utc') - interval '5 hours')::date`)
+      assert.equal(stored(sid), expected)
+      assert.equal(result.local_date, expected)
+      assert.notEqual(stored(sid), db(`select ${localToday}`))
+      // Saved late, but completed_at is still the save, so Undo works.
+      asUser(CAROL, `select uncomplete_session('${sid}', ${localToday});`)
+      assert.equal(stored(sid), '')
+    })
+
+    it('books a normal finish to today', () => {
+      const sid = id('carol-fresh')
+      openSession(sid, `(now() - interval '2 minutes')`)
+      finish(sid, OFFSET)
+      assert.equal(stored(sid), db(`select ${localToday}`))
+    })
+
+    it('keeps the old behavior for a client that sends no offset', () => {
+      const sid = id('carol-old-client')
+      openSession(sid, `(now() - interval '4 days')`)
+      finish(sid, null)
+      assert.equal(stored(sid), db(`select ${localToday}`))
+    })
+
+    it('never books outside the session or into the future', () => {
+      const sid = id('carol-clamp')
+      openSession(sid, `(now() - interval '2 days')`)
+      // A lying offset (+14 h) still can't push the date past today.
+      finish(sid, 840)
+      const day = db(`select local_date from sessions where id = '${sid}'`)
+      assert.ok(day <= db(`select ${localToday}`))
+      assert.ok(day >= db(`select ((started_at at time zone 'utc')::date - 1) from sessions where id = '${sid}'`))
+    })
+  })
 })

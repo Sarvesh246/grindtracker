@@ -12,8 +12,6 @@ import {
   type SleepSession
 } from '../model'
 import { sleepSchema, validateHealthBatch } from '../ingestion'
-import { watchHealthBatch } from '../watchBatch'
-import type { WatchDeps } from '@/lib/watch/handlers'
 import { getBodySummary } from '@/lib/body/queries'
 
 const sleep: SleepSession = {
@@ -169,28 +167,23 @@ describe('health evidence and contracts', () => {
     assert.match(sleepConsistency(nights, '2026-11-16'), /bedtimes spanned 20 minutes/)
   })
   it('preserves legitimate zero, refuses wrong units, future and oversized inputs', () => {
-    assert.equal(validateHealthBatch(batch, now, true).success, true)
+    assert.equal(validateHealthBatch(batch, now).success, true)
     assert.equal(
-      validateHealthBatch({ ...batch, samples: [{ ...batch.samples[0], unit: 'bpm' }] }, now, true)
+      validateHealthBatch({ ...batch, samples: [{ ...batch.samples[0], unit: 'bpm' }] }, now)
         .success,
       false
     )
     assert.equal(
-      validateHealthBatch({ ...batch, captured_at: '2026-11-17T15:00:00Z' }, now, true).success,
+      validateHealthBatch({ ...batch, captured_at: '2026-11-17T15:00:00Z' }, now).success,
       false
     )
     assert.equal(
-      validateHealthBatch({ ...batch, samples: Array(257).fill(batch.samples[0]) }, now, true)
+      validateHealthBatch({ ...batch, samples: Array(257).fill(batch.samples[0]) }, now)
         .success,
       false
     )
     assert.equal(
-      validateHealthBatch({ ...batch, user_id: 'someone-else' }, now, true).success,
-      false
-    )
-    assert.equal(
-      validateHealthBatch({ ...batch, source: 'garmin_personal', sleeps: [input()] }, now, true)
-        .success,
+      validateHealthBatch({ ...batch, user_id: 'someone-else' }, now).success,
       false
     )
   })
@@ -200,57 +193,5 @@ describe('health evidence and contracts', () => {
     assert.doesNotMatch(brief.text, /0h|recovered|ready to train/)
     assert.equal(metricValue({ steps: 0 } as never, 'steps'), 0)
     assert.equal(metricValue(null, 'steps'), null)
-  })
-})
-
-describe('watch health batches', () => {
-  it('derives ownership from token authentication, never uploaded user data', async () => {
-    const calls: { name: string; args: Record<string, unknown> }[] = []
-    const deps: WatchDeps = {
-      rpc: async (name, args) => {
-        calls.push({ name, args })
-        return {
-          data:
-            name === 'watch_authenticate'
-              ? { status: 'ok', user_id: 'owner', device_id: 'verified-device' }
-              : { acknowledged: batch.batch_id },
-          error: null
-        }
-      },
-      now: () => now,
-      afterCompletion: async () => {},
-      log: () => {}
-    }
-    const response = await watchHealthBatch(
-      new Request('https://test/health', {
-        method: 'POST',
-        headers: { authorization: `Bearer gwt_${'a'.repeat(64)}` },
-        body: JSON.stringify(batch)
-      }),
-      deps
-    )
-    assert.equal(response.status, 200)
-    assert.equal(calls[1].args.p_user, 'owner')
-    assert.equal(calls[1].args.p_device, 'verified-device')
-  })
-  it('rejects oversized bodies even without Content-Length', async () => {
-    const deps: WatchDeps = {
-      rpc: async () => ({
-        data: { status: 'ok', user_id: 'owner', device_id: 'device' },
-        error: null
-      }),
-      now: () => now,
-      afterCompletion: async () => {},
-      log: () => {}
-    }
-    const response = await watchHealthBatch(
-      new Request('https://test/health', {
-        method: 'POST',
-        headers: { authorization: `Bearer gwt_${'a'.repeat(64)}` },
-        body: ' '.repeat(128 * 1024 + 1)
-      }),
-      deps
-    )
-    assert.equal(response.status, 413)
   })
 })

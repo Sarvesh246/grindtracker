@@ -138,11 +138,9 @@ const healthBatchSchema = z
     }
   })
 
-export function validateHealthBatch(input: unknown, now: Date, watch = false) {
+export function validateHealthBatch(input: unknown, now: Date) {
   return healthBatchSchema
     .superRefine((batch, ctx) => {
-      if (watch && (batch.source !== 'connect_iq' || batch.sleeps.length))
-        ctx.addIssue({ code: 'custom', message: 'Watch batches cannot claim cloud sleep records' })
       const earliest = now.getTime() - 180 * 86400000,
         latest = now.getTime() + 5 * 60000
       const times = [

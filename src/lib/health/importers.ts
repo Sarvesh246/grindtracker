@@ -576,7 +576,7 @@ export function buildBatches(
       samples: [],
       sleeps: good.slice(i, i + MAX_NIGHTS_PER_BATCH)
     }
-    const checked = validateHealthBatch(batch, now, false)
+    const checked = validateHealthBatch(batch, now)
     if (checked.success) batches.push(batch)
     else
       skipped.push({ key: `batch ${batches.length + 1}`, reason: checked.error.issues[0].message })
