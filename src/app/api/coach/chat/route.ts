@@ -23,6 +23,7 @@ import {
   trimToLastSentence,
   type CoachUnitPreference,
 } from '@/lib/coach'
+import { refundCoachTurn } from '@/lib/coach/refund'
 import {
   buildCoachProposalTools,
   encodeNdjson,
@@ -241,7 +242,7 @@ export async function POST(request: Request) {
   // Persist user turn first — trigger is authoritative if racing. Its id is
   // kept so a total model-call failure below can refund this turn instead of
   // silently burning the user's daily/burst allowance for a reply they never
-  // got (see grind_coach_refund_message, docs/sql/34-coach-quota-fixes.sql).
+  // got (see grind_coach_refund_usage, docs/sql/74-coach-usage-log.sql).
   const userInsert: Record<string, unknown> = {
     user_id: user.id,
     role: 'user',
@@ -335,10 +336,7 @@ export async function POST(request: Request) {
       setCachedCoachContext(contextKey, contextJson)
     } catch (err) {
       console.error('[grind] coach context', err)
-      const { error: refundErr } = await supabase.rpc('grind_coach_refund_message', {
-        p_message_id: insertedMessage.id,
-      })
-      if (refundErr) console.error('[grind] coach refund failed', refundErr)
+      await refundCoachTurn(user.id, insertedMessage.id as string)
       return NextResponse.json(
         { error: 'Failed to load your training data' },
         { status: 500 },
@@ -710,12 +708,9 @@ export async function POST(request: Request) {
             }
           } else {
             // The model never actually produced anything — refund the slot
-            // enforce_coach_rate_limit() charged when the user turn was
+            // enforce_coach_rate_limit() logged when the user turn was
             // inserted, so a broken/unavailable model doesn't cost quota.
-            const { error } = await supabase.rpc('grind_coach_refund_message', {
-              p_message_id: insertedMessage.id,
-            })
-            if (error) console.error('[grind] coach refund failed', error)
+            await refundCoachTurn(user.id, insertedMessage.id as string)
           }
         }
       },
@@ -738,10 +733,7 @@ export async function POST(request: Request) {
     return response
   } catch (err) {
     console.error('[grind] coach generate', err)
-    const { error: refundErr } = await supabase.rpc('grind_coach_refund_message', {
-      p_message_id: insertedMessage.id,
-    })
-    if (refundErr) console.error('[grind] coach refund failed', refundErr)
+    await refundCoachTurn(user.id, insertedMessage.id as string)
     return NextResponse.json(
       { error: 'Coach failed to respond. Try again in a moment.' },
       { status: 502 },

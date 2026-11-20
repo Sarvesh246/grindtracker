@@ -29,20 +29,27 @@ Limits (also in `src/lib/coach/constants.ts` — change both):
 | User messages / 10 minutes | 8 |
 | Max user message length | 2000 chars (API); 4000 in DB |
 
-A turn that never produces a visible reply (model call fails, retired model,
-network error) doesn't count against these — the route calls
-`grind_coach_refund_message` to delete that turn's row instead of charging
-the user's quota for a reply they never got. The admin account can also flip
+Usage is counted from `coach_usage`, an append-only log
+([`sql/74-coach-usage-log.sql`](sql/74-coach-usage-log.sql)) written by the
+`enforce_coach_rate_limit()` trigger on every user turn. Clients can only read
+their own rows, so deleting a message can't hand allowance back. A turn that
+never produces a visible reply (model call fails, retired model, network error)
+doesn't count: the route calls `grind_coach_refund_usage` with the service-role
+client, which appends a `refund` row cancelling that use. It is not callable
+with a user JWT (the old `grind_coach_refund_message` let any user refund
+themselves and was dropped). The admin account can also flip
 "Unlimited Coach Messages" in Profile → Settings → Developer to bypass both
 limits entirely (`user_profiles.coach_dev_unlimited`, enforced in Postgres by
 `enforce_coach_rate_limit()` — not just hidden in the UI) for testing against
-Gemini's own free-tier quota without the app's 15/day cap in the way.
+Gemini's own free-tier quota without the app's 15/day cap in the way. Unlimited
+turns are still logged, just never capped.
 
 ## Env
 
 | Variable | Where | Notes |
 | --- | --- | --- |
 | `GEMINI_API_KEY` | Server only | AI Studio key — never `NEXT_PUBLIC_*` |
+| `COACH_EVAL_GEMINI_API_KEY` | Local only | A *different* AI Studio key (ideally another project) for `npm run coach:eval`, so the eval can't spend the live Coach's free-tier 500/day. Never set on Vercel. |
 | `GEMINI_MODEL` | Server only | Default `gemini-3.5-flash-lite`. `gemini-flash-lite-latest` also works. Avoid retired pins like `gemini-2.5-flash-lite`. Coach uses AI SDK `reasoning: 'none'` so thinking config stays valid across 2.5 (`thinkingBudget: 0`) and 3.x (`thinkingLevel: 'minimal'`) — do not hardcode `thinkingBudget` for 3.x models. |
 
 (`GOOGLE_GENERATIVE_AI_API_KEY` is accepted as a fallback name.)
@@ -276,7 +283,7 @@ Not a nav tab; the full experience is an overlay page, not a `/coach` route.
 ## Coach reliability (src/lib/coach, `scripts/coach-eval/`)
 The Coach (Gemini via the AI SDK) is tuned against a measured golden set, not by
 feel. **Before changing the prompt, router, tools or model settings, run
-`npm run coach:eval`** (needs `GEMINI_API_KEY` in `.env.local`; 45 cases × 3
+`npm run coach:eval`** (needs `COACH_EVAL_GEMINI_API_KEY` in `.env.local`; 45 cases × 3
 runs, synthetic account, stubbed tools, deterministic scoring) and compare per
 group (A short chat · B long · C compound actions · D messy agentic · E watch
 body data: low/high Charge, no watch, rising resting HR, the lighter-today chip).
@@ -310,7 +317,7 @@ body data: low/high Charge, no watch, rising resting HR, the lighter-today chip)
   A2, C10 and D5 (`--model <id> --id <case> --runs 1`); Gemma is too slow for
   the 52s deadline and 3.7/3.8 Flash 503'd on every call when tested.
 - **`enforce_coach_rate_limit()`** has an admin `coach_dev_unlimited` bypass
-  (55). Any redefinition must start from `55-*.sql`.
+  (kept in 74, from 55) and counts `coach_usage`. Any redefinition must start from `74-*.sql`.
 - Every Coach turn logs one `[grind] coach turn {…}` JSON line (intent, tools
   with arguments, finish reason, tokens, retry) — read it before guessing why a
   reply was bad.

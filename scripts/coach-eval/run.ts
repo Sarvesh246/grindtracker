@@ -13,7 +13,7 @@
  *   --model ID     override GEMINI_MODEL
  *   --out FILE     write full per-run results as JSON
  *
- * Needs GEMINI_API_KEY (or GOOGLE_GENERATIVE_AI_API_KEY). No database, no auth:
+ * Needs COACH_EVAL_GEMINI_API_KEY (a key separate from the app's; --shared-key falls back to GEMINI_API_KEY). No database, no auth:
  * nothing here can touch real data.
  */
 import { writeFileSync } from 'node:fs'
@@ -50,9 +50,18 @@ const MODEL_ID = flag('model') || process.env.GEMINI_MODEL?.trim() || COACH_DEFA
 const MODEL_SETTINGS = coachModelSettings(MODEL_ID)
 const NEED = Math.ceil((RUNS * 2) / 3)
 
-const apiKey = process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim()
+// The eval makes ~135 calls per run. On the shared key that burned through
+// Gemini's 500/day free-tier cap and took the live Coach down for everyone, so
+// it gets its own key. --shared-key opts back into the app's key on purpose.
+const apiKey = process.env.COACH_EVAL_GEMINI_API_KEY?.trim()
+  || (argv.includes('--shared-key')
+    ? process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim()
+    : undefined)
 if (!apiKey) {
-  console.error('Missing GEMINI_API_KEY — run with --env-file=.env.local')
+  console.error(
+    "Missing COACH_EVAL_GEMINI_API_KEY — use a separate AI Studio key so the eval cannot exhaust the "
+    + "app's quota (or pass --shared-key to spend GEMINI_API_KEY). Run with --env-file=.env.local",
+  )
   process.exit(1)
 }
 const google = createGoogleGenerativeAI({ apiKey })
