@@ -1846,7 +1846,10 @@ html.reduce-motion .health-refresh-btn svg[data-spin='true'] {
 }
 
 /* ───────── Entry to GRIND Energy (overview) ───────── */
-.energy-entry {
+/* Scoped to .health-page so it outranks `.health-page a:has(> svg)` (the
+   inline icon-link rule): the chevron made this card match it, and as
+   inline-flex it shrank to its text, short of the cards around it. */
+.health-page .energy-entry {
   display: flex;
   align-items: center;
   gap: 14px;

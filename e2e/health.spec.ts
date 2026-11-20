@@ -303,3 +303,16 @@ test('readiness trend: usual band, picked reading, status and empty state', asyn
   await render(page, { state: 'disconnected', width: 390 })
   await expect(page.locator('#readiness')).toHaveCount(0)
 })
+
+test('the Energy link spans the same width as the cards around it', async ({ page }) => {
+  // Narrow enough that its text no longer fills the row on its own.
+  await render(page, { width: 390 })
+  const entry = page.locator('.energy-entry')
+  await expect(entry).toBeVisible()
+  const [box, above] = await entry.evaluate((el) => [
+    el.getBoundingClientRect().toJSON(),
+    (el.previousElementSibling as HTMLElement).getBoundingClientRect().toJSON()
+  ])
+  expect(Math.round(box.x)).toBe(Math.round(above.x))
+  expect(Math.round(box.width)).toBe(Math.round(above.width))
+})
