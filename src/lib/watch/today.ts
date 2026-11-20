@@ -11,7 +11,7 @@ import { rotationStateFrom } from '@/lib/utils/rotationStore'
 
 /** Watches have little memory: cap what one plan can cost (docs/watch-api.md). */
 export const MAX_TODAY_EXERCISES = 20
-export const MAX_NAME_CHARS = 32
+const MAX_NAME_CHARS = 32
 
 export interface TodayContextExercise {
   id: string
@@ -53,13 +53,13 @@ export interface TodayExercise {
 }
 
 /** One of the user's workout days, for the watch's day picker. */
-export interface TodayDay {
+interface TodayDay {
   id: string
   name: string
 }
 
 /** Enough for any real split; keeps `days` to a few hundred bytes. */
-export const MAX_TODAY_DAYS = 14
+const MAX_TODAY_DAYS = 14
 
 export type TodayPayload =
   | {

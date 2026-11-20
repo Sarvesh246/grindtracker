@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto'
  * the whole string is stored, so hashing here must match the SQL exactly:
  * `encode(sha256(convert_to(token, 'UTF8')), 'hex')`.
  */
-export const WATCH_TOKEN_PATTERN = /^gwt_[0-9a-f]{64}$/
+const WATCH_TOKEN_PATTERN =/^gwt_[0-9a-f]{64}$/
 
 export function hashWatchToken(token: string): string {
   return createHash('sha256').update(token, 'utf8').digest('hex')

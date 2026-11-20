@@ -6,17 +6,17 @@ import { z } from 'zod'
  * documented in docs/watch-api.md, so change both together.
  */
 
-export const MAX_SETS_PER_REQUEST = 200
+const MAX_SETS_PER_REQUEST = 200
 export const MAX_BODY_BYTES = 64 * 1024
 /** How far ahead of the server clock a device timestamp may be (clock skew). */
-export const FUTURE_SKEW_MS = 5 * 60_000
+const FUTURE_SKEW_MS = 5 * 60_000
 /** Matches grind_safe_past_date's 730-day floor. */
-export const MAX_AGE_MS = 730 * 86_400_000
+const MAX_AGE_MS = 730 * 86_400_000
 
 const isoUtc = z.iso.datetime({ offset: true, message: 'must be an ISO 8601 timestamp, e.g. 2026-11-16T18:04:05Z' })
 const uuid = z.uuid({ message: 'must be a UUID' })
 
-export const watchSetSchema = z.strictObject({
+const watchSetSchema = z.strictObject({
   id: uuid,
   exercise_id: uuid,
   set_number: z.int().min(1).max(100),
@@ -34,11 +34,11 @@ export const watchSetSchema = z.strictObject({
 })
 
 /** 12 hours at one reading a second (migration 70; 59 allowed 8,640). */
-export const MAX_HR_TRACE = 43_200
+const MAX_HR_TRACE = 43_200
 /** Base64 of MAX_HR_TRACE bytes. */
 const MAX_TRACE_B64 = Math.ceil(MAX_HR_TRACE / 3) * 4
 
-export const watchHrSchema = z.strictObject({
+const watchHrSchema = z.strictObject({
   /** One reading every `step` seconds from started_at; 0 = no reading. */
   trace: z.array(z.int().min(0).max(250)).max(MAX_HR_TRACE).optional(),
   /** The same trace as one byte a reading, base64: a 1 s trace as JSON
@@ -148,14 +148,17 @@ export const watchDailySchema = z.strictObject({
   /** `background`: sent by the watch's background service with the app closed. */
   source: z.enum(['app', 'background']).optional(),
   /** Migration 70. Every all-day HR sample the watch stored since its last
-   *  sync, unaveraged: seconds from local midnight and bpm, same length. */
+   *  sync, unaveraged: seconds from local midnight and bpm, same length.
+   *  Diagnostics never fail the snapshot: a bad value drops this key (`catch`),
+   *  not the day. */
   hr_raw: z
     .strictObject({
       t: z.array(z.int().min(-86_400).max(86_400)).max(480),
       v: z.array(z.int().min(25).max(250)).max(480),
     })
     .refine(r => r.t.length === r.v.length, { message: 't and v must be the same length' })
-    .optional(),
+    .optional()
+    .catch(undefined),
   /** Migration 70. The watch itself, for understanding it: never shown. */
   diag: z
     .strictObject({
@@ -179,17 +182,20 @@ export const watchDailySchema = z.strictObject({
       /** Per sensor value: [value, age in minutes], or a code: -1 empty,
        *  -2 threw, -3 not on this firmware. */
       probe: z
-        .record(z.string().max(16), z.union([z.tuple([z.number(), z.int().min(-1).max(100_000)]), z.int().min(-3).max(-1)]))
+        // A sample stamped ahead of the watch clock (the clock was stepped back)
+        // has a negative age. It is current, so it is clamped to 0, not rejected.
+        .record(z.string().max(16), z.union([z.tuple([z.number(), z.int().min(-100_000).max(100_000).transform(age => Math.max(0, age))]), z.int().min(-3).max(-1)]))
         .refine(r => Object.keys(r).length <= 24, { message: 'at most 24 probes' })
         .optional(),
     })
-    .optional(),
+    .optional()
+    .catch(undefined),
 })
 
 export type WatchDailyInput = z.infer<typeof watchDailySchema>
 
 /** The counter's rolling motion window: 75 s at 12.5 Hz. */
-export const MAX_REP_LAB_SAMPLES = 938
+const MAX_REP_LAB_SAMPLES = 938
 const milliG = z.int().min(-16_000).max(16_000)
 
 /** POST /rep-lab: one set recorded for tuning the wrist rep counter
@@ -226,7 +232,7 @@ const repLabMeta = {
 
 /** The tape format (watch builds from 2026-11-18b): each axis one base64
  *  string of int16, plus compass, heart rate, beat intervals and step marks. */
-export const watchRepLabTapeSchema = z.strictObject({
+const watchRepLabTapeSchema = z.strictObject({
   ...repLabMeta,
   enc: z.literal('i16b64'),
   ax: i16b64(MAX_REP_LAB_SAMPLES),
@@ -298,8 +304,6 @@ export const watchTelemetrySchema = z.strictObject({
   data: z.record(z.string().max(32), telemetryValue).refine(d => Object.keys(d).length <= 40, { message: 'at most 40 fields' }),
 })
 
-export type WatchTelemetryInput = z.infer<typeof watchTelemetrySchema>
-
 /** POST /readiness: one morning HRV check (migration 68). The server
  *  recomputes everything from `rr_ms`; `watch_rmssd` is only what the watch
  *  showed, kept to check the two agree. */
@@ -315,8 +319,6 @@ export const watchReadinessSchema = z.strictObject({
   watch_rmssd: z.number().min(0).max(1000).nullish(),
   app_version: z.string().max(32).nullish(),
 })
-
-export type WatchReadinessInput = z.infer<typeof watchReadinessSchema>
 
 /** Zod issues as `{ path, message }`, path dotted (`sets.2.reps`). */
 export function formatIssues(error: z.ZodError): { path: string; message: string }[] {

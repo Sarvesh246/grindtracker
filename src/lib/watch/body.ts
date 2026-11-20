@@ -28,32 +28,23 @@ export function toBodyPayload(input: WatchSessionInput) {
 }
 
 /** One byte a reading, base64 → readings. A byte over 250 is no reading. */
-export function decodeTrace(b64: string): number[] {
+function decodeTrace(b64: string): number[] {
   return Array.from(Buffer.from(b64, 'base64'), v => (v > 250 ? 0 : v))
 }
 
-const NOON_BUCKET = 48
-
-/** Daily snapshot → watch_upsert_daily's p_day, with the aggregates derived. */
+/**
+ * Daily snapshot → watch_upsert_daily's p_day. Body Battery high, low, wake and
+ * latest are not sent: migration 72's upsert ignores them and derives them from
+ * the cleaned series. `body_battery_now` is accepted from older watches and dropped.
+ */
 export function toDailyPayload(input: WatchDailyInput) {
   const bb = input.body_battery ?? null
   const stress = input.stress ?? null
-  const bbVals = (bb ?? []).filter((v): v is number => v != null)
-  if (input.body_battery_now != null) bbVals.push(input.body_battery_now)
-  const morning = (bb ?? []).slice(0, NOON_BUCKET).filter((v): v is number => v != null)
   const stressVals = (stress ?? []).filter((v): v is number => v != null)
-  let latest: number | null = input.body_battery_now ?? null
-  if (latest == null && bb) {
-    for (let i = bb.length - 1; i >= 0; i--) if (bb[i] != null) { latest = bb[i]; break }
-  }
   return {
     local_date: input.date,
     bb,
     stress,
-    bb_high: bbVals.length ? Math.max(...bbVals) : null,
-    bb_low: bbVals.length ? Math.min(...bbVals) : null,
-    bb_latest: latest,
-    bb_wake: morning.length ? Math.max(...morning) : null,
     stress_avg: stressVals.length ? Math.round(stressVals.reduce((a, b) => a + b, 0) / stressVals.length) : null,
     resting_hr: input.resting_hr ?? null,
     recovery_hours: input.recovery_hours ?? null,

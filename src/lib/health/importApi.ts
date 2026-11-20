@@ -22,6 +22,8 @@ const bodySchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('garmin_api'),
     token: z.string().max(100).optional(),
+    // Only used when a day carries no local-vs-GMT offset (half-hour zones are read from it).
+    timezone: z.string().max(80).optional(),
     days: z.array(z.unknown()).max(120)
   })
 ])
@@ -167,7 +169,7 @@ export async function healthImportRequest(request: Request, deps: WatchDeps) {
       nights = []
       skipped = []
       body.days.forEach((day, i) => {
-        const r = parseGarminNight(day, 'garmin_unofficial', { now })
+        const r = parseGarminNight(day, 'garmin_unofficial', { now, fallbackZone: body.timezone })
         if (r.ok) nights.push(r.night)
         else skipped.push({ key: `#${i + 1}`, reason: r.reason })
       })

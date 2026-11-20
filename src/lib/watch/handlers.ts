@@ -1,7 +1,7 @@
 import { LBS_PER_KG } from '@/lib/utils/units'
 import { analyzeRr } from '@/lib/body/hrv'
 import { ALGO_VERSION, cleanParams } from '../../../watch/tools/reps.mjs'
-import { watchError, watchJson } from './http'
+import { readBodyText, watchError, watchJson } from './http'
 import { hashWatchToken, readBearerToken } from './token'
 import { buildTodayPayload, type TodayContext } from './today'
 import { contextSignals, PUSH_FROM_BUCKET, PUSH_UNTIL_BUCKET, signalPush, toBodyPayload, toDailyPayload, todayBody, type BodyContext, type TodayBody } from './body'
@@ -43,7 +43,7 @@ export interface WatchDeps {
 }
 
 /** Per device, per rolling-ish minute (fixed window in watch_authenticate). */
-export const RATE_LIMIT_PER_MINUTE = 60
+const RATE_LIMIT_PER_MINUTE = 60
 
 type AuthOk = { ok: true; userId: string; deviceId: string; deviceName: string }
 type AuthResult = AuthOk | { ok: false; response: Response }
@@ -232,7 +232,7 @@ export function stepsPerSample(marks: [number, number][], n: number, total: numb
 
 /** The RPC's row shape: the tape format decoded to the first format's arrays
  *  plus the extra signals. The first format passes through unchanged. */
-export function repLabRow(body: WatchRepLabInput): Record<string, unknown> {
+function repLabRow(body: WatchRepLabInput): Record<string, unknown> {
   if (!('enc' in body)) return body
   const { enc: _enc, ax, ay, az, mx, my, mz, step_marks, slim, ...meta } = body
   const x = decodeI16(ax)
@@ -252,7 +252,7 @@ export function repLabRow(body: WatchRepLabInput): Record<string, unknown> {
 
 /** Puts each exercise's tuned counter settings on it, as `tune` with the
  *  watch's short keys. Only valid, in-range settings travel. */
-export function attachTuning(exercises: { id: string }[], rows: { exercise_id: string; params: unknown }[]): void {
+function attachTuning(exercises: { id: string }[], rows: { exercise_id: string; params: unknown }[]): void {
   const byId = new Map(rows.map(r => [r.exercise_id, cleanParams(r.params) as Record<string, number>]))
   for (const e of exercises) {
     const p = byId.get(e.id)
@@ -389,16 +389,12 @@ export function toSyncPayload(input: WatchSessionInput) {
 }
 
 async function readJsonBody(request: Request): Promise<{ ok: true; body: unknown } | { ok: false; response: Response }> {
-  const declared = Number(request.headers.get('content-length') ?? '0')
-  if (declared > MAX_BODY_BYTES) {
-    return { ok: false, response: watchError(413, 'payload_too_large', `Request body must be at most ${MAX_BODY_BYTES} bytes. Split the sets across requests.`) }
-  }
-  const text = await request.text()
-  if (Buffer.byteLength(text, 'utf8') > MAX_BODY_BYTES) {
+  const read = await readBodyText(request, MAX_BODY_BYTES)
+  if (!read.ok) {
     return { ok: false, response: watchError(413, 'payload_too_large', `Request body must be at most ${MAX_BODY_BYTES} bytes. Split the sets across requests.`) }
   }
   try {
-    return { ok: true, body: JSON.parse(text) }
+    return { ok: true, body: JSON.parse(read.text) }
   } catch {
     return { ok: false, response: watchError(400, 'invalid_json', 'Request body is not valid JSON.') }
   }

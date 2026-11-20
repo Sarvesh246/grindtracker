@@ -580,12 +580,55 @@ describe('POST /daily', () => {
     assert.equal(res.status, 422)
   })
 
-  it('422 when raw heart-rate times and values differ in length', async () => {
-    const res = await watchDaily(req('/daily', { body: { date: '2026-11-16', hr_raw: { t: [1, 2], v: [60] } } }), fakeDeps())
-    assert.equal(res.status, 422)
+  it('a bad raw heart-rate series drops hr_raw, not the day', async () => {
+    let day: Record<string, unknown> | null = null
+    const deps = fakeDeps({
+      watch_upsert_daily: args => {
+        day = args.p_day as Record<string, unknown>
+        return { data: { local_date: '2026-11-16' }, error: null }
+      },
+    })
+    const res = await watchDaily(req('/daily', { body: { date: '2026-11-16', steps: 4000, hr_raw: { t: [1, 2], v: [60] } } }), deps)
+    assert.equal(res.status, 200)
+    assert.equal((day as unknown as Record<string, unknown>).hr_raw, null)
+    assert.equal((day as unknown as Record<string, unknown>).steps, 4000)
   })
 
-  it('derives the aggregates from the series', async () => {
+  it('a probe age stamped ahead of the watch clock is clamped to 0, not a 422', async () => {
+    let day: Record<string, unknown> | null = null
+    const deps = fakeDeps({
+      watch_upsert_daily: args => {
+        day = args.p_day as Record<string, unknown>
+        return { data: { local_date: '2026-11-16' }, error: null }
+      },
+    })
+    const diag = { taken_at: '2026-11-16T19:14:03Z', probe: { bb_h: [36, -5], stress_h: [20, 3], spo2_h: -1 } }
+    const res = await watchDaily(req('/daily', { body: { date: '2026-11-16', steps: 4000, diag } }), deps)
+    assert.equal(res.status, 200)
+    const d = day as unknown as Record<string, unknown>
+    assert.deepEqual((d.diag as { probe: unknown }).probe, { bb_h: [36, 0], stress_h: [20, 3], spo2_h: -1 })
+    assert.equal(d.steps, 4000, 'the day still lands')
+  })
+
+  it('a bad diagnostic value drops diag, never the day', async () => {
+    let day: Record<string, unknown> | null = null
+    let upserts = 0
+    const deps = fakeDeps({
+      watch_upsert_daily: args => {
+        upserts++
+        day = args.p_day as Record<string, unknown>
+        return { data: { local_date: '2026-11-16' }, error: null }
+      },
+    })
+    const diag = { taken_at: '2026-11-16T19:14:03Z', battery: 150 }
+    const res = await watchDaily(req('/daily', { body: { date: '2026-11-16', steps: 4000, diag } }), deps)
+    assert.equal(res.status, 200)
+    assert.equal(upserts, 1)
+    assert.equal((day as unknown as Record<string, unknown>).diag, null)
+    assert.equal((day as unknown as Record<string, unknown>).steps, 4000)
+  })
+
+  it('sends the Body Battery and stress series, not server-derived aggregates', async () => {
     let day: Record<string, unknown> | null = null
     const deps = fakeDeps({
       watch_upsert_daily: args => {
@@ -605,11 +648,10 @@ describe('POST /daily', () => {
       },
     }), deps)
     assert.equal(res.status, 200)
-    const d = day as unknown as Record<string, number | null>
-    assert.equal(d.bb_high, 76)
-    assert.equal(d.bb_low, 30)
-    assert.equal(d.bb_latest, 30)
-    assert.equal(d.bb_wake, 76)
+    const d = day as unknown as Record<string, unknown>
+    assert.equal(d.bb_high, undefined, 'migration 72 derives Body Battery high from the series')
+    assert.equal(d.bb_latest, undefined)
+    assert.equal((d.bb as unknown[]).length, 96)
     assert.equal(d.resting_hr, 58)
     assert.equal(typeof d.stress_avg, 'number')
   })
@@ -666,6 +708,33 @@ describe('POST /daily', () => {
   it('422 for a series of the wrong length', async () => {
     const res = await watchDaily(req('/daily', { body: { date: '2026-11-16', body_battery: [1, 2, 3] } }), fakeDeps())
     assert.equal(res.status, 422)
+  })
+
+  it('a chunked body with no Content-Length is cut off at the cap, not read to the end', async () => {
+    let pulls = 0
+    const chunk = new Uint8Array(16 * 1024).fill(0x20)
+    const stream = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          pulls++
+          if (pulls > 1000) controller.close()
+          else controller.enqueue(chunk)
+        },
+      },
+      { highWaterMark: 0 },
+    )
+    const request = new Request('https://grind.test/api/watch/v1/daily', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
+      body: stream,
+      duplex: 'half',
+    } as RequestInit)
+    const deps = fakeDeps()
+    const res = await watchDaily(request, deps)
+    assert.equal(res.status, 413)
+    assert.equal((await errorOf(res)).code, 'payload_too_large')
+    assert.ok(pulls <= 8, `read ${pulls} chunks of 16 KB before stopping`)
+    assert.deepEqual(deps.calls.map(c => c.fn), ['watch_authenticate'], 'never reaches SQL')
   })
 
   it('needs a token', async () => {
