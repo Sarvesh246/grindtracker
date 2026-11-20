@@ -514,6 +514,11 @@ retries.
 - 60 requests per minute per device (all endpoints together). Over the limit:
   `429` with `Retry-After`.
 - Request body: 64 KB max, 200 sets max. `/today` response: < 4 KB.
+- New rows per account per 24 h (migration 73): rep-lab 600, telemetry 200,
+  readiness checks 30, day-snapshot log 400. Past a cap a new row is skipped
+  and answered `201` with `stored: false`, so the watch moves on; a re-send of
+  an id already stored always goes through. A day snapshot re-sent with the
+  same `diag.taken_at` is logged once (the day data itself still merges).
 - Batch sets: one request per finished exercise (or one at the end) is plenty;
   don't send one request per set when the phone is connected and idle-sync
   later.

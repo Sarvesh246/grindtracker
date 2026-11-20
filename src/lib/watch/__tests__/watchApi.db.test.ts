@@ -712,4 +712,41 @@ describe('watch API against the real schema', { skip: !baseUrl && 'set PARITY_DA
       assert.equal(asUser(BOB, `select count(*) from body_signal_labels where user_id = '${ALICE}'`), '0')
     })
   })
+
+  describe('write guards and bounded retention (migration 73)', () => {
+    it("caps a token's new telemetry rows a day, but always takes a re-send of one it has", async () => {
+      const KEEP = id('cap-keep')
+      db(`insert into watch_telemetry (id, user_id, kind) values ('${KEEP}', '${BOB}', 'session');
+          insert into watch_telemetry (id, user_id, kind) select gen_random_uuid(), '${BOB}', 'session' from generate_series(1, 199);`)
+      assert.equal(db(`select count(*) from watch_telemetry where user_id = '${BOB}'`), '200')
+      const over = await watchTelemetry(request('/telemetry', bobToken, { id: id('cap-over'), kind: 'session', data: {} }), deps)
+      assert.equal(over.status, 201)
+      assert.equal(((await over.json()) as { stored: boolean }).stored, false)
+      assert.equal(db(`select count(*) from watch_telemetry where user_id = '${BOB}'`), '200')
+      const again = await watchTelemetry(request('/telemetry', bobToken, { id: KEEP, kind: 'session', data: { mem: 1 } }), deps)
+      assert.equal(((await again.json()) as { stored: boolean }).stored, true)
+      assert.equal(db(`select data->>'mem' from watch_telemetry where id = '${KEEP}'`), '1')
+      // Another account's quota is its own.
+      const alice = await watchTelemetry(request('/telemetry', aliceToken, { id: id('cap-alice'), kind: 'session', data: {} }), deps)
+      assert.equal(((await alice.json()) as { stored: boolean }).stored, true)
+      db(`delete from watch_telemetry where user_id = '${BOB}'`)
+    })
+
+    it('logs a re-sent day snapshot once', () => {
+      const ins = `insert into body_sync_log (user_id, local_date, source, taken_at) values ('${ALICE}', current_date, 'background', '2026-11-19T23:04:45Z');`
+      db(ins + ins)
+      assert.equal(db(`select count(*) from body_sync_log where user_id = '${ALICE}' and taken_at = '2026-11-19T23:04:45Z'`), '1')
+      // Snapshots from builds before diagnostics have no taken_at and are never merged.
+      const bare = `insert into body_sync_log (user_id, local_date, source) values ('${ALICE}', current_date, 'app');`
+      const before = Number(db(`select count(*) from body_sync_log where user_id = '${ALICE}' and taken_at is null`))
+      db(bare + bare)
+      assert.equal(Number(db(`select count(*) from body_sync_log where user_id = '${ALICE}' and taken_at is null`)), before + 2)
+    })
+
+    it('retention reports whether rows were left for the next run', async () => {
+      const run = await serviceRpc('health_retention_cleanup', {})
+      assert.equal(run.error, null)
+      assert.equal((run.data as { more: boolean }).more, false)
+    })
+  })
 })
