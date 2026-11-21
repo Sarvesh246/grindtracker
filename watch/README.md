@@ -220,7 +220,9 @@ evidence. The JS reference and the watch apply the settings identically
 If the phone keeps failing to carry a large record, the watch retries it
 without the compass and beat intervals. If the sensor stream breaks in two
 sets while the extra sensors are on, it stops asking for them; switching Rep
-lab off and on gives them another chance.
+lab off and on, or installing a new build, gives them another chance. When the
+counter gives up on a set because the stream broke, the watch keeps recording
+the rest of that set for the lab.
 
 **The saved number is the truth**, so if AUTO is wrong, fix it before you
 finish the set, or Undo and save it again. A later Undo correction updates the

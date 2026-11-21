@@ -1066,7 +1066,14 @@ function testSensorDeliveryFailures(logger) {
     for (var i = 0; i < Reps.RATE; i++) { a.add(100); ts.add(40 * i + (i >= 12 ? 180 : 0)); }
     Reps.reset(); Reps.listening = true; Reps.sawMotion = true; Reps.count = 8;
     Reps.onSamples(a, a, a, ts, 2000, 0);
-    var ok = T.ck(logger, "internal 220ms dropout despite valid mean interval", Reps.interrupted && Reps.count == null && !Reps.listening);
+    var ok = T.ck(logger, "internal 220ms dropout stops counting despite valid mean interval",
+        Reps.interrupted && Reps.count == null && Reps.listening);
+    // The set keeps recording for the rep lab after the counter gives up.
+    var taped = Tape.total();
+    Reps.onSamples(a, a, a, null, 3000, 0);
+    ok = T.ck(logger, "later batches reach the tape, not the counter",
+        Tape.total() > taped && Reps.batches == 0 && Reps.lastBatch == 3000 && Reps.offer() == null) && ok;
+    Reps.listening = false;
     Reps.reset(); Reps.listening = true; Reps.lastBatch = 1000; Reps.sawMotion = true; Reps.count = 7;
     Reps.checkDelivery(6000);
     ok = T.ck(logger, "late callbacks have a grace period", Reps.offer() == 7) && ok;
@@ -1397,6 +1404,11 @@ function testRichSensorsBackOff(logger) {
     var ok = T.ck(logger, "two broken sets counted once each", Reps.richBad() == 2);
     Lab.setEnabled(true);
     ok = T.ck(logger, "switching Rep lab on resets it", Reps.richBad() == 0) && ok;
+    Store.put("rb", 2);
+    ok = T.ck(logger, "strikes stored by older builds do not count", Reps.richBad() == 0) && ok;
+    Store.put("rb", ["2026-11-18b", 2]);
+    ok = T.ck(logger, "strikes from another build do not count", Reps.richBad() == 0) && ok;
+    Store.del("rb");
     Reps.rich = false; Reps.listening = false; Reps.reset();
     return ok;
 }

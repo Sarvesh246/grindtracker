@@ -133,10 +133,16 @@ module Reps {
         if (v["lag"] != null) { LAG_MIN = v["lag"]; tuneTag += "lag" + v["lag"] + " "; }
     }
 
+    // Strikes belong to one build. 2026-11-18b rejected every batch with
+    // tied timestamps, which spent both strikes on a validator bug and would
+    // otherwise keep the extra sensors off for good.
     function richBad() {
         var v = Store.get("rb");
-        return v instanceof Lang.Number ? v : 0;
+        if (!(v instanceof Lang.Array) || v.size() != 2 || !Lab.VERSION.equals(v[0])) { return 0; }
+        return v[1] instanceof Lang.Number ? v[1] : 0;
     }
+
+    function strikeRich() { Store.put("rb", [Lab.VERSION, richBad() + 1]); }
     var head = 0;              // oldest entry once the motion buffer is full
     var clipped = false;
 
@@ -254,7 +260,7 @@ module Reps {
         // The extra sensors are the newest thing on this path: if the stream
         // misbehaves while they're on, count it, and after two such sets
         // stop asking for them (Lab.RICH_BAD_MAX).
-        if (rich && !richCounted && sawMotion) { richCounted = true; Store.put("rb", richBad() + 1); }
+        if (rich && !richCounted && sawMotion) { richCounted = true; strikeRich(); }
         interrupted = sawMotion;
         if (interrupted || !sensorStatus.equals(reason)) {
             System.println("reps: " + reason + " (" + detail + ") after " + batches + " batches");
@@ -263,7 +269,9 @@ module Reps {
         var seen = lastBatch;
         clearMotion();
         lastBatch = seen;
-        if (interrupted) { stop(); }
+        // Counting stops, but the listener stays on so the rep lab still
+        // records the rest of the set, the way a hand takeover does. A
+        // stream that goes silent is stopped by checkDelivery.
         sensorStatus = reason;
     }
 
@@ -374,7 +382,7 @@ module Reps {
     }
 
     function onData(data) {
-        if (!listening || interrupted || finishBy != null) { return; }
+        if (!listening || finishBy != null) { return; }
         Tape.feedExtra(data);
         var a = data == null ? null : data.accelerometerData;
         if (a == null || a.x == null || a.y == null || a.z == null) {
@@ -382,7 +390,7 @@ module Reps {
             // the extra sensors is not a gap: a stream that really stops is
             // caught by checkDelivery.
             lastBatch = System.getTimer();
-            if (manual || (data != null && (data.magnetometerData != null || data.heartRateData != null))) { return; }
+            if (manual || interrupted || (data != null && (data.magnetometerData != null || data.heartRateData != null))) { return; }
             inputGap("missing accelerometer", null);
             return;
         }
@@ -398,6 +406,8 @@ module Reps {
         var seen = lastBatch;
         var delay = seen == null ? 0 : now - seen;
         lastBatch = now;
+        // After a gap this set is only being recorded, not counted.
+        if (interrupted) { return; }
         if (n == 0 || n > 2 * RATE || ys.size() != n || zs.size() != n) {
             inputGap("invalid sample count", n);
             return;
