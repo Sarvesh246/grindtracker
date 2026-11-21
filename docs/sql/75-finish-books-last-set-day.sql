@@ -28,7 +28,8 @@
 --    production although 30-notification-edge-fixes.sql grants it only to
 --    service_role. Harmless (it only deletes sent/cancelled rows older than
 --    14 days, as the cron does), but it should match the repo.
---  * set_user_rotation_updated_at had no pinned search_path.
+--  * Existing deployments may have a set_user_rotation_updated_at trigger
+--    function that needs a pinned search_path.
 --
 -- Idempotent. Apply before deploying the client that sends
 -- p_utc_offset_minutes: the 4-argument function is dropped, and a client
@@ -221,7 +222,13 @@ grant execute on function public.uncomplete_session(uuid, date) to authenticated
 revoke all on function public.grind_prune_scheduled_notifications() from public, anon, authenticated;
 grant execute on function public.grind_prune_scheduled_notifications() to service_role;
 
-alter function public.set_user_rotation_updated_at() set search_path = public;
+do $$
+begin
+  if to_regprocedure('public.set_user_rotation_updated_at()') is not null then
+    alter function public.set_user_rotation_updated_at() set search_path = public;
+  end if;
+end;
+$$;
 
 -- Record that this migration ran (needs 00-migration-tracking.sql).
 insert into public.grind_migrations (version) values ('75-finish-books-last-set-day') on conflict (version) do nothing;
