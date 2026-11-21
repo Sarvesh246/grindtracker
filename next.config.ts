@@ -22,6 +22,8 @@ const supabaseOrigin = (() => {
 // React needs eval() for dev-only debugging features (callstack reconstruction);
 // production never does, so 'unsafe-eval' is dev-only.
 const isProd = process.env.NODE_ENV === 'production'
+const localBackend = /^http:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?$/.test(supabaseOrigin)
+const supabaseSocket = supabaseOrigin.replace(/^https?/, supabaseOrigin.startsWith('https:') ? 'wss' : 'ws')
 
 const csp = [
   `default-src 'self'`,
@@ -31,14 +33,14 @@ const csp = [
   `style-src 'self' 'unsafe-inline' https://vercel.live`,
   `img-src 'self' data: blob: https://lh3.googleusercontent.com ${supabaseOrigin} https://vercel.live https://vercel.com`,
   `font-src 'self' data: https://vercel.live https://assets.vercel.com`,
-  `connect-src 'self' ${supabaseOrigin} wss://*.supabase.co https://vitals.vercel-insights.com https://va.vercel-scripts.com https://vercel.live wss://ws-us3.pusher.com`,
+  `connect-src 'self' ${supabaseOrigin} ${supabaseSocket} wss://*.supabase.co https://vitals.vercel-insights.com https://va.vercel-scripts.com https://vercel.live wss://ws-us3.pusher.com`,
   `frame-src https://vercel.live`,
   `frame-ancestors 'none'`,
   `object-src 'none'`,
   `base-uri 'self'`,
   `form-action 'self'`,
   `manifest-src 'self'`,
-  `upgrade-insecure-requests`,
+  ...(!localBackend ? ['upgrade-insecure-requests'] : []),
 ].join('; ')
 
 const securityHeaders = [

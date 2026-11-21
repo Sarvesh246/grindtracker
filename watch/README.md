@@ -265,3 +265,23 @@ saved on the watch until then anyway.
 
 > **Gotcha:** `source/Secrets.mc` must carry the `(:background)` annotation
 > (the example file has it), or the background service can't read the token.
+
+### Verify a release on Windows
+
+Run `watch/tools/verify.ps1 -SdkBin <SDK bin directory> -Release` from PowerShell.
+It compiles and runs the Forerunner 165 Music simulator tests, then prints the
+SHA-256 fingerprint for the signed `watch/bin/grind-release.prg`. This file uses
+your watch token, so keep it local. Copy it as `GARMIN/APPS/grind.prg` with the
+same signing key as the installed app.
+
+Open **MENU → Workout sync** to review recent workouts, retry pending uploads and
+see rejected sets. Keep GRIND open with the phone connected while workout uploads
+run. Health snapshots can sync with GRIND closed. A workout may show **Sets
+synced · HR pending** while the watch retries its optional heart-rate data.
+
+For the next physical workout, record the **Build** shown in MENU, count known
+reps on both wrist-visible and wrist-still lifts, and record any AUTO offer and
+its latency. Switch exercises during rest and verify that the countdown keeps
+running. Reconnect first with GRIND closed, then open it and check Workout sync.
+Report exact matches, wrong offers, and no offers by build and exercise. Manual
+entry remains available throughout.

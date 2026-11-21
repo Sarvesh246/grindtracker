@@ -6,7 +6,7 @@
 | --- | --- |
 | `check` | typecheck, unit tests (`npm test`), lint, `npm audit` (critical), production build with placeholder Supabase values |
 | `sql-parity` | `npm run test:sql-parity` against a Postgres 16 service container |
-| `e2e` | builds the app, installs Chromium and runs Playwright (`npm run test:e2e`) against `npm run start` |
+| `e2e` | builds the app, starts a disposable Supabase stack and runs Playwright in Chromium and WebKit (`npm run test:e2e`) against `npm run start` |
 
 ## SQL ↔ TypeScript parity
 
@@ -37,22 +37,20 @@ needs the full Supabase schema and is not compared.
 
 ## End-to-end tests
 
-Today `e2e/` covers the **public shell** (login page, redirects, offline service
-worker) and needs no real credentials, so the `e2e` job falls back to placeholder
-Supabase values. There is **no signed-in workout flow test yet**; writing one
-needs a test user and a throwaway Supabase project.
+CI boots a fresh local Supabase stack, loads the public base-schema fixture and
+all tracked migrations in filename order, then verifies the migration ledger.
+The SQL fixture supplies the dashboard-created tables and policies. The stack
+supplies real Auth, PostgREST, Realtime and Storage. The signed-in workout suite
+creates two fixture accounts, uses the production build in Chromium and WebKit,
+and removes the fixture accounts when it finishes.
 
-To point the job at a throwaway project, add these repository secrets:
+Locally, start a disposable Supabase stack using the same commands as the e2e
+job. Set `GRIND_DB_E2E=1`, `NEXT_PUBLIC_SUPABASE_URL`,
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` and `E2E_LOCAL_SERVICE_ROLE_KEY` from that
+stack. The signed-in suite accepts only a loopback Supabase URL.
 
-| Secret | Used for |
-| --- | --- |
-| `E2E_SUPABASE_URL` | `NEXT_PUBLIC_SUPABASE_URL` for the build and dev server |
-| `E2E_SUPABASE_ANON_KEY` | `NEXT_PUBLIC_SUPABASE_ANON_KEY` |
-| `E2E_SUPABASE_SERVICE_ROLE_KEY` | enables the `migrations:check` step, which fails the job if that project is missing any `docs/sql` migration |
-
-The throwaway project must be built by hand from `docs/sql/`, like production;
-the repo has no base-schema file to create it from scratch.
-Never put the production service-role key in CI.
+The Garmin release check uses the installed Connect IQ SDK and Forerunner
+165 Music device definition. See [watch build instructions](../watch/README.md).
 
 ## Migration check
 

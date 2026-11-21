@@ -40,6 +40,9 @@ class Net {
     var dayWant = null;  // day id being fetched for the picker
     var upSid = null;
     var upSets = null;
+    var upPayload = null;
+    var sensorKey = null;
+    var sensorNextAt = 0;
     var labKey = null;
     var labOk = 0;           // this run's rep lab uploads, for the health record
     var labFailed = 0;
@@ -200,7 +203,7 @@ class Net {
     // Also runs between normal sync ticks so a newly reconnected phone can
     // carry saved workouts promptly. The normal tick handles other traffic.
     function tickUploads() {
-        if (busy || authError || now() < nextAt || !connected() || Store.queue().size() == 0) { return false; }
+        if (busy || authError || now() < nextAt || !connected() || (Store.queue().size() == 0 && !sensorDue())) { return false; }
         flush();
         return true;
     }
@@ -229,6 +232,7 @@ class Net {
     // Right after Save: don't wait out a backoff from an earlier failure.
     function kick() {
         nextAt = 0;
+        sensorNextAt = 0;
         flush();
     }
 
@@ -236,7 +240,8 @@ class Net {
         if (busy || authError || !connected() || now() < nextAt) { return; }
         var q = Store.queue();
         if (q.size() == 0) {
-            if (labDue()) { lab(); }
+            if (sensorDue()) { sendSensor(); }
+            else if (labDue()) { lab(); }
             return;
         }
         var sid = q[0];
@@ -252,13 +257,16 @@ class Net {
         upSid = sid;
         upSets = sets;
         var heart = Logic.pendingCount(sets) <= Config.SYNC_BATCH ? Store.heart(sid) : null;
-        request("/sessions", Logic.buildPayload(meta, sets, Config.SYNC_BATCH, heart), true, method(:onUpload));
+        upPayload = Logic.buildPayload(meta, sets, Config.SYNC_BATCH, heart);
+        upPayload["batch_upload"] = true;
+        request("/sessions", upPayload, true, method(:onUpload));
     }
 
     function retire(sid, sets) {
         for (var i = 0; i < sets.size(); i++) {
             if (sets[i]["y"] == 2) { Store.bury(sid); return; }
         }
+        Store.recordWorkout(Store.meta(sid));
         Store.dropSession(sid);
         Store.dequeue(sid);
     }
@@ -271,8 +279,17 @@ class Net {
         var sets = upSets;
         upSid = null;
         upSets = null;
+        var payload = upPayload;
+        upPayload = null;
         var r = Logic.classify(code, err);
         if (r == Logic.R_OK) {
+            var sensor = data instanceof Lang.Dictionary ? data["sensor"] : null;
+            if (payload != null && sensor instanceof Lang.Dictionary && "pending".equals(sensor["status"])) {
+                var batch = payload["sets"];
+                var key = batch.size() == 0 ? sid : batch[0]["id"];
+                payload["sensor_retry"] = true;
+                Store.keepSensor(key, payload);
+            }
             var changed = Logic.applyResult(sets, data);
             if (changed.size() == 0) {
                 // A 2xx without a matching set ID has made no progress.
@@ -285,6 +302,12 @@ class Net {
             fails = 0;
             nextAt = 0;
             keepResult(sid, data);
+            if (data instanceof Lang.Dictionary && data["sets"] instanceof Lang.Dictionary) {
+                var rejected = data["sets"]["rejected"];
+                if (rejected instanceof Lang.Array && rejected.size() > 0) {
+                    rememberIssue(sid, rejected[0]["code"]);
+                }
+            }
             for (var i = 0; i < changed.size(); i++) {
                 Store.putSet(sid, changed[i], sets[changed[i]]);
             }
@@ -306,6 +329,7 @@ class Net {
         } else if (r == Logic.R_DEAD) {
             // The server will never take this as-is. Keep the data on the
             // watch, stop retrying it, and let the rest of the queue through.
+            rememberIssue(sid, err);
             Store.bury(sid);
             flush();
         } else {
@@ -332,6 +356,7 @@ class Net {
             Store.putMeta(m);
         }
         if (deterministic && n >= Config.UPLOAD_BURY_AFTER) {
+            rememberIssue(sid, "no_receipt");
             Store.bury(sid);
             headTries = 0;
             return;
@@ -346,6 +371,69 @@ class Net {
             Store.put("q", q);
             System.println("upload " + sid + " moved to the back after failures");
         }
+    }
+
+    function sensorDue() {
+        return now() >= sensorNextAt && Store.sensors().size() > 0;
+    }
+
+    function sendSensor() {
+        var q = Store.sensors();
+        if (q.size() == 0) { return; }
+        sensorKey = q[0];
+        var payload = Store.get("hs_" + sensorKey);
+        if (payload == null) {
+            Store.retireSensor(sensorKey);
+            sensorKey = null;
+            return;
+        }
+        request("/sessions", payload, true, method(:onSensor));
+    }
+
+    function onSensor(code, data) {
+        busy = false;
+        var key = sensorKey;
+        sensorKey = null;
+        if ((code == 200 || code == 201) && data instanceof Lang.Dictionary
+            && data["sensor"] instanceof Lang.Dictionary && "stored".equals(data["sensor"]["status"])) {
+            Store.retireSensor(key);
+            sensorNextAt = 0;
+        } else {
+            var q = Store.sensors();
+            Store.put("qh", Logic.qAdd(Logic.qRemove(q, key), key));
+            sensorNextAt = now() + 60;
+            if (code == 401) { authError = true; }
+        }
+        WatchUi.requestUpdate();
+        flush();
+    }
+
+    function rememberIssue(sid, code) {
+        var m = Store.meta(sid);
+        if (m == null) { return; }
+        m["err"] = code == null ? "upload_refused" : code;
+        Store.putMeta(m);
+    }
+
+    function retryWorkout(sid) {
+        if (Store.dead().indexOf(sid) >= 0) {
+            var sets = Store.sets(sid);
+            for (var i = 0; i < sets.size(); i++) {
+                if (sets[i]["y"] == 2) {
+                    sets[i]["y"] = 0;
+                    Store.putSet(sid, i, sets[i]);
+                }
+            }
+            var m = Store.meta(sid);
+            if (m != null) {
+                m["fx"] = 0;
+                m["err"] = null;
+                Store.putMeta(m);
+            }
+            Store.enqueue(sid);
+            Store.put("qd", Logic.qRemove(Store.dead(), sid));
+        }
+        kick();
     }
 
     // --- POST /rep-lab ------------------------------------------------------
@@ -428,11 +516,11 @@ class Net {
     }
 
     function workoutStatus(sid) {
-        if (Store.dead().indexOf(sid) >= 0) { return "Sync failed"; }
-        if (Store.queue().indexOf(sid) < 0) { return "Synced to GRIND"; }
+        if (Store.dead().indexOf(sid) >= 0) { return "Needs attention"; }
+        if (Store.queue().indexOf(sid) < 0) { return Store.sensorPending(sid) ? "Sets synced · HR pending" : "Synced to GRIND"; }
         if (authError) { return "Auth error"; }
         if (busy && sid.equals(upSid)) { return "Syncing to GRIND…"; }
-        return connected() ? "Waiting to sync" : "Will sync when connected";
+        return connected() ? "Waiting to sync" : "Open GRIND with phone";
     }
 
     // Longer form for Home. The last contact of any kind: a workout upload

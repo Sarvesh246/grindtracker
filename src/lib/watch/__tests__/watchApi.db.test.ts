@@ -520,6 +520,40 @@ describe('watch API against the real schema', { skip: !baseUrl && 'set PARITY_DA
       assert.equal(db(`select weight from session_logs where id = '${id('set1')}'`), '140')
     })
 
+    it('stages Garmin batches beside a web draft and retries sensor storage separately', async () => {
+      const sid = id('staged-watch')
+      const day = 'legs'
+      const exercise = id('staged-legs-exercise')
+      db(`insert into public.exercises (id, user_id, day_type, name, active)
+          values ('${exercise}', '${ALICE}', '${day}', 'Staged squat', true)`)
+      const web = JSON.parse(asUser(ALICE, `select start_or_resume_session('${day}')`)).session.id
+      const first = set('staged-set-one', exercise, 1, 135, 10, { hr_peak: 150 })
+      const second = set('staged-set-two', exercise, 2, 135, 5)
+      const payload = { id: sid, workout_id: day, started_at: iso(20), batch_upload: true }
+      const staged = await watchSessions(request('/sessions', aliceToken, { ...payload, sets: [first] }), deps)
+      assert.equal(staged.status, 201)
+      assert.equal((await staged.json()).sensor.status, 'pending')
+      assert.equal(db(`select count(*) from sessions where id = '${sid}'`), '0')
+
+      const finalPayload = { ...payload, ended_at: iso(2), sets: [second], hr: { trace: [110, 130], step: 5 } }
+      const faulty = { ...deps, rpc: (fn: string, args: Record<string, unknown>) =>
+        fn === 'watch_store_session_body' ? Promise.resolve({ data: null, error: { message: 'fixture failure' } }) : serviceRpc(fn, args) }
+      const done = await watchSessions(request('/sessions', aliceToken, finalPayload), faulty)
+      assert.equal(done.status, 201)
+      assert.equal((await done.json()).sensor.status, 'pending')
+      assert.equal(db(`select count(*) from session_logs where session_id = '${sid}'`), '2')
+      assert.equal(db(`select (completed_at is null) from sessions where id = '${web}'`), 't')
+
+      for (const retry of [finalPayload, { ...payload, sets: [first] }]) {
+        const response = await watchSessions(request('/sessions', aliceToken, { ...retry, sensor_retry: true }), deps)
+        assert.equal(response.status, 200)
+        assert.equal((await response.json()).sensor.status, 'stored')
+      }
+      assert.equal(db(`select cardinality(hr_trace) from sessions where id = '${sid}'`), '2')
+      assert.equal(db(`select hr_peak from session_logs where id = '${first.id}'`), '150')
+      assert.equal(db(`select count(*) from session_logs where session_id = '${sid}'`), '2')
+    })
+
     it('refuses what the schema forbids, with stable codes', async () => {
       const unknownDay = await watchSessions(request('/sessions', aliceToken, {
         id: id('s3'), workout_id: 'arms', started_at: iso(20), sets: [],
@@ -752,6 +786,38 @@ describe('watch API against the real schema', { skip: !baseUrl && 'set PARITY_DA
 
   // docs/sql/75: a workout left open and saved days later counts on the day
   // it was lifted, not the day it was saved.
+  describe('durable web commands', () => {
+    it('validates the owner, preserves performed time and makes finish/discard retries safe', () => {
+      const sid = id('durable-web')
+      const exercise = id('durable-exercise')
+      const intent = id('durable-intent')
+      db(`insert into public.exercises (id, user_id, day_type, name, active)
+          values ('${exercise}', '${ALICE}', 'durable', 'Fixture lift', true)`)
+      assert.throws(() => asUser(BOB,
+        `select materialize_workout_draft('${ALICE}', '${sid}', 'durable', now() - interval '2 days')`))
+      assert.equal(asUser(ALICE,
+        `select materialize_workout_draft('${ALICE}', '${sid}', 'durable', now() - interval '2 days')`), 't')
+      asUser(ALICE, `insert into session_logs (session_id,exercise_id,set_number,weight,reps,performed_at)
+        values ('${sid}','${exercise}',1,100,8, date_trunc('day', now() at time zone 'UTC') at time zone 'UTC' + interval '4 hours');`)
+      asUser(ALICE, `update session_logs set weight = 105, performed_at = now() where session_id = '${sid}'`)
+      const finish = `select finish_workout_intent('${ALICE}','${sid}','${intent}',current_date,null,20,-360,'America/Chicago')`
+      assert.equal(asUser(ALICE, finish), asUser(ALICE, finish))
+      const day = db("select (now() at time zone 'UTC')::date - 1")
+      assert.equal(db(`select local_date from sessions where id = '${sid}'`), day)
+      assert.throws(() => asUser(ALICE, `select discard_open_workout('${ALICE}','${sid}')`), /SESSION_ALREADY_COMPLETED/)
+      assert.equal(db(`select count(*) from session_logs where session_id = '${sid}'`), '1')
+
+      const open = id('discard-exact')
+      db(`insert into sessions(id,user_id,day_type) values ('${open}','${ALICE}','durable');
+        insert into session_logs(session_id,exercise_id,set_number,weight,reps) values ('${open}','${exercise}',1,95,8);`)
+      assert.throws(() => asUser(BOB, `select discard_open_workout('${ALICE}','${open}')`), /AUTH_REQUIRED/)
+      for (let attempt = 0; attempt < 2; attempt++) {
+        assert.equal(asUser(ALICE, `select discard_open_workout('${ALICE}','${open}')`), 't')
+      }
+      assert.equal(db(`select count(*) from session_logs where session_id = '${open}'`), '0')
+    })
+  })
+
   describe('complete_session books the day of the last set', () => {
     // UTC-5. The last set is 3 days ago at 03:30 UTC, i.e. 22:30 local the
     // evening before: the case the old code booked to "today".

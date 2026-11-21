@@ -91,6 +91,8 @@ export const data: HealthSummary = {
   sleepState: 'ready',
   history: days as HealthSummary['history'],
   historyError: false,
+  sampleCoverage: [],
+  sampleHistoryError: false,
   connections: [
     {
       id: 'fixture-connection',

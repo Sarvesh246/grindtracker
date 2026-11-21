@@ -13,7 +13,7 @@ using Toybox.Time;
 // per-value limit) and at most MAX_RECORDS waiting, oldest dropped first.
 module Lab {
     const MAX_RECORDS = 60;
-    const VERSION = "2026-11-20b";
+    const VERSION = Body.BUILD_ID;
     const RICH_BAD_MAX = 2;    // sets with a broken stream before the extra sensors go off
 
     // On unless switched off in the Home menu.

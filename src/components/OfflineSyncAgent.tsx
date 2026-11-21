@@ -3,7 +3,11 @@
 import { useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { QUEUED_EVENT } from '@/lib/utils/offlineQueue'
-import { hasUnsyncedWork, syncAllPending } from '@/lib/offline/sync'
+import { syncAllPending } from '@/lib/offline/sync'
+import { WORKOUT_STORE_EVENT } from '@/lib/offline/workoutStore'
+import { lastKnownUserId, rememberUserId } from '@/lib/offline/localSession'
+import { resetAppDataCache } from '@/lib/cache/appDataCache'
+import { clearOfflineCaches } from '@/lib/offline/clearOnSignOut'
 import { browserIsOffline } from '@/lib/offline/offlineGate'
 
 /** First retry after a failed pass; doubles each time up to the cap. */
@@ -47,10 +51,6 @@ export default function OfflineSyncAgent() {
 
     async function run() {
       if (stopped || running) return
-      if (!hasUnsyncedWork()) {
-        attempt = 0
-        return
-      }
       // Resumed by the `online` / `visibilitychange` events below.
       if (browserIsOffline() || document.visibilityState === 'hidden') return
       running = true
@@ -82,16 +82,35 @@ export default function OfflineSyncAgent() {
     /** Something new was queued: give the workout screen a moment, then sync. */
     const onQueued = () => schedule(BASE_DELAY_MS)
 
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        clearOfflineCaches()
+        resetAppDataCache()
+      } else if (session?.user.id) {
+        const previous = lastKnownUserId()
+        if (previous && previous !== session.user.id) {
+          clearOfflineCaches()
+          rememberUserId(session.user.id)
+          resetAppDataCache()
+        } else {
+          rememberUserId(session.user.id)
+        }
+      }
+      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') schedule(0)
+    })
     window.addEventListener('online', kick)
     window.addEventListener(QUEUED_EVENT, onQueued)
+    window.addEventListener(WORKOUT_STORE_EVENT, onQueued)
     document.addEventListener('visibilitychange', onVisibility)
     void run()
 
     return () => {
       stopped = true
+      subscription.unsubscribe()
       clearTimer()
       window.removeEventListener('online', kick)
       window.removeEventListener(QUEUED_EVENT, onQueued)
+      window.removeEventListener(WORKOUT_STORE_EVENT, onQueued)
       document.removeEventListener('visibilitychange', onVisibility)
     }
   }, [])

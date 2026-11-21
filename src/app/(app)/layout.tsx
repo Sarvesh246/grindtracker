@@ -53,12 +53,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <DemoModeProvider initialDemoMode={initialDemoMode}>
     <OnboardingProvider userId={onboardingUserId} initialState={onboardingInitial}>
     <ToastProvider>
-    <RouteCacheSync />
+    <RouteCacheSync owner={user?.id ?? null} />
     <OfflineSyncAgent />
 {/* Coach FAB + sheet: dynamically imported (keeps Fab/Sheet off the initial
         home bundle). Mid-workout stays mounted — FAB hidden; Ask Coach opens
         a compact sheet. */}
-    <CoachRootLazy />
+    <CoachRootLazy key={onboardingUserId} />
     {/* Fixed, non-scrolling app shell. Only .app-main scrolls; the bottom nav is
         a flow child pinned at the bottom by layout (never position:fixed), so it
         can't strand. See .app-shell in globals.css. */}

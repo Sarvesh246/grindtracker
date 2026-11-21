@@ -1,14 +1,16 @@
 import { SupabaseClient } from '@supabase/supabase-js'
 import { reportError } from '@/lib/utils/reportError'
-import { resolveSessionAlias } from '@/lib/offline/localSession'
-
-const STORAGE_KEY = 'grind_offline_set_queue_v2'
+import { lastKnownUserId, resolveSessionAlias } from '@/lib/offline/localSession'
+import { changeWorkoutStore, readWorkoutStore } from '@/lib/offline/workoutStore'
 
 interface QueuedOpBase {
   sessionId: string
   exerciseId: string
   setNumber: number
   queuedAt: number
+  revision?: string
+  rejected?: string
+  performedAt?: string
 }
 
 export type QueuedOp =
@@ -25,93 +27,64 @@ export type QueuedOp =
     })
   | (QueuedOpBase & { kind: 'delete' })
 
-function readQueue(): QueuedOp[] {
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
-  }
-}
-
-function writeQueue(queue: QueuedOp[]) {
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(queue))
-  } catch {
-    // ignore — private mode / storage full; the change stays applied locally
-    // for this session even if it can't be queued for a later retry.
-  }
-}
-
-function sameSlot(a: QueuedOpBase, b: QueuedOpBase) {
+function sameSlot(a: QueuedOpBase, b: Pick<QueuedOpBase, 'sessionId' | 'exerciseId' | 'setNumber'>) {
   return a.sessionId === b.sessionId && a.exerciseId === b.exerciseId && a.setNumber === b.setNumber
 }
 
-/**
- * Persist a write that failed to reach Supabase (after the caller's own
- * retries) so it survives closing the app, and can be replayed once the
- * connection comes back. Only one op per (session, exercise, set) slot is kept.
- */
-/** Fired whenever a write is queued, so the background sync agent can wake up. */
 export const QUEUED_EVENT = 'grind:queued'
-/** Fired after a flush settles or rejects sets, so an open workout can update its badges. */
 export const FLUSHED_EVENT = 'grind:queue-flushed'
 
-export function queueOp(op: QueuedOp) {
-  // A handler that began before a local→server session swap may still carry the
-  // old id; resolve it so the write lands on the real session.
-  const sessionId = resolveSessionAlias(op.sessionId)
-  const resolved = sessionId === op.sessionId ? op : { ...op, sessionId }
-  const queue = readQueue().filter(q => !sameSlot(q, resolved))
-  queue.push(resolved)
-  writeQueue(queue)
-  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
-    window.dispatchEvent(new CustomEvent(QUEUED_EVENT))
-  }
+export function queueOp(op: QueuedOp, owner = lastKnownUserId()) {
+  return queueWorkoutOps([op], owner)
 }
 
-export function removeQueuedOp(sessionId: string, exerciseId: string, setNumber: number) {
-  const sid = resolveSessionAlias(sessionId)
-  writeQueue(readQueue().filter(q => !sameSlot(q, { sessionId: sid, exerciseId, setNumber, queuedAt: 0 })))
+export async function queueWorkoutOps(ops: QueuedOp[], owner = lastKnownUserId()) {
+  if (!owner) throw new Error('Cannot save workout without an account')
+  await changeWorkoutStore(owner, state => {
+    for (const op of ops) {
+      const sessionId = state.aliases[op.sessionId] ?? op.sessionId
+      if (state.discarded.includes(sessionId) || state.discarding.includes(sessionId) || state.finishes[sessionId]) {
+        throw new Error('This workout is closing')
+      }
+      const next = { ...op, sessionId, revision: crypto.randomUUID() }
+      const previous = state.ops.find(q => sameSlot(q, next))
+      if (next.kind === 'upsert' && previous?.kind === 'upsert' && !previous.isSkipped) {
+        next.performedAt = previous.performedAt ?? new Date(previous.queuedAt).toISOString()
+      }
+      state.ops = state.ops.filter(q => !sameSlot(q, next))
+      state.ops.push(next)
+    }
+  })
+  window.dispatchEvent(new CustomEvent(QUEUED_EVENT))
 }
 
-export function clearQueuedOpsForSession(sessionId: string) {
-  const sid = resolveSessionAlias(sessionId)
-  writeQueue(readQueue().filter(q => q.sessionId !== sid))
+export async function removeQueuedOp(
+  sessionId: string, exerciseId: string, setNumber: number, owner = lastKnownUserId(), revision?: string,
+) {
+  if (!owner) return
+  const sid = resolveSessionAlias(sessionId, owner)
+  const queued = getQueuedOps(sid, owner).find(q =>
+    sameSlot(q, { sessionId: sid, exerciseId, setNumber }) && (!revision || q.revision === revision))
+  if (queued) await changeWorkoutStore(owner, state => {
+    state.ops = state.ops.filter(q => q.revision !== queued.revision)
+  })
 }
 
-export function clearQueuedOpsForExercise(sessionId: string, exerciseId: string) {
-  const sid = resolveSessionAlias(sessionId)
-  writeQueue(readQueue().filter(q => !(q.sessionId === sid && q.exerciseId === exerciseId)))
+export async function clearQueuedOpsForExercise(sessionId: string, exerciseId: string, owner = lastKnownUserId()) {
+  if (!owner) return
+  await changeWorkoutStore(owner, state => {
+    const sid = state.aliases[sessionId] ?? sessionId
+    state.ops = state.ops.filter(q => !(q.sessionId === sid && q.exerciseId === exerciseId))
+  })
 }
 
-export function getQueuedOps(sessionId: string): QueuedOp[] {
-  const sid = resolveSessionAlias(sessionId)
-  return readQueue().filter(q => q.sessionId === sid)
+export function getQueuedOps(sessionId: string, owner = lastKnownUserId()): QueuedOp[] {
+  const sid = resolveSessionAlias(sessionId, owner)
+  return readWorkoutStore(owner).ops.filter(q => q.sessionId === sid)
 }
 
-/** Every session that currently has unsynced writes (any user, any age). */
-export function getQueuedSessionIds(): string[] {
-  return [...new Set(readQueue().map(q => q.sessionId))]
-}
-
-/**
- * Re-point every queued op from one session id to another — used when a
- * workout started offline under a locally minted id gets its real server
- * session. If the target already has an op for the same slot, the newer wins.
- */
-export function remapQueuedSession(fromSessionId: string, toSessionId: string) {
-  if (fromSessionId === toSessionId) return
-  const moved = readQueue().map(q => (q.sessionId === fromSessionId ? { ...q, sessionId: toSessionId } : q))
-  const bySlot = new Map<string, QueuedOp>()
-  for (const q of moved) {
-    const key = `${q.sessionId}|${q.exerciseId}|${q.setNumber}`
-    const prev = bySlot.get(key)
-    if (!prev || prev.queuedAt <= q.queuedAt) bySlot.set(key, q)
-  }
-  writeQueue([...bySlot.values()])
+export function getQueuedSessionIds(owner: string): string[] {
+  return [...new Set(readWorkoutStore(owner).ops.map(q => q.sessionId))]
 }
 
 /**
@@ -181,71 +154,64 @@ export function withRequestTimeout<T extends { error: unknown }>(
 type SlotRef = { exerciseId: string; setNumber: number }
 export type FlushResult = { synced: SlotRef[]; rejected: SlotRef[] }
 
-const inFlight = new Map<string, Promise<FlushResult>>()
-
-/**
- * Replay every queued op for a session. Returns the slots that synced
- * successfully so the caller can clear their local "pending sync" indicator,
- * and the slots the server permanently refused (dropped from the queue and
- * reported) so the caller can un-check them.
- * Always writes is_pr: false — server recomputes on finish.
- *
- * Built to be gentle on a bad connection (and on whatever else the phone is
- * streaming over it):
- *  - one flush per session at a time — the mount, `online`, retry button and
- *    finish paths all share a single in-flight run instead of stacking requests;
- *  - all upserts go out as ONE bulk request, deletes one per exercise, instead
- *    of a request per set;
- *  - the first transient failure ends the run — no point sending the rest down
- *    a dead link — and each request has a timeout;
- *  - nothing is attempted at all while the browser reports it is offline.
- */
-export function flushQueuedOps(sessionId: string, supabase: SupabaseClient): Promise<FlushResult> {
-  const sid = resolveSessionAlias(sessionId)
-  const running = inFlight.get(sid)
-  if (running) return running
-  const run = doFlush(sid, supabase)
-    .then(result => {
-      if (
-        (result.synced.length > 0 || result.rejected.length > 0) &&
-        typeof window !== 'undefined' &&
-        typeof window.dispatchEvent === 'function' &&
-        typeof CustomEvent === 'function'
-      ) {
-        window.dispatchEvent(new CustomEvent(FLUSHED_EVENT, { detail: { sessionId: sid, result } }))
-      }
-      return result
-    })
-    .finally(() => {
-      inFlight.delete(sid)
-    })
-  inFlight.set(sid, run)
-  return run
+export async function flushQueuedOps(sessionId: string, supabase: SupabaseClient, owner: string): Promise<FlushResult> {
+  const result = await doFlush(sessionId, supabase, owner)
+  if (result.synced.length > 0 || result.rejected.length > 0) {
+    window.dispatchEvent(new CustomEvent(FLUSHED_EVENT, { detail: { sessionId, result } }))
+  }
+  return result
 }
 
-async function doFlush(sessionId: string, supabase: SupabaseClient): Promise<FlushResult> {
+async function doFlush(sessionId: string, supabase: SupabaseClient, owner: string): Promise<FlushResult> {
   const synced: SlotRef[] = []
   const rejected: SlotRef[] = []
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return { synced, rejected }
 
-  const pending = getQueuedOps(sessionId).sort((a, b) => a.queuedAt - b.queuedAt)
+  const pending = getQueuedOps(sessionId, owner).filter(op => !op.rejected).sort((a, b) => a.queuedAt - b.queuedAt)
   if (pending.length === 0) return { synced, rejected }
 
-  /** Drop a queue entry only if it is still the op we just sent (a newer edit may have replaced it). */
-  const settle = (op: QueuedOp, outcome: 'synced' | 'rejected') => {
-    const latest = readQueue().find(q => sameSlot(q, op))
-    if (latest && latest.queuedAt !== op.queuedAt) return
-    removeQueuedOp(op.sessionId, op.exerciseId, op.setNumber)
-    ;(outcome === 'synced' ? synced : rejected).push({ exerciseId: op.exerciseId, setNumber: op.setNumber })
+  async function settle(op: QueuedOp, reason?: string) {
+    const changed = await changeWorkoutStore(owner, state => {
+      const index = state.ops.findIndex(q => q.revision === op.revision)
+      if (index < 0) return false
+      if (reason) state.ops[index] = { ...op, rejected: reason }
+      else {
+        state.ops.splice(index, 1)
+        const snapshot = state.resume[op.sessionId]
+        if (snapshot) {
+          const match = snapshot.logs.findIndex(row => row.exercise_id === op.exerciseId && row.set_number === op.setNumber)
+          if (op.kind === 'delete') {
+            if (match >= 0) snapshot.logs.splice(match, 1)
+          } else {
+            const row = {
+              id: match >= 0 ? snapshot.logs[match].id : '',
+              exercise_id: op.exerciseId, set_number: op.setNumber, weight: op.weight,
+              reps: op.reps, is_pr: op.isPR, is_warmup: op.isWarmup, note: op.note,
+              is_skipped: op.isSkipped, rpe: op.rpe,
+            }
+            if (match >= 0) snapshot.logs[match] = row
+            else snapshot.logs.push(row)
+          }
+        }
+      }
+      return true
+    })
+    if (changed) (reason ? rejected : synced).push({ exerciseId: op.exerciseId, setNumber: op.setNumber })
   }
 
-  const reject = (op: QueuedOp, error: { message?: string; code?: string }) => {
-    reportError(new Error(`Queued set rejected: ${error.message ?? 'unknown'}`), {
+  async function reject(op: QueuedOp, error: { message?: string; code?: string }) {
+    const reason = error.message || 'Cloud refused this edit'
+    reportError(new Error(reason), {
       operation: 'flushQueuedOps',
       route: '/log',
       extra: { code: error.code, kind: op.kind },
     })
-    settle(op, 'rejected')
+    await settle(op, reason)
+  }
+
+  async function isOwner() {
+    const { data } = await supabase.auth.getSession()
+    return data.session?.user.id === owner
   }
 
   const upsertRow = (op: Extract<QueuedOp, { kind: 'upsert' }>) => ({
@@ -259,6 +225,7 @@ async function doFlush(sessionId: string, supabase: SupabaseClient): Promise<Flu
     note: op.note,
     is_skipped: op.isSkipped,
     rpe: op.rpe ?? null,
+    performed_at: op.performedAt ?? new Date(op.queuedAt).toISOString(),
   })
   const conflict = { onConflict: 'session_id,exercise_id,set_number' }
 
@@ -268,25 +235,29 @@ async function doFlush(sessionId: string, supabase: SupabaseClient): Promise<Flu
   const deletes = pending.filter(op => op.kind === 'delete')
 
   if (upserts.length > 0) {
+    if (!await isOwner()) return { synced, rejected }
     const batch = await withRequestTimeout(
       supabase.from('session_logs').upsert(upserts.map(upsertRow), conflict),
     )
+    if (!await isOwner()) return { synced, rejected }
     if (!batch.error) {
-      for (const op of upserts) settle(op, 'synced')
+      for (const op of upserts) await settle(op)
     } else if (isTransientError(batch.error)) {
       return { synced, rejected }
     } else if (upserts.length === 1) {
-      reject(upserts[0], batch.error)
+      await reject(upserts[0], batch.error)
     } else {
       // The server refused the batch: find the offending row(s) one by one so
       // the good sets still save.
       for (const op of upserts) {
+        if (!await isOwner()) return { synced, rejected }
         const { error } = await withRequestTimeout(
           supabase.from('session_logs').upsert(upsertRow(op), conflict),
         )
-        if (!error) settle(op, 'synced')
+        if (!await isOwner()) return { synced, rejected }
+        if (!error) await settle(op)
         else if (isTransientError(error)) return { synced, rejected }
-        else reject(op, error)
+        else await reject(op, error)
       }
     }
   }
@@ -294,6 +265,7 @@ async function doFlush(sessionId: string, supabase: SupabaseClient): Promise<Flu
   const byExercise = new Map<string, QueuedOp[]>()
   for (const op of deletes) byExercise.set(op.exerciseId, [...(byExercise.get(op.exerciseId) ?? []), op])
   for (const [exerciseId, ops] of byExercise) {
+    if (!await isOwner()) return { synced, rejected }
     const { error } = await withRequestTimeout(
       supabase
         .from('session_logs')
@@ -302,12 +274,13 @@ async function doFlush(sessionId: string, supabase: SupabaseClient): Promise<Flu
         .eq('exercise_id', exerciseId)
         .in('set_number', ops.map(o => o.setNumber)),
     )
+    if (!await isOwner()) return { synced, rejected }
     if (!error) {
-      for (const op of ops) settle(op, 'synced')
+      for (const op of ops) await settle(op)
     } else if (isTransientError(error)) {
       return { synced, rejected }
     } else {
-      for (const op of ops) reject(op, error)
+      for (const op of ops) await reject(op, error)
     }
   }
 

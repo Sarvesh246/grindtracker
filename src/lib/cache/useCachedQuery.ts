@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { getCached, isFresh, setCached, subscribe } from './appDataCache'
+import { cacheOwner, getCached, isFresh, setCached, subscribe } from './appDataCache'
 
 const emptySubscribe = () => () => {}
 
@@ -47,10 +47,12 @@ export function useCachedQuery<T>(
     if (!force && isFresh(key) && getCached<T>(key) !== undefined) return
     if (inFlightKey.current === key && !force) return
     inFlightKey.current = key
+    const owner = cacheOwner()
     setFetching(true)
     try {
       const next = await fetcherRef.current()
       if (inFlightKey.current !== key) return
+      if (owner && cacheOwner() !== owner) return
       setCached(key, next)
       setError(null)
     } catch (err) {

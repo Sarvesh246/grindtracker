@@ -39,10 +39,10 @@ const DONE_FLASH_MS = 1250
  *  paused. An EXPIRED running timer is restored once with remainingMs=0 so the workout page can
  *  fire a single rest-end notification before clearing — returning ZERO immediately would cancel
  *  the server cron fallback without ever notifying. */
-function readPersistedTimer(): TimerState {
+function readPersistedTimer(key: string): TimerState {
   if (typeof window === 'undefined') return ZERO
   try {
-    const raw = localStorage.getItem(ACTIVE_TIMER_KEY)
+    const raw = localStorage.getItem(key)
     if (!raw) return ZERO
     const saved = JSON.parse(raw) as {
       exerciseId: string
@@ -53,7 +53,7 @@ function readPersistedTimer(): TimerState {
     }
     if (saved.paused) {
       const remainingMs = Math.max(0, saved.remainingMs ?? 0)
-      if (remainingMs <= 0) { localStorage.removeItem(ACTIVE_TIMER_KEY); return ZERO }
+      if (remainingMs <= 0) { localStorage.removeItem(key); return ZERO }
       return { exerciseId: saved.exerciseId, startedAt: saved.startedAt, durationMs: saved.durationMs, remainingMs, paused: true }
     }
     const elapsed = Date.now() - saved.startedAt
@@ -61,7 +61,7 @@ function readPersistedTimer(): TimerState {
     if (remainingMs <= 0) {
       // Clear persistence so a later remount doesn't re-notify; keep one expired
       // tick in memory for the consumer's rest-end path.
-      localStorage.removeItem(ACTIVE_TIMER_KEY)
+      localStorage.removeItem(key)
       return {
         exerciseId: saved.exerciseId,
         startedAt: saved.startedAt,
@@ -74,56 +74,65 @@ function readPersistedTimer(): TimerState {
   } catch { return ZERO }
 }
 
+function writeTimer(key: string, state: TimerState): boolean {
+  try {
+    if (state.exerciseId && state.remainingMs > 0) localStorage.setItem(key, JSON.stringify(state))
+    else localStorage.removeItem(key)
+    return true
+  } catch {
+    return false
+  }
+}
+
 /**
- * Single global rest timer for the active workout.
+ * Rest timer stored per workout and account.
  * Persists the active timer to localStorage so it survives page navigations.
  * Auto-fires light haptic at 10s remaining and at 0s on Android only.
  * iOS can't fire timer haptics without a direct switch tap (26.5+/27) — rest-end
  * UI (and later push) covers that path instead.
  */
-export function useRestTimer() {
-  const [state, setState] = useState<TimerState>(() => readPersistedTimer())
+export function useRestTimer(sessionId: string | null, owner: string | null, exerciseIds: ReadonlySet<string>) {
+  const key = sessionId && owner ? `${ACTIVE_TIMER_KEY}:${owner}:${sessionId}` : null
+  const [state, setState] = useState<TimerState>(ZERO)
+  const [loadedKey, setLoadedKey] = useState<string | null>(null)
   const tenSecFired = useRef(false)
   const zeroFired = useRef(false)
   const rafRef = useRef<number | null>(null)
 
-  // Sync a RUNNING timer's parameters to localStorage so a page remount can restore
-  // the countdown. We watch exerciseId/startedAt/durationMs/paused — NOT remainingMs,
-  // to avoid writing on every 250ms tick. The restore function recomputes remaining
-  // from startedAt + durationMs, so the value is always live-accurate on restore.
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    if (state.paused) return // handled by the paused-specific effect below
-    if (state.exerciseId && state.remainingMs > 0) {
-      localStorage.setItem(ACTIVE_TIMER_KEY, JSON.stringify({
-        exerciseId: state.exerciseId,
-        startedAt: state.startedAt,
-        durationMs: state.durationMs,
-        paused: false,
-      }))
-    } else {
-      localStorage.removeItem(ACTIVE_TIMER_KEY)
+    if (!key || loadedKey === key) return
+    let restored = readPersistedTimer(key)
+    if (!restored.exerciseId) {
+      const legacy = readPersistedTimer(ACTIVE_TIMER_KEY)
+      if (legacy.exerciseId && exerciseIds.has(legacy.exerciseId)) {
+        restored = legacy
+        if (writeTimer(key, restored)) {
+          try { localStorage.removeItem(ACTIVE_TIMER_KEY) } catch { /* device storage unavailable */ }
+        }
+      }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.exerciseId, state.startedAt, state.durationMs, state.paused])
+    // Load the timer belonging to this workout when its identity is known.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setState(restored)
+    setLoadedKey(key)
+  }, [key, loadedKey, exerciseIds])
 
-  // Sync a PAUSED timer separately, including its frozen remainingMs — this is
-  // what lets "Save & Exit" freeze the rest timer where it was and have it
-  // resume from there rather than losing it entirely on remount. remainingMs is
-  // frozen while paused (the tick effect below doesn't run in that state), so
-  // this doesn't reintroduce a write-every-tick problem.
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    if (!state.exerciseId || !state.paused) return
-    if (state.remainingMs <= 0) { localStorage.removeItem(ACTIVE_TIMER_KEY); return }
-    localStorage.setItem(ACTIVE_TIMER_KEY, JSON.stringify({
-      exerciseId: state.exerciseId,
-      startedAt: state.startedAt,
-      durationMs: state.durationMs,
-      paused: true,
-      remainingMs: state.remainingMs,
-    }))
-  }, [state.exerciseId, state.paused, state.remainingMs, state.startedAt, state.durationMs])
+    if (!key || loadedKey !== key) return
+    writeTimer(key, state)
+  // Running time is recomputed on restore; paused time is frozen at the transition.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, loadedKey, state.exerciseId, state.startedAt, state.durationMs, state.paused])
+
+  function persistForExit(shouldPause: boolean) {
+    if (!key || loadedKey !== key || !state.exerciseId) return true
+    const next = shouldPause && !state.paused
+      ? { ...state, remainingMs: Math.max(0, state.startedAt + state.durationMs - Date.now()), paused: true }
+      : state
+    if (!writeTimer(key, next)) return false
+    if (next !== state) setState(next)
+    return true
+  }
 
   useEffect(() => {
     if (!state.exerciseId || state.paused) return
@@ -263,6 +272,7 @@ export function useRestTimer() {
     active: state.exerciseId !== null && (state.remainingMs > 0 || state.paused || done),
     done,
     paused: state.paused,
+    persistForExit,
     exerciseId: state.exerciseId,
     remainingMs: state.remainingMs,
     durationMs: state.durationMs,

@@ -1176,7 +1176,10 @@ function testSavedWorkoutSyncTakesPriority(logger) {
     var previous = $.gNet;
     var queue = Store.get("q");
     var sync = Store.get("ls");
+    var receipts = Store.list("receipts");
+    var sensors = Store.sensors();
     Store.put("q", []);
+    Store.put("qh", []);
     var net = new TestWorkoutNet();
     $.gNet = net;
     T.startPress(0);
@@ -1188,7 +1191,7 @@ function testSavedWorkoutSyncTakesPriority(logger) {
     Workout.finish(true);
     var ok = T.ck(logger, "save queues offline and clears earlier backoff",
         Store.queue().indexOf(sid) >= 0 && net.nextAt == 0 && net.path == null
-        && net.workoutStatus(sid).equals("Will sync when connected"));
+        && net.workoutStatus(sid).equals("Open GRIND with phone"));
     net.online = true;
     net.busy = true;
     net.labKey = "lh-test";
@@ -1197,9 +1200,15 @@ function testSavedWorkoutSyncTakesPriority(logger) {
     ok = T.ck(logger, "upload starts as soon as diagnostics release the connection",
         net.path != null && net.path.equals("/sessions") && net.upSid.equals(sid)
         && net.workoutStatus(sid).equals("Syncing to GRIND…")) && ok;
-    net.onUpload(201, { "sets" => { "accepted" => [id] } });
-    ok = T.ck(logger, "acknowledgment clears the pending status before plan refresh finishes",
-        net.workoutStatus(sid).equals("Synced to GRIND") && net.path.equals("/ping") && Store.meta(sid) == null) && ok;
+    net.onUpload(201, { "sets" => { "accepted" => [id] }, "sensor" => { "status" => "pending" } });
+    ok = T.ck(logger, "core acknowledged while sensor data is retained separately",
+        net.workoutStatus(sid).equals("Sets synced · HR pending") && net.path.equals("/ping")
+        && Store.meta(sid) == null && Store.sensorPending(sid)) && ok;
+    net.busy = false;
+    ok = T.ck(logger, "sensor retry does not send a pending core workout", net.tickUploads() && net.sensorKey.equals(id)) && ok;
+    net.onSensor(200, { "sensor" => { "status" => "stored" } });
+    ok = T.ck(logger, "sensor receipt settles without another core upload",
+        net.workoutStatus(sid).equals("Synced to GRIND") && !Store.sensorPending(sid)) && ok;
     net.online = false;
     T.startPress(0);
     T.completeSet(); Workout.toSummary();
@@ -1211,6 +1220,8 @@ function testSavedWorkoutSyncTakesPriority(logger) {
     Store.dropSession(second);
     if (queue == null) { Store.del("q"); } else { Store.put("q", queue); }
     if (sync == null) { Store.del("ls"); } else { Store.put("ls", sync); }
+    Store.put("receipts", receipts);
+    Store.put("qh", sensors);
     $.gNet = previous;
     Workout.saved = false;
     return ok;
@@ -1601,6 +1612,7 @@ function testDailyDiagnostics(logger) {
     var gk = g.keys();
     for (var i = 0; i < gk.size(); i++) { if (g[gk[i]] == null) { nulls = true; } }
     ok = T.ck(logger, "no nulls in diag", !nulls) && ok;
+    ok = T.ck(logger, "daily diagnostics identify the installed build", Body.BUILD_ID.equals(g["app_version"])) && ok;
     var raw = d["hr_raw"];
     ok = T.ck(logger, "raw hr, when sent, is paired", raw == null || raw["t"].size() == raw["v"].size()) && ok;
     ok = T.ck(logger, "trace bytes", Logic.traceB64([90, 0, 120, 300, null]).equals("WgB4AAA=")) && ok;

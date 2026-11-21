@@ -77,6 +77,7 @@ function isSetupPath(pathname: string): boolean {
 }
 
 export async function proxy(request: NextRequest) {
+  if (request.nextUrl.pathname === '/offline-workout') return NextResponse.next()
   let supabaseResponse = NextResponse.next({ request })
 
   const supabase = createServerClient(

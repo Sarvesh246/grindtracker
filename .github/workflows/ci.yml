@@ -79,17 +79,11 @@ jobs:
       - name: SQL <-> TypeScript parity
         run: npm run test:sql-parity
 
-  # Playwright against `npm run dev`. With no secrets set it uses placeholder
-  # Supabase values, which is enough for the public shell (login page, redirects,
-  # offline service worker) that e2e/ covers today. To point it at a throwaway
-  # Supabase project instead, add the repository secrets below; see docs/CI.md.
   e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     env:
-      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.E2E_SUPABASE_URL || 'https://example.supabase.co' }}
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.E2E_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.placeholder' }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.E2E_SUPABASE_SERVICE_ROLE_KEY }}
+      GRIND_DB_E2E: '1'
     steps:
       - uses: actions/checkout@v4
 
@@ -100,18 +94,34 @@ jobs:
 
       - run: npm ci
 
-      # Only when the throwaway project is configured: fail if it is missing
-      # any docs/sql migration (see docs/sql/00-migration-tracking.sql).
-      - name: Migrations applied on the e2e project
-        if: ${{ env.SUPABASE_SERVICE_ROLE_KEY != '' }}
+      - name: Start disposable Supabase
+        shell: bash
+        run: |
+          fixture="$RUNNER_TEMP/grind-e2e"
+          mkdir -p "$fixture"
+          npx --yes supabase@3.2.0 --workdir "$fixture" init --yes
+          npx --yes supabase@3.2.0 --workdir "$fixture" start -x studio,mailpit,imgproxy,postgres-meta,edge-runtime,logflare,vector,supavisor
+          node scripts/bootstrap-test-supabase.mjs supabase_db_grind-e2e
+          status="$(npx --yes supabase@3.2.0 --workdir "$fixture" status -o json)"
+          api="$(jq -r .API_URL <<< "$status")"
+          anon="$(jq -r .ANON_KEY <<< "$status")"
+          service="$(jq -r .SERVICE_ROLE_KEY <<< "$status")"
+          echo "::add-mask::$service"
+          {
+            echo "NEXT_PUBLIC_SUPABASE_URL=$api"
+            echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$anon"
+            echo "E2E_LOCAL_SERVICE_ROLE_KEY=$service"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$service"
+          } >> "$GITHUB_ENV"
+
+      - name: Verify migration order
         run: npx tsx scripts/check-migrations.ts
 
-      # Served by `npm run start` (see playwright.config.ts), so build first.
       - name: Build
         run: npm run build
 
-      - name: Install Playwright browser
-        run: npx playwright install --with-deps chromium
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium webkit
 
       - name: E2E
         run: npm run test:e2e -- --trace off

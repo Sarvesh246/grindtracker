@@ -20,6 +20,7 @@ using Toybox.UserProfile;
 // hour, never a list of every sample.
 (:background)
 module Body {
+    const BUILD_ID = "2026-11-21a";
     // Today's local date, YYYY-MM-DD. Logic.localDate() is this.
     function date() {
         var i = Gregorian.info(Time.now(), Time.FORMAT_SHORT);
@@ -152,7 +153,7 @@ module Body {
     // memory, firmware, how the last background run went, and which sensor
     // values it fills in right now. Never shown to the user.
     function diag(now) {
-        var d = { "taken_at" => iso(now) };
+        var d = { "taken_at" => iso(now), "app_version" => BUILD_ID };
         try {
             var s = System.getSystemStats();
             d["battery"] = num(s.battery, 0, 100);

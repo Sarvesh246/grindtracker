@@ -11,26 +11,26 @@ import { ALL_BADGES, type BadgeDefinition } from '@/lib/utils/badges'
 import BadgeUnlockOverlay from '@/components/BadgeUnlockOverlay'
 import { haptic } from '@/lib/utils/haptics'
 import { useUnit } from '@/lib/contexts/UnitContext'
-import { deleteIncompleteSessions } from '@/lib/utils/sessions'
+import { discardWorkout } from '@/lib/utils/sessions'
 import { completeSession } from '@/lib/utils/completeSession'
 import {
-  queueOp,
+  queueWorkoutOps,
   isTransientError,
   MAX_SET_WEIGHT_LBS,
   MAX_SET_REPS,
   FLUSHED_EVENT,
   getQueuedOps,
   removeQueuedOp,
-  clearQueuedOpsForSession,
   clearQueuedOpsForExercise,
   withRequestTimeout,
   type FlushResult,
+  type QueuedOp,
 } from '@/lib/utils/offlineQueue'
-import { withOfflineGate, browserIsOffline, isOfflineError } from '@/lib/offline/offlineGate'
+import { withOfflineGate, browserIsOffline } from '@/lib/offline/offlineGate'
 import {
-  clearPendingLocalSession,
   ensurePendingLocalSession,
   getActiveWorkoutScreenSession,
+  setActiveWorkoutScreenSession,
   getPendingLocalSessions,
   isPendingLocalSessionId,
   lastKnownUserId,
@@ -38,9 +38,9 @@ import {
   rememberUserId,
   resolveSessionAlias,
   saveWorkoutSnapshot,
-  setActiveWorkoutScreenSession,
 } from '@/lib/offline/localSession'
-import { SESSION_REMAPPED_EVENT, adoptServerSession, syncSessionNow } from '@/lib/offline/sync'
+import { requestWorkoutFinish, reopenWorkoutDraft, saveWorkoutNote, syncSessionNow } from '@/lib/offline/sync'
+import { changeWorkoutStore, loadWorkoutStore, readWorkoutStore, WORKOUT_STORE_EVENT, type SavedSet } from '@/lib/offline/workoutStore'
 import { reportError } from '@/lib/utils/reportError'
 import { planWarmupRamp } from '@/lib/utils/warmupSets'
 import { formatWarmupPercentsList, percentsToFractions, readWarmupPercents } from '@/lib/utils/warmupPrefs'
@@ -137,29 +137,7 @@ function dayLabel(day: string): string {
  * (update-by-id / upsert / select) so re-running a partially-applied attempt is
  * safe.
  */
-async function runWithRetry<R extends { error: unknown }>(
-  op: () => PromiseLike<R>,
-  attempts = 3,
-): Promise<R> {
-  let result: R | undefined
-  for (let attempt = 0; attempt < attempts; attempt++) {
-    // withRequestTimeout also folds a thrown fetch error into `{ error }`.
-    result = await withRequestTimeout(op())
-    if (!result.error) return result
-    // Offline (or a not-yet-synced local session): the gated client failed this
-    // instantly — queue it now rather than sit through backoff delays.
-    if (isOfflineError(result.error)) return result
-    // A request that hung for the full timeout means the link is effectively
-    // dead; queue the write instead of stacking two more doomed attempts.
-    if (result.error instanceof TypeError && result.error.message === 'request timed out') return result
-    // The server understood and refused this write; retrying can't change that.
-    if (!isTransientError(result.error)) return result
-    if (attempt < attempts - 1) {
-      await new Promise(resolve => setTimeout(resolve, 400 * 2 ** attempt))
-    }
-  }
-  return result as R
-}
+
 
 export default function ActiveWorkout({ day }: { day: string }) {
   const router = useRouter()
@@ -237,6 +215,21 @@ export default function ActiveWorkout({ day }: { day: string }) {
   // Coach "lighter weights today" (sessions.weight_overrides), canonical lbs.
   const [weightOverrides, setWeightOverrides] = useState<Record<string, number>>({})
   const [workoutNote, setWorkoutNote] = useState('')
+  const workoutOwnerRef = useRef<string | null>(null)
+  const [workoutOwner, setWorkoutOwner] = useState<string | null>(null)
+  const noteWriteRef = useRef<Promise<void> | null>(null)
+  const storageFailureRef = useRef(new Set<string>())
+  const [storageError, setStorageError] = useState(false)
+  const [, setStoreVersion] = useState(0)
+
+  useEffect(() => {
+    const onStore = (event: Event) => {
+      if ((event as CustomEvent<string>).detail === workoutOwnerRef.current) setStoreVersion(version => version + 1)
+    }
+    window.addEventListener(WORKOUT_STORE_EVENT, onStore)
+    return () => window.removeEventListener(WORKOUT_STORE_EVENT, onStore)
+  }, [])
+
   // Notes from the most recent completed session of each exercise, keyed
   // `${exerciseId}-${setNumber}`, plus that day's last workout note. Read-only
   // hints so last time's notes are visible mid-workout.
@@ -263,7 +256,8 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const [plateCalcTarget, setPlateCalcTarget] = useState<{ key: string; current: number } | null>(null)
   const [warmupUndo, setWarmupUndo] = useState<Record<string, { extrasBefore: number; logsBefore: LogMap }>>({})
   const timerRef = useRef<NodeJS.Timeout | null>(null)
-  const restTimer = useRestTimer()
+  const restExerciseIds = useMemo(() => new Set(exercises.map(exercise => exercise.id)), [exercises])
+  const restTimer = useRestTimer(sessionId, workoutOwner, restExerciseIds)
   const keyboardInset = useKeyboardInset()
   // Keep each toast's last content around through its exit animation instead
   // of yanking it off screen the instant its owning state clears.
@@ -486,8 +480,16 @@ export default function ActiveWorkout({ day }: { day: string }) {
       }
     }
     async function syncNow() {
-      const { result } = await syncSessionNow(sid, rawSupabase)
-      apply(result)
+      try {
+        const { result, completion } = await syncSessionNow(sid, rawSupabase, workoutOwnerRef.current ?? undefined)
+        apply(result)
+        if (completion?.ok && !finishingRef.current) {
+          markAppDataStale()
+          router.replace('/home')
+        }
+      } catch (error) {
+        reportError(error, { operation: 'syncWorkout', route: '/log' })
+      }
     }
     // The background agent (OfflineSyncAgent) flushes on reconnect and on its
     // backoff timer; this screen just reflects what it did.
@@ -495,36 +497,24 @@ export default function ActiveWorkout({ day }: { day: string }) {
       const detail = (e as CustomEvent<{ sessionId: string; result: FlushResult }>).detail
       if (detail?.sessionId === resolveSessionAlias(sid)) apply(detail.result)
     }
-    // A workout started offline just got its real server session.
-    function onRemapped(e: Event) {
-      const detail = (e as CustomEvent<{ from: string; to: string }>).detail
-      if (detail?.from !== sid) return
-      // Carry per-session extras (exercises added mid-workout) across the swap.
-      const extras = readSessionExtraIds(detail.from)
-      if (extras.length > 0) writeSessionExtraIds(detail.to, extras)
-      clearSessionExtraIds(detail.from)
-      setSessionId(detail.to)
+    function onCompleted(event: Event) {
+      if ((event as CustomEvent<string>).detail === sid && !finishingRef.current) {
+        router.replace('/home')
+      }
     }
+    window.addEventListener('grind:workout-complete', onCompleted)
     void syncNow()
     window.addEventListener('online', syncNow)
     window.addEventListener(FLUSHED_EVENT, onFlushed)
-    window.addEventListener(SESSION_REMAPPED_EVENT, onRemapped)
     return () => {
       window.removeEventListener('online', syncNow)
+      window.removeEventListener('grind:workout-complete', onCompleted)
       window.removeEventListener(FLUSHED_EVENT, onFlushed)
-      window.removeEventListener(SESSION_REMAPPED_EVENT, onRemapped)
     }
-  }, [sessionId, rawSupabase])
+  }, [sessionId, rawSupabase, router])
 
-  // Tell the sync layer which session this screen is holding, and retire the
-  // local-id record once we've switched to the server's id (until then it keeps
-  // writes queueing instead of reaching the server under an id it doesn't know).
   useEffect(() => {
-    if (!sessionId) return
     setActiveWorkoutScreenSession(sessionId)
-    for (const p of getPendingLocalSessions()) {
-      if (p.id !== sessionId && resolveSessionAlias(p.id) === sessionId) clearPendingLocalSession(p.id)
-    }
     return () => setActiveWorkoutScreenSession(null)
   }, [sessionId])
 
@@ -553,15 +543,33 @@ export default function ActiveWorkout({ day }: { day: string }) {
     return () => clearTimeout(id)
   }, [undoState])
 
-  // Persist workout note on blur (debounced via effect dependency).
+  function changeWorkoutNote(text: string) {
+    setWorkoutNote(text)
+    const owner = workoutOwnerRef.current
+    if (!owner || !sessionId || demoMode) return
+    const write = saveWorkoutNote(owner, sessionId, text)
+    noteWriteRef.current = write
+    void write.then(() => {
+      if (noteWriteRef.current !== write) return
+      storageFailureRef.current.delete('note')
+      setStorageError(storageFailureRef.current.size > 0)
+    }, () => {
+      if (noteWriteRef.current !== write) return
+      storageFailureRef.current.add('note')
+      setStorageError(true)
+    })
+  }
+
   useEffect(() => {
-    if (!sessionId) return
-    const id = setTimeout(() => {
-      supabase.from('sessions').update({ note: workoutNote || null }).eq('id', sessionId)
+    const owner = workoutOwnerRef.current
+    if (!sessionId || !owner || demoMode) return
+    const timer = setTimeout(() => {
+      if (readWorkoutStore(owner).notes[sessionId]) {
+        void syncSessionNow(sessionId, rawSupabase, owner).catch(() => {})
+      }
     }, 600)
-    return () => clearTimeout(id)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workoutNote])
+    return () => clearTimeout(timer)
+  }, [sessionId, workoutNote, rawSupabase, demoMode])
 
   // Last completed session's set notes per exercise (+ the day's last workout
   // note). Best-effort: a failed read just means no hints.
@@ -626,8 +634,14 @@ export default function ActiveWorkout({ day }: { day: string }) {
       // is a dead connection (an expired token can't refresh offline), not a
       // sign-out — sign-out forgets the account. Never bounce to /login here.
       userId = lastKnownUserId()
-      if (!userId) { redirecting = true; router.push('/login'); return }
+      if (!userId || !browserIsOffline()) { redirecting = true; router.push('/login'); return }
     }
+
+    if (!userId) return
+    workoutOwnerRef.current = userId
+    setWorkoutOwner(userId)
+    if (!demoMode) await loadWorkoutStore(userId).catch(() => {})
+    const pendingDraft = getPendingLocalSessions(userId).find(p => p.day === day)
 
     // What the device remembers from the last online load: lets a workout start
     // with no signal at all (see src/lib/offline/localSession.ts).
@@ -695,7 +709,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
     // empty day never creates a session).
     // Offline (or a dead link): resolve instantly with a transient error and
     // fall through to a device-local session below.
-    const resumePromise = offlineStart
+    const resumePromise = offlineStart || pendingDraft
       ? Promise.resolve({ data: null, error: { message: 'offline', code: '' } })
       : withRequestTimeout(
           Promise.resolve(supabase.rpc('start_or_resume_session', { p_day_type: day })),
@@ -773,30 +787,19 @@ export default function ActiveWorkout({ day }: { day: string }) {
       fillWeights[ex.id] = ex.weight_target ?? bests[ex.id]
     }
 
-    type ExistingLog = {
-      id: string
-      exercise_id: string
-      set_number: number
-      weight: number | null
-      reps: number | null
-      is_pr: boolean
-      is_warmup?: boolean
-      note?: string | null
-      is_skipped?: boolean
-      rpe?: number | null
-    }
-
     let { data: resumeData, error: resumeError } = await resumePromise
 
     // Couldn't reach the server (offline, hung request, flaky cell): start — or
     // pick back up — a session on this device. Sets queue locally and the sync
     // agent creates the real session the moment a connection returns.
-    if ((resumeError || !resumeData) && (!resumeError || isTransientError(resumeError)) && snapshot) {
-      const alreadyStarted = getPendingLocalSessions().some(p => p.day === day)
-      const local = ensurePendingLocalSession(day, userId)
+    if ((resumeError || !resumeData) && (!resumeError || isTransientError(resumeError)) && (snapshot || pendingDraft) && !demoMode) {
+      const cached = Object.values(readWorkoutStore(userId).resume)
+        .find(entry => entry.day === day && (!pendingDraft || entry.id === pendingDraft.id))
+      const alreadyStarted = !!pendingDraft || !!cached
+      const local = pendingDraft ?? cached ?? await ensurePendingLocalSession(day, userId)
       resumeData = {
-        session: { id: local.id, started_at: local.startedAt, note: null },
-        logs: [],
+        session: { id: local.id, started_at: local.startedAt, note: cached?.note ?? null },
+        logs: cached?.logs ?? [],
         resumed: alreadyStarted,
       }
       resumeError = null
@@ -816,29 +819,26 @@ export default function ActiveWorkout({ day }: { day: string }) {
         started_at: string
         note?: string | null
       }
-      logs: ExistingLog[]
+      logs: SavedSet[]
       resumed?: boolean
     }
 
     const session = resumePayload.session
     const sid = session.id
-    // Online now, but this day was started on the device earlier (offline, or on
-    // a connection that died mid-start): fold that local session into the
-    // server's before reading anything keyed by id.
-    for (const local of getPendingLocalSessions()) {
-      if (local.day === day && local.id !== sid) {
-        const extras = readSessionExtraIds(local.id)
-        await adoptServerSession(supabase, local, session)
-        if (extras.length > 0) writeSessionExtraIds(sid, extras)
-        clearSessionExtraIds(local.id)
-      }
-    }
     const sessionStart = new Date(session.started_at)
-    if (session.note) setWorkoutNote(session.note)
+    setWorkoutNote(readWorkoutStore(userId).notes[sid]?.text ?? session.note ?? '')
     void loadLastNotes(exs.map(e => e.id), sid)
-    const existingLogs: ExistingLog[] = Array.isArray(resumePayload.logs)
+    const existingLogs: SavedSet[] = Array.isArray(resumePayload.logs)
       ? resumePayload.logs
       : []
+    if (!demoMode) {
+      await changeWorkoutStore(userId, state => {
+        if (!state.resume[sid] || !offlineStart) {
+          state.resume[sid] = { id: sid, day, startedAt: session.started_at,
+            note: session.note ?? null, logs: existingLogs }
+        }
+      }).catch(() => setStorageError(true))
+    }
 
     const loggedExerciseIds = new Set(existingLogs.map(l => l.exercise_id))
     for (const q of getQueuedOps(sid)) loggedExerciseIds.add(q.exerciseId)
@@ -995,7 +995,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
     } finally {
       if (!redirecting) setLoading(false)
     }
-  }, [day, supabase, router, loadLastNotes])
+  }, [day, supabase, router, loadLastNotes, demoMode, setStorageError])
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { initSession() }, [initSession])
@@ -1108,6 +1108,35 @@ export default function ActiveWorkout({ day }: { day: string }) {
       if (l.pendingSync) keys.add(k)
     }
     return keys.size
+  }
+
+  function persistQueuedOp(op: QueuedOp) { return persistQueuedOps([op]) }
+
+  async function persistQueuedOps(ops: QueuedOp[]) {
+    const keys = ops.map(op => op.exerciseId + '-' + op.setNumber)
+    const write = queueWorkoutOps(ops, workoutOwnerRef.current)
+    inflightSavesRef.current.add(write)
+    try {
+      await write
+      for (const key of keys) storageFailureRef.current.delete(key)
+      setStorageError(storageFailureRef.current.size > 0)
+      return true
+    } catch (error) {
+      for (const key of keys) storageFailureRef.current.add(key)
+      setStorageError(true)
+      setResumeToast('This edit could not be saved on this device. Try again.')
+      reportError(error, { operation: 'persistWorkoutEdit', route: '/log' })
+      return false
+    } finally {
+      inflightSavesRef.current.delete(write)
+    }
+  }
+
+  function syncQueuedEdits(sid: string) {
+    const owner = workoutOwnerRef.current
+    if (!owner || demoMode) return
+    if (browserIsOffline()) showQueuedSyncToast()
+    else void syncSessionNow(sid, rawSupabase, owner).catch(() => {})
   }
 
   async function retryPendingSync() {
@@ -1259,31 +1288,6 @@ export default function ActiveWorkout({ day }: { day: string }) {
       // Optimistic: the set reads as logged the instant it's tapped; the write
       // happens in the background (see persistSet below) instead of making the
       // user wait a network round trip for the checkmark.
-      const savePromise = Promise.resolve(
-        runWithRetry(() =>
-          supabase
-            .from('session_logs')
-            .upsert(
-              {
-                session_id: sessionId,
-                exercise_id: exerciseId,
-                set_number: setNumber,
-                weight,
-                reps,
-                is_pr: false,
-                is_warmup: logEntry.isWarmup,
-                note: logEntry.note || null,
-                is_skipped: false,
-                rpe,
-              },
-              { onConflict: 'session_id,exercise_id,set_number' },
-            )
-            .select('id')
-            .maybeSingle(),
-        ),
-      )
-      inflightSavesRef.current.add(savePromise)
-
       commitLogs(prev => ({
         ...prev,
         [key]: {
@@ -1297,50 +1301,25 @@ export default function ActiveWorkout({ day }: { day: string }) {
       }))
 
       const persistSet = async () => {
-        const { data: saved, error: saveError } = await savePromise
-        inflightSavesRef.current.delete(savePromise)
-        // The user may have undone the set while the write was in flight; the
-        // undo already deleted/queued, so don't resurrect it.
-        if (!logsRef.current[key]?.checked) {
-          if (!saveError && saved?.id) {
-            void supabase.from('session_logs').delete().eq('id', saved.id)
-          }
-          return
-        }
-        if (saveError && !isTransientError(saveError)) {
-          // The server refused this set outright; it will never sync. Put the
-          // row back to how it was before the tap instead of queueing it.
-          notifySetRejected(saveError, 'handleCheck')
-          if (restTimer.exerciseId === exerciseId) restTimer.stop()
-          setUndoState(prev => (prev?.key === key ? null : prev))
+        if (demoMode) return
+        const owner = workoutOwnerRef.current
+        const saved = await persistQueuedOp({
+          kind: 'upsert', sessionId, exerciseId, setNumber, weight, reps, isPR,
+          isWarmup: logEntry.isWarmup, note: logEntry.note || null, isSkipped: false, rpe,
+          queuedAt: Date.now(), performedAt: new Date().toISOString(),
+        })
+        if (!saved) {
           restoreLogEntries(exerciseId, { [key]: logEntry }, [key])
           return
         }
-        if (saveError) {
-          queueOp({
-            kind: 'upsert',
-            sessionId,
-            exerciseId,
-            setNumber,
-            weight,
-            reps,
-            isPR,
-            isWarmup: logEntry.isWarmup,
-            note: logEntry.note || null,
-            isSkipped: false,
-            rpe,
-            queuedAt: Date.now(),
-          })
-          setResumeToast('Saved on this device — will sync once back online.')
+        commitLogs(prev => prev[key]?.checked
+          ? { ...prev, [key]: { ...prev[key], pendingSync: true } } : prev)
+        if (browserIsOffline()) {
+          setResumeToast('Saved on this device. It will sync when you reconnect.')
           setTimeout(() => setResumeToast(null), 4000)
-        } else {
-          removeQueuedOp(sessionId, exerciseId, setNumber)
+        } else if (owner) {
+          void syncSessionNow(sessionId, rawSupabase, owner).catch(() => {})
         }
-        commitLogs(prev =>
-          prev[key]
-            ? { ...prev, [key]: { ...prev[key], logId: saved?.id, pendingSync: !!saveError } }
-            : prev,
-        )
       }
 
       if (isPR) {
@@ -1451,32 +1430,10 @@ export default function ActiveWorkout({ day }: { day: string }) {
       void cancelRestNotifications(sessionId)
     }
 
-    // Drop any queued upsert for this slot so a later online flush can't revive it.
-    removeQueuedOp(sessionId, exerciseId, setNumber)
-
-    const { error } = await supabase
-      .from('session_logs')
-      .delete()
-      .eq('session_id', sessionId)
-      .eq('exercise_id', exerciseId)
-      .eq('set_number', setNumber)
-
-    if (error && !isTransientError(error)) {
-      // The server refused the delete: the set is still saved there, so keep
-      // it checked rather than showing a state that will never sync.
-      notifySetRejected(error, 'handleUndo')
-      if (previous) restoreLogEntries(exerciseId, { [key]: previous }, [key])
-      return
-    }
-    if (error) {
-      // Re-queue a delete so the row still gets cleared when back online.
-      // Timestamp inside a click-triggered async handler, not render.
+    if (!demoMode && !await persistQueuedOp({
       // eslint-disable-next-line react-hooks/purity
-      queueOp({ kind: 'delete', sessionId, exerciseId, setNumber, queuedAt: Date.now() })
-      setResumeToast('Undo saved on this device — will sync once back online.')
-      setTimeout(() => setResumeToast(null), 4000)
-    }
-
+      kind: 'delete', sessionId, exerciseId, setNumber, queuedAt: Date.now(),
+    })) return
     setLogs(prev => {
       const cur = prev[key] ?? previous
       if (!cur) return prev
@@ -1488,7 +1445,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
           checked: false,
           isPR: false,
           logId: undefined,
-          pendingSync: !!error,
+          pendingSync: !demoMode,
         },
       }
       setPreviousBests(pb => ({ ...pb, [exerciseId]: bestFromLogs(exerciseId, next) }))
@@ -1496,6 +1453,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       return next
     })
     setEditingKey(null)
+    syncQueuedEdits(sessionId)
   }
 
   function handleStartEdit(key: string) {
@@ -1545,70 +1503,22 @@ export default function ActiveWorkout({ day }: { day: string }) {
       reps !== null && computeLocalIsPR(logEntry.isWarmup, weight, reps, prevBestVolume)
     const rpe = parseRpe(logEntry.rpe)
 
-    const { error } = await runWithRetry(() =>
-      supabase.from('session_logs').upsert(
-        {
-          session_id: sessionId,
-          exercise_id: exerciseId,
-          set_number: setNumber,
-          weight,
-          reps,
-          is_pr: false,
-          is_warmup: logEntry.isWarmup,
-          note: logEntry.note || null,
-          is_skipped: false,
-          rpe,
-        },
-        { onConflict: 'session_id,exercise_id,set_number' },
-      ),
-    )
-
-    // A refusal from the server can never sync: leave the row in edit mode so
-    // the values can be corrected, and don't queue it.
-    if (error && !isTransientError(error)) {
-      notifySetRejected(error, 'handleSaveEdit')
-      return
-    }
-
-    // Even after retries, a real network drop shouldn't discard what the user
-    // just typed — queue it (same fallback as handleCheck) and keep the edit
-    // applied locally instead of leaving the row stuck in edit mode.
-    if (error) {
-      queueOp({
-        kind: 'upsert',
-        sessionId,
-        exerciseId,
-        setNumber,
-        weight,
-        reps,
-        isPR,
-        isWarmup: logEntry.isWarmup,
-        note: logEntry.note || null,
-        isSkipped: false,
-        rpe,
-        // Same: only ever called from the save button's handler.
-        // eslint-disable-next-line react-hooks/purity
-        queuedAt: Date.now(),
-      })
-      setResumeToast('Saved on this device — will sync once back online.')
-      setTimeout(() => setResumeToast(null), 4000)
-    } else {
-      // A prior failed check/skip on this slot may have left a stale queued
-      // op — this successful write is now the source of truth, so drop it
-      // (same as handleCheck's success branch) or a later flush/resume would
-      // silently overwrite this edit with the old queued data.
-      removeQueuedOp(sessionId, exerciseId, setNumber)
-    }
+    if (!demoMode && !await persistQueuedOp({
+      kind: 'upsert', sessionId, exerciseId, setNumber, weight, reps, isPR,
+      isWarmup: logEntry.isWarmup, note: logEntry.note || null, isSkipped: false,
+      // eslint-disable-next-line react-hooks/purity
+      rpe, queuedAt: Date.now(),
+    })) return
 
     setLogs(prev => {
-      const next = { ...prev, [key]: { ...prev[key], isPR, pendingSync: !!error } }
+      const next = { ...prev, [key]: { ...prev[key], isPR, pendingSync: !demoMode } }
       setPreviousBests(pb => ({ ...pb, [exerciseId]: bestFromLogs(exerciseId, next) }))
       setPreviousBestVolumes(pb => ({ ...pb, [exerciseId]: bestVolumeFromLogs(exerciseId, next) }))
       return next
     })
     setEditingKey(null)
+    syncQueuedEdits(sessionId)
     // Save-edit tick comes from data-haptic="heavy" on the check/save button.
-    if (!error) showSaveToast(`Set ${setNumber} saved`)
   }
 
   /**
@@ -1642,47 +1552,19 @@ export default function ActiveWorkout({ day }: { day: string }) {
     if (!logEntry || !logEntry.checked || logEntry.skipped) return
     const note = (overrides?.note ?? logEntry.note) || null
     const rpe = parseRpe(overrides?.rpe ?? logEntry.rpe)
-    const { error } = await runWithRetry(() =>
-      supabase
-        .from('session_logs')
-        .update({ note, rpe })
-        .eq('session_id', sessionId)
-        .eq('exercise_id', exerciseId)
-        .eq('set_number', setNumber),
-    )
-    if (error && !isTransientError(error)) {
-      notifySetRejected(error, 'persistSetMeta')
-      return
-    }
-    if (error) {
-      const weight = logEntry.weight !== '' ? parseFloat(logEntry.weight) : null
-      const reps = logEntry.reps !== '' ? parseInt(logEntry.reps, 10) : null
-      queueOp({
-        kind: 'upsert',
-        sessionId,
-        exerciseId,
-        setNumber,
-        weight: weight !== null && Number.isFinite(weight) ? weight : null,
-        reps: reps !== null && Number.isFinite(reps) ? reps : null,
-        isPR: logEntry.isPR,
-        isWarmup: logEntry.isWarmup,
-        note,
-        isSkipped: false,
-        rpe,
-        // Timestamping a queued retry inside a blur/change handler, never
-        // during render — same as handleDeleteSet / undoWarmupRamp below.
+    if (!demoMode) {
+      const weight = parseFloat(logEntry.weight)
+      const reps = parseInt(logEntry.reps, 10)
+      if (!Number.isFinite(weight) || !Number.isFinite(reps)) return
+      if (!await persistQueuedOp({
+        kind: 'upsert', sessionId, exerciseId, setNumber, weight, reps,
+        isPR: logEntry.isPR, isWarmup: logEntry.isWarmup, note, isSkipped: false,
         // eslint-disable-next-line react-hooks/purity
-        queuedAt: Date.now(),
-      })
-      commitLogs(prev =>
-        prev[key] ? { ...prev, [key]: { ...prev[key], pendingSync: true } } : prev,
-      )
-      showQueuedSyncToast()
-      return
+        rpe, queuedAt: Date.now(),
+      })) return
+      commitLogs(prev => prev[key] ? { ...prev, [key]: { ...prev[key], pendingSync: true } } : prev)
+      syncQueuedEdits(sessionId)
     }
-    removeQueuedOp(sessionId, exerciseId, setNumber)
-    if (overrides?.rpe !== undefined) showSaveToast(rpe === null ? 'RPE cleared' : `RPE ${rpe} saved`)
-    else showSaveToast(note ? 'Note saved' : 'Note cleared')
   }
 
   function handleAddSet(exerciseId: string) {
@@ -1771,6 +1653,15 @@ export default function ActiveWorkout({ day }: { day: string }) {
     const totalNow = ex.sets_target + extrasNow
     const restoredTotal = ex.sets_target + snap.extrasBefore
 
+    if (sessionId && !demoMode && totalNow > restoredTotal) {
+      // eslint-disable-next-line react-hooks/purity
+      const queuedAt = Date.now()
+      if (!await persistQueuedOps(Array.from({ length: totalNow - restoredTotal }, (_, offset) => ({
+        kind: 'delete' as const, sessionId, exerciseId, setNumber: restoredTotal + 1 + offset, queuedAt,
+      })))) return
+      syncQueuedEdits(sessionId)
+    }
+
     setLogs(prev => {
       const next = { ...prev }
       for (let n = 1; n <= totalNow; n++) delete next[`${exerciseId}-${n}`]
@@ -1785,28 +1676,6 @@ export default function ActiveWorkout({ day }: { day: string }) {
       return next
     })
 
-    if (sessionId && totalNow > restoredTotal) {
-      let anyFailed = false
-      for (let s = restoredTotal + 1; s <= totalNow; s++) {
-        const { error } = await runWithRetry(() =>
-          supabase
-            .from('session_logs')
-            .delete()
-            .eq('session_id', sessionId)
-            .eq('exercise_id', exerciseId)
-            .eq('set_number', s),
-        )
-        if (error && !isTransientError(error)) {
-          notifySetRejected(error, 'undoWarmupRamp')
-        } else if (error) {
-          anyFailed = true
-          // Same click-triggered async handler as handleDeleteSet, not render.
-          // eslint-disable-next-line react-hooks/purity
-          queueOp({ kind: 'delete', sessionId, exerciseId, setNumber: s, queuedAt: Date.now() })
-        }
-      }
-      if (anyFailed) showQueuedSyncToast()
-    }
     showSaveToast('Warm-up undone')
   }
 
@@ -1841,80 +1710,27 @@ export default function ActiveWorkout({ day }: { day: string }) {
     }
     delete next[`${exerciseId}-${total}`]
 
-    if (sessionId) {
-      let anyFailed = false
-      for (let s = setNumber; s < total; s++) {
-        const entry = next[`${exerciseId}-${s}`]
-        if (!entry) continue
-        const weight = entry.weight !== '' ? parseFloat(entry.weight) : null
-        const reps = entry.reps !== '' ? parseInt(entry.reps) : null
-        const { error } = await runWithRetry(() =>
-          supabase.from('session_logs').upsert(
-            {
-              session_id: sessionId,
-              exercise_id: exerciseId,
-              set_number: s,
-              weight,
-              reps,
-              is_pr: false,
-              is_warmup: entry.isWarmup,
-              note: entry.note || null,
-              is_skipped: entry.skipped,
-              rpe: parseRpe(entry.rpe),
-            },
-            { onConflict: 'session_id,exercise_id,set_number' },
-          ),
-        )
-        if (error && !isTransientError(error)) {
-          notifySetRejected(error, 'handleDeleteSet')
-        } else if (error) {
-          anyFailed = true
-          queueOp({
-            kind: 'upsert',
-            sessionId,
-            exerciseId,
-            setNumber: s,
-            weight,
-            reps,
-            isPR: entry.isPR,
-            isWarmup: entry.isWarmup,
-            note: entry.note || null,
-            isSkipped: entry.skipped,
-            rpe: parseRpe(entry.rpe),
-            // Timestamping a queued retry inside a click-triggered async
-            // handler, never during render — eslint's purity check can't
-            // see that this function is only ever invoked from an event
-            // handler.
-            // eslint-disable-next-line react-hooks/purity
-            queuedAt: Date.now(),
-          })
-          next[`${exerciseId}-${s}`] = { ...entry, pendingSync: true }
-        } else {
-          // This write is now authoritative for the slot — drop any queued
-          // op left over from an earlier failed check/edit/skip, or a later
-          // flush/resume would replay the stale data over this shift.
-          removeQueuedOp(sessionId, exerciseId, s)
+    if (sessionId && !demoMode) {
+      // eslint-disable-next-line react-hooks/purity
+      const queuedAt = Date.now()
+      const edits: QueuedOp[] = []
+      for (let slot = setNumber; slot <= total; slot++) {
+        const target = next[`${exerciseId}-${slot}`]
+        if (!target || (!target.checked && !target.skipped)) {
+          edits.push({ kind: 'delete', sessionId, exerciseId, setNumber: slot, queuedAt })
+          continue
         }
+        edits.push({
+          kind: 'upsert', sessionId, exerciseId, setNumber: slot, queuedAt,
+          weight: target.weight ? parseFloat(target.weight) : null,
+          reps: target.reps ? parseInt(target.reps, 10) : null,
+          isPR: target.isPR, isWarmup: target.isWarmup, isSkipped: target.skipped,
+          note: target.note || null, rpe: parseRpe(target.rpe),
+        })
+        next[`${exerciseId}-${slot}`] = { ...target, pendingSync: true }
       }
-      const { error: deleteError } = await runWithRetry(() =>
-        supabase
-          .from('session_logs')
-          .delete()
-          .eq('session_id', sessionId)
-          .eq('exercise_id', exerciseId)
-          .eq('set_number', total),
-      )
-      if (deleteError && !isTransientError(deleteError)) {
-        notifySetRejected(deleteError, 'handleDeleteSet')
-      } else if (deleteError) {
-        anyFailed = true
-        // Same click-triggered async handler as above, not render.
-        // eslint-disable-next-line react-hooks/purity
-        queueOp({ kind: 'delete', sessionId, exerciseId, setNumber: total, queuedAt: Date.now() })
-      } else {
-        removeQueuedOp(sessionId, exerciseId, total)
-      }
-      if (anyFailed) showQueuedSyncToast()
+      if (!await persistQueuedOps(edits)) return
+      syncQueuedEdits(sessionId)
     }
 
     // The deleted set may have held the live PR — recompute the bests.
@@ -1941,47 +1757,13 @@ export default function ActiveWorkout({ day }: { day: string }) {
    * Stats RPCs already filter on `weight is not null`, so these rows are
    * inert for XP/streak/PR purposes.
    */
-  async function persistSkip(exerciseId: string, setNumbers: number[]) {
-    if (!sessionId || setNumbers.length === 0) return { error: null }
-    const { error } = await runWithRetry(() =>
-      supabase.from('session_logs').upsert(
-        setNumbers.map(s => ({
-          session_id: sessionId,
-          exercise_id: exerciseId,
-          set_number: s,
-          weight: null,
-          reps: null,
-          is_pr: false,
-          is_warmup: false,
-          is_skipped: true,
-          rpe: null,
-        })),
-        { onConflict: 'session_id,exercise_id,set_number' },
-      ),
-    )
-    // This write is now authoritative for these slots — drop any queued op
-    // left over from an earlier failed check/edit, or a later flush/resume
-    // would replay stale (non-skipped) data over this skip.
-    if (!error) for (const s of setNumbers) removeQueuedOp(sessionId, exerciseId, s)
-    return { error }
-  }
-
-  /** Undo persistSkip — deletes the marker row(s) so resume no longer sees them. */
-  async function persistUnskip(exerciseId: string, setNumbers: number[]) {
-    if (!sessionId || setNumbers.length === 0) return { error: null }
-    const { error } = await runWithRetry(() =>
-      supabase
-        .from('session_logs')
-        .delete()
-        .eq('session_id', sessionId)
-        .eq('exercise_id', exerciseId)
-        .in('set_number', setNumbers),
-    )
-    // Same reasoning as persistSkip: a successful unskip is authoritative,
-    // so any stale queued op for these slots (e.g. a failed skip that never
-    // synced) must not survive to resurrect on a later flush/resume.
-    if (!error) for (const s of setNumbers) removeQueuedOp(sessionId, exerciseId, s)
-    return { error }
+  async function persistSkipEdit(exerciseId: string, setNumbers: number[], skip: boolean) {
+    if (!sessionId || demoMode) return true
+    const queuedAt = Date.now()
+    return persistQueuedOps(setNumbers.map((setNumber): QueuedOp => skip
+      ? { kind: 'upsert', sessionId, exerciseId, setNumber, weight: null, reps: null,
+          isPR: false, isWarmup: false, note: null, isSkipped: true, queuedAt }
+      : { kind: 'delete', sessionId, exerciseId, setNumber, queuedAt }))
   }
 
   function showQueuedSyncToast() {
@@ -1995,17 +1777,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
   }
 
   /** A permanent (non-network) failure: report it and tell the user. Never queued. */
-  function notifySetRejected(error: unknown, operation: string) {
-    const message = (error as { message?: unknown } | null)?.message
-    reportError(new Error(typeof message === 'string' ? message : 'Set write rejected'), {
-      operation,
-      route: '/log',
-      extra: { code: (error as { code?: unknown } | null)?.code },
-    })
-    showSetRejectedToast()
-  }
 
-  /** Put rows back to a pre-action snapshot and recompute the live PR bars. */
   function restoreLogEntries(exerciseId: string, snapshot: LogMap, keys: string[]) {
     commitLogs(prev => {
       const next = { ...prev }
@@ -2014,34 +1786,6 @@ export default function ActiveWorkout({ day }: { day: string }) {
       setPreviousBestVolumes(pb => ({ ...pb, [exerciseId]: bestVolumeFromLogs(exerciseId, next) }))
       return next
     })
-  }
-
-  /** Queues a skip marker for each set (same fallback as handleCheck/handleSaveEdit)
-   * after persistSkip fails even after its own retries. */
-  function queueSkip(exerciseId: string, setNumbers: number[]) {
-    if (!sessionId) return
-    for (const s of setNumbers) {
-      queueOp({
-        kind: 'upsert',
-        sessionId,
-        exerciseId,
-        setNumber: s,
-        weight: null,
-        reps: null,
-        isPR: false,
-        isWarmup: false,
-        note: null,
-        isSkipped: true,
-        queuedAt: Date.now(),
-      })
-    }
-  }
-
-  function queueUnskip(exerciseId: string, setNumbers: number[]) {
-    if (!sessionId) return
-    for (const s of setNumbers) {
-      queueOp({ kind: 'delete', sessionId, exerciseId, setNumber: s, queuedAt: Date.now() })
-    }
   }
 
   async function handleSkipSet(exerciseId: string, setNumber: number) {
@@ -2087,14 +1831,17 @@ export default function ActiveWorkout({ day }: { day: string }) {
     // Exit edit mode if the user is mid-edit when they skip.
     if (editingKey === key) setEditingKey(null)
     try {
-      const { error } = await persistSkip(exerciseId, [setNumber])
-      if (error && !isTransientError(error)) {
-        notifySetRejected(error, 'handleSkipSet')
+      if (!await persistSkipEdit(exerciseId, [setNumber], true)) {
         restoreLogEntries(exerciseId, skipSnapshot, [key])
-      } else if (error) {
-        queueSkip(exerciseId, [setNumber])
-        setLogs(prev => ({ ...prev, [key]: { ...prev[key], pendingSync: true } }))
-        showQueuedSyncToast()
+        return
+      }
+      if (sessionId && !demoMode) {
+        setLogs(prev => {
+          const next = { ...prev }
+          for (const slot of [key]) next[slot] = { ...next[slot], pendingSync: true }
+          return next
+        })
+        syncQueuedEdits(sessionId)
       }
     } finally {
       skippingKeysRef.current.delete(key)
@@ -2128,14 +1875,17 @@ export default function ActiveWorkout({ day }: { day: string }) {
       }
     })
     try {
-      const { error } = await persistUnskip(exerciseId, [setNumber])
-      if (error && !isTransientError(error)) {
-        notifySetRejected(error, 'handleUnskipSet')
+      if (!await persistSkipEdit(exerciseId, [setNumber], false)) {
         restoreLogEntries(exerciseId, skipSnapshot, [key])
-      } else if (error) {
-        queueUnskip(exerciseId, [setNumber])
-        setLogs(prev => ({ ...prev, [key]: { ...prev[key], pendingSync: true } }))
-        showQueuedSyncToast()
+        return
+      }
+      if (sessionId && !demoMode) {
+        setLogs(prev => {
+          const next = { ...prev }
+          for (const slot of [key]) next[slot] = { ...next[slot], pendingSync: true }
+          return next
+        })
+        syncQueuedEdits(sessionId)
       }
     } finally {
       skippingKeysRef.current.delete(key)
@@ -2197,21 +1947,17 @@ export default function ActiveWorkout({ day }: { day: string }) {
       setEditingKey(null)
     }
     try {
-      const { error } = await persistSkip(exerciseId, setsToSkip)
-      if (error && !isTransientError(error)) {
-        notifySetRejected(error, 'handleSkipExercise')
+      if (!await persistSkipEdit(exerciseId, setsToSkip, true)) {
         restoreLogEntries(exerciseId, skipSnapshot, skipKeys)
-      } else if (error) {
-        queueSkip(exerciseId, setsToSkip)
+        return
+      }
+      if (sessionId && !demoMode) {
         setLogs(prev => {
           const next = { ...prev }
-          for (const s of setsToSkip) {
-            const key = `${exerciseId}-${s}`
-            next[key] = { ...next[key], pendingSync: true }
-          }
+          for (const slot of skipKeys) next[slot] = { ...next[slot], pendingSync: true }
           return next
         })
-        showQueuedSyncToast()
+        syncQueuedEdits(sessionId)
       }
     } finally {
       for (const k of skipKeys) skippingKeysRef.current.delete(k)
@@ -2257,21 +2003,17 @@ export default function ActiveWorkout({ day }: { day: string }) {
       return next
     })
     try {
-      const { error } = await persistUnskip(exerciseId, setsToUnskip)
-      if (error && !isTransientError(error)) {
-        notifySetRejected(error, 'handleUnskipExercise')
+      if (!await persistSkipEdit(exerciseId, setsToUnskip, false)) {
         restoreLogEntries(exerciseId, skipSnapshot, unskipKeys)
-      } else if (error) {
-        queueUnskip(exerciseId, setsToUnskip)
+        return
+      }
+      if (sessionId && !demoMode) {
         setLogs(prev => {
           const next = { ...prev }
-          for (const s of setsToUnskip) {
-            const key = `${exerciseId}-${s}`
-            next[key] = { ...next[key], pendingSync: true }
-          }
+          for (const slot of unskipKeys) next[slot] = { ...next[slot], pendingSync: true }
           return next
         })
-        showQueuedSyncToast()
+        syncQueuedEdits(sessionId)
       }
     } finally {
       for (const k of unskipKeys) skippingKeysRef.current.delete(k)
@@ -2328,7 +2070,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
 
     // Drop offline-queue ops for the swapped-out exercise so a later flush
     // can't re-insert logs for a slot that's no longer on screen.
-    clearQueuedOpsForExercise(sessionId, swapTarget)
+    await clearQueuedOpsForExercise(sessionId, swapTarget, workoutOwnerRef.current)
 
     let prevBest: number | null = previousBests[newExercise.id] !== undefined
       ? previousBests[newExercise.id]
@@ -2707,7 +2449,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
       return
     }
 
-    clearQueuedOpsForExercise(sessionId, exerciseId)
+    await clearQueuedOpsForExercise(sessionId, exerciseId, workoutOwnerRef.current)
     const oldExtras = extraSets[exerciseId] ?? 0
     commitExercises(prev => prev.filter(e => e.id !== exerciseId))
     clearExerciseLocalState(exerciseId, oldExercise, oldExtras)
@@ -2807,42 +2549,21 @@ export default function ActiveWorkout({ day }: { day: string }) {
   async function handleDiscard() {
     if (discardingRef.current) return
     discardingRef.current = true
+    setResumeToast(null)
     // The confirm dialog stays up showing "Discarding…" until we navigate.
     // It used to close first, which left the live workout on screen with no
     // feedback for the whole round trip — it read as a discard that hung.
     setDiscarding(true)
 
-    // Stop queued set writes from flushing into the session mid-delete.
-    if (sessionId) clearQueuedOpsForSession(sessionId)
-
-    // A workout that only exists on this device has nothing on the server to
-    // delete — drop it locally and leave, signal or not.
-    if (sessionId && isPendingLocalSessionId(sessionId)) {
-      clearPendingLocalSession(sessionId)
-      clearSessionExtraIds(sessionId)
-      clearSessionRest(sessionId)
-      restTimer.stop()
-      clearWorkoutNotifications()
-      void wakeLockRef.current?.release()
-      setSessionId(null)
-      router.replace('/log')
-      return
-    }
-
-    const user = await getClientUser(supabase)
-    if (!user) {
-      discardingRef.current = false
-      setDiscarding(false)
-      router.replace('/login')
-      return
-    }
-
-    const result = await deleteIncompleteSessions(supabase, user.id, day)
+    const owner = workoutOwnerRef.current
+    const result = owner && sessionId
+      ? demoMode ? { ok: true } : await discardWorkout(rawSupabase, owner, sessionId)
+      : { ok: false, error: 'Could not identify this workout.' }
     if (!result.ok) {
       discardingRef.current = false
       setDiscarding(false)
       setShowExitConfirm(false)
-      setResumeToast('Could not discard workout. Try again.')
+      setResumeToast('error' in result ? result.error ?? 'Could not discard. Try again.' : 'Could not discard. Try again.')
       setTimeout(() => setResumeToast(null), 4000)
       return
     }
@@ -2864,7 +2585,10 @@ export default function ActiveWorkout({ day }: { day: string }) {
     void Promise.allSettled(extrasToDrop.map(ex => retireThisDayExtra(ex)))
 
     setSessionId(null)
-    router.replace('/log')
+    // A document navigation lets the worker serve the cached workout shell.
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+    if (browserIsOffline()) window.location.assign('/offline-workout')
+    else router.replace('/log')
   }
 
   async function handleUndoFinish() {
@@ -2897,69 +2621,44 @@ export default function ActiveWorkout({ day }: { day: string }) {
     clearWorkoutNotifications()
     void wakeLockRef.current?.release()
 
-    // The whole finish is wrapped so a network failure can't leave the button
-    // stuck on "SAVING…" or silently drop the workout. Every set is already
-    // saved to session_logs as it's checked, so on failure the session simply
-    // isn't marked complete — it stays in-progress and resumes right where it
-    // left off. `runWithRetry` gives a transient blip, or an auth token that
-    // just expired on a long session, a chance to recover on its own.
     try {
-      // Flush offline-queued set writes BEFORE complete_session — otherwise the
-      // server may see NO_WORKING_SETS or finish with missing sets/wrong XP.
       await Promise.allSettled([...inflightSavesRef.current])
-      // A workout started offline gets its server session here (if it hasn't
-      // already); from then on every call uses the server's id.
-      const { sessionId: liveSessionId, result: flushed } = await syncSessionNow(sessionId, rawSupabase)
-      if (isPendingLocalSessionId(liveSessionId)) {
-        setResumeToast('Still offline — your sets are saved here and will sync when you reconnect.')
-        setTimeout(() => setResumeToast(null), 5000)
+      await noteWriteRef.current?.catch(() => {})
+      if (storageFailureRef.current.size > 0) {
+        setResumeToast('Some edits have not been saved. Retry them before finishing.')
         return
       }
-      if (flushed.rejected.length > 0) {
-        // Refused sets were dropped from the queue; un-check them so the
-        // finish check below sees the real state.
-        setLogs(prev => applyFlushResult(prev, flushed))
-        setResumeToast("Couldn't save that set — check the weight and reps.")
-        setTimeout(() => setResumeToast(null), 5000)
-        return
-      }
-      if (getQueuedOps(liveSessionId).length > 0) {
-        setResumeToast('Still syncing sets — check your connection and try again.')
-        setTimeout(() => setResumeToast(null), 5000)
-        return
-      }
-      setLogs(prev => {
-        let changed = false
-        const next = { ...prev }
-        for (const [k, l] of Object.entries(next)) {
-          if (l.pendingSync) {
-            next[k] = { ...l, pendingSync: false }
-            changed = true
-          }
-        }
-        return changed ? next : prev
-      })
-
-      const user = await getClientUser(supabase)
-      if (!user) { router.push('/login'); return }
-
-      // Completion (server-side transaction, lost-response recovery, rotation,
-      // undo token, badges) lives in completeSession so every finish path shares it.
-      const outcome = await completeSession(supabase, {
-        userId: user.id,
-        sessionId: liveSessionId,
-        dayType: day,
+      const owner = workoutOwnerRef.current
+      if (!owner) return
+      const args = {
+        day,
         note: workoutNote || null,
         startHour: startedAt.getHours(),
-      })
-      if (!outcome.ok) {
-        if (outcome.reason === 'no_working_sets') {
-          setResumeToast('Log at least one set with weight and reps before finishing.')
-          setTimeout(() => setResumeToast(null), 5000)
+        offsetMinutes: -startedAt.getTimezoneOffset(),
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      }
+      let liveSessionId = sessionId
+      let outcome
+      if (demoMode) {
+        outcome = await completeSession(supabase, {
+          userId: owner, sessionId, dayType: day, note: args.note, startHour: args.startHour,
+        })
+      } else {
+        await requestWorkoutFinish(owner, sessionId, { ...args, note: null })
+        const synced = await syncSessionNow(sessionId, rawSupabase, owner)
+        liveSessionId = synced.sessionId
+        outcome = synced.completion
+        if (!outcome) {
+          const state = readWorkoutStore(owner)
+          const blocked = getQueuedOps(liveSessionId, owner).some(op => op.rejected) ||
+            state.notes[liveSessionId]?.rejected || state.drafts.find(draft => draft.id === liveSessionId)?.rejected
+          setResumeToast(blocked
+            ? 'Finish needs attention. Resume editing to resolve the saved changes.'
+            : 'Finish saved on this device. It will sync when you reconnect.')
           return
         }
-        throw outcome.error
       }
+      if (!outcome.ok) throw outcome.error
       const { result, newBadges } = outcome
 
       const xpEarned = result.xp_earned
@@ -3199,6 +2898,23 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const checked = checkedSets()
   const total = totalSets()
 
+  const nextSet = exercises.flatMap(exercise => Array.from(
+    { length: exercise.sets_target + (extraSets[exercise.id] ?? 0) },
+    (_, index) => ({ exercise, number: index + 1, key: `${exercise.id}-${index + 1}` }),
+  )).find(entry => !logs[entry.key]?.checked && !logs[entry.key]?.skipped)
+  const workingSet = hasWorkingSet()
+  const store = readWorkoutStore(workoutOwner)
+  const currentId = sessionId ? resolveSessionAlias(sessionId, workoutOwner) : null
+  const queued = currentId ? getQueuedOps(currentId, workoutOwner) : []
+  const rejected = queued.find(op => op.rejected)
+  const noteState = currentId ? store.notes[currentId] : undefined
+  const finishState = currentId ? store.finishes[currentId] : undefined
+  const draftError = store.drafts.find(draft => draft.id === currentId)?.rejected
+  const issue = rejected?.rejected ?? noteState?.rejected ?? finishState?.rejected ?? draftError
+  const syncLabel = storageError ? 'Some edits aren’t saved' : issue ? 'Sync needs attention'
+    : finishState ? 'Finish saved on device' : (queued.length || noteState) ? 'Saved on device'
+    : checked > 0 && !demoMode ? 'Synced' : ''
+
   return (
     <>
       {activeWorkoutHints}
@@ -3288,14 +3004,23 @@ export default function ActiveWorkout({ day }: { day: string }) {
               <button
                 data-haptic="medium"
                 disabled={discarding}
-                onClick={() => {
+                onClick={async () => {
+                  await Promise.allSettled([...inflightSavesRef.current])
+                  await noteWriteRef.current?.catch(() => {})
+                  if (storageFailureRef.current.size > 0) {
+                    setShowExitConfirm(false)
+                    setResumeToast('Some edits could not be saved. Retry them before leaving.')
+                    return
+                  }
+                  if (!restTimer.persistForExit(getPauseRestOnExit())) {
+                    setShowExitConfirm(false)
+                    setResumeToast('Could not save the rest timer. Try again.')
+                    return
+                  }
                   setShowExitConfirm(false)
-                  // Default: freeze the rest timer right where it is so it doesn't
-                  // keep counting down while the workout is closed, and resumes from
-                  // the same remaining time when the user comes back. Configurable
-                  // in Settings (Profile) — "keep going" leaves it running instead.
-                  if (getPauseRestOnExit()) restTimer.pause()
-                  router.replace('/log')
+                  // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+                  if (browserIsOffline()) window.location.assign('/offline-workout')
+                  else router.replace('/log')
                 }}
                 style={{
                   position: 'relative',
@@ -3548,7 +3273,14 @@ export default function ActiveWorkout({ day }: { day: string }) {
         </div>
       )}
 
-      {/* Rest timer — owns the bottom edge; Finish is hidden while active. */}
+      {restTimer.active && (
+        <div className="wo-rest-sync" role="status">
+          {restTimer.paused ? 'Rest paused' : restTimer.done ? 'Rest done' :
+            `Rest until ${new Date(restTimer.startedAt + restTimer.durationMs).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })}`}
+          {syncLabel && ` · ${syncLabel}`}
+        </div>
+      )}
+      {/* Rest timer owns the lower controls while it is running. */}
       {restTimer.active && restTimer.exerciseId && (
         <RestTimerBar
           exerciseId={restTimer.exerciseId}
@@ -3571,12 +3303,13 @@ export default function ActiveWorkout({ day }: { day: string }) {
         />
       )}
 
-      <div className="page page--workout" style={{ paddingBottom: 'calc(140px + env(safe-area-inset-bottom))', fontFamily: "'DM Sans', sans-serif" }}>
+      <div className="page page--workout" style={{ paddingBottom: workingSet || restTimer.active ? 'calc(140px + env(safe-area-inset-bottom))' : 'calc(72px + env(safe-area-inset-bottom))', fontFamily: "'DM Sans', sans-serif" }}>
        <div className="wo-layout">
 
         {/* Desktop sidebar rail — hidden on mobile via CSS. Mirrors the mobile
             header (title/timer/progress) and adds an exercise jump-list. */}
         <aside className="wo-sidebar">
+          <p className="wo-keys">Tab between controls. Enter advances from weight and logs the set from reps.</p>
           <button
             onClick={() => setShowExitConfirm(true)}
             aria-label="Exit workout"
@@ -3670,7 +3403,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
               const anyChecked = entries.some(e => e?.checked)
               const done = allProcessed && anyChecked
               return (
-                <button
+                <button title={ex.name}
                   key={ex.id}
                   className="wo-jump-item"
                   onClick={() => document.getElementById(`wo-ex-${ex.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
@@ -3702,7 +3435,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
                     fontSize: '13px', minWidth: 0,
                     color: allSkipped ? 'var(--text-muted)' : 'var(--text-secondary)',
                     textDecoration: allSkipped ? 'line-through' : 'none',
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    overflowWrap: 'anywhere',
                   }}>
                     {ex.name}
                   </span>
@@ -3849,6 +3582,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
               lastSetNotes={lastSetNotes}
               priorVolume={baselineBestVolumes[ex.id]}
               editingKey={editingKey}
+              nextSetKey={nextSet?.key}
               onCheck={handleCheck}
               onUpdate={updateLog}
               className={enteredExerciseId === ex.id ? 'swap-in' : undefined}
@@ -3903,6 +3637,31 @@ export default function ActiveWorkout({ day }: { day: string }) {
             + ADD EXERCISE
           </button>
 
+          {issue && (
+            <section className="wo-sync-issue" aria-label="Workout sync issue">
+              <strong>Saved changes need attention</strong>
+              <p>{rejected
+                ? `${exercises.find(exercise => exercise.id === rejected.exerciseId)?.name ?? 'Exercise'} · Set ${rejected.setNumber}`
+                : draftError ? 'Local workout draft' : noteState?.rejected ? 'Workout note' : 'Finish request'}</p>
+              <p>{issue}</p>
+              <button type="button" onClick={() => {
+                if (workoutOwner && currentId) {
+                  void reopenWorkoutDraft(workoutOwner, currentId).then(() => {
+                    if (rejected) setEditingKey(`${rejected.exerciseId}-${rejected.setNumber}`)
+                    else if (noteState?.rejected) document.getElementById('workout-note')?.focus()
+                    else void retryPendingSync()
+                  }).catch(() => setStorageError(true))
+                }
+              }}>{rejected ? 'Correct saved set' : 'Resolve sync'}</button>
+              {rejected && workoutOwner && currentId && (
+                <button type="button" onClick={() => {
+                  void removeQueuedOp(currentId, rejected.exerciseId, rejected.setNumber, workoutOwner, rejected.revision)
+                    .catch(() => setStorageError(true))
+                }}>Remove saved edit</button>
+              )}
+            </section>
+          )}
+
           {/* Workout note */}
           <div
             style={{
@@ -3938,7 +3697,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
             <textarea
               id="workout-note"
               value={workoutNote}
-              onChange={e => setWorkoutNote(e.target.value)}
+              onChange={e => changeWorkoutNote(e.target.value)}
               placeholder="Felt heavy, shoulder tweaked, form notes..."
               rows={2}
               style={{
@@ -3963,13 +3722,13 @@ export default function ActiveWorkout({ day }: { day: string }) {
           (including the brief REST DONE / OK flash). Always pinned to the
           viewport bottom otherwise; the keyboard appears on top of it. */}
       {!restTimer.active && (
-      <div className="wo-fixed-bar" style={{
+      <div className={`wo-fixed-bar${workingSet ? '' : ' wo-fixed-bar--compact'}`} style={{
         position: 'fixed',
         bottom: 0,
-        paddingTop: '12px',
+        paddingTop: workingSet ? '10px' : '5px',
         paddingLeft: '16px',
         paddingRight: '16px',
-        paddingBottom: 'max(16px, env(safe-area-inset-bottom))',
+        paddingBottom: workingSet ? 'max(12px, env(safe-area-inset-bottom))' : 'max(5px, env(safe-area-inset-bottom))',
         backgroundColor: 'var(--bg)',
         borderTop: '1px solid var(--border)',
         zIndex: 50,
@@ -3978,7 +3737,16 @@ export default function ActiveWorkout({ day }: { day: string }) {
         {(() => {
           const pending = hasPendingSync()
           const pendingCount = pendingSyncCount()
-          const canFinish = hasWorkingSet() && !pending && !finishing
+          const store = readWorkoutStore(workoutOwner)
+          const intent = sessionId ? store.finishes[sessionId] : undefined
+          const pendingNote = sessionId ? store.notes[sessionId] : undefined
+          const rejected = !!(sessionId && (getQueuedOps(sessionId).some(op => op.rejected) ||
+            pendingNote?.rejected || intent?.rejected || store.drafts.find(draft => draft.id === sessionId)?.rejected))
+          const canFinish = hasWorkingSet() && !storageError && !finishing
+          if (!hasWorkingSet() && !pending && !storageError) {
+            return <div className="wo-next-set-hint">{nextSet
+              ? `Next · ${nextSet.exercise.name} · Set ${nextSet.number}` : 'Log a working set to finish'}</div>
+          }
           return (
             <>
             <button
@@ -3986,13 +3754,7 @@ export default function ActiveWorkout({ day }: { day: string }) {
               disabled={!canFinish}
               className="wo-finish-btn"
               data-haptic="heavy"
-              title={
-                pending
-                  ? 'Waiting for sets to sync…'
-                  : !hasWorkingSet()
-                    ? 'Log at least one working set'
-                    : undefined
-              }
+              title="Save and finish this workout"
               style={{
                 position: 'relative',
                 height: '56px',
@@ -4005,9 +3767,14 @@ export default function ActiveWorkout({ day }: { day: string }) {
                 transition: 'background-color 150ms ease, color 150ms ease',
               }}
             >
-              {finishing ? 'SAVING...' : 'FINISH WORKOUT'}
+              {finishing ? 'SAVING…' : intent ? 'RETRY FINISH' : 'FINISH WORKOUT'}
             </button>
-            {pending && (
+            {intent && workoutOwner && sessionId && (
+              <button type="button" className="wo-next-set-hint" onClick={() => {
+                void reopenWorkoutDraft(workoutOwner, sessionId).catch(() => setStorageError(true))
+              }}>Resume editing</button>
+            )}
+            {(syncLabel || pending) && (
               <div
                 role="status"
                 style={{
@@ -4023,9 +3790,11 @@ export default function ActiveWorkout({ day }: { day: string }) {
                 }}
               >
                 <span>
-                  Waiting to sync {pendingCount} {pendingCount === 1 ? 'set' : 'sets'}
+                  {storageError ? 'Edits not saved' : rejected ? 'Saved edits need attention' :
+                    intent ? 'Finish saved on this device' :
+                    pendingCount ? `${pendingCount} ${pendingCount === 1 ? 'set' : 'sets'} saved on this device` : syncLabel}
                 </span>
-                <span aria-hidden="true">·</span>
+                {(pending || pendingNote || intent) && <><span aria-hidden="true">·</span>
                 <button
                   type="button"
                   data-haptic="light"
@@ -4044,17 +3813,17 @@ export default function ActiveWorkout({ day }: { day: string }) {
                   }}
                 >
                   Retry
-                </button>
+                </button></>}
               </div>
             )}
             </>
           )
         })()}
-        <div className="wo-finish-summary" style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+        {workingSet && <div className="wo-finish-summary" style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
           {skipped > 0
             ? `${checked} done · ${skipped} skipped · ${total} total`
             : `${checked} / ${total} sets`}
-        </div>
+        </div>}
         </div>
       </div>
       )}
@@ -4075,6 +3844,7 @@ interface ExerciseCardProps {
   priorVolume: number | null | undefined
   lastSetNotes: Record<string, string>
   editingKey: string | null
+  nextSetKey?: string
   onCheck: (exerciseId: string, setNumber: number) => void
   onUpdate: (key: string, field: 'weight' | 'reps' | 'note' | 'rpe', value: string) => void
   onSwap: () => void
@@ -4103,7 +3873,7 @@ interface ExerciseCardProps {
 }
 
 function ExerciseCard({
-  exercise, firstExercise, extraSets, logs, previousBest, priorVolume, lastSetNotes, editingKey,
+  exercise, firstExercise, extraSets, logs, previousBest, priorVolume, lastSetNotes, editingKey, nextSetKey,
   onCheck, onUpdate, onSwap, onRename, canRemove, onRemove,
   onSkipSet, onUnskipSet, onDeleteSet,
   onSkipExercise, onUnskipExercise,
@@ -4326,6 +4096,7 @@ function ExerciseCard({
               setsTarget={exercise.sets_target}
               onboardFirst={firstExercise && setNum === 1 && !isBonus}
               editing={editing}
+              nextSet={key === nextSetKey}
               showPR={liveSetIsPR(logEntry, priorVolume)}
               logEntry={logEntry}
               prevReps={prevReps}
@@ -4547,6 +4318,7 @@ function ExerciseCard({
 // ─── Set Row ───────────────────────────────────────────────────────────────────
 
 interface SetRowProps {
+  nextSet: boolean
   setNumber: number
   isBonus: boolean
   /** Working-set target count — bonus labels use setNumber - setsTarget (+1, +2…). */
@@ -4576,7 +4348,7 @@ interface SetRowProps {
 }
 
 function SetRow({
-  setNumber, isBonus, setsTarget, onboardFirst, editing,
+  setNumber, isBonus, setsTarget, onboardFirst, editing, nextSet,
   showPR, logEntry, prevReps, lastNote,
   onCheck, onSaveEdit, onStartEdit,
   onWeightChange, onRepsChange, onNoteChange, onNoteBlur, onRpeChange,
@@ -4758,7 +4530,7 @@ function SetRow({
   }
 
   return (
-    <div
+    <div className={nextSet ? "wo-set-row wo-set-row--next" : "wo-set-row"}
       style={{
         opacity: logEntry.skipped ? 0.55 : logEntry.checked && !inEdit ? 0.75 : 1,
         transition: 'opacity 150ms ease',
@@ -4852,11 +4624,11 @@ function SetRow({
         {/* Weight + reps inputs. pointerDown unlocks a checked set before focus,
             so typing works immediately for both check-to-edit and tap-to-edit. */}
         <div
+          className="wo-set-inputs"
           style={{
             display: 'flex',
             alignItems: 'center',
             gap: '10px',
-            flex: 1,
             minWidth: 0,
           }}
         >

@@ -67,7 +67,9 @@ export const watchSessionSchema = z
       .nullish(),
     calories: z.int().min(0).max(20000).nullish(),
     hr: watchHrSchema.nullish(),
-    sets:z.array(watchSetSchema).max(MAX_SETS_PER_REQUEST).default([]),
+    batch_upload: z.boolean().optional(),
+    sensor_retry: z.boolean().optional(),
+    sets: z.array(watchSetSchema).max(MAX_SETS_PER_REQUEST).default([]),
   })
   .superRefine((s, ctx) => {
     const ids = new Set<string>()

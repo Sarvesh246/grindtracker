@@ -1,32 +1,14 @@
 'use client'
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createClient, getClientUser } from '@/lib/supabase/client'
 import { useDemoMode } from '@/lib/contexts/DemoModeContext'
-import {
-  buildBatches,
-  GARMIN_EXPORT_FILE,
-  parseGarminExportText,
-  parseGarminHealthStatusText,
-  withExportHrv,
-  type ImportedNight
-} from '@/lib/health/importers'
+import type { GarminPreview, GarminWorkerMessage } from '@/lib/health/garminExport'
 import { dateLabel, durationShort } from '@/lib/health/model'
 import { sourceLabel } from '@/lib/health/reconcile'
 import './health-import.css'
 
 type Summary = { source: string; nights: number; latest: string }
-type Preview = {
-  found: number
-  accepted: number
-  skipped: { key: string; reason: string }[]
-  batches: ReturnType<typeof buildBatches>['batches']
-  recent: ImportedNight[]
-  from: string
-  to: string
-}
-
 const ENDPOINT_PATH = '/api/watch/v1/health-import'
-const MAX_ZIP_BYTES = 400 * 1024 * 1024
 
 async function copy(text: string): Promise<boolean> {
   try {
@@ -139,7 +121,7 @@ export default function HealthImportSettings() {
   const client = useMemo(() => createClient(), [])
   const { demoMode } = useDemoMode()
   const [sources, setSources] = useState<Summary[]>([])
-  const [preview, setPreview] = useState<Preview | null>(null)
+  const [preview, setPreview] = useState<GarminPreview | null>(null)
   const [status, setStatus] = useState('')
   const [busy, setBusy] = useState(false)
   const [token, setToken] = useState('')
@@ -155,6 +137,13 @@ export default function HealthImportSettings() {
     () => Intl.DateTimeFormat().resolvedOptions().timeZone,
     () => null
   )
+
+  const workerRef = useRef<Worker | null>(null)
+  const importAbortRef = useRef<AbortController | null>(null)
+  useEffect(() => () => {
+    workerRef.current?.terminate()
+    importAbortRef.current?.abort()
+  }, [])
 
   const [reload, setReload] = useState(0)
   useEffect(() => {
@@ -189,78 +178,68 @@ export default function HealthImportSettings() {
     return () => window.removeEventListener('grind:health-updated', again)
   }, [])
 
-  async function onFiles(files: FileList | null) {
-    if (!files?.length || busy) return
+  function onFiles(files: FileList | null) {
+    if (!files?.length || busy || demoMode) return
     setBusy(true)
     setPreview(null)
     setStatus('Reading your export…')
     try {
-      const texts: string[] = []
-      const statusTexts: string[] = []
-      const add = (name: string, text: string) =>
-        (/healthStatusData/i.test(name) ? statusTexts : texts).push(text)
-      for (const file of Array.from(files)) {
-        if (/\.zip$/i.test(file.name)) {
-          if (file.size > MAX_ZIP_BYTES) {
-            setStatus(
-              'That zip is very large. Unzip it on a computer and upload just the *_sleepData.json files.'
-            )
-            return
-          }
-          const { unzipSync, strFromU8 } = await import('fflate')
-          const entries = unzipSync(new Uint8Array(await file.arrayBuffer()), {
-            filter: (entry) => GARMIN_EXPORT_FILE.test(entry.name)
-          })
-          for (const [name, bytes] of Object.entries(entries)) add(name, strFromU8(bytes))
-        } else add(file.name, await file.text())
+      const worker = new Worker(new URL('../../lib/health/garminExport.worker.ts', import.meta.url))
+      workerRef.current = worker
+      function finish() {
+        worker.terminate()
+        workerRef.current = null
+        setBusy(false)
       }
-      const hrvByDate = new Map<string, number>()
-      for (const text of statusTexts)
-        for (const [date, hrv] of parseGarminHealthStatusText(text)) hrvByDate.set(date, hrv)
-      const nights = new Map<string, ImportedNight>()
-      const skipped: { key: string; reason: string }[] = []
-      for (const text of texts) {
-        const r = parseGarminExportText(text, { fallbackZone: zone ?? undefined })
-        for (const n of withExportHrv(r.nights, hrvByDate)) nights.set(n.provider_id, n)
-        skipped.push(...r.skipped)
+      worker.onmessage = ({ data }: MessageEvent<GarminWorkerMessage>) => {
+        if (workerRef.current !== worker) return
+        if (data.type === 'progress') {
+          setStatus(data.text)
+          return
+        }
+        if (data.type === 'done') setPreview(data.preview)
+        setStatus(data.type === 'error' ? data.text : '')
+        finish()
       }
-      if (!nights.size) {
-        setStatus(
-          texts.length
-            ? 'No sleep nights found in those files. Look for files named like 2026-01-01_2026-04-10_12345_sleepData.json.'
-            : 'No sleepData.json file found in that upload.'
-        )
-        return
+      worker.onerror = () => {
+        if (workerRef.current !== worker) return
+        setStatus('Could not read that export. Try the sleepData.json files.')
+        finish()
       }
-      const all = [...nights.values()].sort((a, b) => a.start_at.localeCompare(b.start_at))
-      const built = buildBatches(all, 'garmin_export', new Date())
-      setPreview({
-        found: all.length,
-        accepted: built.accepted,
-        skipped: [...skipped, ...built.skipped],
-        batches: built.batches,
-        recent: [...all].reverse().slice(0, 5),
-        from: all[0].wake_date,
-        to: all[all.length - 1].wake_date
-      })
-      setStatus('')
+      worker.postMessage({ files: Array.from(files), zone: zone ?? undefined })
     } catch {
-      setStatus('Couldn’t read that file. Try the *_sleepData.json files instead of the zip.')
-    } finally {
+      setStatus('Could not start the file reader. Try again.')
       setBusy(false)
     }
+  }
+
+  function cancelFileImport() {
+    if (workerRef.current) {
+      workerRef.current.terminate()
+      workerRef.current = null
+      setBusy(false)
+      setStatus('File inspection canceled.')
+    }
+    importAbortRef.current?.abort()
   }
 
   async function runImport() {
     if (!preview || busy || demoMode) return
     setBusy(true)
+    const abort = new AbortController()
+    importAbortRef.current = abort
     try {
       for (let i = 0; i < preview.batches.length; i++) {
+        if (abort.signal.aborted) return
         setStatus(`Importing ${i + 1} of ${preview.batches.length}…`)
         const { error } = await client.rpc('import_health_batch', {
           p_source: 'garmin_export',
           p_batch: preview.batches[i]
-        })
+        }).abortSignal(abort.signal)
+        if (abort.signal.aborted) {
+          setStatus(`Import canceled after ${i} confirmed batches. You can safely import again.`)
+          return
+        }
         if (error) {
           setStatus(
             /PAUSED/.test(error.message)
@@ -274,6 +253,7 @@ export default function HealthImportSettings() {
       setPreview(null)
       window.dispatchEvent(new Event('grind:health-updated'))
     } finally {
+      importAbortRef.current = null
       setBusy(false)
     }
   }
@@ -332,6 +312,9 @@ python3 garmin-sleep-sync.py --days 14`
             }}
           />
         </label>
+        {busy && (
+          <button type="button" className="hi-primary" onClick={cancelFileImport}>Cancel</button>
+        )}
         {preview && (
           <div className="hi-preview">
             <p>

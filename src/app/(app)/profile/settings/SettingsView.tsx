@@ -35,6 +35,8 @@ import {
   sessionsLogsToCsv,
   type GrindExportPayload,
 } from '@/lib/utils/exportData'
+import { purgeWorkoutStore } from '@/lib/offline/workoutStore'
+import { exportPages } from '@/lib/utils/exportPages'
 import { reportError } from '@/lib/utils/reportError'
 import Dialog from '@/components/ui/Dialog'
 import Input from '@/components/ui/Input'
@@ -631,40 +633,29 @@ export default function SettingsView({
       const user = await getClientUser(supabase)
       if (!user) { router.push('/login'); return }
 
-      const [
-        { data: sessions },
-        { data: exercises },
-        { data: bodyWeights },
-        { data: badges },
-        { data: restDayRows },
-        { data: restDates },
-        { data: statsRow },
-      ] = await Promise.all([
-        supabase.from('sessions').select('*').eq('user_id', user.id).order('started_at', { ascending: true }),
-        supabase.from('exercises').select('*').eq('user_id', user.id),
-        supabase.from('body_weights').select('*').eq('user_id', user.id).order('recorded_at', { ascending: true }),
-        supabase.from('user_badges').select('*').eq('user_id', user.id),
-        supabase.from('user_rest_days').select('*').eq('user_id', user.id),
-        supabase.from('user_rest_dates').select('*').eq('user_id', user.id),
-        supabase.from('user_stats').select('*').eq('user_id', user.id).maybeSingle(),
+      const [sessions, exercises, bodyWeights, badges, restDayRows, restDates, stats] = await Promise.all([
+        exportPages((from, to) => supabase.from('sessions').select('*', { count: 'exact' })
+          .eq('user_id', user.id).order('started_at').order('id').range(from, to)),
+        exportPages((from, to) => supabase.from('exercises').select('*', { count: 'exact' })
+          .eq('user_id', user.id).order('id').range(from, to)),
+        format === 'json' ? exportPages((from, to) => supabase.from('body_weights').select('*', { count: 'exact' })
+          .eq('user_id', user.id).order('recorded_at').order('id').range(from, to)) : [],
+        format === 'json' ? exportPages((from, to) => supabase.from('user_badges').select('*', { count: 'exact' })
+          .eq('user_id', user.id).order('badge_id').range(from, to)) : [],
+        format === 'json' ? exportPages((from, to) => supabase.from('user_rest_days').select('*', { count: 'exact' })
+          .eq('user_id', user.id).order('day_of_week').order('effective_from').range(from, to)) : [],
+        format === 'json' ? exportPages((from, to) => supabase.from('user_rest_dates').select('*', { count: 'exact' })
+          .eq('user_id', user.id).order('rest_date').range(from, to)) : [],
+        format === 'json' ? supabase.from('user_stats').select('*').eq('user_id', user.id).maybeSingle() : null,
       ])
+      if (stats?.error) throw stats.error
 
-      // Fetch the logs in batches. A single `.in('session_id', […])` over every
-      // session id is a GET whose URL grows ~40 bytes per session: past a
-      // few hundred workouts it blows the request-line limit and comes back as
-      // an error, which the old `{ data }`-only destructure swallowed — the
-      // export then wrote out zero sets and still reported success. Chunking
-      // bounds each URL, and a failed chunk now aborts the export instead of
-      // silently truncating it.
-      const sessionIds = (sessions ?? []).map(s => s.id)
-      const logs: unknown[] = []
+      const sessionIds = sessions.map(session => session.id)
+      const logs = []
       for (let i = 0; i < sessionIds.length; i += EXPORT_ID_CHUNK) {
-        const { data: chunk, error: chunkError } = await supabase
-          .from('session_logs')
-          .select('*')
-          .in('session_id', sessionIds.slice(i, i + EXPORT_ID_CHUNK))
-        if (chunkError) throw chunkError
-        if (chunk) logs.push(...chunk)
+        const ids = sessionIds.slice(i, i + EXPORT_ID_CHUNK)
+        logs.push(...await exportPages((from, to) => supabase.from('session_logs')
+          .select('*', { count: 'exact' }).in('session_id', ids).order('id').range(from, to)))
       }
 
       if (format === 'csv') {
@@ -684,7 +675,7 @@ export default function SettingsView({
         exported_at: new Date().toISOString(),
         format_version: 1,
         profile: { username, display_name: displayName },
-        stats: statsRow ?? null,
+        stats: stats?.data ?? null,
         sessions: sessions ?? [],
         session_logs: logs,
         exercises: exercises ?? [],
@@ -698,7 +689,7 @@ export default function SettingsView({
       markExported()
     } catch (err) {
       reportError(err, { operation: 'exportData', route: '/profile/settings' })
-      toast.show('Export failed — check your connection')
+      toast.show('Export failed. No file was downloaded. Try again.')
     } finally {
       setExporting(false)
     }
@@ -721,9 +712,13 @@ export default function SettingsView({
       // Never go through demoSafeClient: a no-op "success" used to sign out
       // without touching the database.
       const live = createClient()
+      const user = await getClientUser(live)
+      if (!user) throw new Error('Sign in again to delete your data')
       const response = await fetch('/api/profile/delete-data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirmation: 'DELETE' }) })
       if (!response.ok) throw new Error('Could not complete data deletion')
+      const purged = await purgeWorkoutStore(user.id).then(() => true, () => false)
       await live.auth.signOut()
+      if (!purged) toast.show('Cloud data deleted. Device storage could not be cleared.')
       resetAppDataCache()
       clearLastKnownStats()
       clearOfflineCaches()
@@ -1372,7 +1367,7 @@ export default function SettingsView({
     <Section label="Your data">
       <NavRow
         title={exporting ? 'Exporting…' : 'Export Data'}
-        hint="Download workouts, sets & body weight as JSON"
+        hint="JSON with workouts, sets, exercises, weight, stats, badges and rest days"
         onClick={() => void handleExportData('json')}
         disabled={exporting}
         icon={downloadIcon}
@@ -1380,7 +1375,7 @@ export default function SettingsView({
       <div className="settings-divider" style={dividerStyle} />
       <NavRow
         title="Export Sets (CSV)"
-        hint="Spreadsheet-friendly set history"
+        hint="Workout set history with exercises, dates, weights and reps"
         onClick={() => void handleExportData('csv')}
         disabled={exporting}
         icon={csvIcon}

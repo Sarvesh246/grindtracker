@@ -9,6 +9,7 @@ import {
 } from './model'
 import {
   mergeSamplesIntoHistory,
+  SAMPLE_HISTORY_FIELD,
   type DayProvenance,
   type HealthSource,
   type SampleRow
@@ -27,16 +28,6 @@ export interface HealthWorkout {
   started_at: string | null
   completed_at: string | null
 }
-
-const SAMPLE_METRICS = [
-  'resting_hr',
-  'hrv',
-  'spo2',
-  'steps',
-  'recovery_hours',
-  'body_battery',
-  'stress'
-]
 
 export async function getHealthSummary(
   client: SupabaseClient,
@@ -66,18 +57,7 @@ export async function getHealthSummary(
       .gte('local_date', shiftDate(date, -89))
       .lte('local_date', date)
       .order('local_date'),
-    // Raw UTC samples and connections are additive: a missing table or a failed
-    // read must leave the legacy view intact, never break the page.
-    client
-      .from('health_samples')
-      .select(
-        'connection_id,metric,provider_id,start_at,end_at,observed_at,revision_at,value,unit,kind,quality'
-      )
-      .eq('user_id', userId)
-      .in('metric', SAMPLE_METRICS)
-      .gte('end_at', new Date(Date.parse(`${shiftDate(date, -90)}T00:00:00Z`)).toISOString())
-      .order('end_at', { ascending: false })
-      .limit(3000),
+    client.rpc('health_daily_samples', { p_date: date, p_timezone: timeZone }),
     client
       .from('health_connections')
       .select('id,source,device_id,status,last_success_at,last_error_code')
@@ -98,17 +78,12 @@ export async function getHealthSummary(
       : 'error'
   const sleeps = ((sleep.data ?? []) as SleepSession[]).reverse()
   const links = (connections.error ? [] : (connections.data ?? [])) as HealthConnection[]
-  const sourceOf = new Map(links.map((c) => [c.id, c.source]))
-  const sampleRows: SampleRow[] = samples.error
+  const sampleRows = samples.error || !Array.isArray(samples.data)
     ? []
-    : ((samples.data ?? []) as (Omit<SampleRow, 'source'> & { connection_id: string })[]).flatMap(
-        ({ connection_id, ...row }) => {
-          const source = sourceOf.get(connection_id)
-          return source
-            ? [{ ...row, value: row.value == null ? null : Number(row.value), source }]
-            : []
-        }
-      )
+    : samples.data as (SampleRow & { local_date: string })[]
+  const sampleCoverage = sampleRows.map(row => ({
+    source: row.source, metric: SAMPLE_HISTORY_FIELD[row.metric], date: row.local_date,
+  }))
   const legacyHistory = (history.data ?? []) as HealthHistoryDay[]
   const merged = mergeSamplesIntoHistory(legacyHistory, sampleRows, timeZone)
   const dates = new Set([
@@ -138,6 +113,8 @@ export async function getHealthSummary(
     sleepState,
     history: canonicalHistory,
     historyError: !!history.error,
+    sampleCoverage,
+    sampleHistoryError: !!samples.error,
     connections: links,
     provenance,
     workouts: (workouts.error ? [] : (workouts.data ?? [])) as HealthWorkout[]

@@ -133,6 +133,7 @@ function accuracy(rows) {
   const watch = blank()
   const now = blank()
   const byEx = new Map()
+  const byBuildExercise = new Map()
   const misses = new Map()
   const lat = []
   const results = {}
@@ -146,6 +147,15 @@ function accuracy(rows) {
     if (!byEx.has(name)) byEx.set(name, { watch: blank(), now: blank() })
     tally(byEx.get(name).watch, r.auto_reps, r.logged_reps)
     tally(byEx.get(name).now, rep, r.logged_reps)
+    const build = r.app_version ?? 'unknown build'
+    const key = JSON.stringify([build, name])
+    if (!byBuildExercise.has(key)) byBuildExercise.set(key, { ...blank(), times: [] })
+    const group = byBuildExercise.get(key)
+    const firstOffer = (r.events ?? []).find(event => event[1] === 2 && event[2] > 0)
+    const shown = firstOffer?.[2] ?? (r.auto_shown ? r.auto_reps : null)
+    tally(group, shown, r.logged_reps)
+    const offerTime = shown != null ? latency(r.events) : null
+    if (offerTime != null) group.times.push(offerTime)
     const miss = rep == null ? 'no count' : rep - r.logged_reps
     if (miss !== 0) misses.set(miss, (misses.get(miss) ?? 0) + 1)
     const l = latency(r.events)
@@ -159,6 +169,14 @@ function accuracy(rows) {
   console.log(`\nOn the watch:              ${line(watch)}`)
   console.log(`Current counter, replayed: ${line(now)}`)
   if (lat.length) console.log(`Wrist still → count shown: median ${quant(lat, 0.5).toFixed(1)} s, 90th ${quant(lat, 0.9).toFixed(1)} s, worst ${Math.max(...lat).toFixed(1)} s`)
+  console.log('\nShown on watch by build and exercise:')
+  for (const [key, group] of byBuildExercise) {
+    const [build, exercise] = JSON.parse(key)
+    const p50 = quant(group.times, 0.5)
+    const p90 = quant(group.times, 0.9)
+    console.log(`  ${build} · ${exercise}: exact ${group.exact}/${group.n}, wrong ${group.over + group.under}, no offer ${group.none} (${pct(group.none, group.n)})` +
+      (p50 == null ? '' : `, median ${p50.toFixed(1)} s, p90 ${p90.toFixed(1)} s`))
+  }
   console.log('\nBy exercise (replay):')
   for (const [name, s] of [...byEx].sort((a, b) => b[1].now.n - a[1].now.n)) {
     console.log(`  ${name.slice(0, 30).padEnd(30)} ${line(s.now)}`)

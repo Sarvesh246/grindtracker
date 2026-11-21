@@ -58,8 +58,10 @@ export function dockPixelPosition(dock: CoachDockId): DockPoint {
   const margin = COACH_FAB_MARGIN
   const size = COACH_FAB_SIZE
 
-  const leftX = margin
-  const rightX = w - margin - size
+  const bottomNavDock = !desktop && w >= 320 && w <= 767
+  const side = bottomNavDock && (dock === 'br' || dock === 'bl') ? 6 : margin
+  const leftX = side
+  const rightX = w - side - size
 
   let topY: number
   let bottomY: number
@@ -70,7 +72,7 @@ export function dockPixelPosition(dock: CoachDockId): DockPoint {
   } else {
     topY = margin + safeTop
     // CSS: bottom: calc(64px + max(8px, env(safe-area-inset-bottom)) + 16px)
-    const bottomClear = BOTTOM_NAV_H + Math.max(8, safeBottom) + margin
+    const bottomClear = Math.max(8, safeBottom) + (bottomNavDock ? 3 : BOTTOM_NAV_H + margin)
     bottomY = h - bottomClear - size
   }
 

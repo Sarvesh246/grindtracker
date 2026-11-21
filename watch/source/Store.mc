@@ -34,6 +34,38 @@ module Store {
 
     function queue() { return list("q"); }
     function dead() { return list("qd"); }
+    function sensors() { return list("qh"); }
+
+    function keepSensor(key, payload) {
+        put("hs_" + key, payload);
+        put("qh", Logic.qAdd(sensors(), key));
+    }
+
+    function retireSensor(key) {
+        put("qh", Logic.qRemove(sensors(), key));
+        del("hs_" + key);
+    }
+
+    function sensorPending(sid) {
+        var q = sensors();
+        for (var i = 0; i < q.size(); i++) {
+            var p = get("hs_" + q[i]);
+            if (p != null && sid.equals(p["id"])) { return true; }
+        }
+        return false;
+    }
+
+    function recordWorkout(m) {
+        if (m == null) { return; }
+        var r = list("receipts");
+        for (var i = r.size() - 1; i >= 0; i--) {
+            if (m["id"].equals(r[i]["id"])) { r.remove(r[i]); }
+        }
+        r.add({ "id" => m["id"], "nm" => m["nm"], "en" => m["en"] });
+        if (r.size() > 8) { r = r.slice(r.size() - 8, null); }
+        put("receipts", r);
+    }
+
 
     // Keeps only the fields the watch uses, so a cached plan stays ~3 KB.
     // { date, unit, id, name, ex: [...] } for a workout day, or

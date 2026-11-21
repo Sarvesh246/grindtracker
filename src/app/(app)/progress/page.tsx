@@ -7,7 +7,7 @@ import { createClient, getClientUser } from '@/lib/supabase/client'
 import { useDemoMode } from '@/lib/contexts/DemoModeContext'
 import { Exercise } from '@/lib/types'
 import { formatShortDate } from '@/lib/utils/formatting'
-import { enabledDayKeys } from '@/lib/utils/dayKeys'
+import { enabledDayKeys, logDayHref } from '@/lib/utils/dayKeys'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { useTour, type TourStep } from '@/components/onboarding/Tour'
 import TodayLabel from '@/components/TodayLabel'
@@ -576,10 +576,10 @@ export default function ProgressPage() {
         </section>
 
         <div className="progress-main">
-          <section data-onboard="progress-chart" className="progress-chart-card" aria-labelledby="progress-exercise-title">
+          <section data-onboard="progress-chart" className={`progress-chart-card${!loadingChart && !chartData.length ? ' progress-chart-card--empty' : ''}`} aria-labelledby="progress-exercise-title">
             <div className="progress-chart-header">
               <h2 id="progress-exercise-title" title={selectedExercise?.name}>{selectedExercise?.name ?? 'Exercise progress'}</h2>
-              <div className="progress-metrics" role="tablist" aria-label="Chart metric">
+              {(loadingChart || chartData.length > 0) && <div className="progress-metrics" role="tablist" aria-label="Chart metric">
                 {METRIC_IDS.map(({ id, label }, index) => (
                   <button
                     key={id}
@@ -597,12 +597,12 @@ export default function ProgressPage() {
                     {label}
                   </button>
                 ))}
-              </div>
+              </div>}
             </div>
             <div
-              role="tabpanel"
+              role={chartData.length ? 'tabpanel' : undefined}
               id="progress-metric-panel"
-              aria-labelledby={`progress-metric-${metric}`}
+              aria-labelledby={chartData.length ? `progress-metric-${metric}` : undefined}
               aria-busy={loadingChart || undefined}
               tabIndex={0}
             >
@@ -614,20 +614,22 @@ export default function ProgressPage() {
                     <path d="M3 20h18M6 16v-4m6 4V8m6 8V4" />
                   </svg>
                   <p>No sessions logged for this exercise.</p>
-                  <span>Log a workout with this exercise to start tracking progress.</span>
+                  {selectedExercise && <Link className="progress-start-link" href={logDayHref(selectedExercise.day_type)}>
+                    Open {selectedExercise.day_type.replace(/-/g, ' ')} workout
+                  </Link>}
                 </div>
               ) : (
                 <ProgressChart key={selectedId} data={chartData} metric={metric} />
               )}
             </div>
-            <dl className="progress-stats">
+            {chartData.length > 0 && <dl className="progress-stats">
               {summary.map(({ label, value }) => (
                 <div key={label}>
                   <dt>{label}</dt>
                   <dd>{loadingChart ? '—' : value}</dd>
                 </div>
               ))}
-            </dl>
+            </dl>}
           </section>
 
           <div className="progress-details">
@@ -635,25 +637,22 @@ export default function ProgressPage() {
 
             {recentSessions.length > 0 && (
               <section className="progress-history" aria-labelledby="progress-history-title">
-                <header>
-                  <h2 id="progress-history-title">Recent sessions</h2>
-                  <span>Best set</span>
-                </header>
-                <ul>
-                  {recentSessions.map((session, index) => (
-                    <li key={index}>
-                      <span>{session.date}</span>
-                      <div className="progress-history-result">
-                        {session.isPR && <span className="progress-history-pr">PR</span>}
-                        <span className="progress-history-set">
+                <header><h2 id="progress-history-title">Recent sessions</h2></header>
+                <table className="progress-recent-table" aria-labelledby="progress-history-title" tabIndex={0}>
+                  <thead><tr><th scope="col">Date</th><th scope="col">Best set</th><th scope="col">Record</th></tr></thead>
+                  <tbody>
+                    {recentSessions.map((session, index) => (
+                      <tr key={index}>
+                        <th scope="row">{session.date}</th>
+                        <td className="progress-history-set">
                           {session.weight !== null && session.reps !== null
-                            ? `${formatWeight(session.weight)} × ${session.reps}`
-                            : '—'}
-                        </span>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
+                            ? `${formatWeight(session.weight)} × ${session.reps}` : '—'}
+                        </td>
+                        <td>{session.isPR ? <span className="progress-history-pr">PR</span> : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </section>
             )}
           </div>

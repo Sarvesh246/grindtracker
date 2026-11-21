@@ -66,7 +66,7 @@ export interface Provenance {
 export type DayProvenance = Partial<Record<HealthMetric, Provenance>>
 
 /** Sample metric → the history field it feeds. Others (heart_rate, respiration) are not daily values. */
-const FIELD: Record<string, HealthMetric> = {
+export const SAMPLE_HISTORY_FIELD: Record<string, HealthMetric> = {
   resting_hr: 'resting_hr',
   hrv: 'overnight_hrv',
   spo2: 'spo2',
@@ -114,7 +114,7 @@ export function mergeSamplesIntoHistory(
 ): { history: HealthHistoryDay[]; provenance: Record<string, DayProvenance> } {
   const best = new Map<string, SampleRow>()
   for (const s of samples) {
-    const field = FIELD[s.metric]
+    const field = SAMPLE_HISTORY_FIELD[s.metric]
     if (!field || s.value == null || !Number.isFinite(s.value) || s.quality === 'unavailable')
       continue
     const key = `${localDateIn(s.end_at, timeZone)}|${field}`
@@ -136,7 +136,7 @@ export function mergeSamplesIntoHistory(
   }
   // Legacy values that no sample replaced keep an honest "snapshot" provenance.
   for (const row of history)
-    for (const field of Object.keys(FIELD).map((k) => FIELD[k])) {
+    for (const field of Object.values(SAMPLE_HISTORY_FIELD)) {
       const value = (row as Record<string, unknown>)[field]
       if (typeof value === 'number' && !provenance[row.local_date]?.[field])
         (provenance[row.local_date] ??= {})[field] = {

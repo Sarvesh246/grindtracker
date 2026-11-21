@@ -6,7 +6,7 @@ export const runtime = 'nodejs'
 type Ctx = { params: Promise<{ id: string }> }
 
 /** Load messages for one conversation (owner only via RLS). */
-export async function GET(_request: Request, ctx: Ctx) {
+export async function GET(request: Request, ctx: Ctx) {
   const { id } = await ctx.params
   const supabase = await createClient()
   const {
@@ -31,26 +31,37 @@ export async function GET(_request: Request, ctx: Ctx) {
     return NextResponse.json({ error: 'Chat not found' }, { status: 404 })
   }
 
-  const { data: messages, error: msgErr } = await supabase
-    .from('coach_messages')
-    .select('id, role, content, created_at')
-    .eq('conversation_id', id)
-    .order('created_at', { ascending: true })
-    .limit(200)
+  const cursor = new URL(request.url).searchParams.get('before')
+  let query = supabase.from('coach_messages').select('id, role, content, created_at')
+    .eq('conversation_id', id).eq('user_id', user.id)
+  if (cursor) {
+    const [created, messageId, extra] = cursor.split('|')
+    if (extra || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/.test(created)
+      || !messageId || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(messageId)) {
+      return NextResponse.json({ error: 'Invalid history cursor' }, { status: 400 })
+    }
+    query = query.or(`created_at.lt.${created},and(created_at.eq.${created},id.lt.${messageId})`)
+  }
+  const pageSize = 60
+  const { data: messages, error: msgErr } = await query
+    .order('created_at', { ascending: false }).order('id', { ascending: false }).limit(pageSize + 1)
 
   if (msgErr) {
     console.error('[grind] coach conversation messages', msgErr)
     return NextResponse.json({ error: 'Failed to load messages' }, { status: 500 })
   }
 
+  const page = (messages ?? []).slice(0, pageSize)
+  const oldest = page.at(-1)
   return NextResponse.json({
+    olderCursor: oldest && (messages?.length ?? 0) > pageSize ? oldest.created_at + '|' + oldest.id : null,
     conversation: {
       id: conv.id as string,
       title: conv.title as string,
       createdAt: conv.created_at as string,
       updatedAt: conv.updated_at as string,
     },
-    messages: (messages ?? []).map(m => ({
+    messages: page.reverse().map(m => ({
       id: m.id as string,
       role: m.role as 'user' | 'assistant',
       content: m.content as string,

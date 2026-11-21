@@ -232,15 +232,13 @@ class HomeDelegate extends WatchUi.BehaviorDelegate {
     // MENU: refresh, the watch's settings, and clearing sessions the
     // server refused for good.
     function onMenu() {
-        var dead = Store.dead().size();
         var m = new WatchUi.Menu2({ :title => "GRIND" });
         m.addItem(new WatchUi.MenuItem("Readiness check", "1 min HRV, sitting still", :ready, null));
         m.addItem(new WatchUi.MenuItem("Refresh", null, :refresh, null));
         m.addItem(Menus.repToggle());
         m.addItem(Menus.labToggle());
-        if (dead > 0) {
-            m.addItem(new WatchUi.MenuItem("Clear failed (" + dead + ")", "Deletes unsynced workouts", :clear, null));
-        }
+        m.addItem(new WatchUi.MenuItem("Workout sync", "Recent workouts & retry", :sync, null));
+        m.addItem(new WatchUi.MenuItem("Build", Body.BUILD_ID, :build, null));
         WatchUi.pushView(m, new HomeMenuDelegate(), WatchUi.SLIDE_UP);
         return true;
     }
@@ -283,16 +281,69 @@ class HomeMenuDelegate extends WatchUi.Menu2InputDelegate {
             WatchUi.pushView(new ReadinessView(), new ReadinessDelegate(), WatchUi.SLIDE_UP);
             return;
         }
-        if (item.getId() == :clear) {
-            var d = Store.dead();
-            for (var i = 0; i < d.size(); i++) {
-                Store.dropSession(d[i]);
-                Lab.dropSession(d[i]);
-            }
-            Store.put("qd", []);
-        } else {
+        if (item.getId() == :sync) {
+            showWorkoutSync();
+        } else if (item.getId() == :refresh) {
             gNet.refresh();
         }
         WatchUi.requestUpdate();
+    }
+}
+
+function showWorkoutSync() {
+    var menu = new WatchUi.Menu2({ :title => "Workout sync" });
+    menu.addItem(new WatchUi.MenuItem("Sync now", "Connect your phone and keep GRIND open", :retry, null));
+    var recent = Store.list("receipts");
+    for (var i = 0; i < recent.size(); i++) {
+        var r = recent[recent.size() - 1 - i];
+        addSyncItem(menu, r);
+    }
+    var pending = Store.queue();
+    pending.addAll(Store.dead());
+    for (var j = 0; j < pending.size(); j++) {
+        var m = Store.meta(pending[j]);
+        if (m != null) { addSyncItem(menu, m); }
+    }
+    WatchUi.pushView(menu, new WorkoutSyncDelegate(), WatchUi.SLIDE_UP);
+}
+
+function addSyncItem(menu, m) {
+    var sid = m["id"];
+    var name = m["nm"] == null ? "Workout" : m["nm"];
+    var date = m["en"] == null ? "" : Logic.isoUtc(m["en"]).substring(5, 10) + " ";
+    menu.addItem(new WatchUi.MenuItem(date + name, gNet.workoutStatus(sid), sid, null));
+}
+
+class WorkoutSyncDelegate extends WatchUi.Menu2InputDelegate {
+    function initialize() { Menu2InputDelegate.initialize(); }
+
+    function onSelect(item) {
+        var sid = item.getId();
+        if (sid == :retry) {
+            gNet.kick();
+            return;
+        }
+        var m = Store.meta(sid);
+        var menu = new WatchUi.Menu2({ :title => item.getLabel() });
+        var status = gNet.workoutStatus(sid);
+        var detail = "Keep GRIND open and reconnect";
+        if (m != null && m["err"] != null) {
+            detail = m["err"];
+            if ("day_already_logged".equals(detail)) { detail = "Day already saved in GRIND"; }
+            else if ("unknown_exercise".equals(detail)) { detail = "Check exercises in GRIND"; }
+        }
+        menu.addItem(new WatchUi.MenuItem(status, detail, :status, null));
+        menu.addItem(new WatchUi.MenuItem("Retry upload", null, sid, null));
+        WatchUi.pushView(menu, new RetryWorkoutDelegate(), WatchUi.SLIDE_UP);
+    }
+}
+
+class RetryWorkoutDelegate extends WatchUi.Menu2InputDelegate {
+    function initialize() { Menu2InputDelegate.initialize(); }
+
+    function onSelect(item) {
+        if (item.getId() == :status) { return; }
+        gNet.retryWorkout(item.getId());
+        WatchUi.popView(WatchUi.SLIDE_IMMEDIATE);
     }
 }

@@ -146,6 +146,20 @@ export default function LandingPage() {
           demo={<FriendsMock />}
         />
 
+        <Section
+          id="garmin"
+          eyebrow="Garmin"
+          title="From wrist to workout history"
+          lead="Log sets on your Forerunner 165 Music. After saving, keep GRIND open on the watch with your phone connected. The workout appears in your web history when the sets sync."
+          demo={
+            <dl className="landing-watch-states">
+              <div><dt>Waiting to sync</dt><dd>Workout saved on the watch.</dd></div>
+              <div><dt>Synced to GRIND</dt><dd>Your sets are in workout history. Heart rate can finish syncing separately.</dd></div>
+              <div><dt>Needs attention</dt><dd>Open Workout sync on the watch to see the reason and retry.</dd></div>
+            </dl>
+          }
+        />
+
         <InstallSection />
         <FinalCta />
       </main>

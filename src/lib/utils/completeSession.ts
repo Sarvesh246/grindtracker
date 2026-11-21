@@ -9,6 +9,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { CompleteSessionResult, UserStats } from '@/lib/types'
+import type { FinishIntent } from '@/lib/offline/workoutStore'
 import { localDateKey } from '@/lib/utils/formatting'
 import { checkAndAwardBadges } from '@/lib/utils/badges'
 import { writeFinishUndoToken } from '@/lib/utils/finishUndo'
@@ -40,9 +41,10 @@ export async function completeSession(
     dayType: string
     note: string | null
     startHour: number
+    intent?: FinishIntent
   },
 ): Promise<CompleteSessionOutcome> {
-  const { userId, sessionId, dayType, note, startHour } = args
+  const { userId, sessionId, dayType, note, startHour, intent } = args
 
   // Completion is a single server-side transaction: xp, level, streak and PR
   // flags are all derived in Postgres (docs/sql/11-server-side-xp.sql). We send
@@ -54,13 +56,18 @@ export async function completeSession(
   let finishError: unknown = null
   for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
     try {
-      const res = await supabase.rpc('complete_session', {
+      const params = {
         p_session_id: sessionId,
         p_local_date: localDateKey(new Date()),
         p_note: note,
         p_start_hour: startHour,
-        p_utc_offset_minutes: -new Date().getTimezoneOffset(),
-      })
+        p_utc_offset_minutes: intent?.offsetMinutes ?? -new Date().getTimezoneOffset(),
+      }
+      const res = intent ? await supabase.rpc('finish_workout_intent', {
+        p_owner: userId, p_session_id: sessionId, p_intent_id: intent.id,
+        p_local_date: params.p_local_date, p_note: note, p_start_hour: startHour,
+        p_offset_minutes: params.p_utc_offset_minutes, p_timezone: intent.timezone,
+      }) : await supabase.rpc('complete_session', params)
       finishData = res.data
       finishError = res.error
     } catch (err) {
@@ -83,7 +90,7 @@ export async function completeSession(
     // attempt committed server-side but the reply never arrived, the retry gets
     // SESSION_NOT_OPEN (the session is already completed). That specific error
     // means success, not failure — re-read what the server already settled on.
-    const alreadyDone = errorMessage(finishError).includes('SESSION_NOT_OPEN')
+    const alreadyDone = !intent && errorMessage(finishError).includes('SESSION_NOT_OPEN')
 
     if (!alreadyDone) {
       console.error('[grind] complete_session failed', finishError, finishData)
@@ -94,7 +101,7 @@ export async function completeSession(
     }
 
     const [{ data: sessionRow }, { data: statsRow }, { data: prRows }] = await Promise.all([
-      supabase.from('sessions').select('xp_earned').eq('id', sessionId).maybeSingle(),
+      supabase.from('sessions').select('xp_earned').eq('id', sessionId).eq('user_id', userId).not('completed_at', 'is', null).maybeSingle(),
       supabase.from('user_stats').select('*').eq('user_id', userId).maybeSingle(),
       // The RPC already flagged is_pr on session_logs server-side before its
       // response was lost — re-read it directly instead of reporting 0 PRs
@@ -142,6 +149,10 @@ export async function completeSession(
     }
   } else {
     result = finishData as CompleteSessionResult
+  }
+
+  if (intent && (await supabase.auth.getSession()).data.session?.user.id !== userId) {
+    return { ok: true, result, prExercises: result.pr_exercises ?? [], newBadges: [] }
   }
 
   // Authoritative post-completion stats, for the badge check below.

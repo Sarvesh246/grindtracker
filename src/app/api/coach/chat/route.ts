@@ -210,7 +210,7 @@ export async function POST(request: Request) {
       .eq('id', conversationId)
       .eq('user_id', user.id)
       .maybeSingle()
-    if (!owned) conversationId = null
+    if (!owned) return NextResponse.json({ error: 'Chat not found' }, { status: 404 })
   }
 
   if (!conversationId) {
@@ -253,7 +253,7 @@ export async function POST(request: Request) {
   const { data: insertedMessage, error: insertUserErr } = await supabase
     .from('coach_messages')
     .insert(userInsert)
-    .select('id')
+    .select('id, created_at')
     .single()
   if (insertUserErr) {
     const mapped = mapCoachRateLimitError(insertUserErr.message)
@@ -282,7 +282,7 @@ export async function POST(request: Request) {
   }
 
   if (conversationId && !conversationCreated) {
-    void supabase
+    await supabase
       .from('coach_conversations')
       .update({
         updated_at: new Date().toISOString(),
@@ -344,7 +344,17 @@ export async function POST(request: Request) {
     }
   }
 
-  const history = sanitizeHistory(body.history)
+  const persisted = conversationId && !conversationCreated ? await supabase
+    .from('coach_messages').select('role, content')
+    .eq('conversation_id', conversationId).eq('user_id', user.id)
+    .or(`created_at.lt.${insertedMessage.created_at},and(created_at.eq.${insertedMessage.created_at},id.lt.${insertedMessage.id})`)
+    .order('created_at', { ascending: false }).order('id', { ascending: false })
+    .limit(COACH_MAX_HISTORY_MESSAGES) : null
+  if (persisted?.error) {
+    await refundCoachTurn(user.id, insertedMessage.id as string)
+    return NextResponse.json({ error: 'Failed to load the recent conversation' }, { status: 503 })
+  }
+  const history = sanitizeHistory(conversationId ? (persisted?.data ?? []).reverse() : body.history)
   // Requested model first (dropdown), then the rest of the list: free-tier
   // quotas are per model, so a 429 on one usually isn't a 429 on the next.
   const modelChain = resolveCoachModelChain(

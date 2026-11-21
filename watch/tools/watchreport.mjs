@@ -74,6 +74,12 @@ function backgroundSync(rows) {
   head('background sync')
   const bg = rows.filter(r => r.source === 'background')
   console.log(`${rows.length} stored snapshots, ${bg.length} from the background (${share(bg.length, rows.length)})`)
+  const builds = new Map()
+  for (const row of rows) {
+    const build = row.diag?.app_version ?? 'unknown'
+    builds.set(build, (builds.get(build) ?? 0) + 1)
+  }
+  console.log('Snapshots by build: ' + [...builds].map(([build, count]) => `${build}: ${count}`).join(', '))
   if (!bg.length) {
     console.log('No background snapshots: the 15-minute event is not firing, or the app was not opened after install.')
     return

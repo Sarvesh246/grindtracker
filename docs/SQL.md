@@ -199,3 +199,12 @@ Starting a session and calling `complete_session` still require connectivity.
 Apply migration **27** (and **28** if needed) and set VAPID / `CRON_SECRET` /
 `SUPABASE_SERVICE_ROLE_KEY` before relying on
 push (see [PUSH.md](PUSH.md)). If an older 27 was already applied, run **28** as well.
+
+## Workout integrity release
+
+Apply migrations 76 through 81 in filename order before deploying the web
+client or sideloading the Garmin build. Verify all six versions with
+`npm run migrations:check`. Confirm the `grind-energy` job is active and has
+recent executions in `cron.job_run_details`. After the web deploy, check
+`notification_prefs.energy_refresh_last_ok_at` for opted-in users to confirm
+that the HTTP worker ran and advanced its leases.

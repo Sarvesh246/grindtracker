@@ -243,7 +243,7 @@ test('Settings: a Garmin export zip is previewed and imported in batches through
     entryPoints: ['e2e/fixtures/healthImport.tsx'],
     bundle: true,
     write: false,
-    format: 'iife',
+    format: 'esm',
     jsx: 'automatic',
     tsconfig: 'tsconfig.json',
     loader: { '.css': 'empty' },
@@ -251,6 +251,13 @@ test('Settings: a Garmin export zip is previewed and imported in batches through
       'process.env':
         '{"NODE_ENV":"production","NEXT_PUBLIC_SUPABASE_URL":"https://stub.supabase.co","NEXT_PUBLIC_SUPABASE_ANON_KEY":"stub"}'
     }
+  }).outputFiles[0].text
+  const workerBundle = buildSync({
+    entryPoints: ['src/lib/health/garminExport.worker.ts'],
+    bundle: true,
+    write: false,
+    format: 'iife',
+    tsconfig: 'tsconfig.json',
   }).outputFiles[0].text
   const batches: { source: string; count: number }[] = []
   await page.route('https://stub.supabase.co/**', async (route) => {
@@ -263,14 +270,20 @@ test('Settings: a Garmin export zip is previewed and imported in batches through
     return route.fulfill({ status: 401, contentType: 'application/json', body: '{}' })
   })
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.route('https://settings.test/**', (route) =>
-    route.fulfill({
+  await page.route('https://settings.test/**', route => {
+    const path = new URL(route.request().url()).pathname
+    if (path === '/fixtures/settings.js' || path === '/lib/health/garminExport.worker.ts') {
+      return route.fulfill({
+        contentType: 'application/javascript',
+        body: path === '/fixtures/settings.js' ? bundle : workerBundle,
+      })
+    }
+    return route.fulfill({
       contentType: 'text/html',
-      body: `<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}body{overflow:auto!important;height:auto!important}</style></head><body><div id="root"></div></body></html>`
+      body: `<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}body{overflow:auto!important;height:auto!important}</style></head><body><div id="root"></div><script type="module" src="/fixtures/settings.js"></script></body></html>`
     })
-  )
+  })
   await page.goto('https://settings.test/')
-  await page.addScriptTag({ content: bundle })
   await page.getByText('1 · Garmin data export (file upload)').click()
   await page.locator('input[type=file]').setInputFiles({
     name: 'garmin-export.zip',
@@ -286,6 +299,12 @@ test('Settings: a Garmin export zip is previewed and imported in batches through
     { source: 'garmin_export', count: 14 },
     { source: 'garmin_export', count: 6 }
   ])
+  await page.locator('input[type=file]').setInputFiles({
+    name: 'oversized-entry.zip', mimeType: 'application/zip',
+    buffer: Buffer.from(zipSync({ 'oversized_sleepData.json': new Uint8Array(9 * 1024 * 1024) })),
+  })
+  await expect(page.getByText(/This export exceeds the import limit/)).toBeVisible()
+  expect(batches).toHaveLength(2)
   await page.screenshot({ path: test.info().outputPath('settings-import.png'), fullPage: true })
 })
 

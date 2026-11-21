@@ -16,9 +16,9 @@ import {
   type PointerSnapshot,
   type RotationState,
 } from '@/lib/utils/rotationStore'
-import { deleteIncompleteSessions } from '@/lib/utils/sessions'
-import { flushQueuedOps, getQueuedOps, clearQueuedOpsForSession } from '@/lib/utils/offlineQueue'
-import { completeSession } from '@/lib/utils/completeSession'
+import { discardWorkout } from '@/lib/utils/sessions'
+
+import { finishWorkout } from '@/lib/offline/sync'
 import { uncoveredDatesBetween, skipTodayState, restLeftThisWeekLabel, weekStart, sameDateKeyList, type RestDayOpts } from '@/lib/utils/restDays'
 import WorkoutCalendar from '@/components/WorkoutCalendar'
 import FinishUndoBanner from '@/components/FinishUndoBanner'
@@ -31,7 +31,7 @@ import { useTour, type TourStep } from '@/components/onboarding/Tour'
 import FlameIcon from '@/components/FlameIcon'
 import DayIcon from '@/components/DayIcon'
 import { markAppDataStale } from '@/lib/cache/appDataCache'
-import { readLastKnownStats, writeLastKnownStats } from '@/lib/cache/lastKnownStats'
+import { readLastKnownStatsEntry, writeLastKnownStats } from '@/lib/cache/lastKnownStats'
 import { reportError } from '@/lib/utils/reportError'
 import { logDayHref } from '@/lib/utils/dayKeys'
 import TodayLabel from '@/components/TodayLabel'
@@ -260,6 +260,7 @@ export default function HomeDashboard({
   // succeeds where the server render's just failed; failing that, the user's
   // last-known numbers come out of localStorage. Either way the dashboard
   // paints real stats instead of asking the user to tap a retry button.
+  const [cachedStatsAt, setCachedStatsAt] = useState<number | null>(null)
   const [recoveredStats, setRecoveredStats] = useState<UserStats | null>(null)
   const [statsRecoveryFailed, setStatsRecoveryFailed] = useState(false)
   const effectiveStats = stats ?? recoveredStats
@@ -278,8 +279,11 @@ export default function HomeDashboard({
     let cancelled = false
     void (async () => {
       // Paint last-known immediately — offline, this is the whole recovery.
-      const cached = readLastKnownStats(userId)
-      if (!cancelled && cached) setRecoveredStats(cached)
+      const cached = readLastKnownStatsEntry(userId)
+      if (!cancelled && cached) {
+        setRecoveredStats(cached.stats)
+        setCachedStatsAt(cached.savedAt)
+      }
       for (let attempt = 0; attempt < 3 && !cancelled; attempt++) {
         if (attempt > 0) await new Promise(resolve => setTimeout(resolve, 400 * attempt))
         if (cancelled) return
@@ -292,6 +296,7 @@ export default function HomeDashboard({
         if (data) {
           const fresh = data as UserStats
           setRecoveredStats(fresh)
+          setCachedStatsAt(null)
           writeLastKnownStats(userId, fresh)
           return
         }
@@ -300,6 +305,15 @@ export default function HomeDashboard({
     })()
     return () => { cancelled = true }
   }, [statsUnavailable, demoMode, userId, supabase])
+
+  useEffect(() => {
+    performance.mark('grind.home.hydrated')
+    const onShow = (event: PageTransitionEvent) => {
+      if (event.persisted) performance.mark('grind.home.resumed')
+    }
+    window.addEventListener('pageshow', onShow)
+    return () => window.removeEventListener('pageshow', onShow)
+  }, [])
 
   const xpTotal = effectiveStats?.xp_total ?? 0
   const level = getLevel(xpTotal)
@@ -593,25 +607,16 @@ export default function HomeDashboard({
     if (busySessionIdRef.current || session.loggedSets === 0) return
     busySessionIdRef.current = session.id
     setBusySessionId(session.id)
-    const dayType = session.day_type
     const sessionId = session.id
     try {
       const user = await getClientUser(supabase)
       if (!user) { router.push('/login'); return }
 
-      await flushQueuedOps(sessionId, supabase)
-      if (getQueuedOps(sessionId).length > 0) {
-        flashToast('Still syncing sets — check your connection and try again.')
+      const outcome = await finishWorkout(supabase, user.id, session.id, session.day_type, new Date(session.started_at))
+      if (!outcome) {
+        flashToast('Finish saved on this device. Open the workout to check sync.')
         return
       }
-
-      const outcome = await completeSession(supabase, {
-        userId: user.id,
-        sessionId,
-        dayType,
-        note: null,
-        startHour: new Date(session.started_at).getHours(),
-      })
       if (!outcome.ok) throw outcome.error
 
       setDiscardConfirmId(null)
@@ -638,9 +643,8 @@ export default function HomeDashboard({
     try {
       const user = await getClientUser(supabase)
       if (!user) { router.push('/login'); return }
-      const result = await deleteIncompleteSessions(supabase, user.id, session.day_type)
-      if (!result.ok) throw new Error(result.error)
-      clearQueuedOpsForSession(session.id)
+      const result = await discardWorkout(supabase, user.id, session.id)
+      if (!result.ok) { flashToast(result.error); return }
       setDiscardConfirmId(null)
       markSessionClosed(session.id)
       flashToast('Workout discarded')
@@ -923,6 +927,282 @@ export default function HomeDashboard({
         </h2>
       </div>
 
+      {/* Resume blocks — one card per open session (today + overnight orphans). */}
+      {showResume && activeSessions.map(session => {
+        const today = sessionIsToday(session.started_at)
+        const busy = busySessionId === session.id
+        const confirming = discardConfirmId === session.id
+        return (
+        <div key={session.id} style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '10px' }}>
+          <button className="hover-cta"
+            data-haptic="medium"
+            onClick={() => handleResume(session)}
+            title={DAY_MUSCLES[session.day_type]}
+            style={{
+              position: 'relative',
+              width: '100%',
+              minHeight: '96px',
+              padding: '0 24px',
+              backgroundColor: 'var(--accent)',
+              color: 'var(--on-accent)',
+              border: 'none',
+              borderRadius: '20px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '18px',
+              transition: 'opacity 150ms ease',
+            }}
+          >
+            <span style={{ flexShrink: 0, display: 'flex' }}>
+              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="var(--on-accent)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <polygon points="10 8 16 12 10 16 10 8" fill="var(--on-accent)" stroke="none" />
+              </svg>
+            </span>
+            <span style={{ flex: 1, textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                <span style={{
+                  width: '7px', height: '7px', borderRadius: '9999px',
+                  backgroundColor: 'var(--on-accent)', opacity: 0.85, flexShrink: 0,
+                }} />
+                <span style={{
+                  fontSize: '10px', fontWeight: 700, letterSpacing: '1.5px',
+                  textTransform: 'uppercase', color: 'var(--on-accent)', opacity: 0.75,
+                }}>
+                  {today ? 'In progress' : 'Incomplete'}
+                </span>
+              </span>
+              <span style={{
+                fontFamily: "'Bebas Neue', sans-serif",
+                fontSize: '28px',
+                letterSpacing: '1px',
+                lineHeight: 1,
+              }}>
+                RESUME {dayLabel(session.day_type)}
+              </span>
+              <span style={{
+                fontSize: '12px',
+                fontWeight: 500,
+                color: 'var(--on-accent)',
+                opacity: 0.7,
+                lineHeight: 1.2,
+              }}>
+                {today
+                  ? (session.loggedSets > 0
+                    ? `${session.loggedSets} set${session.loggedSets === 1 ? '' : 's'} logged`
+                    : 'No sets logged yet')
+                  : `${formatShortDate(session.started_at)}${
+                      session.loggedSets > 0
+                        ? ` · ${session.loggedSets} set${session.loggedSets === 1 ? '' : 's'}`
+                        : ' · no sets yet'
+                    }`}
+              </span>
+            </span>
+            <span style={{ flexShrink: 0 }}><ChevronRight color="var(--on-accent)" /></span>
+          </button>
+
+          {!confirming ? (
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                data-haptic="medium"
+                onClick={() => handleSaveActive(session)}
+                disabled={busy || session.loggedSets === 0}
+                title={session.loggedSets === 0 ? 'Log a set before saving' : undefined}
+                style={{
+                  position: 'relative',
+                  flex: 1,
+                  height: '48px',
+                  backgroundColor: 'var(--surface)',
+                  border: '1px solid var(--border)',
+                  borderRadius: '14px',
+                  color: session.loggedSets === 0 ? 'var(--text-muted)' : 'var(--accent-text)',
+                  fontFamily: "'DM Sans', sans-serif",
+                  fontSize: '14px',
+                  fontWeight: 700,
+                  cursor: (busy || session.loggedSets === 0) ? 'default' : 'pointer',
+                  opacity: busy ? 0.6 : 1,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                  transition: 'border-color 150ms ease',
+                }}
+              >
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                  <polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" />
+                </svg>
+                {busy && busySessionId === session.id ? 'Saving…' : 'Save workout'}
+              </button>
+              <button
+                data-haptic="light"
+                onClick={() => setDiscardConfirmId(session.id)}
+                disabled={busy}
+                style={{
+                  position: 'relative',
+                  flex: 1,
+                  height: '48px',
+                  backgroundColor: 'transparent',
+                  border: '1px solid var(--border)',
+                  borderRadius: '14px',
+                  color: 'var(--text-secondary)',
+                  fontFamily: "'DM Sans', sans-serif",
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  cursor: busy ? 'default' : 'pointer',
+                  opacity: busy ? 0.6 : 1,
+                }}
+              >
+                Exit without saving
+              </button>
+            </div>
+          ) : (
+            <div style={{
+              display: 'flex', flexDirection: 'column', gap: '10px',
+              padding: '14px 16px',
+              backgroundColor: 'var(--surface)',
+              border: '1px solid rgba(239,68,68,0.3)',
+              borderRadius: '14px',
+            }}>
+              <div style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                Discard this workout? Your logged sets will be permanently deleted.
+              </div>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button
+                  data-haptic="light"
+                  onClick={() => setDiscardConfirmId(null)}
+                  disabled={busy}
+                  style={{
+                    position: 'relative',
+                    flex: 1, height: '44px',
+                    backgroundColor: 'var(--surface-elevated)',
+                    border: '1px solid var(--border)', borderRadius: '10px',
+                    color: 'var(--text-primary)', fontFamily: "'DM Sans', sans-serif",
+                    fontSize: '14px', fontWeight: 600, cursor: 'pointer',
+                  }}
+                >
+                  Keep
+                </button>
+                <button
+                  data-haptic="heavy"
+                  onClick={() => handleExitActive(session)}
+                  disabled={busy}
+                  style={{
+                    position: 'relative',
+                    flex: 1, height: '44px',
+                    backgroundColor: 'rgba(239,68,68,0.15)',
+                    border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px',
+                    color: 'var(--danger)', fontFamily: "'DM Sans', sans-serif",
+                    fontSize: '14px', fontWeight: 700,
+                    cursor: busy ? 'default' : 'pointer',
+                  }}
+                >
+                  {busy ? 'Discarding…' : 'Discard'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+        )
+      })}
+
+      {/* Primary CTA — start the suggested day. Hidden for a zero-workout user,
+          whose single primary action is the welcome hero above, and hidden while
+          a workout is in progress (the resume block owns the slot). This keeps one
+          clear next step instead of competing "start" affordances. */}
+      {noActiveForUi && !isNewUser && (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      <button className="hover-cta"
+        data-onboard="home-cta"
+        data-haptic="medium"
+        onClick={() => router.push(hasDays ? logDayHref(nextDay) : '/log')}
+        title={hasDays ? DAY_MUSCLES[nextDay] : undefined}
+        style={{
+          position: 'relative',
+          width: '100%',
+          minHeight: '96px',
+          padding: '0 24px',
+          backgroundColor: 'var(--accent)',
+          color: 'var(--on-accent)',
+          border: 'none',
+          borderRadius: '20px',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '18px',
+          transition: 'opacity 150ms ease',
+        }}
+      >
+        <span style={{ flexShrink: 0 }}>
+          <DayIcon
+            dayKey={hasDays ? nextDay : undefined}
+            kind={hasDays ? undefined : 'default'}
+            size={32}
+            color="var(--on-accent)"
+          />
+        </span>
+        <span style={{ flex: 1, textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <span style={{
+            fontFamily: "'Bebas Neue', sans-serif",
+            fontSize: '28px',
+            letterSpacing: '1px',
+            lineHeight: 1,
+          }}>
+            {hasDays ? `START ${dayLabel(nextDay)}` : 'CREATE YOUR FIRST DAY'}
+          </span>
+          <span style={{
+            fontSize: '12px',
+            fontWeight: 500,
+            color: 'var(--on-accent)',
+            opacity: 0.7,
+            lineHeight: 1.2,
+          }}>
+            {hasDays ? exercisePreview : 'Set up your workout days to get started'}
+          </span>
+        </span>
+        <span style={{ flexShrink: 0 }}><ChevronRight color="var(--on-accent)" /></span>
+      </button>
+
+      {/* Skip — advances the rotation pointer past today's suggested day
+          without logging anything (e.g. already did legs off-app, or just
+          taking a planned day off). Only meaningful with more than one day
+          in the loop; a single-day rotation would just suggest itself again. */}
+      {hasDays && (
+        <button
+          className="press hover-text-secondary"
+          data-haptic="light"
+          onClick={handleSkipDay}
+          disabled={skippingDay}
+          style={{
+            position: 'relative',
+            alignSelf: 'center',
+            height: '40px',
+            padding: '0 14px',
+            background: 'none',
+            border: 'none',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+            cursor: skippingDay ? 'default' : 'pointer',
+            color: 'var(--text-muted)',
+            fontFamily: "'DM Sans', sans-serif",
+            fontSize: '13px',
+            fontWeight: 600,
+            opacity: skippingDay ? 0.6 : 1,
+          }}
+
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polygon points="5 4 15 12 5 20 5 4" /><line x1="19" y1="5" x2="19" y2="19" />
+          </svg>
+          {skippingDay ? 'Skipping…' : `Skip ${dayLabel(nextDay)}`}
+        </button>
+      )}
+      </div>
+      )}
+
+      {statsUnavailable && cachedStatsAt && (
+        <p className="home-cache-age" role="status">
+          Stats saved on this device · {new Date(cachedStatsAt).toLocaleString()}
+        </p>
+      )}
+
       {/* Stats read failed and neither the client re-read nor the last-known
           cache has answered yet. Rendering level 0 / "your streak starts here"
           here would tell an established user their account reset — the exact
@@ -1178,284 +1458,6 @@ export default function HomeDashboard({
             </button>
           </div>
         </div>
-      )}
-
-      {/* Resume blocks — one card per open session (today + overnight orphans). */}
-      {showResume && activeSessions.map(session => {
-        const today = sessionIsToday(session.started_at)
-        const busy = busySessionId === session.id
-        const confirming = discardConfirmId === session.id
-        return (
-        <div key={session.id} style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '10px' }}>
-          <button className="hover-cta"
-            data-haptic="medium"
-            onClick={() => handleResume(session)}
-            title={DAY_MUSCLES[session.day_type]}
-            style={{
-              position: 'relative',
-              width: '100%',
-              minHeight: '96px',
-              padding: '0 24px',
-              backgroundColor: 'var(--accent)',
-              color: 'var(--on-accent)',
-              border: 'none',
-              borderRadius: '20px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '18px',
-              transition: 'opacity 150ms ease',
-            }}
-          >
-            <span style={{ flexShrink: 0, display: 'flex' }}>
-              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="var(--on-accent)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="10" />
-                <polygon points="10 8 16 12 10 16 10 8" fill="var(--on-accent)" stroke="none" />
-              </svg>
-            </span>
-            <span style={{ flex: 1, textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
-                <span style={{
-                  width: '7px', height: '7px', borderRadius: '9999px',
-                  backgroundColor: 'var(--on-accent)', opacity: 0.85, flexShrink: 0,
-                }} />
-                <span style={{
-                  fontSize: '10px', fontWeight: 700, letterSpacing: '1.5px',
-                  textTransform: 'uppercase', color: 'var(--on-accent)', opacity: 0.75,
-                }}>
-                  {today ? 'In progress' : 'Incomplete'}
-                </span>
-              </span>
-              <span style={{
-                fontFamily: "'Bebas Neue', sans-serif",
-                fontSize: '28px',
-                letterSpacing: '1px',
-                lineHeight: 1,
-              }}>
-                RESUME {dayLabel(session.day_type)}
-              </span>
-              <span style={{
-                fontSize: '12px',
-                fontWeight: 500,
-                color: 'var(--on-accent)',
-                opacity: 0.7,
-                lineHeight: 1.2,
-              }}>
-                {today
-                  ? (session.loggedSets > 0
-                    ? `${session.loggedSets} set${session.loggedSets === 1 ? '' : 's'} logged`
-                    : 'No sets logged yet')
-                  : `${formatShortDate(session.started_at)}${
-                      session.loggedSets > 0
-                        ? ` · ${session.loggedSets} set${session.loggedSets === 1 ? '' : 's'}`
-                        : ' · no sets yet'
-                    }`}
-              </span>
-            </span>
-            <span style={{ flexShrink: 0 }}><ChevronRight color="var(--on-accent)" /></span>
-          </button>
-
-          {!confirming ? (
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button
-                data-haptic="medium"
-                onClick={() => handleSaveActive(session)}
-                disabled={busy || session.loggedSets === 0}
-                title={session.loggedSets === 0 ? 'Log a set before saving' : undefined}
-                style={{
-                  position: 'relative',
-                  flex: 1,
-                  height: '48px',
-                  backgroundColor: 'var(--surface)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '14px',
-                  color: session.loggedSets === 0 ? 'var(--text-muted)' : 'var(--accent-text)',
-                  fontFamily: "'DM Sans', sans-serif",
-                  fontSize: '14px',
-                  fontWeight: 700,
-                  cursor: (busy || session.loggedSets === 0) ? 'default' : 'pointer',
-                  opacity: busy ? 0.6 : 1,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                  transition: 'border-color 150ms ease',
-                }}
-              >
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-                  <polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" />
-                </svg>
-                {busy && busySessionId === session.id ? 'Saving…' : 'Save workout'}
-              </button>
-              <button
-                data-haptic="light"
-                onClick={() => setDiscardConfirmId(session.id)}
-                disabled={busy}
-                style={{
-                  position: 'relative',
-                  flex: 1,
-                  height: '48px',
-                  backgroundColor: 'transparent',
-                  border: '1px solid var(--border)',
-                  borderRadius: '14px',
-                  color: 'var(--text-secondary)',
-                  fontFamily: "'DM Sans', sans-serif",
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  cursor: busy ? 'default' : 'pointer',
-                  opacity: busy ? 0.6 : 1,
-                }}
-              >
-                Exit without saving
-              </button>
-            </div>
-          ) : (
-            <div style={{
-              display: 'flex', flexDirection: 'column', gap: '10px',
-              padding: '14px 16px',
-              backgroundColor: 'var(--surface)',
-              border: '1px solid rgba(239,68,68,0.3)',
-              borderRadius: '14px',
-            }}>
-              <div style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                Discard this workout? Your logged sets will be permanently deleted.
-              </div>
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <button
-                  data-haptic="light"
-                  onClick={() => setDiscardConfirmId(null)}
-                  disabled={busy}
-                  style={{
-                    position: 'relative',
-                    flex: 1, height: '44px',
-                    backgroundColor: 'var(--surface-elevated)',
-                    border: '1px solid var(--border)', borderRadius: '10px',
-                    color: 'var(--text-primary)', fontFamily: "'DM Sans', sans-serif",
-                    fontSize: '14px', fontWeight: 600, cursor: 'pointer',
-                  }}
-                >
-                  Keep
-                </button>
-                <button
-                  data-haptic="heavy"
-                  onClick={() => handleExitActive(session)}
-                  disabled={busy}
-                  style={{
-                    position: 'relative',
-                    flex: 1, height: '44px',
-                    backgroundColor: 'rgba(239,68,68,0.15)',
-                    border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px',
-                    color: 'var(--danger)', fontFamily: "'DM Sans', sans-serif",
-                    fontSize: '14px', fontWeight: 700,
-                    cursor: busy ? 'default' : 'pointer',
-                  }}
-                >
-                  {busy ? 'Discarding…' : 'Discard'}
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-        )
-      })}
-
-      {/* Primary CTA — start the suggested day. Hidden for a zero-workout user,
-          whose single primary action is the welcome hero above, and hidden while
-          a workout is in progress (the resume block owns the slot). This keeps one
-          clear next step instead of competing "start" affordances. */}
-      {noActiveForUi && !isNewUser && (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-      {/* Charge: the watch's verdict on today, read before the action it
-          informs. Absent without watch data, so Home is unchanged for everyone else. */}
-      {body?.charge && (
-        <>
-          <ChargeRing charge={body.charge} onOpen={() => setTodayOpen(true)} />
-          <TodaySheet open={todayOpen} onClose={() => setTodayOpen(false)} summary={body} />
-        </>
-      )}
-      <button className="hover-cta"
-        data-onboard="home-cta"
-        data-haptic="medium"
-        onClick={() => router.push(hasDays ? logDayHref(nextDay) : '/log')}
-        title={hasDays ? DAY_MUSCLES[nextDay] : undefined}
-        style={{
-          position: 'relative',
-          width: '100%',
-          minHeight: '96px',
-          padding: '0 24px',
-          backgroundColor: 'var(--accent)',
-          color: 'var(--on-accent)',
-          border: 'none',
-          borderRadius: '20px',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '18px',
-          transition: 'opacity 150ms ease',
-        }}
-      >
-        <span style={{ flexShrink: 0 }}>
-          <DayIcon
-            dayKey={hasDays ? nextDay : undefined}
-            kind={hasDays ? undefined : 'default'}
-            size={32}
-            color="var(--on-accent)"
-          />
-        </span>
-        <span style={{ flex: 1, textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <span style={{
-            fontFamily: "'Bebas Neue', sans-serif",
-            fontSize: '28px',
-            letterSpacing: '1px',
-            lineHeight: 1,
-          }}>
-            {hasDays ? `START ${dayLabel(nextDay)}` : 'CREATE YOUR FIRST DAY'}
-          </span>
-          <span style={{
-            fontSize: '12px',
-            fontWeight: 500,
-            color: 'var(--on-accent)',
-            opacity: 0.7,
-            lineHeight: 1.2,
-          }}>
-            {hasDays ? exercisePreview : 'Set up your workout days to get started'}
-          </span>
-        </span>
-        <span style={{ flexShrink: 0 }}><ChevronRight color="var(--on-accent)" /></span>
-      </button>
-
-      {/* Skip — advances the rotation pointer past today's suggested day
-          without logging anything (e.g. already did legs off-app, or just
-          taking a planned day off). Only meaningful with more than one day
-          in the loop; a single-day rotation would just suggest itself again. */}
-      {hasDays && (
-        <button
-          className="press hover-text-secondary"
-          data-haptic="light"
-          onClick={handleSkipDay}
-          disabled={skippingDay}
-          style={{
-            position: 'relative',
-            alignSelf: 'center',
-            height: '40px',
-            padding: '0 14px',
-            background: 'none',
-            border: 'none',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-            cursor: skippingDay ? 'default' : 'pointer',
-            color: 'var(--text-muted)',
-            fontFamily: "'DM Sans', sans-serif",
-            fontSize: '13px',
-            fontWeight: 600,
-            opacity: skippingDay ? 0.6 : 1,
-          }}
-
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polygon points="5 4 15 12 5 20 5 4" /><line x1="19" y1="5" x2="19" y2="19" />
-          </svg>
-          {skippingDay ? 'Skipping…' : `Skip ${dayLabel(nextDay)}`}
-        </button>
-      )}
-      </div>
       )}
 
       {/* Rest today — secondary to Start. One-off skip that spends a configured
@@ -1758,6 +1760,17 @@ export default function HomeDashboard({
                 {lastSession.note || 'No notes for this session.'}
               </div>
             </div>
+          </div>
+        )}
+        {body?.charge && (
+          <div className="home-recovery">
+            <ChargeRing charge={body.charge} onOpen={() => setTodayOpen(true)} />
+            <TodaySheet open={todayOpen} onClose={() => setTodayOpen(false)} summary={body} />
+            {body.syncs[0] ? (
+              <p>Watch data received · {new Date(body.syncs[0].received_at).toLocaleString()}</p>
+            ) : body.todayRow?.synced_at && (
+              <p>Watch snapshot · {new Date(body.todayRow.synced_at).toLocaleString()}</p>
+            )}
           </div>
         )}
       </div>{/* end last-workout band */}

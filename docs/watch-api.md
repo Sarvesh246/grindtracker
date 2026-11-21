@@ -206,6 +206,8 @@ Content-Type: application/json
 | `workout_id` | no | `workout.id` from `/today`. When absent, the day of the first set's exercise is used. Ignored after the session exists |
 | `started_at` | yes | ISO 8601. Send UTC (`…Z`); offsets are accepted and converted |
 | `ended_at` | no | ISO 8601, ≥ `started_at`. Present = the workout is finished |
+| `batch_upload` | no | True for batches from a finished workout. Intermediate sets are staged until `ended_at` arrives. |
+| `sensor_retry` | no | True to retry heart-rate data from an acknowledged batch without replaying its core sets. |
 | `utc_offset_seconds` | no | Watch's UTC offset, −50400…50400 (`System.getClockTime().timeZoneOffset`). Decides which calendar day the workout counts for in streaks. Send it |
 | `heart_rate.avg`, `.max` | no | int 20–250 |
 | `calories` | no | int 0–20000 |
@@ -306,6 +308,15 @@ code, `429`, `500` or `503` keep everything and retry later with backoff
 
 ### Partial syncs and completion
 
+Current builds send `batch_upload: true`. Intermediate batches are durably
+staged in Postgres without opening a web workout. The final batch publishes the
+sets and completes the workout in one transaction. The response includes
+`sensor.status` (`none`, `stored`, or `pending`). On `pending`, retain the
+heart-rate payload and retry it with `sensor_retry: true` after core completion.
+Only `stored` acknowledges that copy. Foreground GRIND drains both queues.
+
+Clients that omit `batch_upload` keep the open-session protocol:
+
 1. First upload without `ended_at` → session created **open** (`201`). It
    appears in GRIND as an in-progress workout (Home's resume card; opening that
    day in Log resumes it with the watch's sets).
@@ -332,7 +343,8 @@ Completion rules (same as the web app):
   original number and unit are kept alongside, so a re-upload compares exactly.
   Send whatever unit the watch displays; always set `unit`.
 - All timestamps are stored in UTC. The workout's calendar day (for streaks) is
-  the local date of `ended_at` using `utc_offset_seconds`.
+  the local date of the last non-warm-up working set. The stored IANA timezone
+  takes precedence, with `utc_offset_seconds` as the fallback.
 
 ## POST /daily
 

@@ -272,6 +272,8 @@ export default function CoachSheet() {
     newChat,
     openHistory,
     closeHistory,
+    olderCursor,
+    loadOlderMessages,
   } = useCoach()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -1781,6 +1783,12 @@ export default function CoachSheet() {
               </div>
             ) : (
               <ul className="coach-sheet__messages">
+                {olderCursor && (
+                  <li><button type="button" className="coach-chip" disabled={streaming} onClick={() => {
+                    stickBottom.current = false
+                    void loadOlderMessages()
+                  }}>Load older messages</button></li>
+                )}
                 {messages.map((m, i) => {
                   const waiting =
                     m.role === 'assistant' && !m.content && streaming

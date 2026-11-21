@@ -34,6 +34,7 @@ import { localDateKey } from '@/lib/utils/formatting'
 import { focusWithoutRing } from '@/lib/utils/haptics'
 import { healIosViewport } from '@/lib/utils/iosViewportHeal'
 import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
 
 export type CoachDockId = 'br' | 'bl' | 'tr' | 'tl'
 /** compact = quick sheet; page = full-screen Coach app */
@@ -103,6 +104,8 @@ type CoachContextValue = {
   openHistory: () => void
   closeHistory: () => void
   loadConversation: (id: string) => Promise<void>
+  olderCursor: string | null
+  loadOlderMessages: () => Promise<void>
   deleteConversation: (id: string) => Promise<void>
   refreshConversations: () => Promise<void>
   /** Picked model id, or COACH_AUTO_MODEL. Server falls back past it on 429. */
@@ -195,6 +198,7 @@ export function CoachProvider({
     () => 'br' as CoachDockId,
   )
   const [messages, setMessages] = useState<CoachMessage[]>([])
+  const [olderCursor, setOlderCursor] = useState<string | null>(null)
   const [streaming, setStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [quota, setQuota] = useState<CoachQuotaState | null>(null)
@@ -212,6 +216,33 @@ export function CoachProvider({
   const returnFocusRef = useRef<HTMLButtonElement | null>(null)
   const openedOnce = useRef(false)
   const streamingRef = useRef(false)
+  const conversationEpoch = useRef(0)
+  const olderLoading = useRef(false)
+  const chatAbort = useRef<AbortController | null>(null)
+
+  useEffect(() => {
+    let owner: string | null | undefined
+    const { data: { subscription } } = createClient().auth.onAuthStateChange((event, session) => {
+      const next = session?.user.id ?? null
+      if (event === 'SIGNED_OUT' || (owner !== undefined && owner !== next)) {
+        conversationEpoch.current++
+        chatAbort.current?.abort()
+        chatAbort.current = null
+        streamingRef.current = false
+        setStreaming(false)
+        setActiveConversationId(null)
+        setOlderCursor(null)
+        setConversations([])
+        setMessages([])
+        setError(null)
+      }
+      owner = next
+    })
+    return () => {
+      subscription.unsubscribe()
+      chatAbort.current?.abort()
+    }
+  }, [])
   const sendMessageRef = useRef<(text: string) => Promise<void>>(async () => {})
 
   const setDock = useCallback((next: CoachDockId) => {
@@ -369,12 +400,14 @@ export function CoachProvider({
   const clearError = useCallback(() => setError(null), [])
 
   const newChat = useCallback(() => {
-    if (streaming) return
+    if (streamingRef.current) return
+    conversationEpoch.current++
+    setOlderCursor(null)
     setMessages([])
     setActiveConversationId(null)
     setHistoryOpen(false)
     setError(null)
-  }, [streaming])
+  }, [])
 
   const openHistory = useCallback(() => {
     setHistoryOpen(true)
@@ -385,36 +418,64 @@ export function CoachProvider({
 
   const loadConversation = useCallback(
     async (id: string) => {
-      if (streaming || !id || id === 'pending') return
+      if (streamingRef.current || !id || id === 'pending') return
       setError(null)
       // Already viewing this thread — just dismiss the history panel.
       if (id === activeConversationId) {
         setHistoryOpen(false)
         return
       }
+      const epoch = ++conversationEpoch.current
       try {
         const res = await fetch(`/api/coach/conversations/${id}`)
+        if (conversationEpoch.current !== epoch || streamingRef.current) return
         if (!res.ok) {
           setError('Could not open that chat.')
           return
         }
         const data = (await res.json()) as {
           messages?: CoachMessage[]
-          conversation?: CoachConversationSummary
+          olderCursor?: string | null
         }
+        if (conversationEpoch.current !== epoch || streamingRef.current) return
         setActiveConversationId(id)
+        setOlderCursor(data.olderCursor ?? null)
         setMessages(data.messages ?? [])
         setHistoryOpen(false)
         setSize('page')
       } catch {
-        setError('Could not open that chat.')
+        if (conversationEpoch.current === epoch) setError('Could not open that chat.')
       }
     },
-    [streaming, activeConversationId],
+    [activeConversationId],
   )
+
+  const loadOlderMessages = useCallback(async () => {
+    if (streamingRef.current || olderLoading.current || !activeConversationId || !olderCursor) return
+    const epoch = conversationEpoch.current
+    olderLoading.current = true
+    try {
+      const params = new URLSearchParams({ before: olderCursor })
+      const response = await fetch(`/api/coach/conversations/${activeConversationId}?${params}`)
+      if (!response.ok) throw new Error('Could not load older messages')
+      const page = await response.json() as { messages: CoachMessage[]; olderCursor: string | null }
+      if (conversationEpoch.current !== epoch || streamingRef.current) return
+      setOlderCursor(page.olderCursor)
+      setMessages(current => {
+        const ids = new Set(current.map(message => message.id))
+        return [...page.messages.filter(message => !ids.has(message.id)), ...current]
+      })
+    } catch {
+      if (conversationEpoch.current === epoch) setError('Could not load older messages.')
+    } finally {
+      olderLoading.current = false
+    }
+  }, [activeConversationId, olderCursor])
 
   const deleteConversation = useCallback(
     async (id: string) => {
+      if (streamingRef.current) return
+      const epoch = conversationEpoch.current
       try {
         const res = await fetch(`/api/coach/conversations/${id}`, {
           method: 'DELETE',
@@ -423,8 +484,11 @@ export function CoachProvider({
           setError('Could not delete that chat.')
           return
         }
+        if (conversationEpoch.current !== epoch) return
         setConversations(prev => prev.filter(c => c.id !== id))
         if (activeConversationId === id) {
+          conversationEpoch.current++
+          setOlderCursor(null)
           setActiveConversationId(null)
           setMessages([])
         }
@@ -466,6 +530,9 @@ export function CoachProvider({
       }
 
       streamingRef.current = true
+      conversationEpoch.current++
+      const abort = new AbortController()
+      chatAbort.current = abort
       setError(null)
       const userMsg: CoachMessage = { id: uid(), role: 'user', content: text }
       const history = messages
@@ -505,6 +572,7 @@ export function CoachProvider({
         setServedBy(null)
         const res = await fetch('/api/coach/chat', {
           method: 'POST',
+          signal: abort.signal,
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             message: text,
@@ -517,6 +585,7 @@ export function CoachProvider({
           }),
         })
 
+        if (abort.signal.aborted) return
         const convHeader = res.headers.get('X-Coach-Conversation-Id')
         if (convHeader) {
           setActiveConversationId(convHeader)
@@ -631,6 +700,7 @@ export function CoachProvider({
           content: string,
           nextProposals?: CoachProposalView[],
         ) => {
+          if (abort.signal.aborted) return
           setMessages(prev =>
             prev.map(m =>
               m.id === assistantId
@@ -692,6 +762,7 @@ export function CoachProvider({
 
         while (true) {
           const { done, value } = await reader.read()
+          if (abort.signal.aborted) return
           if (done) break
           const chunk = decoder.decode(value, { stream: true })
           rawAcc += chunk
@@ -768,16 +839,22 @@ export function CoachProvider({
           setError('Connection dropped mid-reply. Partial answer shown.')
         }
       } catch {
+        if (abort.signal.aborted) return
         setMessages(prev =>
           prev.filter(m => !(m.id === assistantId && !m.content)),
         )
         setConversations(prev => prev.filter(c => c.id !== 'pending'))
         setError('Could not reach Coach. Check your connection.')
       } finally {
-        streamingRef.current = false
-        setStreaming(false)
-        void refreshQuota()
-        void refreshConversations()
+        if (chatAbort.current === abort) {
+          chatAbort.current = null
+          streamingRef.current = false
+          setStreaming(false)
+          if (!abort.signal.aborted) {
+            void refreshQuota()
+            void refreshConversations()
+          }
+        }
       }
     },
     [
@@ -1063,6 +1140,8 @@ export function CoachProvider({
       openHistory,
       closeHistory,
       loadConversation,
+      olderCursor,
+      loadOlderMessages,
       deleteConversation,
       refreshConversations,
       model,
@@ -1100,6 +1179,8 @@ export function CoachProvider({
       openHistory,
       closeHistory,
       loadConversation,
+      olderCursor,
+      loadOlderMessages,
       deleteConversation,
       refreshConversations,
     ],

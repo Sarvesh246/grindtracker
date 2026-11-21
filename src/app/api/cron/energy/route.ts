@@ -38,39 +38,46 @@ async function run() {
     // Due heads-ups go out first: a slow schedule refresh below must never hold back an alert already queued.
     const sent = await sendDueNotifications(supabase)
 
-    const { data: prefs, error } = await supabase
-      .from('notification_prefs')
-      .select('user_id,timezone,energy_kinds,energy_lead_min')
-      .eq('enabled', true)
-      .eq('energy_alerts', true)
-      .order('user_id')
-      .limit(1000)
-    if (error) throw error
-    const users = prefs ?? []
-
     let queued = 0
     let failed = 0
     let attempted = 0
-    const worker = async () => {
-      while (attempted < users.length && Date.now() - started < BUDGET_MS) {
-        const pref = users[attempted++]
+    while (Date.now() - started < BUDGET_MS) {
+      const { data, error } = await supabase.rpc('claim_energy_refreshes', { p_limit: CONCURRENCY })
+      if (error) throw error
+      const prefs = data ?? []
+      if (!prefs.length) break
+      attempted += prefs.length
+      await Promise.all(prefs.map(async (pref: Parameters<typeof refreshUserSchedule>[1] & { lease_until: string }) => {
+        let success = false
         try {
           queued += await refreshUserSchedule(supabase, pref)
+          success = true
         } catch (err) {
-          // One user's bad data must not stop everyone else's alerts.
           failed++
           reportError(err, { operation: 'energy-refresh', route: '/api/cron/energy' })
         }
-      }
+        const { error: settleError } = await supabase.rpc('settle_energy_refresh', {
+          p_user: pref.user_id, p_lease: pref.lease_until, p_success: success,
+        })
+        if (settleError) throw settleError
+      }))
     }
-    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, users.length) }, worker))
+    const { data: oldest, error: oldestError } = await supabase.from('notification_prefs')
+      .select('energy_refresh_due_at').eq('enabled', true).eq('energy_alerts', true)
+      .order('energy_refresh_due_at').limit(1).maybeSingle()
+    if (oldestError) throw oldestError
+    const oldestOverdueSeconds = oldest
+      ? Math.max(0, Math.floor((Date.now() - Date.parse(oldest.energy_refresh_due_at)) / 1000)) : 0
+    if (oldestOverdueSeconds > 900) {
+      console.warn('[grind] Energy refresh overdue', { oldestOverdueSeconds })
+    }
 
     return NextResponse.json({
       ok: true,
-      users: users.length,
+      users: attempted,
       queued,
       failed,
-      deferred: users.length - attempted,
+      oldestOverdueSeconds,
       ...sent,
     })
   } catch (err) {

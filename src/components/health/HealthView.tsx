@@ -725,6 +725,19 @@ function HealthTrend({
   })
   const count = rows.filter((r) => r.value != null).length
   const volume = VOLUME_METRICS.includes(metric)
+  const datesInWindow = new Set(rows.map(row => row.date))
+  const coverage = new Map<string, Set<string>>()
+  for (const row of data.sampleCoverage) {
+    if (row.metric !== metric || !datesInWindow.has(row.date)) continue
+    if (!coverage.has(row.source)) coverage.set(row.source, new Set())
+    coverage.get(row.source)?.add(row.date)
+  }
+  for (const row of rows) {
+    const source = data.provenance[row.date]?.[metric]?.source
+    if (!source || (source !== 'legacy_snapshot' && source !== 'sleep_record')) continue
+    if (!coverage.has(source)) coverage.set(source, new Set())
+    coverage.get(source)?.add(row.date)
+  }
   const usual = metricBaseline(data.history, data.sleeps, metric, date)
   const stats = seriesStats(rows.map((r) => r.value))
   const pickKey = `${metric}:${window}`
@@ -825,10 +838,20 @@ function HealthTrend({
         </p>
       )}
       <p className="health-coverage">
-        {count}/{window} days{data.historyError ? ' · couldn’t refresh' : ''}
+        {count}/{window} days{data.historyError || data.sampleHistoryError ? ' · some sources could not refresh' : ''}
       </p>
       <details>
-        <summary>Data</summary>
+        <summary>Data and source coverage</summary>
+        {coverage.size > 0 && (
+          <ul className="health-coverage">
+            {[...coverage].map(([source, days]) => (
+              <li key={source}>
+                {source === 'legacy_snapshot' ? 'Garmin watch snapshots' :
+                  source === 'sleep_record' ? 'Sleep records' : sourceLabel(source)} · {days.size}/{window} days
+              </li>
+            ))}
+          </ul>
+        )}
         <div className="health-table-wrap">
           <table>
             <thead>

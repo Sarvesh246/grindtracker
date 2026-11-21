@@ -14,16 +14,20 @@ import {
   resolveDayTextColor,
 } from '@/lib/utils/dayColors'
 import { effectiveSequence, nextDay as nextDayFromRotation, orderedDayKeys, resolveRotationIndex, type LastCompletion } from '@/lib/utils/rotation'
-import { completeSession } from '@/lib/utils/completeSession'
-import { deleteIncompleteSessions } from '@/lib/utils/sessions'
-import { flushQueuedOps, getQueuedOps, clearQueuedOpsForSession } from '@/lib/utils/offlineQueue'
+import { finishWorkout } from '@/lib/offline/sync'
+import { discardWorkout } from '@/lib/utils/sessions'
+import { getQueuedOps } from '@/lib/utils/offlineQueue'
 import { formatShortDate } from '@/lib/utils/formatting'
 import {
   LOG_CATALOG_STORAGE_KEY,
   getPendingLocalSessions,
+  lastKnownUserId,
+  readWorkoutSnapshot,
   rememberUserId,
   saveWorkoutSnapshot,
 } from '@/lib/offline/localSession'
+import { browserIsOffline } from '@/lib/offline/offlineGate'
+import { loadWorkoutStore, readWorkoutStore } from '@/lib/offline/workoutStore'
 import WorkoutManager from './WorkoutManager'
 import FinishUndoBanner from '@/components/FinishUndoBanner'
 import DayIcon from '@/components/DayIcon'
@@ -78,6 +82,7 @@ const CATALOG_TIMEOUT_MS = 10_000
  * on the device but not yet synced are listed as open sessions.
  */
 async function loadCatalogWithOfflineFallback(fetchFresh: () => Promise<LogCatalog>): Promise<LogCatalog> {
+  const before = lastKnownUserId()
   try {
     const fresh = await new Promise<LogCatalog>((resolve, reject) => {
       const timer = setTimeout(() => reject(new TypeError('catalog request timed out')), CATALOG_TIMEOUT_MS)
@@ -87,7 +92,10 @@ async function loadCatalogWithOfflineFallback(fetchFresh: () => Promise<LogCatal
       )
     })
     try {
-      window.localStorage.setItem(LOG_CATALOG_STORAGE_KEY, JSON.stringify(fresh))
+      const owner = lastKnownUserId()
+      if (owner && (!before || before === owner)) {
+        window.localStorage.setItem(LOG_CATALOG_STORAGE_KEY, JSON.stringify({ owner, catalog: fresh }))
+      }
     } catch {
       /* storage full / private mode — only the offline copy is lost */
     }
@@ -96,28 +104,52 @@ async function loadCatalogWithOfflineFallback(fetchFresh: () => Promise<LogCatal
     let saved: LogCatalog | null = null
     try {
       const raw = window.localStorage.getItem(LOG_CATALOG_STORAGE_KEY)
-      saved = raw ? (JSON.parse(raw) as LogCatalog) : null
+      const entry = raw ? JSON.parse(raw) as { owner?: string; catalog?: LogCatalog } : null
+      if (before && entry?.owner === before && lastKnownUserId() === before) {
+        saved = entry.catalog ?? null
+        await loadWorkoutStore(before)
+      }
     } catch {
       saved = null
     }
-    if (!saved || !Array.isArray(saved.exercises)) throw err
-    const known = new Set(saved.openSessions.map(s => s.id))
-    const local: OpenSession[] = getPendingLocalSessions()
-      .filter(p => !known.has(p.id))
-      .map(p => ({
-        id: p.id,
-        day_type: p.day,
-        started_at: p.startedAt,
-        loggedSets: getQueuedOps(p.id).filter(
-          q => q.kind === 'upsert' && !q.isSkipped && !q.isWarmup && q.weight != null,
-        ).length,
+    if (!before || lastKnownUserId() !== before) throw err
+    await loadWorkoutStore(before)
+    if (!saved || !Array.isArray(saved.exercises)) {
+      const snapshot = readWorkoutSnapshot<Exercise>(before)
+      if (!snapshot) throw err
+      saved = {
+        exercises: snapshot.exercises, rotation: null, flexDays: [], dayCategories: {},
+        dayColors: {}, openSessions: [], lastCompletion: null,
+      }
+    }
+    const store = readWorkoutStore(before)
+    const known = new Set(saved.openSessions.map(session => session.id))
+    const drafts = getPendingLocalSessions(before)
+    const local: OpenSession[] = [...Object.values(store.resume), ...drafts
+      .filter(draft => !Object.hasOwn(store.resume, draft.id))]
+      .filter(entry => !known.has(entry.id) && !store.discarded.includes(entry.id))
+      .map(entry => ({
+        id: entry.id,
+        day_type: entry.day,
+        started_at: entry.startedAt,
+        loggedSets: ('logs' in entry ? entry.logs.filter(log => !log.is_warmup && !log.is_skipped &&
+          log.weight != null && log.reps != null).length : 0) +
+          getQueuedOps(entry.id, before).filter(op => op.kind === 'upsert' && !op.isSkipped &&
+            !op.isWarmup && op.weight != null && op.reps != null).length,
       }))
-    return { ...saved, openSessions: [...saved.openSessions, ...local] }
+    return { ...saved, openSessions: [...saved.openSessions.filter(entry =>
+      !store.discarded.includes(entry.id)), ...local] }
+
   }
 }
 
 export default function DaySelect() {
   const router = useRouter()
+  function openWorkout(day: string) {
+    const path = logDayHref(day)
+    if (browserIsOffline()) window.location.assign(path.replace('/log', '/offline-workout'))
+    else router.push(path)
+  }
   const searchParams = useSearchParams()
   const supabase = useMemo(() => createClient(), [])
   const { theme } = useTheme()
@@ -291,19 +323,11 @@ export default function DaySelect() {
       const user = await getClientUser(supabase)
       if (!user) { router.push('/login'); return }
 
-      await flushQueuedOps(session.id, supabase)
-      if (getQueuedOps(session.id).length > 0) {
-        flashToast('Still syncing sets — check your connection and try again.')
+      const outcome = await finishWorkout(supabase, user.id, session.id, session.day_type, new Date(session.started_at))
+      if (!outcome) {
+        flashToast('Finish saved on this device. Open the workout to check sync.')
         return
       }
-
-      const outcome = await completeSession(supabase, {
-        userId: user.id,
-        sessionId: session.id,
-        dayType: session.day_type,
-        note: null,
-        startHour: new Date(session.started_at).getHours(),
-      })
       if (!outcome.ok) throw outcome.error
 
       setDiscardConfirmId(null)
@@ -327,9 +351,8 @@ export default function DaySelect() {
     try {
       const user = await getClientUser(supabase)
       if (!user) { router.push('/login'); return }
-      const result = await deleteIncompleteSessions(supabase, user.id, session.day_type)
-      if (!result.ok) throw new Error(result.error)
-      clearQueuedOpsForSession(session.id)
+      const result = await discardWorkout(supabase, user.id, session.id)
+      if (!result.ok) { flashToast(result.error); return }
       setDiscardConfirmId(null)
       setOpenSessionsOverride(prev => (prev ?? openSessions).filter(s => s.id !== session.id))
       flashToast('Workout discarded')
@@ -549,7 +572,7 @@ export default function DaySelect() {
                         data-haptic="medium"
                         className="press"
                         disabled={busy}
-                        onClick={() => router.push(logDayHref(session.day_type))}
+                        onClick={() => openWorkout(session.day_type)}
                         style={{
                           position: 'relative',
                           height: '40px', padding: '0 16px', flexShrink: 0,
@@ -690,7 +713,7 @@ export default function DaySelect() {
                   data-onboard={idx === 0 ? 'dayselect-days' : undefined}
                   data-haptic="heavy"
                   onClick={() => {
-                    router.push(logDayHref(key))
+                    openWorkout(key)
                   }}
                   style={{
                     '--i': idx,

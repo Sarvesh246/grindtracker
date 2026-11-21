@@ -25,17 +25,21 @@ interface StoredStats {
   stats: UserStats
 }
 
-export function readLastKnownStats(userId: string, now: number = Date.now()): UserStats | null {
+export function readLastKnownStatsEntry(userId: string, now: number = Date.now()): StoredStats | null {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY)
     if (!raw) return null
     const parsed = JSON.parse(raw) as StoredStats | null
     if (!parsed || parsed.userId !== userId || !parsed.stats) return null
     if (!Number.isFinite(parsed.savedAt) || now - parsed.savedAt > MAX_AGE_MS) return null
-    return parsed.stats
+    return parsed
   } catch {
     return null
   }
+}
+
+export function readLastKnownStats(userId: string, now: number = Date.now()): UserStats | null {
+  return readLastKnownStatsEntry(userId, now)?.stats ?? null
 }
 
 export function writeLastKnownStats(userId: string, stats: UserStats, now: number = Date.now()): void {

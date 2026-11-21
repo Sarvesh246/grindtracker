@@ -1,3 +1,4 @@
+import { performance as serverClock } from 'node:perf_hooks'
 import { cookies } from 'next/headers'
 import { enabledDayKeys } from '@/lib/utils/dayKeys'
 import { createClient, getAuthUser } from '@/lib/supabase/server'
@@ -17,10 +18,13 @@ import {
 } from '@/lib/demoMode/fakeData'
 
 export default async function HomePage() {
+  const renderStart = serverClock.now()
   const supabase = await createClient()
 
   const user = await getAuthUser()
   if (!user) redirect('/login')
+  const authMS = serverClock.now() - renderStart
+  const initialStart = serverClock.now()
   // Stamped before the reads, so the dashboard can tell a render it is being
   // shown hours later (service-worker replay, restored PWA) from a live one.
   // A server component runs once per request; the per-request clock is the point.
@@ -107,6 +111,9 @@ export default async function HomePage() {
       supabase.from('user_rest_cancels').select('rest_date').eq('user_id', user.id),
     ),
   ])
+
+  const initialReadMS = serverClock.now() - initialStart
+  const followupStart = serverClock.now()
 
   const demoModePref = (await cookies()).get('grind_demo_mode_pref')?.value
   const demoMode = demoModePref === 'on' && isAdminEmail(user.email)
@@ -234,6 +241,14 @@ export default async function HomePage() {
       .order('sort_order', { ascending: true }),
     activeCountsPromise,
   ])
+
+  if (process.env.GRIND_PROFILE_HOME === '1') {
+    console.info('[grind] Home timings', {
+      authMs: Math.round(authMS), parallelReadsMs: Math.round(initialReadMS),
+      followupMs: Math.round(serverClock.now() - followupStart),
+      activeSessions: openIds.length,
+    })
+  }
 
   const loggedBySession = new Map<string, number>()
   for (const r of activeCountRows ?? []) {

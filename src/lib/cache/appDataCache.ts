@@ -1,3 +1,5 @@
+import { lastKnownUserId } from '@/lib/offline/localSession'
+
 /**
  * In-memory session cache for client-fetched tab data.
  *
@@ -54,11 +56,15 @@ export function subscribe(listener: () => void): () => void {
 // back on a miss as STALE entries (generation -1): they paint instantly, and
 // the usual revalidation replaces them when the network answers. Cleared with
 // the rest of the cache on sign-out.
-const PERSIST_PREFIX = 'grind_qc_v1:'
+const PERSIST_PREFIX = 'grind_qc_v2:'
 const PERSIST_MAX_CHARS = 400_000
 
+export function cacheOwner() { return lastKnownUserId() }
+
+function ownerKey(key: string) { return `${cacheOwner() ?? 'anonymous'}:${key}` }
+
 function persist(key: string, data: unknown) {
-  if (typeof window === 'undefined') return
+  if (typeof window === 'undefined' || !cacheOwner()) return
   try {
     const json = JSON.stringify(data)
     if (json.length <= PERSIST_MAX_CHARS) window.localStorage.setItem(PERSIST_PREFIX + key, json)
@@ -68,7 +74,7 @@ function persist(key: string, data: unknown) {
 }
 
 function readPersisted(key: string): unknown {
-  if (typeof window === 'undefined') return undefined
+  if (typeof window === 'undefined' || !cacheOwner()) return undefined
   try {
     const raw = window.localStorage.getItem(PERSIST_PREFIX + key)
     return raw ? JSON.parse(raw) : undefined
@@ -78,32 +84,32 @@ function readPersisted(key: string): unknown {
 }
 
 export function getCached<T>(key: string): T | undefined {
-  const hit = store.get(key)
+  const hit = store.get(ownerKey(key))
   if (hit) return hit.data as T
-  const saved = readPersisted(key)
+  const saved = readPersisted(ownerKey(key))
   if (saved === undefined) return undefined
   // Stored once so repeated snapshot reads return the same reference.
-  store.set(key, { data: saved, generation: -1 })
+  store.set(ownerKey(key), { data: saved, generation: -1 })
   return saved as T
 }
 
 export function isFresh(key: string): boolean {
-  const entry = store.get(key)
+  const entry = store.get(ownerKey(key))
   return !!entry && entry.generation === generation
 }
 
 export function setCached<T>(key: string, data: T): void {
-  store.set(key, { data, generation })
-  persist(key, data)
+  store.set(ownerKey(key), { data, generation })
+  persist(ownerKey(key), data)
   notify()
 }
 
 export function getUiState<T>(key: string): T | undefined {
-  return uiStore.get(key) as T | undefined
+  return uiStore.get(ownerKey(key)) as T | undefined
 }
 
 export function setUiState<T>(key: string, value: T): void {
-  uiStore.set(key, value)
+  uiStore.set(ownerKey(key), value)
 }
 
 /**
@@ -152,7 +158,7 @@ export function resetAppDataCache(): void {
   if (typeof window !== 'undefined') {
     try {
       for (const k of Object.keys(window.localStorage)) {
-        if (k.startsWith(PERSIST_PREFIX)) window.localStorage.removeItem(k)
+        if (k.startsWith(PERSIST_PREFIX) || k.startsWith('grind_qc_v1:')) window.localStorage.removeItem(k)
       }
     } catch {
       /* ignore */
@@ -160,4 +166,5 @@ export function resetAppDataCache(): void {
   }
   uiStore.clear()
   routeGeneration.clear()
+  notify()
 }

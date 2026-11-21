@@ -418,7 +418,18 @@ export function watchSessions(request: Request, deps: WatchDeps): Promise<Respon
       return watchError(422, 'validation_failed', `${clock[0].path}: ${clock[0].message}`, { details: clock })
     }
 
-    const { data, error } = await deps.rpc('watch_sync_session', {
+    const body = toBodyPayload(parsed.data)
+    if (parsed.data.sensor_retry) {
+      if (!body) return watchJson({ sensor: { status: 'stored' } }, 200)
+      const { error } = await deps.rpc('watch_store_session_body', { p_user: auth.userId, p_body: body })
+      if (error) {
+        deps.log('watch sensor retry failed', error)
+        return watchError(503, 'service_unavailable', 'Sensor data is still pending. Retry later.')
+      }
+      return watchJson({ sensor: { status: 'stored' } }, 200)
+    }
+
+    const { data, error } = await deps.rpc(parsed.data.batch_upload ? 'watch_ingest_session' : 'watch_sync_session', {
       p_user: auth.userId,
       p_session: toSyncPayload(parsed.data),
     })
@@ -430,15 +441,17 @@ export function watchSessions(request: Request, deps: WatchDeps): Promise<Respon
     }
 
     const result = data as {
-      session: { id: string; workout_id: string; created: boolean; completed_now: boolean; completed_at: string | null }
+      session: { id: string; workout_id: string; created: boolean; completed_now: boolean; completed_at: string | null; status: string }
     }
 
-    // Heart rate is advice, not record: if storing it fails (say migration 59
-    // isn't applied yet) the workout is still saved and the upload succeeds.
-    const body = toBodyPayload(parsed.data)
+    const sensor = { status: 'none' }
     if (body) {
-      const stored = await deps.rpc('watch_store_session_body', { p_user: auth.userId, p_body: body })
-      if (stored.error) deps.log('watch_store_session_body failed', stored.error)
+      sensor.status = 'pending'
+      if (result.session.status !== 'staged') {
+        const stored = await deps.rpc('watch_store_session_body', { p_user: auth.userId, p_body: body })
+        if (stored.error) deps.log('watch_store_session_body failed', stored.error)
+        else sensor.status = 'stored'
+      }
     }
     if (result.session.completed_now && result.session.completed_at) {
       await deps.afterCompletion({
@@ -448,6 +461,6 @@ export function watchSessions(request: Request, deps: WatchDeps): Promise<Respon
         completedAt: result.session.completed_at,
       })
     }
-    return watchJson(result, result.session.created ? 201 : 200)
+    return watchJson({ ...result, sensor }, result.session.created ? 201 : 200)
   })
 }
