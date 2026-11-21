@@ -37,6 +37,7 @@ module Config {
     // the only always-on timer; the watch allows 3 running at once.
     const TICK_MS = 1000;
     const SYNC_EVERY_TICKS = 30;
+    const UPLOAD_EVERY_TICKS = 5; // check queued workouts more often, including after reconnect
 
     // GRIND Body. One heart-rate reading per HR_STEP seconds; a trace stops
     // growing after 4 hours (the server takes 12; this bounds the watch's

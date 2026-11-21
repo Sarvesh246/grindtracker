@@ -5,7 +5,7 @@ using Toybox.WatchUi;
 module Menus {
     function pause(onSetScreen) {
         // Not "Paused": the rest timer and the recording keep running.
-        var m = new WatchUi.Menu2({ :title => "Workout" });
+        var m = new WorkoutMenu("Workout");
         m.addItem(new WatchUi.MenuItem("Resume", null, :resume, null));
         var last = Workout.lastSetLabel();
         if (last != null) {
@@ -48,7 +48,7 @@ module Menus {
     // Every exercise with sets left, in plan order; skipped ones say so and
     // come back when chosen. `replace` swaps out the menu this came from.
     function exercises(replace) {
-        var m = new WatchUi.Menu2({ :title => "Exercises" });
+        var m = new WorkoutMenu("Exercises");
         var list = Workout.pickable();
         for (var i = 0; i < list.size(); i++) {
             m.addItem(new WatchUi.MenuItem(list[i][1], list[i][2], list[i][0], null));
@@ -90,6 +90,25 @@ module Menus {
             WatchUi.switchToView(m, new ConfirmDelegate(), WatchUi.SLIDE_IMMEDIATE);
         }
         return true;
+    }
+}
+
+class WorkoutMenu extends WatchUi.Menu2 {
+    var title;
+    var lastLeft = null;
+
+    function initialize(label) {
+        Menu2.initialize({ :title => label });
+        title = label;
+        updateRest();
+    }
+
+    function updateRest() {
+        var left = Workout.inRest() ? Workout.restLeft() : null;
+        if (left == lastLeft) { return; }
+        lastLeft = left;
+        setTitle(left == null ? title : "Rest  " + Logic.fmtDuration(Logic.clamp(left, 0, 3600)));
+        WatchUi.requestUpdate();
     }
 }
 

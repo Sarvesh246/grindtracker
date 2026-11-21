@@ -132,7 +132,9 @@ class Net {
         if (code == 200) {
             authError = false;
             if (data instanceof Lang.Dictionary) { System.println("server_time " + data["server_time"]); }
-            request("/today", { "date" => Logic.localDate(), "unit" => Config.UNIT }, false, method(:onToday));
+            if (!tickUploads()) {
+                request("/today", { "date" => Logic.localDate(), "unit" => Config.UNIT }, false, method(:onToday));
+            }
         } else if (code == 401) {
             authError = true;
         }
@@ -193,6 +195,14 @@ class Net {
         } else if (!Workout.active()) {
             daily();
         }
+    }
+
+    // Also runs between normal sync ticks so a newly reconnected phone can
+    // carry saved workouts promptly. The normal tick handles other traffic.
+    function tickUploads() {
+        if (busy || authError || now() < nextAt || !connected() || Store.queue().size() == 0) { return false; }
+        flush();
+        return true;
     }
 
     // --- POST /daily ------------------------------------------------------
@@ -285,6 +295,7 @@ class Net {
                 // Home stops offering the day that was just done.
                 if (Store.queue().size() == 0) {
                     Pick.reset();
+                    WatchUi.requestUpdate();
                     refresh();
                     return;
                 }
@@ -368,7 +379,6 @@ class Net {
             if (r == Logic.R_OK) { labOk += 1; }
             labFails = 0;
             labNextAt = 0;
-            if (labDue()) { lab(); }
         } else if (r == Logic.R_AUTH) {
             authError = true;
         } else {
@@ -383,6 +393,11 @@ class Net {
             // A record the phone keeps failing to carry (too large for the
             // bridge, say) must not hold up the ones behind it for ever.
             if (labFails >= 8) { Lab.drop(key); labFails = 0; labNextAt = 0; }
+        }
+        if (Store.queue().size() > 0) {
+            if (tickUploads()) { WatchUi.requestUpdate(); }
+        } else if (r == Logic.R_OK || r == Logic.R_DEAD) {
+            if (labDue()) { lab(); }
         }
     }
 
@@ -410,6 +425,14 @@ class Net {
     function statusColor() {
         if (authError || Store.dead().size() > 0) { return Config.WARN; }
         return Config.DIM;
+    }
+
+    function workoutStatus(sid) {
+        if (Store.dead().indexOf(sid) >= 0) { return "Sync failed"; }
+        if (Store.queue().indexOf(sid) < 0) { return "Synced to GRIND"; }
+        if (authError) { return "Auth error"; }
+        if (busy && sid.equals(upSid)) { return "Syncing to GRIND…"; }
+        return connected() ? "Waiting to sync" : "Will sync when connected";
     }
 
     // Longer form for Home. The last contact of any kind: a workout upload

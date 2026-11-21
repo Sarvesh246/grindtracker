@@ -47,9 +47,8 @@ class GrindApp extends Application.AppBase {
         }
         System.println("GRIND start, active=" + Workout.active() + " queue=" + Store.queue().size());
         Probe.log("open");
-        // Sync trigger 1 of 3: on app open. (2: right after Save. 3: the tick.)
-        gNet.refresh();
-        gNet.flush();
+        // Recover queued workouts before fetching a new plan.
+        if (Store.queue().size() > 0) { gNet.flush(); } else { gNet.refresh(); }
         timer = new Timer.Timer();
         timer.start(method(:onTick), Config.TICK_MS, true);
         if (Config.DEMO_DATA && Config.TOUR) {
@@ -65,14 +64,28 @@ class GrindApp extends Application.AppBase {
         ticks += 1;
         Reps.checkDelivery(System.getTimer());
         var v = Clock.view;
+        tickRest(v);
         if (v != null) { v.onSecond(); }
         if (ticks % Config.HR_STEP == 0 && Workout.active() && !Workout.awaitingResume && !Workout.atSummary()) {
             Hr.sample(Time.now().value());
         }
-        if (ticks % Config.SYNC_EVERY_TICKS != 0) { return; }
-        if (ticks % 900 == 0) { Probe.log("tick"); } // every 15 min while open
-        gNet.tick();
-        WatchUi.requestUpdate();
+        if (ticks % Config.SYNC_EVERY_TICKS == 0) {
+            if (ticks % 900 == 0) { Probe.log("tick"); } // every 15 min while open
+            gNet.tick();
+            WatchUi.requestUpdate();
+        } else if (ticks % Config.UPLOAD_EVERY_TICKS == 0 && gNet.tickUploads()) {
+            WatchUi.requestUpdate();
+        }
+    }
+
+    function tickRest(view) {
+        if (!Workout.inRest() || Workout.awaitingResume) { return; }
+        if (Workout.restLeft() == 10 && Workout.cur["rd"] > 20) { Nav.buzz(40); }
+        if (Workout.expireRest()) { Nav.buzz(600); }
+        if (view == null) {
+            var menu = WatchUi.getCurrentView()[0];
+            if (menu instanceof WorkoutMenu) { menu.updateRest(); }
+        }
     }
 
     function onTour() {

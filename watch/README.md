@@ -79,11 +79,13 @@ weight of 0 shows as BW (bodyweight).
 a set. TRACKING means samples are arriving. CHECKING means analysis is running.
 An estimate can appear during the lift and update after movement settles.
 **AUTO** under the reps means the watch found a count. Check the number before
-pressing START. UP/DOWN adjusts
-the displayed reps and takes over for that set. The estimate takes longer
-for long sets. When motion is ambiguous, samples are interrupted, or a set
-runs beyond the 75-second motion window, enter reps yourself. Turn the
-feature off with Home MENU → Rep counting, or from the workout menu.
+pressing START. UP/DOWN adjusts the displayed reps and takes over for that
+set. If the count is still pending when you press START, the watch briefly
+checks the motion it already captured before logging the set. Rest and the
+workout summary show the last set's logged reps and mark an automatic count
+with AUTO. When motion is ambiguous, samples are interrupted, or a set runs
+beyond the 75-second motion window, enter reps yourself. Turn the feature off
+with Home MENU → Rep counting, or from the workout menu.
 
 It counts a rep only when the wrist goes away and comes back, in the set's
 own rhythm, size and direction. That is what keeps out picking the weight up,
@@ -102,12 +104,15 @@ exercise, so you can load the bar while you wait. It taps once at 10 s left
 and buzzes long at zero.
 
 **Doing exercises in another order:** BACK → Switch exercise lists every
-exercise with sets left. Pick one and you're on it. A skipped exercise stays
+exercise with sets left. During a break the countdown stays visible in the
+picker and carries over to the next exercise. A skipped exercise stays
 in that list marked "Skipped", so choosing it undoes the skip; the summary's
 BACK menu offers the same when something was skipped.
 
-After Save, the summary shows the XP the workout earned (and your streak) as
-soon as GRIND confirms the upload.
+Save starts the upload automatically when the phone is connected. The summary
+shows the upload status and switches to XP and streak once GRIND replies.
+If the phone is offline, the watch keeps the workout and retries after
+reconnecting while GRIND is open.
 
 ## Heart rate and Charge (GRIND Body)
 

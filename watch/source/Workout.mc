@@ -133,7 +133,7 @@ module Workout {
         awaitingResume = false;
         saved = false;
         if (!atSummary()) { Recorder.start(); }
-        if (inRest() && restLeft() <= 0) { endRest(); }
+        expireRest();
         Reps.reset();
         // The motion recorded before the interruption cannot be recovered.
         if (setRunning()) { Reps.takeOver(); }
@@ -280,6 +280,12 @@ module Workout {
         return Logic.fmtLoad(s["w"]) + " x " + s["r"] + (i < 0 ? "" : "  " + plan["ex"][i]["name"]);
     }
 
+    function lastRepLabel() {
+        if (sets == null || sets.size() == 0) { return null; }
+        var s = sets[sets.size() - 1];
+        return s["r"] + (s["r"] == 1 ? " rep" : " reps") + (s["ar"] == true ? " AUTO" : " logged");
+    }
+
     function indexOfEx(id) {
         for (var i = 0; i < exCount(); i++) {
             if (plan["ex"][i]["id"].equals(id)) { return i; }
@@ -344,10 +350,9 @@ module Workout {
         prefill();
     }
 
-    // From the exercise picker: do this one now (also brings back a skipped
-    // one). Ends any rest in progress, since you've moved on.
+    // The rest belongs to the previous set. Picking the next exercise
+    // changes the preview while the same rest continues.
     function choose(i) {
-        if (cur["re"] != null) { endRest(); }
         closeSetWindow();
         if (cur["sum"] == true) { cur["sum"] = false; }
         jumpTo(i);
@@ -357,8 +362,6 @@ module Workout {
     function skipExercise() {
         closeSetWindow();
         cur["sk"][cur["ei"]] = 1;
-        cur["re"] = null;
-        cur["rs"] = null;
         if (!nextExercise()) {
             toSummary();
         } else {
@@ -409,6 +412,12 @@ module Workout {
         saveCur();
     }
 
+    function expireRest() {
+        if (!inRest() || restLeft() > 0) { return false; }
+        endRest();
+        return true;
+    }
+
     function toSummary() {
         closeSetWindow();
         cur["re"] = null;
@@ -452,6 +461,7 @@ module Workout {
             "sets" => sets.size(),
             "vol" => Logic.volume(sets),
             "hr" => st["ha"],
+            "lastReps" => lastRepLabel(),
             "unit" => meta["u"],
             "sid" => cur["sid"]
         };
@@ -478,6 +488,7 @@ module Workout {
             Recorder.stop(true);
             Health.workoutEnd(sid, sets.size(), true, $.gNet);
             saved = true;
+            Health.mark("saved");
         } else {
             meta["discard"] = true;
             Store.putMeta(meta);
@@ -490,5 +501,6 @@ module Workout {
         Reps.stop();
         Reps.reset();
         clear();
+        if (saved && $.gNet != null) { $.gNet.kick(); }
     }
 }

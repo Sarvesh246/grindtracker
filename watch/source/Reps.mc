@@ -67,6 +67,7 @@ module Reps {
     const SAMPLE_BUDGET = 128; // maximum filter samples per timer callback
     const SETTLED_MS = 30;     // work per 50 ms timer period once the wrist is still
     const SETTLED_STEPS = 40;
+    const FINISH_MS = 1800;    // maximum wait for a count after pressing START
 
     // --- live state -------------------------------------------------------
     var bx = [];
@@ -84,6 +85,8 @@ module Reps {
     var lastBatch = null;
     var listenerAt = null;
     var lastSample = null;
+    var repeatedTimestamps = 0;
+    var finishBy = null;
     var revision = 0;
     var jobRevision = 0;
     var jobSettled = false;    // the running analysis began with the wrist still
@@ -195,6 +198,8 @@ module Reps {
         interrupted = false;
         events = [];
         t0 = System.getTimer();
+        repeatedTimestamps = 0;
+        finishBy = null;
         analyses = 0; analysisMs = 0; longestStep = 0;
         Tape.reset();
     }
@@ -209,6 +214,7 @@ module Reps {
         d["analyses"] = analyses; d["analysis_ms"] = analysisMs; d["longest_callback_ms"] = longestStep;
         d["set_ms"] = System.getTimer() - t0;
         d["rich"] = rich; d["rich_bad"] = richBad();
+        d["repeated_timestamps"] = repeatedTimestamps;
         d["tune"] = tuneTag.length() == 0 ? null : tuneTag;
         return { "events" => events, "diag" => d };
     }
@@ -266,6 +272,23 @@ module Reps {
     function offer() {
         if (manual || count == null) { return null; }
         return count;
+    }
+
+    // Freeze the captured window for one final pass if START arrived before
+    // any count was displayed. The timer does the work off the button event.
+    function checkFinalCount() {
+        if (manual || interrupted || !listening || !sawMotion || bx.size() < 48 || clipped) { return false; }
+        if (job == null && !dirty && lastResult != null && jobSettled) { return false; }
+        cancelAnalysis();
+        finishBy = System.getTimer() + FINISH_MS;
+        movingBatches = 0;
+        dirty = true;
+        update();
+        return true;
+    }
+
+    function finalCountReady(now) {
+        return finishBy != null && (job == null || now >= finishBy);
     }
 
     function start() {
@@ -332,7 +355,7 @@ module Reps {
     // A listener can stop delivering without issuing another callback. Allow
     // delayed delivery, but retire an estimate when its stream goes silent.
     function checkDelivery(now) {
-        if (!listening || interrupted) { return; }
+        if (!listening || interrupted || finishBy != null) { return; }
         var last = lastBatch == null ? listenerAt : lastBatch;
         if (last == null || now - last <= 6 * BATCH_MS) { return; }
         inputGap("sensor timeout", now - last);
@@ -351,7 +374,7 @@ module Reps {
     }
 
     function onData(data) {
-        if (!listening || interrupted) { return; }
+        if (!listening || interrupted || finishBy != null) { return; }
         Tape.feedExtra(data);
         var a = data == null ? null : data.accelerometerData;
         if (a == null || a.x == null || a.y == null || a.z == null) {
@@ -379,8 +402,30 @@ module Reps {
             inputGap("invalid sample count", n);
             return;
         }
-        var time = timestamps != null && timestamps.size() == n && n > 1 && timestamps[n - 1] > timestamps[0]
-            ? timestamps : null;
+        var time = timestamps != null && timestamps.size() == n && n > 1 ? timestamps : null;
+        if (time != null) {
+            var repeats = 0;
+            for (var j = 1; j < n; j++) {
+                var spacing = time[j] - time[j - 1];
+                if (spacing < 0 || spacing > 200) {
+                    inputGap("invalid sample interval", spacing);
+                    return;
+                }
+                if (spacing == 0) { repeats++; }
+            }
+            var averageMs = (time[n - 1] - time[0]).toFloat() / (n - 1);
+            // The FR165 Music can report tied timestamps for different
+            // samples. Keep the samples in delivery order. If the ties make
+            // the cadence unusable, validate the batch by size and arrival.
+            repeatedTimestamps += repeats;
+            if (averageMs < 32.0 || averageMs > 50.0) {
+                if (repeats == 0) {
+                    inputGap("unexpected sample spacing", averageMs);
+                    return;
+                }
+                time = null;
+            }
+        }
         // Use sample time where the firmware supplies it. A late callback
         // can still carry contiguous samples.
         var gap = time != null && lastSample != null ? time[0] - lastSample : null;
@@ -394,22 +439,6 @@ module Reps {
         if (time == null && (n < RATE - 4 || n > RATE + 4)) {
             inputGap("unexpected sample count", n);
             return;
-        }
-        // The classifier expects 25 Hz before pair averaging. Suppress
-        // counts when the reported cadence is substantially different.
-        if (time != null) {
-            for (var j = 1; j < n; j++) {
-                var spacing = time[j] - time[j - 1];
-                if (spacing <= 0 || spacing > 200) {
-                    inputGap("invalid sample interval", spacing);
-                    return;
-                }
-            }
-            var averageMs = (time[n - 1] - time[0]).toFloat() / (n - 1);
-            if (averageMs < 32.0 || averageMs > 50.0) {
-                inputGap("unexpected sample spacing", averageMs);
-                return;
-            }
         }
         if (batches == 0) { ev(1, n, time != null ? 1 : 0, null, null); }
         if (!sensorStatus.equals("receiving")) {
@@ -559,14 +588,16 @@ module Reps {
     function repLabel() {
         if (offer() != null) { return "AUTO"; }
         if (!Workout.setRunning()) { return "REPS"; }
-        if (manual || interrupted || !listening) { return "MANUAL"; }
+        if (manual || (!listening && !enabled())) { return "MANUAL"; }
+        if (interrupted || !listening) { return "NO COUNT"; }
         if (job != null) { return "CHECKING"; }
+        if (jobSettled && lastResult != null && movingBatches == 0 && !dirty) { return "NO COUNT"; }
         return batches == 0 ? "WAITING" : "TRACKING";
     }
 
     function diagnostics() {
         return " sensor=" + sensorStatus + " batches=" + batches + " motion=" + revision
-            + " result=" + lastResult + " gap=" + interrupted;
+            + " result=" + lastResult + " gap=" + interrupted + " tied_ts=" + repeatedTimestamps;
     }
 
     // --- maths helpers ------------------------------------------------------

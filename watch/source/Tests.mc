@@ -385,7 +385,17 @@ function testExerciseOrder(logger) {
     Workout.setFocus(1);
     T.completeSet();
     ok = T.ck(logger, "wraps to first unfinished", Workout.cur["ei"] == 0 && Workout.cur["dn"][2] == 1) && ok;
-    Workout.endRest();
+    var restEnd = Workout.cur["re"];
+    var restStart = Workout.cur["r0"];
+    Workout.choose(1);
+    ok = T.ck(logger, "switch updates the next set and preserves the original rest",
+        Workout.cur["ei"] == 1 && Workout.cur["re"] == restEnd && Workout.cur["r0"] == restStart
+        && Workout.cur["rd"] == 30 && Store.get("cur")["re"] == restEnd) && ok;
+    Workout.choose(0);
+    Workout.cur["r0"] = Workout.now() - 31;
+    Workout.cur["re"] = Workout.cur["r0"] + 30;
+    ok = T.ck(logger, "rest can expire inside the picker and records the full interval once",
+        Workout.expireRest() && !Workout.expireRest() && Workout.cur["rs"] == 30 && Workout.cur["ei"] == 0) && ok;
 
     Workout.skipExercise(); // oops
     ok = T.ck(logger, "skip moves on", Workout.cur["ei"] == 1 && Workout.isSkipped(0)) && ok;
@@ -1070,6 +1080,39 @@ function testSensorDeliveryFailures(logger) {
 }
 
 (:test)
+function testTiedSensorTimestampsAndFinalCount(logger) {
+    var data = RepFx.curl(8, false);
+    Reps.reset();
+    Reps.configure(null);
+    Reps.listening = true;
+    var n = Reps.RATE;
+    var end = (2 * data[0].size() / n) * n;
+    for (var start = 0; start < end; start += n) {
+        var xs = []; var ys = []; var zs = []; var ts = [];
+        for (var i = 0; i < n; i++) {
+            var pos = (start + i) / 2;
+            xs.add(Reps.rnd(1000 * data[0][pos]));
+            ys.add(Reps.rnd(1000 * data[1][pos]));
+            zs.add(Reps.rnd(1000 * data[2][pos]));
+            // Some batches have duplicate timestamps with a valid span,
+            // others provide no usable cadence at all.
+            ts.add(start * 40 + (start % 50 == 0 ? (i / 2) * 80 : 0));
+        }
+        Reps.onSamples(xs, ys, zs, ts, start * 40, 0);
+    }
+    var ok = T.ck(logger, "tied timestamps preserve batches and samples",
+        Reps.batches == end / n && Reps.bx.size() == end / 2 && !Reps.interrupted && Reps.repeatedTimestamps > 0);
+    ok = T.ck(logger, "START can request the last count while a preview is still pending",
+        Reps.offer() == null && Reps.checkFinalCount() && !Reps.finalCountReady(System.getTimer())) && ok;
+    for (var i = 0; i < 100 && Reps.job != null; i++) { Reps.advanceAnalysis(); }
+    ok = T.ck(logger, "final pass offers all eight reps",
+        Reps.finalCountReady(System.getTimer()) && Reps.offer() == 8) && ok;
+    Reps.stop();
+    Reps.reset();
+    return ok;
+}
+
+(:test)
 function testMalformedPlanKeepsCache(logger) {
     var data = { "date" => Logic.localDate(), "unit" => "lbs", "workout" => {
         "id" => "audit", "name" => "Push", "exercises" => [
@@ -1106,6 +1149,64 @@ function testMissingUploadAcknowledgment(logger) {
             && net.nextAt - net.now() >= Logic.backoffSecs(i) - 1 && rows[0]["y"] == 0) && ok;
     }
     return T.ck(logger, "empty acknowledgments did not advance last sync", Store.get("ls") == savedSync) && ok;
+}
+
+(:test)
+class TestWorkoutNet extends Net {
+    var online = false;
+    var path = null;
+
+    function initialize() { Net.initialize(); }
+    function connected() { return online; }
+    function request(nextPath, params, post, cb) {
+        path = nextPath;
+        busy = true;
+    }
+}
+
+(:test)
+function testSavedWorkoutSyncTakesPriority(logger) {
+    var previous = $.gNet;
+    var queue = Store.get("q");
+    var sync = Store.get("ls");
+    Store.put("q", []);
+    var net = new TestWorkoutNet();
+    $.gNet = net;
+    T.startPress(0);
+    T.completeSet();
+    Workout.toSummary();
+    var sid = Workout.cur["sid"];
+    var id = Workout.sets[0]["id"];
+    net.nextAt = net.now() + 600;
+    Workout.finish(true);
+    var ok = T.ck(logger, "save queues offline and clears earlier backoff",
+        Store.queue().indexOf(sid) >= 0 && net.nextAt == 0 && net.path == null
+        && net.workoutStatus(sid).equals("Will sync when connected"));
+    net.online = true;
+    net.busy = true;
+    net.labKey = "lh-test";
+    ok = T.ck(logger, "queued workout waits for the in-flight request", !net.tickUploads()) && ok;
+    net.onLab(-1, null);
+    ok = T.ck(logger, "upload starts as soon as diagnostics release the connection",
+        net.path != null && net.path.equals("/sessions") && net.upSid.equals(sid)
+        && net.workoutStatus(sid).equals("Syncing to GRIND…")) && ok;
+    net.onUpload(201, { "sets" => { "accepted" => [id] } });
+    ok = T.ck(logger, "acknowledgment clears the pending status before plan refresh finishes",
+        net.workoutStatus(sid).equals("Synced to GRIND") && net.path.equals("/ping") && Store.meta(sid) == null) && ok;
+    net.online = false;
+    T.startPress(0);
+    T.completeSet(); Workout.toSummary();
+    var second = Workout.cur["sid"];
+    Workout.finish(true);
+    net.online = true;
+    net.busy = false;
+    ok = T.ck(logger, "reconnect poll picks up another offline save", net.tickUploads() && net.upSid.equals(second)) && ok;
+    Store.dropSession(second);
+    if (queue == null) { Store.del("q"); } else { Store.put("q", queue); }
+    if (sync == null) { Store.del("ls"); } else { Store.put("ls", sync); }
+    $.gNet = previous;
+    Workout.saved = false;
+    return ok;
 }
 
 (:test)

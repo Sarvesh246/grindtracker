@@ -41,6 +41,14 @@ class SetView extends TickView {
     var displayedOffer = null;
     function initialize() { TickView.initialize(); }
 
+    function onSecond() {
+        if (Reps.finalCountReady(System.getTimer())) {
+            new SetDelegate().saveSet(Reps.offer());
+            return;
+        }
+        TickView.onSecond();
+    }
+
     function onUpdate(dc) {
         var c = Workout.cur;
         if (c == null) { return; }
@@ -105,7 +113,8 @@ class SetView extends TickView {
             [sn + "  ·  " + Logic.repsText(e), sn + "  ·  " + bare, sn], Config.FG);
         // Below it: the planned weight when you're off it, else what START does
         // while that's not obvious.
-        var action = c["editRow"] != null ? "START to save edit" : Workout.setRunning() ? "START to finish set"
+        var action = Reps.finishBy != null ? "Checking final reps"
+            : c["editRow"] != null ? "START to save edit" : Workout.setRunning() ? "START to finish set"
             : (c["f"] == 0 ? "START for reps" : "START to begin set");
         Draw.line(dc, 0.845, [Graphics.FONT_XTINY], action, Config.DIM);
         Draw.segments(dc, Workout.sets.size(), Workout.totalSets(), Config.ACCENT);
@@ -147,7 +156,18 @@ class SetDelegate extends WatchUi.BehaviorDelegate {
             WatchUi.requestUpdate();
             return true;
         }
-        Workout.logDisplayedSet(view.displayedOffer);
+        if (Reps.finishBy != null) { return true; }
+        var shown = view.displayedOffer;
+        var auto = Reps.offer();
+        if ((shown == null || auto == null) && Reps.checkFinalCount()) {
+            WatchUi.requestUpdate();
+            return true;
+        }
+        return saveSet(auto == null || shown == null ? auto : shown);
+    }
+
+    function saveSet(offered) {
+        Workout.logDisplayedSet(offered);
         Nav.buzz(120);
         Nav.show();
         return true;
@@ -179,8 +199,8 @@ class SetDelegate extends WatchUi.BehaviorDelegate {
         return true;
     }
 
-    function onBack() { return Menus.pause(true); }
-    function onMenu() { return Menus.pause(true); }
+    function onBack() { return Reps.finishBy != null || Menus.pause(true); }
+    function onMenu() { return onBack(); }
 }
 
 // ---------------------------------------------------------------------------
@@ -191,13 +211,7 @@ class RestView extends TickView {
     function initialize() { TickView.initialize(); }
 
     function onSecond() {
-        // A short tap 10 s out, so the bar is in your hands when rest ends.
-        if (Workout.cur != null && Workout.inRest() && Workout.restLeft() == 10 && Workout.cur["rd"] > 20) {
-            Nav.buzz(40);
-        }
-        if (Workout.cur != null && Workout.inRest() && Workout.restLeft() <= 0) {
-            Workout.endRest();
-            Nav.buzz(600);
+        if (Workout.active() && !Workout.inRest()) {
             Nav.show();
             return;
         }
@@ -213,14 +227,16 @@ class RestView extends TickView {
 
     function onUpdate(dc) {
         var c = Workout.cur;
-        if (c == null || !Workout.inRest()) { return; }
+        if (c == null) { return; }
         var e = Workout.ex();
-        var left = Workout.restLeft();
+        var left = Workout.inRest() ? Workout.restLeft() : 0;
         if (left < 0) { left = 0; }
         Draw.clear(dc);
         Draw.status(dc, hr);
         var rec = Store.smartRest() && Hr.recoveredNow(Workout.restElapsed());
-        Draw.line(dc, 0.265, [Graphics.FONT_TINY], rec ? "RECOVERED" : "REST", rec ? Config.ACCENT : Config.DIM);
+        var label = rec ? "RECOVERED" : "REST";
+        Draw.fit(dc, 0.265, [Graphics.FONT_TINY, Graphics.FONT_XTINY],
+            [label + "  ·  " + Workout.lastRepLabel(), label], rec ? Config.ACCENT : Config.DIM);
         Draw.line(dc, 0.455, [Graphics.FONT_NUMBER_HOT, Graphics.FONT_NUMBER_MEDIUM], Logic.fmtDuration(left), Config.FG);
         // What's next, so you can load the bar while you wait.
         var load = Logic.fmtLoad(c["w"]) + (c["w"].toFloat() == 0.0 ? "" : " " + Workout.meta["u"]) + "  x  " + c["r"];
@@ -232,7 +248,7 @@ class RestView extends TickView {
         } else {
             Draw.line(dc, 0.825, [Graphics.FONT_XTINY], setTxt, Config.DIM);
         }
-        Draw.ring(dc, Workout.restFrac(), rec ? Config.ACCENT : Config.FG);
+        Draw.ring(dc, Workout.inRest() ? Workout.restFrac() : 0.0, rec ? Config.ACCENT : Config.FG);
         Draw.startCue(dc, Config.FG);
         Draw.debug(dc);
     }
@@ -302,6 +318,9 @@ class SummaryView extends WatchUi.View {
             dc.setColor(Config.DIM, Graphics.COLOR_TRANSPARENT);
             dc.drawText(xs[i], ly, Graphics.FONT_XTINY, labs[i], Draw.C);
         }
+        if (s["lastReps"] != null) {
+            Draw.line(dc, 0.71, [Graphics.FONT_XTINY], "Last set  ·  " + s["lastReps"], Config.DIM);
+        }
 
         if (Workout.saved) {
             // The server's answer once it lands: the XP this earned.
@@ -311,7 +330,7 @@ class SummaryView extends WatchUi.View {
                 if (res["st"] != null && res["st"] > 1) { line += "  ·  " + res["st"] + "-day streak"; }
                 Draw.fit(dc, 0.785, [Graphics.FONT_SMALL, Graphics.FONT_TINY], [line, "+" + res["xp"] + " XP"], Config.ACCENT);
             } else {
-                Draw.line(dc, 0.785, [Graphics.FONT_XTINY], gNet.status(), gNet.statusColor());
+                Draw.line(dc, 0.785, [Graphics.FONT_XTINY], gNet.workoutStatus(s["sid"]), gNet.statusColor());
             }
         } else {
             var y = Draw.yAt(dc, 0.785);
@@ -349,7 +368,6 @@ class SummaryDelegate extends WatchUi.BehaviorDelegate {
         }
         Workout.finish(true);
         Nav.buzz(200);
-        gNet.kick(); // sync trigger 2 of 3: right after Save
         WatchUi.requestUpdate();
         return true;
     }
