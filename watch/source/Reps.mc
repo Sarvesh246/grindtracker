@@ -32,6 +32,7 @@ module Reps {
     const SHORT_CV = 0.15;
     const FRAG_AC = 0.35;
     const FRAG_T = 0.25;
+    const FRAG_HARMONIC_T = 0.15;
     var SWING_MIN = 0.45;      // tunable
     const SWING_MAX = 2.4;
     const MIN_AMP = 0.06;
@@ -62,6 +63,7 @@ module Reps {
     const RATE = 25;           // Hz asked of the sensor
     const MAX_SAMPLES = 938;   // 75 s at 12.5 Hz
     const BATCH_MS = 1000;
+    const BATCH_GRACE_MS = 1750; // allow callback jitter, but catch a missed one-second batch
     const PREVIEW_EVERY = 3;  // sensor batches between in-set estimates
     const PAIR_BUDGET = 256;   // maximum correlation pairs per timer callback
     const SAMPLE_BUDGET = 128; // maximum filter samples per timer callback
@@ -86,6 +88,7 @@ module Reps {
     var listenerAt = null;
     var lastSample = null;
     var repeatedTimestamps = 0;
+    var fallbackBatches = 0;
     var finishBy = null;
     var revision = 0;
     var jobRevision = 0;
@@ -153,7 +156,7 @@ module Reps {
     // 1 first batch (samples, timestamped) · 2 count shown (n, -1 = none) ·
     // 3 analysis done (reps, ok, wall ms, steps) · 4 input gap (code) ·
     // 5 wrist settled (moving batches) · 6 glance kept count (count, re-check
-    // result) · 7 taken over by hand.
+    // result) · 7 taken over by hand · 8 first batch using callback timing.
     const MAX_EVENTS = 110;
     var events = [];
     var t0 = 0;
@@ -205,6 +208,9 @@ module Reps {
         events = [];
         t0 = System.getTimer();
         repeatedTimestamps = 0;
+        fallbackBatches = 0;
+        rich = false;
+        richCounted = false;
         finishBy = null;
         analyses = 0; analysisMs = 0; longestStep = 0;
         Tape.reset();
@@ -221,6 +227,7 @@ module Reps {
         d["set_ms"] = System.getTimer() - t0;
         d["rich"] = rich; d["rich_bad"] = richBad();
         d["repeated_timestamps"] = repeatedTimestamps;
+        d["fallback_batches"] = fallbackBatches;
         d["tune"] = tuneTag.length() == 0 ? null : tuneTag;
         return { "events" => events, "diag" => d };
     }
@@ -282,11 +289,18 @@ module Reps {
         return count;
     }
 
-    // Freeze the captured window for one final pass if START arrived before
-    // any count was displayed. The timer does the work off the button event.
+    // Freeze the captured window on START when motion has not settled or
+    // an analysis is pending. A mid-lift preview only covers part of the set.
     function checkFinalCount() {
         if (manual || interrupted || !listening || !sawMotion || bx.size() < 48 || clipped) { return false; }
         if (job == null && !dirty && lastResult != null && jobSettled) { return false; }
+        // Keep a settled result through a brief glance. A live estimate
+        // expires here so a timeout cannot save an unfinished count.
+        glanceNext = countSettled && (jobGlance || glanceNext || movingBatches <= 2);
+        if (!glanceNext && count != null) {
+            count = null;
+            ev(2, -1, null, null, null);
+        }
         cancelAnalysis();
         finishBy = System.getTimer() + FINISH_MS;
         movingBatches = 0;
@@ -314,8 +328,6 @@ module Reps {
                 System.println("reps: accelerometer limit " + maxRate + " Hz");
                 return;
             }
-            rich = false;
-            richCounted = false;
             if (Lab.enabled() && richBad() < Lab.RICH_BAD_MAX) {
                 try {
                     var opts = {
@@ -363,10 +375,10 @@ module Reps {
     // A listener can stop delivering without issuing another callback. Allow
     // delayed delivery, but retire an estimate when its stream goes silent.
     function checkDelivery(now) {
-        if (!listening || interrupted || finishBy != null) { return; }
+        if (!listening || finishBy != null) { return; }
         var last = lastBatch == null ? listenerAt : lastBatch;
         if (last == null || now - last <= 6 * BATCH_MS) { return; }
-        inputGap("sensor timeout", now - last);
+        if (!interrupted) { inputGap("sensor timeout", now - last); }
         interrupted = true;
         stop();
         sensorStatus = "sensor timeout";
@@ -386,11 +398,9 @@ module Reps {
         Tape.feedExtra(data);
         var a = data == null ? null : data.accelerometerData;
         if (a == null || a.x == null || a.y == null || a.z == null) {
-            // Something arrived, so the stream is alive. A batch carrying only
-            // the extra sensors is not a gap: a stream that really stops is
-            // caught by checkDelivery.
-            lastBatch = System.getTimer();
-            if (manual || interrupted || (data != null && (data.magnetometerData != null || data.heartRateData != null))) { return; }
+            // Extra sensors can deliver independently. Only accelerometer
+            // batches advance its delivery clock.
+            if (interrupted || (data != null && (data.magnetometerData != null || data.heartRateData != null))) { return; }
             inputGap("missing accelerometer", null);
             return;
         }
@@ -398,59 +408,41 @@ module Reps {
     }
 
     function onSamples(xs, ys, zs, timestamps, now, steps) {
-        Tape.feed(xs, ys, zs, steps);
         var n = xs.size();
-        // Every delivered batch is stream activity, including one rejected
-        // below, so the delivery watchdog sees it. Taking over by hand stops
-        // only the counting, further down.
-        var seen = lastBatch;
-        var delay = seen == null ? 0 : now - seen;
+        if (n == 0 || n > 2 * RATE || ys.size() != n || zs.size() != n) {
+            if (!interrupted) { inputGap("invalid sample count", n); }
+            return;
+        }
+        Tape.feed(xs, ys, zs, steps);
+        var delay = lastBatch == null ? 0 : now - lastBatch;
         lastBatch = now;
         // After a gap this set is only being recorded, not counted.
         if (interrupted) { return; }
-        if (n == 0 || n > 2 * RATE || ys.size() != n || zs.size() != n) {
-            inputGap("invalid sample count", n);
-            return;
-        }
+
         var time = timestamps != null && timestamps.size() == n && n > 1 ? timestamps : null;
-        if (time != null) {
-            var repeats = 0;
-            for (var j = 1; j < n; j++) {
-                var spacing = time[j] - time[j - 1];
-                if (spacing < 0 || spacing > 200) {
-                    inputGap("invalid sample interval", spacing);
-                    return;
-                }
-                if (spacing == 0) { repeats++; }
-            }
-            var averageMs = (time[n - 1] - time[0]).toFloat() / (n - 1);
-            // The FR165 Music can report tied timestamps for different
-            // samples. Keep the samples in delivery order. If the ties make
-            // the cadence unusable, validate the batch by size and arrival.
-            repeatedTimestamps += repeats;
-            if (averageMs < 32.0 || averageMs > 50.0) {
-                if (repeats == 0) {
-                    inputGap("unexpected sample spacing", averageMs);
-                    return;
-                }
-                time = null;
-            }
-        }
-        // Use sample time where the firmware supplies it. A late callback
-        // can still carry contiguous samples.
+        if (time != null && !regularTimestamps(time, n)) { time = null; }
         var gap = time != null && lastSample != null ? time[0] - lastSample : null;
-        // Some firmware can report timestamps relative to each batch. Use
-        // delivery time if the timestamp starts over.
-        if ((gap != null && gap > 200)
-            || ((gap == null || gap <= 0) && (delay < 0 || delay > 3 * BATCH_MS))) {
-            inputGap("sample gap", gap != null && gap > 0 ? gap : delay);
+        if (gap != null && gap > 200) {
+            inputGap("sample gap", gap);
             if (interrupted) { return; }
         }
-        if (time == null && (n < RATE - 4 || n > RATE + 4)) {
+        // The Forerunner can attach ties and 200+ ms jumps to a complete
+        // batch. Use those samples in delivery order when the callback
+        // arrives on time. Never join batches across a missed delivery
+        // unless clean sensor timestamps show the samples are contiguous.
+        if (time == null && n != RATE) {
             inputGap("unexpected sample count", n);
             return;
         }
+        if ((gap == null || gap <= 0) && (delay < 0 || delay > BATCH_GRACE_MS)) {
+            inputGap("sample gap", delay);
+            if (interrupted) { return; }
+        }
         if (batches == 0) { ev(1, n, time != null ? 1 : 0, null, null); }
+        if (time == null) {
+            if (fallbackBatches == 0) { ev(8, n, delay, null, null); }
+            fallbackBatches++;
+        }
         if (!sensorStatus.equals("receiving")) {
             System.println("reps: received " + n + " samples, timestamps=" + (time != null));
             sensorStatus = "receiving";
@@ -498,6 +490,17 @@ module Reps {
             movingBatches = 0;
             update();
         }
+    }
+
+    function regularTimestamps(time, n) {
+        var regular = true;
+        for (var i = 1; i < n; i++) {
+            var spacing = time[i] - time[i - 1];
+            if (spacing == 0) { repeatedTimestamps++; }
+            if (spacing <= 0 || spacing > 200) { regular = false; }
+        }
+        var averageMs = (time[n - 1] - time[0]).toFloat() / (n - 1);
+        return regular && averageMs >= 32.0 && averageMs <= 50.0;
     }
 
     function append(x, y, z, steps) {
@@ -596,7 +599,7 @@ module Reps {
     }
 
     function repLabel() {
-        if (offer() != null) { return "AUTO"; }
+        if (offer() != null) { return countSettled ? "AUTO" : "AUTO LIVE"; }
         if (!Workout.setRunning()) { return "REPS"; }
         if (manual || (!listening && !enabled())) { return "MANUAL"; }
         if (interrupted || !listening) { return "NO COUNT"; }
@@ -607,7 +610,7 @@ module Reps {
 
     function diagnostics() {
         return " sensor=" + sensorStatus + " batches=" + batches + " motion=" + revision
-            + " result=" + lastResult + " gap=" + interrupted + " tied_ts=" + repeatedTimestamps;
+            + " result=" + lastResult + " gap=" + interrupted + " tied_ts=" + repeatedTimestamps + " fallback=" + fallbackBatches;
     }
 
     // --- maths helpers ------------------------------------------------------
@@ -1026,7 +1029,11 @@ module Reps {
         for (var i = 0; i < all.size(); i++) {
             var r = all[i];
             if (i == best || r[0] < 2 || r[1] < FRAG_AC) { continue; }
-            if (fabs(r[3] - b[3]) <= FRAG_T * b[3]) { return [0, false]; }
+            // A longer, strongly periodic bout may skip every other beat.
+            // Treat its doubled period as evidence that the short count is partial.
+            var sameRhythm = fabs(r[3] - b[3]) <= FRAG_T * b[3];
+            var doubledPeriod = r[1] >= SHORT_AC && r[0] >= b[0] && fabs(r[3] / 2.0 - b[3]) <= FRAG_HARMONIC_T * b[3];
+            if (sameRhythm || doubledPeriod) { return [0, false]; }
         }
         return [b[0], true];
     }

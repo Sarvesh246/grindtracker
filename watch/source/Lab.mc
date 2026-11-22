@@ -4,9 +4,8 @@ using Toybox.Time;
 
 // Rep lab: records every finished set for tuning the rep counter against real
 // lifts. Each record holds the motion window the counter analyzed (12.5 Hz,
-// milli-g), what it offered and when, and the reps that were logged. An Undo
-// correction later sends the corrected number for the same set id. Records
-// upload through Net after their workout has synced (POST /rep-lab) and are
+// milli-g), what it offered and when, and the reps that were logged. Undo
+// drops that set's recording. Records upload after the workout syncs and are
 // deleted once the server has them. See docs/watch-api.md.
 //
 // Storage: one value per record (a full 75 s window is ~15 KB of the 32 KB
@@ -122,18 +121,9 @@ module Lab {
         }
     }
 
-    // The set was reopened with Undo and saved again: its true count.
-    function correct(sid, setId, reps) {
-        if (!enabled() || Config.DEMO_DATA) { return; }
-        var key = "lb_" + setId;
-        var waiting = Store.get(key);
-        if (waiting instanceof Lang.Dictionary && waiting["body"]["logged_reps"] != null && waiting["body"]["corrected"] == null) {
-            // Not uploaded yet: fix the recording itself.
-            waiting["body"]["logged_reps"] = reps;
-            Store.put(key, waiting);
-            return;
-        }
-        push("lc_" + setId, { "sid" => sid, "body" => { "id" => setId, "logged_reps" => reps, "corrected" => true } });
+    function dropSet(setId) {
+        drop("lb_" + setId);
+        drop("lc_" + setId); // queued by older builds
     }
 
     // The oldest record whose workout has reached the server, or null.

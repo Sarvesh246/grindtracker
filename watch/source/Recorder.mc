@@ -9,6 +9,7 @@ using Toybox.System;
 // its sets carry on and still sync to GRIND.
 module Recorder {
     var session = null;
+    var setsAtLastLap = 0;
     var hrSum = 0;
     var hrN = 0;
     var hrMax = 0;
@@ -47,6 +48,7 @@ module Recorder {
                     :subSport => Activity.SUB_SPORT_STRENGTH_TRAINING
                 });
                 session.start();
+                setsAtLastLap = Workout.sets.size();
             }
         } catch (e) {
             System.println("rec start failed: " + e.getErrorMessage());
@@ -122,11 +124,15 @@ module Recorder {
     // Garmin's own strength screen ("Set 1") numbers sets by lap, and a
     // Connect IQ session has no other way to tell it a set ended. One lap
     // per logged set keeps its count in step; each lap in Garmin Connect is
-    // then that set plus the rest after it.
-    function setLogged() {
-        if (session == null) { return; }
+    // then that set plus the rest after it. Garmin cannot remove a lap,
+    // so redoing an undone set must not advance the native count twice.
+    function setLogged(totalSets) {
+        if (session == null || totalSets <= setsAtLastLap) { return; }
         try {
-            if (session.isRecording()) { session.addLap(); }
+            if (session.isRecording()) {
+                session.addLap();
+                setsAtLastLap = totalSets;
+            }
         } catch (e) {
             System.println("rec lap failed: " + e.getErrorMessage());
         }

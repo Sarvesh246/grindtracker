@@ -51,6 +51,17 @@ module Workout {
         }
         finishUndo();
         sets = Store.sets(cur["sid"]);
+        // Old builds left an undone set running in manual-correction mode.
+        // A row already re-saved before an interruption still gets reconciled.
+        var oldEdit = cur["editRow"];
+        if (oldEdit != null) {
+            if (sets.size() == 0 || !sets[sets.size() - 1]["id"].equals(oldEdit["id"])) {
+                cur["setAt"] = null;
+                Lab.dropSet(oldEdit["id"]);
+            }
+            cur.remove("editRow");
+            saveCur();
+        }
         if (cur["dn"] == null) { upgrade(); } else { reconcileSets(); }
         Hr.begin(meta);
     }
@@ -156,7 +167,6 @@ module Workout {
 
     function closeSetWindow() {
         cur["setAt"] = null;
-        cur["editRow"] = null;
         Reps.stop();
         Reps.reset();
     }
@@ -216,33 +226,21 @@ module Workout {
         // `ra`: what the rep counter made of this set (null: no confident
         // count). Kept on the watch only, to measure the counter against
         // what was logged; never uploaded.
-        var edit = cur["editRow"];
-        var s = edit == null ? {
+        var s = {
             "id" => Logic.uuid4(), "e" => e["id"], "n" => cur["sn"], "r" => reps, "w" => cur["w"],
             "t" => now(), "rs" => cur["rs"], "y" => 0, "ra" => Reps.count, "ar" => offered != null
-        } : edit;
-        if (edit != null) {
-            s["w"] = cur["w"];
-            s["r"] = reps;
-            s["ar"] = false;
-        }
+        };
         System.println("reps auto=" + Reps.count + " logged=" + reps + " typed=" + Reps.manual
             + " " + e["name"] + Reps.diagnostics());
         Store.putSet(cur["sid"], sets.size(), s);
         sets.add(s);
         // Rep lab: the live window is still open here; it closes below.
-        if (edit == null) {
-            Lab.capture(cur["sid"], s, e, offered != null, cur["setAt"], meta == null ? Config.UNIT : meta["u"]);
-        } else {
-            Lab.correct(cur["sid"], s["id"], reps);
-        }
-        if (edit == null) {
-            Hr.onSetLogged(sets.size() - 1, s["t"]);
-        }
+        Lab.capture(cur["sid"], s, e, offered != null, cur["setAt"], meta["u"]);
+        Hr.onSetLogged(sets.size() - 1, s["t"]);
         Health.mark("logged");
         var done = advanceAfterSet(e, s["t"]);
         // No lap after the last set: it would leave an empty one in Connect.
-        if (edit == null && !done) { Recorder.setLogged(); }
+        if (!done) { Recorder.setLogged(sets.size()); }
         return done;
     }
 
@@ -293,10 +291,9 @@ module Workout {
         return -1;
     }
 
-    // Takes back the last logged set (a double-pressed START, the wrong
-    // reps) and puts you back on it with its numbers filled in, ready to
-    // fix and log again. Sets only reach the server after Save, so nothing
-    // needs un-syncing. Persist the row and its position before removing it.
+    // Take back the last logged set and return to its setup screen. START
+    // opens a fresh timer and motion window. Persist the intent before
+    // removing the local set and its recording.
     function undoSet() {
         if (sets == null || sets.size() == 0) { return false; }
         var k = sets.size() - 1;
@@ -306,11 +303,8 @@ module Workout {
         sets = sets.slice(0, k);
         Hr.onSetUndone(k);
         closeSetWindow();
-        // The set already happened. START can save the corrected numbers.
-        cur["setAt"] = now();
-        cur["editRow"] = s;
         cur["removeAt"] = k;
-        Reps.takeOver();
+        cur["undoId"] = s["id"];
         cur["dn"][i] -= 1;
         if (cur["dn"][i] < 0) { cur["dn"][i] = 0; }
         cur["sk"][i] = 0;
@@ -320,8 +314,11 @@ module Workout {
         cur["r"] = s["r"];
         cur["f"] = 1;
         cur["re"] = null;
+        cur["r0"] = null;
+        cur["rd"] = null;
         cur["rs"] = s["rs"];
         cur["sum"] = false;
+        cur["sumAt"] = null;
         saveCur();
         finishUndo();
         return true;
@@ -330,6 +327,8 @@ module Workout {
     function finishUndo() {
         if (cur["removeAt"] == null) { return; }
         Store.del("t_" + cur["sid"] + "_" + cur["removeAt"]);
+        if (cur["undoId"] != null) { Lab.dropSet(cur["undoId"]); }
+        cur.remove("undoId");
         cur["removeAt"] = null;
         saveCur();
     }
