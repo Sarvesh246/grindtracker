@@ -509,7 +509,8 @@ function testUndoSet(logger) {
     ok = T.ck(logger, "label", Workout.lastSetLabel().equals("135 x 6  Bench Press")) && ok;
     ok = T.ck(logger, "undo", Workout.undoSet()) && ok;
     ok = T.ck(logger, "back on bench set 2", Workout.cur["ei"] == 0 && Workout.cur["sn"] == 2 && Workout.cur["dn"][0] == 1
-        && Workout.cur["r"] == 6 && Workout.cur["f"] == 1 && !Workout.inRest()) && ok;
+        && Workout.cur["r"] == 6 && Workout.cur["f"] == 1 && !Workout.inRest()
+        && !Workout.setRunning() && !Reps.listening && Reps.offer() == null && !Reps.manual) && ok;
     ok = T.ck(logger, "stored set gone", Workout.sets.size() == 1 && Store.sets(sid).size() == 1) && ok;
     // Survives a crash.
     Workout.cur = null; Workout.plan = null; Workout.meta = null; Workout.sets = null;
@@ -887,8 +888,11 @@ function testRepOfferDoesNotCarryForward(logger) {
     ok = T.ck(logger, "manual adjustment starts from the offer", Workout.cur["r"] == 10 && Reps.offer() == null) && ok;
     T.completeSet();
     Workout.undoSet();
-    Reps.count = 7;
-    ok = T.ck(logger, "undo retains reps for correction", Workout.cur["r"] == 10 && Reps.offer() == null) && ok;
+    ok = T.ck(logger, "undo retains fallback reps and clears the previous count", Workout.cur["r"] == 10 && Reps.offer() == null) && ok;
+    var input = new TestSetDelegate();
+    input.onSelect();
+    ok = T.ck(logger, "START after undo starts a fresh timer and enables automatic counting",
+        Workout.setRunning() && Workout.cur["setAt"] == Workout.now() && !Reps.manual && Workout.sets.size() == 1) && ok;
     Workout.finish(false);
     return ok;
 }
@@ -935,12 +939,14 @@ function testRepLabRecordsSets(logger) {
     for (var i = 0; i < body["events"].size(); i++) { kinds[body["events"][i][1]] = true; }
     ok = T.ck(logger, "timeline has first batch, analysis and the shown count",
         kinds[1] == true && kinds[3] == true && kinds[2] == true && body["diag"]["analyses"] > 0) && ok;
-    // Undo and save 9: the waiting recording takes the corrected number.
     Workout.undoSet();
-    Workout.cur["r"] = 9;
-    Workout.logDisplayedSet(null);
-    ok = T.ck(logger, "correction folded into the waiting recording",
-        Store.get("lb_" + setId)["body"]["logged_reps"] == 9 && Lab.queue().size() == 1) && ok;
+    ok = T.ck(logger, "undo removes the old motion record", Store.get("lb_" + setId) == null && Lab.queue().size() == 0) && ok;
+    Workout.beginSet();
+    Workout.logDisplayedSet(9);
+    setId = Workout.sets[0]["id"];
+    ok = T.ck(logger, "redo attaches a fresh recording to the automatically counted set",
+        Store.get("lb_" + setId)["body"]["logged_reps"] == 9 && Lab.queue().size() == 1
+        && Workout.sets[0]["ar"] == true && Store.get("lb_" + setId)["body"]["diag"]["tape_samples"] == 0) && ok;
     ok = T.ck(logger, "held while its workout is open", Lab.next() == null) && ok;
     Workout.cur["sumAt"] = Workout.now();
     Workout.finish(true);
@@ -948,7 +954,7 @@ function testRepLabRecordsSets(logger) {
     var h = Lab.next();
     var hb = h == null ? null : Store.get(h)["body"];
     ok = T.ck(logger, "workout health summary queued", h != null && h.substring(0, 3).equals("lh_")
-        && hb["kind"].equals("session") && hb["data"]["sets"] == 1 && hb["data"]["lab_sets"] == 1
+        && hb["kind"].equals("session") && hb["data"]["sets"] == 1 && hb["data"]["lab_sets"] == 2
         && hb["data"]["mem_peak"] > 0) && ok;
     Lab.drop(h);
     ok = T.ck(logger, "held while its workout waits to upload", Store.queue().indexOf(sid) >= 0 && Lab.next() == null) && ok;
@@ -958,12 +964,6 @@ function testRepLabRecordsSets(logger) {
     net.labKey = "lb_" + setId;
     net.onLab(201, { "id" => setId, "stored" => true });
     ok = T.ck(logger, "dropped after the server has it", Lab.queue().size() == 0 && Store.get("lb_" + setId) == null) && ok;
-    // A later correction for an uploaded set goes on its own.
-    Lab.correct(sid, setId, 10);
-    var c = Store.get("lc_" + setId);
-    ok = T.ck(logger, "late correction queued", c != null && c["body"]["corrected"] == true && c["body"]["logged_reps"] == 10) && ok;
-    Lab.dropSession(sid);
-    ok = T.ck(logger, "discarded workout drops its records", Lab.queue().size() == 0) && ok;
     Store.dropSession(sid);
     Store.put("labq", savedQ == null ? [] : savedQ);
     return ok;
@@ -1062,32 +1062,39 @@ function testRepSettingsDuringSet(logger) {
 
 (:test)
 function testSensorDeliveryFailures(logger) {
-    var a = []; var ts = [];
-    for (var i = 0; i < Reps.RATE; i++) { a.add(100); ts.add(40 * i + (i >= 12 ? 180 : 0)); }
+    var a = [];
+    for (var i = 0; i < Reps.RATE; i++) { a.add(100); }
     Reps.reset(); Reps.listening = true; Reps.sawMotion = true; Reps.count = 8;
-    Reps.onSamples(a, a, a, ts, 2000, 0);
-    var ok = T.ck(logger, "internal 220ms dropout stops counting despite valid mean interval",
+    Reps.lastBatch = 1000;
+    Reps.onSamples(a, a, a, null, 3000, 0);
+    var ok = T.ck(logger, "missed delivery stops counting without reliable timestamps",
         Reps.interrupted && Reps.count == null && Reps.listening);
     // The set keeps recording for the rep lab after the counter gives up.
     var taped = Tape.total();
-    Reps.onSamples(a, a, a, null, 3000, 0);
+    Reps.onSamples(a, a, a, null, 4000, 0);
     ok = T.ck(logger, "later batches reach the tape, not the counter",
-        Tape.total() > taped && Reps.batches == 0 && Reps.lastBatch == 3000 && Reps.offer() == null) && ok;
+        Tape.total() > taped && Reps.batches == 0 && Reps.lastBatch == 4000 && Reps.offer() == null) && ok;
+    Reps.reset(); Reps.sawMotion = true;
+    var short = a.slice(0, 20);
+    Reps.onSamples(short, short, short, null, 5000, 0);
+    ok = T.ck(logger, "a short batch with no reliable timestamps interrupts counting", Reps.interrupted) && ok;
     Reps.listening = false;
     Reps.reset(); Reps.listening = true; Reps.lastBatch = 1000; Reps.sawMotion = true; Reps.count = 7;
     Reps.checkDelivery(6000);
     ok = T.ck(logger, "late callbacks have a grace period", Reps.offer() == 7) && ok;
     Reps.checkDelivery(9000);
     ok = T.ck(logger, "silent stream retires stale count without another callback", Reps.offer() == null && Reps.interrupted && !Reps.listening) && ok;
-    Reps.reset(); Reps.listening = true; Reps.listenerAt = 5000;
-    Reps.checkDelivery(12000);
-    ok = T.ck(logger, "listener with no first sample leaves waiting", Reps.interrupted && !Reps.listening) && ok;
+    Reps.reset(); Reps.listening = true;
+    Reps.listenerAt = System.getTimer() - 7000;
+    Reps.onData(new FakeSensorData(null, null, new FakeBeats([640])));
+    Reps.checkDelivery(System.getTimer());
+    ok = T.ck(logger, "extra-sensor callbacks cannot mask accelerometer silence", Reps.interrupted && !Reps.listening) && ok;
     Reps.reset();
     return ok;
 }
 
 (:test)
-function testTiedSensorTimestampsAndFinalCount(logger) {
+function testIrregularSensorTimestampsAndFinalCount(logger) {
     var data = RepFx.curl(8, false);
     Reps.reset();
     Reps.configure(null);
@@ -1101,22 +1108,41 @@ function testTiedSensorTimestampsAndFinalCount(logger) {
             xs.add(Reps.rnd(1000 * data[0][pos]));
             ys.add(Reps.rnd(1000 * data[1][pos]));
             zs.add(Reps.rnd(1000 * data[2][pos]));
-            // Some batches have duplicate timestamps with a valid span,
-            // others provide no usable cadence at all.
-            ts.add(start * 40 + (start % 50 == 0 ? (i / 2) * 80 : 0));
+            // Garmin delivered complete batches with repeated timestamps
+            // and jumps up to 304 ms. Preserve every sample in those batches.
+            var offset = i * 40;
+            if (start % 50 == 0) {
+                if (i <= 6) { offset = 0; }
+                else if (i < 12) { offset = 24 * (i - 6); }
+                else { offset = 424 + 40 * (i - 12); }
+            }
+            ts.add(start * 40 + offset);
         }
         Reps.onSamples(xs, ys, zs, ts, start * 40, 0);
     }
-    var ok = T.ck(logger, "tied timestamps preserve batches and samples",
-        Reps.batches == end / n && Reps.bx.size() == end / 2 && !Reps.interrupted && Reps.repeatedTimestamps > 0);
-    ok = T.ck(logger, "START can request the last count while a preview is still pending",
-        Reps.offer() == null && Reps.checkFinalCount() && !Reps.finalCountReady(System.getTimer())) && ok;
+    var ok = T.ck(logger, "irregular timestamps preserve all samples when delivery continues",
+        Reps.batches == end / n && Reps.bx.size() == end / 2 && !Reps.interrupted
+        && Reps.repeatedTimestamps > 0 && Reps.fallbackBatches > 0);
+    Reps.count = 3; Reps.countSettled = false;
+    ok = T.ck(logger, "START replaces a partial preview with a final pass",
+        Reps.checkFinalCount() && Reps.offer() == null && !Reps.finalCountReady(System.getTimer())) && ok;
     for (var i = 0; i < 100 && Reps.job != null; i++) { Reps.advanceAnalysis(); }
     ok = T.ck(logger, "final pass offers all eight reps",
         Reps.finalCountReady(System.getTimer()) && Reps.offer() == 8) && ok;
     Reps.stop();
     Reps.reset();
     return ok;
+}
+
+(:test)
+function testPartialRepCountWithCompetingMotion(logger) {
+    var candidate = [4, 0.94, 0.04, 19.8, true];
+    var longer = [7, 0.88, 0.09, 40.0, false];
+    var result = Reps.selectBout([longer, candidate]);
+    var ok = T.ck(logger, "a short count is withheld after strongly periodic motion at double its period", !result[1]);
+    longer[1] = 0.60;
+    result = Reps.selectBout([longer, candidate]);
+    return T.ck(logger, "weak competing motion does not erase a count", result[1] && result[0] == 4) && ok;
 }
 
 (:test)
@@ -1243,7 +1269,7 @@ function testRecoveryEndsAtNextSet(logger) {
 }
 
 (:test)
-function testInterruptedUndoAndCorrection(logger) {
+function testInterruptedUndoAndRedo(logger) {
     T.startPress(60);
     T.completeSet();
     var sid = Workout.cur["sid"];
@@ -1254,15 +1280,24 @@ function testInterruptedUndoAndCorrection(logger) {
     Workout.undoSet();
     // Restore the durable midpoint between recording intent and removing the row.
     Store.putSet(sid, 0, row);
-    Workout.cur["removeAt"] = 0; Workout.saveCur();
+    Lab.push("lb_" + row["id"], { "sid" => sid, "body" => { "id" => row["id"] } });
+    Workout.cur["removeAt"] = 0; Workout.cur["undoId"] = row["id"]; Workout.saveCur();
     Workout.load(); Workout.resume();
-    var ok = T.ck(logger, "interrupted undo restores exactly one editable row", Workout.sets.size() == 0
-        && Store.sets(sid).size() == 0 && Workout.cur["editRow"]["id"].equals(row["id"]));
-    Workout.adjust(1, null); Workout.logDisplayedSet(null);
+    var ok = T.ck(logger, "interrupted undo removes the old row and recording and re-arms START",
+        Workout.sets.size() == 0 && Store.sets(sid).size() == 0 && !Workout.setRunning()
+        && Store.get("lb_" + row["id"]) == null && Workout.cur["sn"] == row["n"]);
+    // A legacy build may also have left an undone row in manual-edit mode.
+    Workout.cur["setAt"] = row["t"]; Workout.cur["editRow"] = row; Workout.saveCur();
+    Workout.load(); Workout.resume();
+    ok = T.ck(logger, "legacy undo loads ready for a fresh START",
+        !Workout.setRunning() && !Reps.manual && Workout.cur["editRow"] == null) && ok;
+    Workout.beginSet();
+    Hr.now = 120;
+    Workout.logDisplayedSet(11);
     var updated = Store.sets(sid)[0];
-    ok = T.ck(logger, "correction retains ID time and measured heart rate",
-        updated["id"].equals(row["id"]) && updated["t"] == row["t"] && updated["hp"] == 140 && updated["r"] == 11
-        && Workout.restLeft() <= 25 && Workout.restLeft() >= 20) && ok;
+    ok = T.ck(logger, "redo tracks a new set and starts a full rest",
+        !updated["id"].equals(row["id"]) && updated["t"] > row["t"] && updated["hp"] == null
+        && updated["he"] == 120 && updated["r"] == 11 && updated["ar"] == true && Workout.restLeft() >= 59) && ok;
     Workout.finish(false);
     return ok;
 }
@@ -1654,17 +1689,17 @@ function testBatchesCountUnderManual(logger) {
 
 (:test)
 function testRejectedBatchKeepsStream(logger) {
-    // Rejected batches are still a live stream: the 6 s watchdog must not
-    // fire on them, and real silence after them must still trip it.
+    // A short accelerometer batch still tells us the listener is alive,
+    // but an empty batch must not hide a lack of accelerometer samples.
     Reps.reset();
     Reps.listening = true;
     Reps.listenerAt = 0;
-    Reps.onSamples([], [], [], null, 5000, 0);
+    Reps.onSamples([100], [100], [100], null, 5000, 0);
     Reps.checkDelivery(9000);
-    var ok = T.ck(logger, "rejected batch keeps the watchdog fed", !Reps.interrupted && Reps.listening);
+    var ok = T.ck(logger, "a short batch keeps the watchdog fed", !Reps.interrupted && Reps.listening);
     Reps.onSamples([], [], [], null, 9500, 0);
-    Reps.checkDelivery(16000);
-    ok = T.ck(logger, "then real silence trips it", Reps.interrupted) && ok;
+    Reps.checkDelivery(12000);
+    ok = T.ck(logger, "empty batches cannot mask motion sensor silence", Reps.interrupted && !Reps.listening) && ok;
     Reps.reset();
     return ok;
 }

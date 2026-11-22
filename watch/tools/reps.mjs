@@ -54,6 +54,7 @@ const SHORT_AC = 0.7;
 const SHORT_CV = 0.15;
 const FRAG_AC = 0.35;      // another bout this periodic...
 const FRAG_T = 0.25;       // ...at this close a period = the set came in pieces
+const FRAG_HARMONIC_T = 0.15;
 let SWING_MIN = 0.45;      // of the median swing (tunable)
 const SWING_MAX = 2.4;
 export const MIN_AMP = 0.06; // g: median swing below this is tremor, not reps
@@ -579,7 +580,7 @@ export function analyzeBout(x, y, z, lo, hi) {
 // keep the counter's structure intact. Anything outside, or any other key,
 // is ignored here and on the watch alike. Bump ALGO_VERSION whenever the
 // counter changes in a way that makes old tunings meaningless.
-export const ALGO_VERSION = '2026-11-18';
+export const ALGO_VERSION = '2026-11-21';
 export const TUNE_DEFAULTS = Object.freeze({ ac: 0.60, cv: 0.32, swing: 0.45, lag: 8 });
 export const TUNE_RANGES = Object.freeze({ ac: [0.45, 0.75], cv: [0.22, 0.45], swing: [0.30, 0.60], lag: [6, 10] });
 
@@ -633,7 +634,10 @@ function analyzeDefault(x, y, z, steps) {
   // same rhythm. Any one piece would be an undercount: say nothing.
   for (const r of all) {
     if (r === best || r.reps < 2 || r.ac < FRAG_AC) continue;
-    if (Math.abs(r.T - best.T) <= FRAG_T * best.T) return { reps: 0, ok: false, bouts: all, frag: true };
+    // A longer, strongly periodic bout may skip every other beat.
+    const sameRhythm = Math.abs(r.T - best.T) <= FRAG_T * best.T;
+    const doubledPeriod = r.ac >= SHORT_AC && r.reps >= best.reps && Math.abs(r.T / 2 - best.T) <= FRAG_HARMONIC_T * best.T;
+    if (sameRhythm || doubledPeriod) return { reps: 0, ok: false, bouts: all, frag: true };
   }
   return { reps: best.reps, ok: true, amp: best.amp, ac: best.ac, cv: best.cv, T: best.T, bouts: all, times: best.times.map(t => Math.max(0, t - BLOCK)) };
 }

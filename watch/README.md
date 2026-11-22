@@ -77,11 +77,10 @@ weight of 0 shows as BW (bodyweight).
 
 **Rep counting.** The watch reads wrist motion between starting and finishing
 a set. TRACKING means samples are arriving. CHECKING means analysis is running.
-An estimate can appear during the lift and update after movement settles.
-**AUTO** under the reps means the watch found a count. Check the number before
-pressing START. UP/DOWN adjusts the displayed reps and takes over for that
-set. If the count is still pending when you press START, the watch briefly
-checks the motion it already captured before logging the set. Rest and the
+**AUTO LIVE** is a running estimate. **AUTO** is a count from a settled motion
+window. UP/DOWN adjusts the displayed reps and takes over for that set.
+When you press START to finish during a live estimate or a pending check,
+the watch briefly analyzes the captured motion before logging the set. Rest and the
 workout summary show the last set's logged reps and mark an automatic count
 with AUTO. When motion is ambiguous, samples are interrupted, or a set runs
 beyond the 75-second motion window, enter reps yourself. Turn the feature off
@@ -96,8 +95,9 @@ below. The method, and a simulator that scores it on
 18 lifts plus no-set sessions, are in `tools/` (`node tools/repsim.mjs`).
 
 **Logged the wrong thing?** BACK → Undo last set (it names the set) takes it
-back and puts you on it with its numbers filled in. Sets only upload after
-Save, so there's nothing to un-sync.
+back and returns you to the set with its previous weight and reps filled in.
+Press START to begin a fresh set timer and rep count. Finishing again starts
+a new rest countdown. Sets upload after Save on the workout summary.
 
 **Rest** shows the time left, the weight x reps you're about to do and which
 exercise, so you can load the bar while you wait. It taps once at 10 s left
@@ -224,9 +224,8 @@ lab off and on, or installing a new build, gives them another chance. When the
 counter gives up on a set because the stream broke, the watch keeps recording
 the rest of that set for the lab.
 
-**The saved number is the truth**, so if AUTO is wrong, fix it before you
-finish the set, or Undo and save it again. A later Undo correction updates the
-recording too. Gotcha: the tables come from `docs/sql/66-rep-lab.sql` and
+Adjust an AUTO count with UP/DOWN before finishing the set. Undo removes the
+old recording, so a repeated set has its own motion trace. The tables come from `docs/sql/66-rep-lab.sql` and
 `67-watch-telemetry.sql`; until they're applied the watch keeps its records
 and retries.
 

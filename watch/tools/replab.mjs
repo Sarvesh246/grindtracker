@@ -22,8 +22,8 @@
 //
 // After --save-baseline, every run lists the sets a change fixed or broke.
 // Needs NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (.env.local).
-// Truth is `logged_reps`: fix a wrong AUTO number before finishing the set
-// (or Undo and re-save it), and the recording carries the corrected count.
+// `logged_reps` is the reference count. A live estimate can change before
+// the set is logged.
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -44,7 +44,7 @@ const saveBaseline = process.argv.includes('--save-baseline')
 const only = arg('--set', null)
 const tuneMode = process.argv.includes('--tune')
 
-const EVENT = { 1: 'first batch', 2: 'count shown', 3: 'analysis done', 4: 'sensor gap', 5: 'wrist settled', 6: 'glance kept count', 7: 'taken over by hand' }
+const EVENT = { 1: 'first batch', 2: 'count shown', 3: 'analysis done', 4: 'sensor gap', 5: 'wrist settled', 6: 'glance kept count', 7: 'taken over by hand', 8: 'using callback timing' }
 const GAP = ['?', 'sample gap', 'invalid sample count', 'unexpected sample count', 'invalid sample interval', 'unexpected sample spacing', 'missing accelerometer', 'sensor timeout']
 
 async function fetchAll(table, order) {
@@ -161,20 +161,20 @@ function accuracy(rows) {
     const l = latency(r.events)
     if (l != null) lat.push(l)
     const notes = [r.typed && 'typed', r.corrected && 'corrected', r.clipped && 'clipped', r.diag?.interrupted && 'sensor gap',
-      r.diag?.slim && 'slim', r.mag_x?.length && 'compass'].filter(Boolean).join(',')
+      r.diag?.fallback_batches > 0 && 'callback timing', r.diag?.slim && 'slim', r.mag_x?.length && 'compass'].filter(Boolean).join(',')
     console.log(
       `${String(r.finished_at ?? '').slice(5, 16).replace('T', ' ').padEnd(12)} ${name.slice(0, 25).padEnd(25)} ${String(r.logged_reps).padStart(6)} ${String(r.auto_reps ?? '-').padStart(5)} ${(r.auto_shown ? 'yes' : 'no').padStart(6)} ${String(rep ?? '-').padStart(7)} ${String(l == null ? '-' : l.toFixed(1)).padStart(13)}  ${notes}`,
     )
   }
-  console.log(`\nOn the watch:              ${line(watch)}`)
+  console.log(`\nWatch estimate at finish:  ${line(watch)}`)
   console.log(`Current counter, replayed: ${line(now)}`)
   if (lat.length) console.log(`Wrist still → count shown: median ${quant(lat, 0.5).toFixed(1)} s, 90th ${quant(lat, 0.9).toFixed(1)} s, worst ${Math.max(...lat).toFixed(1)} s`)
-  console.log('\nShown on watch by build and exercise:')
+  console.log('\nFirst live estimate by build and exercise:')
   for (const [key, group] of byBuildExercise) {
     const [build, exercise] = JSON.parse(key)
     const p50 = quant(group.times, 0.5)
     const p90 = quant(group.times, 0.9)
-    console.log(`  ${build} · ${exercise}: exact ${group.exact}/${group.n}, wrong ${group.over + group.under}, no offer ${group.none} (${pct(group.none, group.n)})` +
+    console.log(`  ${build} · ${exercise}: exact ${group.exact}/${group.n}, different from final reps ${group.over + group.under}, no offer ${group.none} (${pct(group.none, group.n)})` +
       (p50 == null ? '' : `, median ${p50.toFixed(1)} s, p90 ${p90.toFixed(1)} s`))
   }
   console.log('\nBy exercise (replay):')

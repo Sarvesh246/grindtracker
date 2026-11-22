@@ -59,6 +59,14 @@ module Tour {
         else if (step == 19) { new SetDelegate().onSelect(); new SetDelegate().onSelect(); }
         else if (step == 20) {
             check(Workout.atSummary() && Workout.sets.size() == 5 && Workout.sets[4]["w"] == 0, "bodyweight final set");
+            new SummaryDelegate().onBack();
+            new FinishDelegate().onSelect(new WatchUi.MenuItem("Undo last set", null, :undo, null));
+            check(WatchUi.getCurrentView()[0] instanceof SetView && !Workout.setRunning() && Workout.sets.size() == 4,
+                "summary undo returns to set setup");
+            new SetDelegate().onSelect();
+            check(Workout.setRunning() && Workout.sets.size() == 4, "START after undo resets the set timer");
+            new SetDelegate().onSelect();
+            check(Workout.atSummary() && Workout.sets.size() == 5, "finishing the repeated set returns to summary");
             new SummaryDelegate().onNextPage();
         } else if (step == 21) {
             check(WatchUi.getCurrentView()[0].sel == 1, "discard highlighted");

@@ -105,7 +105,7 @@ class SetView extends TickView {
         // Set count and the whole rep target on one line; the target is
         // never cut off (shorter forms drop words, never numbers).
         var sn = "Set " + c["sn"] + "/" + e["sets"];
-        if (Workout.setRunning() && c["editRow"] == null) {
+        if (Workout.setRunning()) {
             sn += "  " + Logic.fmtDuration(Logic.clamp(Workout.now() - c["setAt"], 0, 86400));
         }
         var bare = Logic.bareTarget(e);
@@ -114,7 +114,7 @@ class SetView extends TickView {
         // Below it: the planned weight when you're off it, else what START does
         // while that's not obvious.
         var action = Reps.finishBy != null ? "Checking final reps"
-            : c["editRow"] != null ? "START to save edit" : Workout.setRunning() ? "START to finish set"
+            : Workout.setRunning() ? "START to finish set"
             : (c["f"] == 0 ? "START for reps" : "START to begin set");
         Draw.line(dc, 0.845, [Graphics.FONT_XTINY], action, Config.DIM);
         Draw.segments(dc, Workout.sets.size(), Workout.totalSets(), Config.ACCENT);
@@ -157,13 +157,11 @@ class SetDelegate extends WatchUi.BehaviorDelegate {
             return true;
         }
         if (Reps.finishBy != null) { return true; }
-        var shown = view.displayedOffer;
-        var auto = Reps.offer();
-        if ((shown == null || auto == null) && Reps.checkFinalCount()) {
+        if (Reps.checkFinalCount()) {
             WatchUi.requestUpdate();
             return true;
         }
-        return saveSet(auto == null || shown == null ? auto : shown);
+        return saveSet(Reps.countSettled ? Reps.offer() : null);
     }
 
     function saveSet(offered) {
