@@ -202,23 +202,24 @@ module Workout {
     function isDone(i) { return cur["dn"][i] >= setsOf(i); }
     function isSkipped(i) { return cur["sk"][i] == 1; }
 
-    // New exercise: the weight and reps you last logged for it this workout,
-    // else its targets. A fresh exercise starts with the weight focused
-    // because that's the value most likely to need changing first.
+    // Use the latest load and the latest manual rep value for this exercise.
+    // An AUTO count describes the completed set and isn't the manual fallback
+    // for the next one. A fresh exercise starts with the weight focused.
     //
     // Reps prefill to the top of a target range ("10-12" -> 12): that's the
     // goal, and starting low cost real reps when the range was hard to read.
     function prefill() {
         var e = ex();
-        var prev = Logic.lastSetFor(sets, e["id"]);
+        var prev = Logic.lastSetFor(sets, e["id"], false);
+        cur["r"] = Logic.targetReps(e);
         if (prev != null) {
+            var manual = prev["ar"] == true ? Logic.lastSetFor(sets, e["id"], true) : prev;
             cur["w"] = prev["w"];
-            cur["r"] = prev["r"];
+            if (manual != null) { cur["r"] = manual["r"]; }
             cur["f"] = 1;
             return;
         }
         cur["w"] = e["weight"] == null ? 0.0 : e["weight"].toFloat();
-        cur["r"] = Logic.targetReps(e);
         cur["f"] = 0;
     }
 
@@ -380,6 +381,7 @@ module Workout {
     // The rest belongs to the previous set. Picking the next exercise
     // changes the preview while the same rest continues.
     function choose(i) {
+        if (i == cur["ei"] && !atSummary() && !isSkipped(i)) { return; }
         closeSetWindow();
         if (cur["sum"] == true) { cur["sum"] = false; }
         jumpTo(i);
