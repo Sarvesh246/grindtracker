@@ -1135,6 +1135,33 @@ function testSensorDeliveryFailures(logger) {
 }
 
 (:test)
+function testFinalOfferOpensReviewWithoutWaitingForAppTick(logger) {
+    T.startPress(30);
+    Workout.beginSet();
+    Reps.reset();
+    Reps.listening = true;
+    var d = RepFx.curl(8, false);
+    Reps.bx = d[0]; Reps.by = d[1]; Reps.bz = d[2]; Reps.bs = d[3];
+    Reps.sawMotion = true;
+    var view = new SetView();
+    var ok = T.ck(logger, "tracking suppresses the target number in the counter",
+        view.repText(Workout.cur, null, false).equals("--"));
+    Workout.endSetMotion();
+    ok = T.ck(logger, "finish runs a final check and suppresses the fallback",
+        Reps.checkFinalCount() && view.repText(Workout.cur, null, false).equals("--")) && ok;
+    for (var i = 0; i < 100 && Reps.job != null; i++) { Reps.advanceAnalysis(); }
+    ok = T.ck(logger, "completed motion worker opens review immediately with AUTO",
+        Reps.finishBy == null && !Reps.listening && Workout.cur["reviewAuto"] == 8
+        && view.repText(Workout.cur, Workout.cur["reviewAuto"], true).equals("8")
+        && Workout.sets.size() == 0) && ok;
+    Workout.adjust(1, Workout.cur["reviewAuto"]);
+    ok = T.ck(logger, "an edit keeps the automatic estimate in telemetry",
+        Workout.cur["r"] == 9 && Workout.cur["reviewAuto"] == null && Reps.count == 8) && ok;
+    Workout.finish(false);
+    return ok;
+}
+
+(:test)
 function testIrregularSensorTimestampsAndFinalCount(logger) {
     var data = RepFx.curl(8, false);
     Reps.reset();

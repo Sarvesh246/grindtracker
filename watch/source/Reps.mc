@@ -604,7 +604,13 @@ module Reps {
             ev(2, offered == null ? -1 : offered, null, null, null);
             WatchUi.requestUpdate();
         }
+        if (Workout.completeRepReview(System.getTimer())) { return; }
         if (movingBatches == 0) { update(); }
+    }
+
+    function awaitingOffer() {
+        return finishBy != null || (!manual && listening && !interrupted
+            && (lastResult == null || dirty || job != null || movingBatches > 0));
     }
 
     function repLabel() {
