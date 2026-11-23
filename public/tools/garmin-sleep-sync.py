@@ -13,7 +13,7 @@ changes things. Use it only for your own account, at your own risk. It has not b
 verified against a live account by GRIND's author.
 
 Setup (once):
-    pip install garminconnect
+    pip install "garminconnect>=0.3,<0.4"
     export GRIND_URL="https://YOUR-GRIND-DOMAIN"     # no trailing slash
     export GRIND_TOKEN="gwt_..."                      # Settings → Sleep & health sources
 Run (now, or from cron/launchd every morning):
@@ -31,7 +31,7 @@ import urllib.request
 try:
     from garminconnect import Garmin
 except ImportError:
-    sys.exit("Missing dependency. Run: pip install garminconnect")
+    sys.exit('Missing dependency. Run: pip install "garminconnect>=0.3,<0.4"')
 
 TOKENSTORE = os.path.expanduser("~/.garmin-grind")
 
@@ -47,11 +47,7 @@ def login() -> "Garmin":
     email = os.environ.get("GARMIN_EMAIL") or input("Garmin email: ")
     password = os.environ.get("GARMIN_PASSWORD") or getpass.getpass("Garmin password: ")
     api = Garmin(email=email, password=password, prompt_mfa=lambda: input("Garmin MFA code: "))
-    api.login()
-    try:
-        api.garth.dump(TOKENSTORE)
-    except Exception as err:  # saving the session is a convenience only
-        print(f"(could not save the session: {err})", file=sys.stderr)
+    api.login(TOKENSTORE)
     return api
 
 
@@ -80,7 +76,7 @@ def main() -> None:
     days = max(1, min(90, args.days))
 
     api = login()
-    today = datetime.date.today()
+    today = api.today()
     nights = []
     for back in range(days):
         day = (today - datetime.timedelta(days=back)).isoformat()
@@ -89,8 +85,19 @@ def main() -> None:
         except Exception as err:
             print(f"{day}: skipped ({err})", file=sys.stderr)
             continue
-        if data and (data.get("dailySleepDTO") or {}).get("sleepTimeSeconds"):
-            nights.append(data)
+        sleep = (data or {}).get("dailySleepDTO") or {}
+        if not sleep.get("sleepTimeSeconds"):
+            continue
+        summary = data.get("hrvSummary") or {}
+        reported = (data.get("avgOvernightHrv"), sleep.get("avgOvernightHrv"), summary.get("lastNightAvg"))
+        if not any(isinstance(value, (int, float)) and 1 <= value <= 500 for value in reported):
+            try:
+                hr = api.get_hrv_data(day) or {}
+                if hr.get("hrvSummary"):
+                    data["hrvSummary"] = hr["hrvSummary"]
+            except Exception as err:
+                print(f"{day}: overnight HRV unavailable ({type(err).__name__})", file=sys.stderr)
+        nights.append(data)
     print(f"Fetched {len(nights)} nights from Garmin.")
     if args.dry_run or not nights:
         return

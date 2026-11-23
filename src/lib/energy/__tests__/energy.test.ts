@@ -214,6 +214,15 @@ describe('night merging and plausibility', () => {
     kind,
   })
 
+  it('drops a superseded Apple Health start time without extending the same night', () => {
+    const prior = { ...session(TODAY, '21:00', '08:00', 11), source: 'apple_health', provider_id: 'prior' }
+    const revision = { ...session(TODAY, '00:00', '08:00', 8), source: 'apple_health',
+      provider_id: 'revision', revision_at: '2026-11-18T00:00:00.000Z' }
+    const [n] = nightsFrom([prior, revision], TODAY)
+    assert.equal(n.onset, 0)
+    assert.equal(n.sleepH, 8)
+  })
+
   it('counts the time two overlapping sources jointly cover, not the longer one alone', () => {
     // Garmin 23:00–03:00 and Apple 02:30–07:00 are one night of 8h, not 4.5h.
     const garmin = rec(at(shiftDate(TODAY, -1), '23:00'), at(TODAY, '03:00'), 4, 'main', 'garmin_export')

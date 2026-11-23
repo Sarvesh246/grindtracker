@@ -1,4 +1,5 @@
 import { LBS_PER_KG } from '@/lib/utils/units'
+import type { RecoveryNight } from '@/lib/body/sleep'
 import { analyzeRr } from '@/lib/body/hrv'
 import { ALGO_VERSION, cleanParams } from '../../../watch/tools/reps.mjs'
 import { readBodyText, watchError, watchJson } from './http'
@@ -30,6 +31,8 @@ export type RpcResult = { data: unknown; error: { message: string; code?: string
 export interface WatchDeps {
   /** Calls a Postgres function as the service role. */
   rpc: (fn: string, args: Record<string, unknown>) => Promise<RpcResult>
+  /** Sleep records for the authenticated watch owner's overnight comparison. */
+  recoveryNights?: (userId: string, date: string) => Promise<Map<string, RecoveryNight>>
   /** Runs after a session is completed by this request (rotation advance).
    *  Failures are logged by the caller's implementation, never surfaced. */
   afterCompletion: (info: {
@@ -143,9 +146,12 @@ export function watchToday(request: Request, deps: WatchDeps): Promise<Response>
 
     let body: TodayBody | null = null
     try {
-      const bodyCtx = await deps.rpc('watch_body_context', { p_user: auth.userId, p_local_date: ctx.local_date })
+      const [bodyCtx, nights] = await Promise.all([
+        deps.rpc('watch_body_context', { p_user: auth.userId, p_local_date: ctx.local_date }),
+        deps.recoveryNights?.(auth.userId, ctx.local_date).catch(() => undefined),
+      ])
       if (bodyCtx.error || !bodyCtx.data) deps.log('watch_body_context failed', bodyCtx.error)
-      else body = todayBody(bodyCtx.data as BodyContext, ctx.local_date)
+      else body = todayBody({ ...bodyCtx.data as BodyContext, nights }, ctx.local_date)
     } catch (err) {
       deps.log('watch_body_context crashed', err)
     }
@@ -192,9 +198,14 @@ export function watchDaily(request: Request, deps: WatchDeps): Promise<Response>
 async function queueSignalPush(userId: string, date: string, bucket: number | undefined, deps: WatchDeps): Promise<void> {
   if (bucket == null || bucket < PUSH_FROM_BUCKET || bucket > PUSH_UNTIL_BUCKET) return
   try {
-    const ctx = await deps.rpc('watch_body_context', { p_user: userId, p_local_date: date })
+    const [ctx, nights] = await Promise.all([
+      deps.rpc('watch_body_context', { p_user: userId, p_local_date: date }),
+      deps.recoveryNights?.(userId, date).catch(() => undefined),
+    ])
     if (ctx.error || !ctx.data) return
-    const push = signalPush(contextSignals(ctx.data as BodyContext, date))
+    const sleep = nights?.get(date)
+    if (sleep && bucket / 4 < sleep.end) return
+    const push = signalPush(contextSignals({ ...ctx.data as BodyContext, nights }, date))
     if (!push) return
     const queued = await deps.rpc('watch_queue_body_signal', { p_user: userId, p_local_date: date, p_payload: push })
     if (queued.error) deps.log('watch_queue_body_signal failed', queued.error)

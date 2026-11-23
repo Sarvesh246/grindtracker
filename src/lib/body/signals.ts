@@ -1,5 +1,7 @@
 import { summarizeReadiness, type ReadinessCheck } from './hrv'
 import { restingRespiration } from './respiration'
+import { durationShort, shiftDate } from '@/lib/health/model'
+import type { RecoveryNight } from './sleep'
 import type { DailyBody, LoadSession } from './types'
 
 /**
@@ -20,15 +22,15 @@ import type { DailyBody, LoadSession } from './types'
  *     wording is "under strain", never "you are sick".
  *
  * Each signal is last night's value against the median of up to 28 nights
- * before it (at least 7), with a robust spread (1.4826 × MAD, floored so a
+ * before it (at least 7, or 3 for preliminary sleeping heart rate), with a robust spread (1.4826 × MAD, floored so a
  * very steady history doesn't turn noise into alarms). "Off" means 2 spreads
  * in the bad direction, "far off" 3.
  *
- * The night is 00:00–06:00 local (buckets 0–23): asleep or still for most
- * people, and the same window every night.
+ * Use recorded sleep intervals when available; midnight to 06:00 is the
+ * fallback for dates with no imported sleep. Compare like windows.
  */
 
-export type SignalKey = 'sleeping_hr' | 'night_stress' | 'bb_gain' | 'respiration' | 'overnight_hrv' | 'hrv_check' | 'temperature'
+export type SignalKey = 'sleeping_hr' | 'night_stress' | 'bb_gain' | 'respiration' | 'overnight_hrv' | 'hrv_check' | 'temperature' | 'sleep_duration' | 'sleep_efficiency'
 export type SignalLevel = 'learning' | 'clear' | 'mild' | 'strong'
 
 export interface Signal {
@@ -41,6 +43,7 @@ export interface Signal {
   /** Spreads from usual, positive = worse. */
   z: number
   off: boolean
+  baselineNights?: number
   /** "4 bpm higher than usual". */
   phrase: string
 }
@@ -74,7 +77,8 @@ export interface SignalExtras {
   sessions?: LoadSession[]
   labels?: SignalLabel[]
   /** Overnight HRV (ms) by wake date, from an imported sleep source. */
-  overnightHrv?: Map<string, number>
+  overnightHrv?: ReadonlyMap<string, number>
+  nights?: ReadonlyMap<string, RecoveryNight>
 }
 
 const NIGHT = 24
@@ -82,6 +86,7 @@ const BASELINE_NIGHTS = 28
 export const MIN_BASELINE_NIGHTS = 7
 const OFF = 2
 const FAR_OFF = 3
+const MIN_PRELIMINARY_HR_NIGHTS = 3
 
 interface Spec {
   key: SignalKey
@@ -92,17 +97,18 @@ interface Spec {
   floor: number
   unit: string
   digits: number
-  /** Only counts toward a warning when another signal is off. */
-  weak?: boolean
+  group?: 'sleep' | 'autonomic'
 }
 
 const SPECS: Spec[] = [
   { key: 'sleeping_hr', label: 'Sleeping heart rate', worse: 1, floor: 2, unit: 'bpm', digits: 0 },
-  { key: 'overnight_hrv', label: 'Overnight HRV', worse: -1, floor: 4, unit: 'ms', digits: 0 },
-  { key: 'night_stress', label: 'Overnight stress', worse: 1, floor: 4, unit: '', digits: 0 },
-  { key: 'bb_gain', label: 'Body Battery recharge', worse: -1, floor: 6, unit: 'pts', digits: 0 },
+  { key: 'overnight_hrv', label: 'Overnight HRV', worse: -1, floor: 4, unit: 'ms', digits: 0, group: 'autonomic' },
+  { key: 'night_stress', label: 'Overnight stress', worse: 1, floor: 4, unit: '', digits: 0, group: 'autonomic' },
+  { key: 'bb_gain', label: 'Body Battery recharge', worse: -1, floor: 6, unit: 'pts', digits: 0, group: 'autonomic' },
   { key: 'respiration', label: 'Breathing rate', worse: 1, floor: 0.5, unit: '/min', digits: 1 },
-  { key: 'temperature', label: 'Wrist temperature', worse: 1, floor: 0.3, unit: '°C', digits: 1, weak: true },
+  { key: 'temperature', label: 'Wrist temperature', worse: 1, floor: 0.3, unit: '°C', digits: 1 },
+  { key: 'sleep_duration', label: 'Sleep duration', worse: -1, floor: 30, unit: 'min', digits: 0, group: 'sleep' },
+  { key: 'sleep_efficiency', label: 'Time asleep', worse: -1, floor: 4, unit: '%', digits: 0, group: 'sleep' },
 ]
 
 function median(v: number[]): number {
@@ -116,12 +122,6 @@ function nightValues(series: (number | null)[] | null | undefined, min: number):
   return v.length >= min ? v : null
 }
 
-function shiftDate(key: string, days: number): string {
-  const d = new Date(`${key}T12:00:00`)
-  d.setDate(d.getDate() + days)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
 /** Body Battery gained overnight: the morning peak (by 10:00) minus the
  *  lowest reading from 21:00 the evening before through 02:00. */
 export function bbGain(row: DailyBody | undefined, prev: DailyBody | undefined): number | null {
@@ -133,25 +133,55 @@ export function bbGain(row: DailyBody | undefined, prev: DailyBody | undefined):
   return Math.max(...morning) - Math.min(...low)
 }
 
-/** One night's raw value for each signal, or null where the watch had too
- *  little of that night. */
+type NightSeries = 'hr_series' | 'stress_series' | 'resp_series' | 'temp_series' | 'bb_series'
+
+function duringSleep(days: Map<string, DailyBody>, date: string, night: RecoveryNight, field: NightSeries, min: number) {
+  const values: number[] = []
+  let possible = 0
+  const first = Math.floor(night.start * 4)
+  const last = Math.ceil(night.end * 4)
+  const rows = new Map<number, DailyBody | undefined>()
+  for (let b = first; b < last; b++) {
+    const center = (b + 0.5) / 4
+    if (!night.asleep.some(s => center >= s.start && center < s.end)) continue
+    possible++
+    const day = Math.floor(b / 96)
+    if (!rows.has(day)) rows.set(day, days.get(shiftDate(date, day)))
+    const v = rows.get(day)?.[field]?.[b - day * 96]
+    if (v != null && Number.isFinite(v)) values.push(v)
+  }
+  return values.length >= Math.max(min, Math.ceil(possible / 2)) ? values : null
+}
+
+/** One night's raw value for each signal, or absent with inadequate coverage. */
 export function nightOf(days: Map<string, DailyBody>, date: string, extras: SignalExtras = {}): Partial<Record<SignalKey, number>> {
   const row = days.get(date)
+  const night = extras.nights?.get(date)
   const out: Partial<Record<SignalKey, number>> = {}
-  const hr = nightValues(row?.hr_series, 12)
+  const sample = (field: NightSeries, min: number) =>
+    night ? duringSleep(days, date, night, field, min) : nightValues(row?.[field], min)
+  const hr = sample('hr_series', night ? 8 : 12)
   if (hr) out.sleeping_hr = median(hr)
-  const st = nightValues(row?.stress_series, 12)
+  const st = sample('stress_series', night ? 8 : 12)
   if (st) out.night_stress = st.reduce((a, b) => a + b, 0) / st.length
-  const gain = bbGain(row, days.get(shiftDate(date, -1)))
+  const bb = night && sample('bb_series', 8)
+  const gain = night ? (bb && bb[bb.length - 1] - bb[0]) : bbGain(row, days.get(shiftDate(date, -1)))
   if (gain != null) out.bb_gain = gain
-  const resp = restingRespiration(row)
+  const breathing = night ? sample('resp_series', 8) : null
+  const resp = night ? (breathing && median(breathing)) : restingRespiration(row)
   if (resp != null) out.respiration = resp
-  const temp = nightValues(row?.temp_series, 8)
+  const temp = sample('temp_series', 8)
   if (temp) out.temperature = median(temp) / 10
-  const hrv = extras.overnightHrv?.get(date)
-  if (hrv != null) out.overnight_hrv = hrv
+  const hrv = night?.hrv ?? extras.overnightHrv?.get(date)
+  if (typeof hrv === 'number' && Number.isFinite(hrv) && hrv > 0) out.overnight_hrv = hrv
+  if (night) {
+    out.sleep_duration = night.minutes
+    out.sleep_efficiency = night.efficiency
+  }
   return out
 }
+
+const WINDOW_KEYS = new Set<SignalKey>(['sleeping_hr', 'night_stress', 'bb_gain', 'respiration', 'temperature'])
 
 function fmt(v: number, digits: number, unit: string): string {
   const n = digits ? (Math.round(v * 10 ** digits) / 10 ** digits).toFixed(digits) : String(Math.round(v))
@@ -161,6 +191,10 @@ function fmt(v: number, digits: number, unit: string): string {
 function phraseFor(spec: Spec, diff: number): string {
   const amount = fmt(Math.abs(diff), spec.digits, spec.unit)
   switch (spec.key) {
+    case 'sleep_duration':
+      return `you slept ${durationShort(Math.abs(diff) * 60)} ${diff < 0 ? 'less' : 'more'} than usual`
+    case 'sleep_efficiency':
+      return diff < 0 ? 'you spent more time awake during sleep than usual' : 'you spent less time awake during sleep than usual'
     case 'bb_gain':
       return diff < 0 ? `Body Battery recharged ${amount} less than usual` : `Body Battery recharged ${amount} more than usual`
     case 'night_stress':
@@ -207,27 +241,44 @@ export function labelText(tag: string): string {
 
 export function computeSignals(daysList: DailyBody[], date: string, extras: SignalExtras = {}): BodySignals {
   const days = new Map(daysList.map(d => [d.local_date, d]))
-  const tonight = nightOf(days, date, extras)
-  const history: Partial<Record<SignalKey, number>>[] = []
-  for (let i = 1; i <= BASELINE_NIGHTS; i++) history.push(nightOf(days, shiftDate(date, -i), extras))
+  return signalsFor(date, extras, day => nightOf(days, day, extras))
+}
+
+type NightLookup = (date: string) => ReturnType<typeof nightOf>
+
+function signalsFor(date: string, extras: SignalExtras, lookup: NightLookup): BodySignals {
+  const tonight = lookup(date)
+  const history = Array.from({ length: BASELINE_NIGHTS }, (_, i) => {
+    const prior = shiftDate(date, -i - 1)
+    return { values: lookup(prior), aligned: extras.nights?.has(prior) ?? false }
+  })
+  const aligned = extras.nights?.has(date) ?? false
 
   const signals: Signal[] = []
   let nights = 0
   for (const spec of SPECS) {
-    const prior = history.map(h => h[spec.key]).filter((v): v is number => v != null)
+    const prior = history
+      .filter(h => !WINDOW_KEYS.has(spec.key) || h.aligned === aligned)
+      .map(h => h.values[spec.key])
+      .filter((v): v is number => v != null)
     nights = Math.max(nights, prior.length)
     const now = tonight[spec.key]
-    if (now == null || prior.length < MIN_BASELINE_NIGHTS) continue
+    const preliminary = spec.key === 'sleeping_hr' && aligned
+      && prior.length >= MIN_PRELIMINARY_HR_NIGHTS && prior.length < MIN_BASELINE_NIGHTS
+    if (now == null || (!preliminary && prior.length < MIN_BASELINE_NIGHTS)) continue
     const center = median(prior)
-    const spread = Math.max(spec.floor, 1.4826 * median(prior.map(v => Math.abs(v - center))))
+    // With a short reference window, require at least 6 bpm before marking HR off.
+    const floor = preliminary ? 3 : spec.floor
+    const spread = Math.max(floor, 1.4826 * median(prior.map(v => Math.abs(v - center))))
     const z = (spec.worse * (now - center)) / spread
     signals.push({
       key: spec.key,
       label: spec.label,
-      value: fmt(now, spec.digits, spec.unit),
-      usual: fmt(center, spec.digits, spec.unit),
+      value: spec.key === 'sleep_duration' ? durationShort(now * 60) : fmt(now, spec.digits, spec.unit),
+      usual: spec.key === 'sleep_duration' ? durationShort(center * 60) : fmt(center, spec.digits, spec.unit),
       z: Math.round(z * 10) / 10,
       off: z >= OFF,
+      baselineNights: preliminary ? prior.length : undefined,
       phrase: phraseFor(spec, now - center),
     })
   }
@@ -248,16 +299,20 @@ export function computeSignals(daysList: DailyBody[], date: string, extras: Sign
   }
 
   signals.sort((a, b) => b.z - a.z)
-  const weakKeys = new Set(SPECS.filter(s => s.weak).map(s => s.key))
-  const strongOff = signals.filter(s => s.off && !weakKeys.has(s.key))
-  const off = strongOff.length + (strongOff.length ? signals.filter(s => s.off && weakKeys.has(s.key)).length : 0)
-  const farOff = strongOff.some(s => s.z >= FAR_OFF)
+  const groupOf = (s: Signal) => s.key === 'hrv_check' ? 'autonomic' : SPECS.find(spec => spec.key === s.key)?.group ?? s.key
+  const flagged = signals.filter(s => s.off)
+  const physiological = flagged.filter(s => groupOf(s) !== 'sleep' && s.key !== 'temperature')
+  // Garmin stress and Body Battery both use HRV. Treat them as support for
+  // one kind of change rather than three independent warnings.
+  const core = new Set(physiological.map(groupOf))
+  const support = new Set(flagged.map(groupOf))
+  const farOff = physiological.some(s => s.z >= FAR_OFF && !s.baselineNights)
 
   // NightSignal's rule: sleeping HR above usual on two successive nights.
   const hrNow = signals.find(s => s.key === 'sleeping_hr')
   let hrTwoNights = false
-  if (hrNow?.off) {
-    const prev = computeSignalOne(days, shiftDate(date, -1), 'sleeping_hr', extras)
+  if (hrNow?.off && !hrNow.baselineNights) {
+    const prev = computeSignalOne(lookup, shiftDate(date, -1), 'sleeping_hr', extras)
     hrTwoNights = prev != null && prev >= OFF
   }
 
@@ -265,16 +320,21 @@ export function computeSignals(daysList: DailyBody[], date: string, extras: Sign
   const explanations = explain(date, extras)
 
   let level: SignalLevel
-  if (signals.length < 2) level = 'learning'
-  else if (off >= 3 || (off >= 2 && farOff) || (hrTwoNights && off >= 2)) level = 'strong'
-  else if (off >= 2 || hrTwoNights) level = 'mild'
+  if (core.size >= 2 && (support.size >= 3 || farOff || hrTwoNights)) level = 'strong'
+  else if ((core.size >= 1 && support.size >= 2) || hrTwoNights) level = 'mild'
+  else if (signals.length < 2 || signals.every(s => groupOf(s) === 'sleep')) level = 'learning'
   else level = 'clear'
 
-  const offPhrases = signals.filter(s => s.off).map(s => s.phrase)
+  const reasons = new Map<ReturnType<typeof groupOf>, string>()
+  for (const signal of flagged) {
+    const group = groupOf(signal)
+    if (!reasons.has(group)) reasons.set(group, signal.phrase)
+  }
+  const offPhrases = [...reasons.values()]
   let headline: string
   let advice: string
   let short: string | null = null
-  if (level === 'learning' && nights < MIN_BASELINE_NIGHTS) {
+  if (level === 'learning' && signals.length === 0 && nights < MIN_BASELINE_NIGHTS) {
     headline = 'Learning your usual nights'
     advice = `Body signals start after ${MIN_BASELINE_NIGHTS} nights of wearing the watch to bed (${nights} so far).`
   } else if (level === 'learning') {
@@ -282,21 +342,28 @@ export function computeSignals(daysList: DailyBody[], date: string, extras: Sign
     // long history), but a warning compares two or more, and the rest either
     // has no usual yet or nothing from last night.
     headline = 'Not enough from last night yet'
-    advice = signals.length
-      ? `Only one reading (${signals[0].label}) could be compared with your usual. Body signals need two, so keep the watch on overnight.`
-      : "None of last night's readings could be compared with your usual yet. Keep the watch on overnight."
+    if (signals.length && signals.every(s => groupOf(s) === 'sleep')) {
+      advice = offPhrases.length
+        ? `${capitalize(offPhrases[0])}. Sleep alone gives limited evidence of broader strain.`
+        : 'Sleep could be compared with your usual. More overnight readings are needed to assess strain.'
+    } else {
+      advice = signals.length
+        ? `Only one reading (${signals[0].label}) could be compared with your usual. Body signals need two, so keep the watch on overnight.`
+        : "None of last night's readings could be compared with your usual yet. Keep the watch on overnight."
+    }
   } else if (level === 'clear') {
-    headline = 'Nothing unusual overnight'
-    advice = signals.some(s => s.off)
-      ? `${capitalize(offPhrases[0])}, but nothing else moved with it.`
-      : 'Your overnight numbers are in your usual range.'
+    headline = flagged.length ? 'An overnight change stood out' : 'Compared readings are in range'
+    advice = flagged.length
+      ? `${capitalize(offPhrases[0])}. The available readings give limited evidence of broader strain.`
+      : 'The overnight readings we could compare are in your usual range.'
   } else if (level === 'mild') {
     headline = 'Your body is under some strain'
     advice = `${capitalize(offPhrases.slice(0, 2).join(' and '))}. Go easier today and get to bed early.`
     short = 'Signs of strain'
   } else {
-    headline = 'Strong signs your body is fighting something'
-    advice = `${capitalize(offPhrases.slice(0, 2).join(' and '))}${offPhrases.length > 2 ? `, and ${offPhrases.length - 2} more` : ''}. This pattern often comes a day or two before getting sick: rest, hydrate and skip hard training today.`
+    headline = 'Several signs of overnight strain'
+    const named = new Intl.ListFormat('en', { style: 'long', type: 'conjunction' }).format(offPhrases.slice(0, 3))
+    advice = `${capitalize(named)}. Take it easy today and skip hard training if you feel unwell.`
     short = 'Rest: strain signs'
   }
   if (level !== 'learning' && level !== 'clear' && explanations.length) {
@@ -307,13 +374,15 @@ export function computeSignals(daysList: DailyBody[], date: string, extras: Sign
   return { date, level, signals, nights, hrTwoNights, headline, advice, short, explanations, labels }
 }
 
-function computeSignalOne(days: Map<string, DailyBody>, date: string, key: SignalKey, extras: SignalExtras): number | null {
+function computeSignalOne(lookup: NightLookup, date: string, key: SignalKey, extras: SignalExtras): number | null {
   const spec = SPECS.find(s => s.key === key)!
-  const now = nightOf(days, date, extras)[key]
+  const now = lookup(date)[key]
   if (now == null) return null
   const prior: number[] = []
   for (let i = 1; i <= BASELINE_NIGHTS; i++) {
-    const v = nightOf(days, shiftDate(date, -i), extras)[key]
+    const day = shiftDate(date, -i)
+    if (WINDOW_KEYS.has(key) && !!extras.nights?.has(day) !== !!extras.nights?.has(date)) continue
+    const v = lookup(day)[key]
     if (v != null) prior.push(v)
   }
   if (prior.length < MIN_BASELINE_NIGHTS) return null
@@ -331,10 +400,19 @@ export const RECORD_DAYS = 28
  *  how many of those you said you were sick within two days. */
 export function signalTrackRecord(daysList: DailyBody[], until: string, extras: SignalExtras = {}): { flagged: number; labelled: number; sick: number } {
   let flagged = 0, labelled = 0, sick = 0
+  const days = new Map(daysList.map(d => [d.local_date, d]))
+  const readings = new Map<string, ReturnType<typeof nightOf>>()
+  const lookup = (date: string) => {
+    const prior = readings.get(date)
+    if (prior) return prior
+    const night = nightOf(days, date, extras)
+    readings.set(date, night)
+    return night
+  }
   const labels = new Map((extras.labels ?? []).map(l => [l.local_date, l.tags]))
   for (let i = 0; i < RECORD_DAYS; i++) {
     const date = shiftDate(until, -i)
-    const s = computeSignals(daysList, date, extras)
+    const s = signalsFor(date, extras, lookup)
     if (s.level !== 'mild' && s.level !== 'strong') continue
     flagged++
     const around = [date, shiftDate(date, 1), shiftDate(date, 2)].map(d => labels.get(d) ?? [])

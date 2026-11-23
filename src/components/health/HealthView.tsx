@@ -462,6 +462,10 @@ function SleepSummary({
   detail?: boolean
 }) {
   const sleep = mainSleep(data.sleeps, date)
+  const latestHrv = detail && sleep?.overnight_hrv == null
+    ? [...new Set(data.sleeps.filter(s => s.wake_date < date && s.overnight_hrv != null).map(s => s.wake_date))]
+      .sort().reverse().map(day => mainSleep(data.sleeps, day)).find(s => s?.overnight_hrv != null)
+    : null
   const naps = data.sleeps.filter((s) => s.wake_date === date && s.kind === 'nap')
   return (
     <Panel
@@ -541,9 +545,14 @@ function SleepSummary({
                 {duration((Date.parse(sleep.end_at) - Date.parse(sleep.start_at)) / 1000)}
               </p>
               <h3 className="health-subhead">Overnight measurements</h3>
-              {sleep.overnight_hrv == null && sleep.respiration == null && sleep.spo2 == null ? (
-                <p className="health-muted">None for this night</p>
-              ) : (
+              {sleep.overnight_hrv == null && (
+                <p className="health-muted">
+                  No overnight HRV was imported for this night.
+                  {latestHrv && ` Latest available: ${latestHrv.overnight_hrv} ms on ${dateLabel(latestHrv.wake_date)}.`}
+                  {' '}Import Garmin sleep and health status in Settings.
+                </p>
+              )}
+              {(sleep.overnight_hrv != null || sleep.respiration != null || sleep.spo2 != null) && (
                 <div className="health-mini-stats">
                   {sleep.overnight_hrv != null && (
                     <div>
@@ -1077,7 +1086,7 @@ export function HealthView({
                 <SleepSummary data={data} date={date} today={today} />
                 <RecoveryBreakdown body={data.body} />
               </div>
-              {body?.hasWatch && body.signals && date === today && (
+              {body?.signals && date === today && (
                 <Panel title="Body signals" id="signals" index={4}>
                   <BodySignalsPanel
                     key={body.signals.date}

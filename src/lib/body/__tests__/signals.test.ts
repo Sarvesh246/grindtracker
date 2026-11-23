@@ -1,5 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { nightOf } from '../signals'
+import type { RecoveryNight } from '../sleep'
 import { bbGain, computeSignals, signalTrackRecord, type DailyBody } from '..'
 
 const TODAY = '2026-11-19'
@@ -104,6 +106,45 @@ describe('body signals', () => {
     const s = computeSignals(history({ hr: 63 }), TODAY, { overnightHrv: hrv })
     assert.equal(s.signals.find(x => x.key === 'overnight_hrv')?.off, true)
     assert.equal(s.level, 'mild')
+  })
+
+  it('compares late, fragmented sleep using measured buckets, not midnight activity', () => {
+    const nights = new Map<string, RecoveryNight>()
+    const days = history({})
+    for (const row of days) {
+      const current = row.local_date === TODAY
+      row.hr_series = Array.from({ length: 96 }, (_, b) => b < 24 ? 95 : current ? 80 : 65)
+      nights.set(row.local_date, {
+        start: 6, end: 12, asleep: [{ start: 6, end: current ? 10 : 12 }],
+        minutes: current ? 240 : 360, efficiency: current ? 67 : 100, hrv: current ? 25 : 45,
+      })
+    }
+    const result = computeSignals(days, TODAY, { nights })
+    assert.equal(result.level, 'strong')
+    assert.equal(result.signals.find(s => s.key === 'sleeping_hr')?.value, '80 bpm')
+    assert.equal(result.signals.find(s => s.key === 'overnight_hrv')?.off, true)
+  })
+
+  it('counts the prior calendar day and excludes a recorded awake gap', () => {
+    const previous = night(shift(TODAY, -1))
+    const today = night(TODAY)
+    previous.hr_series = Array.from({ length: 96 }, () => 60)
+    today.hr_series = Array.from({ length: 96 }, (_, i) => i < 4 ? 120 : 64)
+    const nights = new Map([[TODAY, {
+      start: -2, end: 3, asleep: [{ start: -2, end: 0 }, { start: 1, end: 3 }],
+      minutes: 240, efficiency: 80, hrv: null,
+    }]])
+    const raw = nightOf(new Map([[TODAY, today], [previous.local_date, previous]]), TODAY, { nights })
+    assert.equal(raw.sleeping_hr, 62)
+  })
+
+  it('deduplicates autonomic strain markers and reports isolated changes without reassurance', () => {
+    const hrv = new Map<string, number>()
+    for (let i = 14; i >= 1; i--) hrv.set(shift(TODAY, -i), 45)
+    hrv.set(TODAY, 25)
+    const s = computeSignals(history({ stress: 40, gain: 5 }), TODAY, { overnightHrv: hrv })
+    assert.equal(s.level, 'clear')
+    assert.match(s.headline, /change stood out/)
   })
 
   it('counts flagged mornings and the ones you said were sickness', () => {

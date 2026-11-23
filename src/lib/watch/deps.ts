@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { readRecoveryNights } from '@/lib/body/sleep'
 import { createServiceClient } from '@/lib/supabase/admin'
 import { advanceRotationAfterFinish } from '@/lib/utils/rotationStore'
 import type { WatchDeps } from './handlers'
@@ -26,6 +27,7 @@ export function productionWatchDeps(): WatchDeps {
       const { data, error } = await service().rpc(fn, args)
       return { data, error: error ? { message: error.message, code: error.code } : null }
     },
+    recoveryNights: (userId, date) => readRecoveryNights(service(), userId, date),
     afterCompletion: async ({ userId, sessionId, workoutId, completedAt }) => {
       try {
         const supabase = service()

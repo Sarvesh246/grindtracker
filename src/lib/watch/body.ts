@@ -1,3 +1,4 @@
+import { overnightReadings, type RecoveryNight } from '@/lib/body/sleep'
 import { bodyExtras, computeCharge, computeSignals, type BodySignals, type ChargeBand, type DailyBody, type LoadSession, type ReadinessCheck, type SignalLabel, type StrengthSet } from '@/lib/body'
 import type { WatchDailyInput, WatchSessionInput } from './schema'
 
@@ -87,6 +88,7 @@ export interface BodyContext {
   strength?: StrengthSet[] | null
   /** Migration 72; absent before it. */
   labels?: SignalLabel[] | null
+  nights?: Map<string, RecoveryNight>
   prefs: { coach_uses_body: boolean; smart_rest: boolean } | null
 }
 
@@ -108,12 +110,13 @@ export function contextSignals(ctx: BodyContext, localDate: string): BodySignals
     readiness: ctx.readiness ?? [],
     sessions: ctx.sessions ?? [],
     labels: ctx.labels ?? [],
+    nights: ctx.nights,
   })
 }
 
 export function todayBody(ctx: BodyContext, localDate: string): TodayBody {
   const days = ctx.days ?? []
-  const extras = { readiness: ctx.readiness ?? [], strength: ctx.strength ?? [] }
+  const extras = { readiness: ctx.readiness ?? [], strength: ctx.strength ?? [], overnightHrv: ctx.nights && overnightReadings(ctx.nights) }
   const c = computeCharge(days, ctx.sessions ?? [], localDate, extras)
   const { readiness, strength } = bodyExtras(days, localDate, extras)
   const b = readiness?.baseline
