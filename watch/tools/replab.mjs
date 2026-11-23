@@ -137,27 +137,31 @@ function accuracy(rows) {
   const misses = new Map()
   const lat = []
   const results = {}
-  console.log('when         exercise                  logged  auto  shown  replay  settle→count  notes')
+  let acceptedAuto = 0
+  console.log('when         exercise                  logged  auto  used   replay  settle→count  notes')
   for (const r of rows) {
     const rep = replay(r)
     results[r.id] = rep
-    tally(watch, r.auto_reps, r.logged_reps)
-    tally(now, rep, r.logged_reps)
+    const fromAuto = r.auto_shown && !r.corrected
+    if (fromAuto) acceptedAuto++
     const name = r.exercise_name ?? '?'
     if (!byEx.has(name)) byEx.set(name, { watch: blank(), now: blank() })
-    tally(byEx.get(name).watch, r.auto_reps, r.logged_reps)
-    tally(byEx.get(name).now, rep, r.logged_reps)
     const build = r.app_version ?? 'unknown build'
     const key = JSON.stringify([build, name])
     if (!byBuildExercise.has(key)) byBuildExercise.set(key, { ...blank(), times: [] })
     const group = byBuildExercise.get(key)
     const firstOffer = (r.events ?? []).find(event => event[1] === 2 && event[2] > 0)
     const shown = firstOffer?.[2] ?? (r.auto_shown ? r.auto_reps : null)
-    tally(group, shown, r.logged_reps)
     const offerTime = shown != null ? latency(r.events) : null
     if (offerTime != null) group.times.push(offerTime)
-    const miss = rep == null ? 'no count' : rep - r.logged_reps
-    if (miss !== 0) misses.set(miss, (misses.get(miss) ?? 0) + 1)
+    if (!fromAuto) {
+      tally(watch, r.auto_reps, r.logged_reps)
+      tally(now, rep, r.logged_reps)
+      tally(byEx.get(name).now, rep, r.logged_reps)
+      tally(group, shown, r.logged_reps)
+      const miss = rep == null ? 'no count' : rep - r.logged_reps
+      if (miss !== 0) misses.set(miss, (misses.get(miss) ?? 0) + 1)
+    }
     const l = latency(r.events)
     if (l != null) lat.push(l)
     const notes = [r.typed && 'typed', r.corrected && 'corrected', r.clipped && 'clipped', r.diag?.interrupted && 'sensor gap',
@@ -166,7 +170,8 @@ function accuracy(rows) {
       `${String(r.finished_at ?? '').slice(5, 16).replace('T', ' ').padEnd(12)} ${name.slice(0, 25).padEnd(25)} ${String(r.logged_reps).padStart(6)} ${String(r.auto_reps ?? '-').padStart(5)} ${(r.auto_shown ? 'yes' : 'no').padStart(6)} ${String(rep ?? '-').padStart(7)} ${String(l == null ? '-' : l.toFixed(1)).padStart(13)}  ${notes}`,
     )
   }
-  console.log(`\nWatch estimate at finish:  ${line(watch)}`)
+  console.log(`\nScored against logged reps. Accepted AUTO values without a correction excluded: ${acceptedAuto}.`)
+  console.log(`Watch estimate at finish:  ${line(watch)}`)
   console.log(`Current counter, replayed: ${line(now)}`)
   if (lat.length) console.log(`Wrist still → count shown: median ${quant(lat, 0.5).toFixed(1)} s, 90th ${quant(lat, 0.9).toFixed(1)} s, worst ${Math.max(...lat).toFixed(1)} s`)
   console.log('\nFirst live estimate by build and exercise:')
@@ -196,7 +201,7 @@ function compareBaseline(rows, results) {
   const fixed = []
   const broke = []
   for (const r of rows) {
-    if (!(r.id in base.results)) continue
+    if ((r.auto_shown && !r.corrected) || !(r.id in base.results)) continue
     const was = base.results[r.id] === r.logged_reps
     const is = results[r.id] === r.logged_reps
     if (!was && is) fixed.push(r)
@@ -234,7 +239,7 @@ function health(rows) {
     if (long.length) console.log(`  Longest counter step: ${Math.max(...long)} ms (watchdog risk starts in the hundreds)`)
     const failed = num('uploads_failed').reduce((a, b) => a + b, 0)
     const codes = sessions.flatMap(s => s.data?.upload_codes ?? [])
-    console.log(`  Uploads: ${num('uploads_ok').reduce((a, b) => a + b, 0)} ok, ${failed} failed${codes.length ? ` (codes ${[...new Set(codes)].join(' ')})` : ''}`)
+    console.log(`  Rep Lab uploads recorded before Save: ${num('uploads_ok').reduce((a, b) => a + b, 0)} ok, ${failed} failed${codes.length ? ` (codes ${[...new Set(codes)].join(' ')})` : ''}`)
     const sum = k => num(k).reduce((a, b) => a + b, 0)
     console.log(`  Sets with compass ${sum('mag_sets')}/${sum('lab_sets')}, with beat intervals ${sum('beat_sets')}, with a sensor gap ${sum('gap_sets')}`)
     const bad = Math.max(0, ...num('rich_bad'))

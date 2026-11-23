@@ -109,7 +109,7 @@ module Lab {
             body["id"] = set["id"]; body["session_id"] = sid;
             body["exercise_id"] = ex["id"]; body["exercise_name"] = ex["name"];
             body["set_number"] = set["n"]; body["weight"] = set["w"]; body["unit"] = unit;
-            body["logged_reps"] = set["r"]; body["auto_reps"] = Reps.count; body["auto_shown"] = autoShown;
+            body["logged_reps"] = set["r"]; body["auto_reps"] = set["ra"]; body["auto_shown"] = autoShown;
             body["typed"] = Reps.manual; body["started_at"] = startedAt == null ? null : Logic.isoUtc(startedAt);
             body["finished_at"] = Logic.isoUtc(set["t"]);
             body["rate_hz"] = 12.5;

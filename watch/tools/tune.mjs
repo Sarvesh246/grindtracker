@@ -48,7 +48,8 @@ export function eligible(row) {
   return Array.isArray(row.motion_x) && row.motion_x.length >= 48
     && row.motion_y?.length === row.motion_x.length && row.motion_z?.length === row.motion_x.length
     && Number.isInteger(row.logged_reps) && row.logged_reps >= 1 && row.logged_reps <= 100
-    && row.diag?.interrupted !== true;
+    && row.diag?.interrupted !== true && row.clipped !== true
+    && (row.auto_shown !== true || row.corrected === true);
 }
 
 const keyOf = (p) => `${p.ac}|${p.cv}|${p.swing}|${p.lag}`;

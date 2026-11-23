@@ -147,10 +147,25 @@ module Workout {
         expireRest();
         Reps.reset();
         // The motion recorded before the interruption cannot be recovered.
-        if (setRunning()) { Reps.takeOver(); }
+        if (setRunning() && !setEnded()) { Reps.takeOver(); }
     }
 
     function setRunning() { return cur != null && cur["setAt"] != null; }
+
+    function setEnded() { return setRunning() && cur["setEnd"] != null; }
+
+    function endSetMotion() {
+        cur["setEnd"] = now();
+        Reps.captureEnd = System.getTimer();
+        cur["f"] = 1;
+        saveCur();
+    }
+
+    function reviewSet(offered) {
+        cur["reviewAuto"] = offered;
+        saveCur();
+        Reps.finishCapture();
+    }
 
     function beginSet() {
         if (cur == null || inRest() || atSummary() || setRunning()) { return; }
@@ -167,6 +182,8 @@ module Workout {
 
     function closeSetWindow() {
         cur["setAt"] = null;
+        cur.remove("setEnd");
+        cur.remove("reviewAuto");
         Reps.stop();
         Reps.reset();
     }
@@ -207,6 +224,7 @@ module Workout {
         } else {
             var reps = Reps.manual || displayedOffer == null ? cur["r"] : displayedOffer;
             cur["r"] = Logic.clamp(reps + dir, 0, 1000);
+            cur.remove("reviewAuto");
             Reps.takeOver(); // your number wins for the rest of this set
         }
         saveCur();
@@ -223,12 +241,14 @@ module Workout {
         var e = ex();
         if (Reps.manual) { offered = null; }
         var reps = offered == null ? cur["r"] : offered;
+        var loggedAt = now();
+        var endedAt = setEnded() ? cur["setEnd"] : loggedAt;
         // `ra`: what the rep counter made of this set (null: no confident
         // count). Kept on the watch only, to measure the counter against
         // what was logged; never uploaded.
         var s = {
             "id" => Logic.uuid4(), "e" => e["id"], "n" => cur["sn"], "r" => reps, "w" => cur["w"],
-            "t" => now(), "rs" => cur["rs"], "y" => 0, "ra" => Reps.count, "ar" => offered != null
+            "t" => endedAt, "rs" => cur["rs"], "y" => 0, "ra" => Reps.count == null ? offered : Reps.count, "ar" => offered != null
         };
         System.println("reps auto=" + Reps.count + " logged=" + reps + " typed=" + Reps.manual
             + " " + e["name"] + Reps.diagnostics());
@@ -236,7 +256,7 @@ module Workout {
         sets.add(s);
         // Rep lab: the live window is still open here; it closes below.
         Lab.capture(cur["sid"], s, e, offered != null, cur["setAt"], meta["u"]);
-        Hr.onSetLogged(sets.size() - 1, s["t"]);
+        Hr.onSetLogged(sets.size() - 1, endedAt, loggedAt);
         Health.mark("logged");
         var done = advanceAfterSet(e, s["t"]);
         // No lap after the last set: it would leave an empty one in Connect.

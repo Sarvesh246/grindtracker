@@ -155,7 +155,7 @@ function blockMotion(x, y, z, nb) {
 }
 
 // [[startSample, endSample], ...] of motion, walking cut out.
-export function bouts(x, y, z, steps) {
+export function bouts(x, y, z, steps, walkStart = []) {
   const n = x.length;
   const nb = Math.floor(n / BLOCK);
   if (nb < 3) return [];
@@ -169,6 +169,7 @@ export function bouts(x, y, z, steps) {
       const d = steps[Math.min(n - 1, b1 * BLOCK + BLOCK - 1)] - steps[b0 * BLOCK];
       walk = d >= WALK_STEPS;
     }
+    if (walk && walkStart.length === 0) walkStart.push(b * BLOCK);
     act[b] = !walk && mo[b] > thr;
   }
   const out = [];
@@ -580,7 +581,7 @@ export function analyzeBout(x, y, z, lo, hi) {
 // keep the counter's structure intact. Anything outside, or any other key,
 // is ignored here and on the watch alike. Bump ALGO_VERSION whenever the
 // counter changes in a way that makes old tunings meaningless.
-export const ALGO_VERSION = '2026-11-21';
+export const ALGO_VERSION = '2026-11-23';
 export const TUNE_DEFAULTS = Object.freeze({ ac: 0.60, cv: 0.32, swing: 0.45, lag: 8 });
 export const TUNE_RANGES = Object.freeze({ ac: [0.45, 0.75], cv: [0.22, 0.45], swing: [0.30, 0.60], lag: [6, 10] });
 
@@ -618,7 +619,8 @@ function analyzeDefault(x, y, z, steps) {
     const pad = a => Array(BLOCK).fill(a[0]).concat(a);
     x = pad(x); y = pad(y); z = pad(z); steps = pad(steps);
   }
-  const bs = bouts(x, y, z, steps);
+  const walkStart = [];
+  const bs = bouts(x, y, z, steps, walkStart);
   let best = null, bestScore = 0;
   const all = [];
   for (const [lo, hi] of bs) {
@@ -627,6 +629,22 @@ function analyzeDefault(x, y, z, steps) {
     if (!r.ok) continue;
     const score = r.reps * r.ac;
     if (score >= bestScore) { best = r; bestScore = score; }
+  }
+  // Wrist motion can also increment the step counter. Recover only when a
+  // verified lifting rhythm starts before the step veto and continues through
+  // it in a single, strongly periodic chain.
+  const walkAt = walkStart[0];
+  const anchor = all.find(r => r.ok && Math.abs(r.hi - walkAt) <= BLOCK);
+  if (anchor) {
+    const range = bouts(x, y, z, null).find(([lo, hi]) => lo === anchor.lo && hi > walkAt);
+    if (range) {
+      const r = analyzeBout(x, y, z, ...range);
+      if (r.ok && r.ac >= 0.8 && r.cv <= 0.24 && r.reps >= (best?.reps ?? 0) + 3
+          && Math.abs(r.T - anchor.T) <= 0.2 * anchor.T
+          && r.times.filter(t => t < walkAt).length >= 3 && r.times.filter(t => t >= walkAt).length >= 3) {
+        return { ...r, bouts: all, times: r.times.map(t => Math.max(0, t - BLOCK)) };
+      }
+    }
   }
   if (!best) return { reps: 0, ok: false, bouts: all };
   // A set the counter only sees in pieces (the wrist barely moves, so the

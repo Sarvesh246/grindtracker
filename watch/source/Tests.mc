@@ -663,6 +663,20 @@ function testRepsCurl(logger) {
 }
 
 (:test)
+function testStepCounterDuringLifting(logger) {
+    var lift = RepFx.curl(12, false);
+    for (var i = 252; i < lift[3].size(); i++) {
+        lift[3][i] = 10 + (i - 252) / 6;
+    }
+    var result = RepFx.run(lift);
+    var ok = T.ck(logger, "repetitions continue across false steps", result[1] && result[0] == 12);
+    var walk = RepFx.curl(12, false);
+    for (var i = 0; i < walk[3].size(); i++) { walk[3][i] = i / 6; }
+    result = RepFx.run(walk);
+    return T.ck(logger, "steady steps from the start still veto wrist rhythm", !result[1]) && ok;
+}
+
+(:test)
 function testRepsGlanceIsNotARep(logger) {
     // Raising the wrist to press START after the set is half a motion.
     var r = RepFx.run(RepFx.curl(8, true));
@@ -1046,6 +1060,33 @@ function testRestRecoveryAndStrayInput(logger) {
 }
 
 (:test)
+function testSetReviewPersistsEditsAndRestStart(logger) {
+    T.startPress(60);
+    Workout.beginSet();
+    Workout.endSetMotion();
+    Workout.cur["setEnd"] = Workout.now() - 20;
+    var endedAt = Workout.cur["setEnd"];
+    Reps.count = 5;
+    Workout.reviewSet(5);
+    var ok = T.ck(logger, "rep offer is ready for review before anything is logged",
+        Workout.setEnded() && Workout.sets.size() == 0 && !Reps.listening && Workout.cur["reviewAuto"] == 5);
+    Workout.setFocus(0);
+    Workout.adjust(1, 5);
+    ok = T.ck(logger, "weight edit keeps the candidate count", Workout.cur["w"] == 100.0 && Workout.cur["reviewAuto"] == 5) && ok;
+    Workout.setFocus(1);
+    Workout.adjust(1, 5);
+    ok = T.ck(logger, "rep edit starts from the reviewed count", Workout.cur["r"] == 6 && Workout.cur["reviewAuto"] == null) && ok;
+    Workout.load();
+    Workout.resume();
+    Workout.logDisplayedSet(Workout.cur["reviewAuto"]);
+    ok = T.ck(logger, "stored review logs the corrected values and keeps elapsed rest",
+        Workout.sets.size() == 1 && Workout.sets[0]["w"] == 100.0 && Workout.sets[0]["r"] == 6
+        && Workout.sets[0]["ar"] == false && Workout.cur["re"] == endedAt + 60 && !Workout.setEnded()) && ok;
+    Workout.finish(false);
+    return ok;
+}
+
+(:test)
 function testRepSettingsDuringSet(logger) {
     var previous = Reps.enabled();
     T.startPress(0);
@@ -1254,6 +1295,28 @@ function testSavedWorkoutSyncTakesPriority(logger) {
 }
 
 (:test)
+function testSetReviewUsesHeartRateAtEndOfLifting(logger) {
+    T.startPress(90);
+    Workout.beginSet();
+    Workout.endSetMotion();
+    var end = Workout.now() - 70;
+    Workout.cur["setEnd"] = end;
+    Hr.st = end - 30;
+    Logic.traceSet(Hr.trace, Hr.idx(end), 148);
+    Logic.traceSet(Hr.trace, Hr.idx(end + 15), 171);
+    Logic.traceSet(Hr.trace, Hr.idx(end + 30), 185);
+    Logic.traceSet(Hr.trace, Hr.idx(end + 60), 119);
+    Hr.now = 106;
+    Workout.reviewSet(null);
+    Workout.logDisplayedSet(null);
+    var s = Workout.sets[0];
+    var ok = T.ck(logger, "delayed review uses end HR and the original rest windows",
+        s["he"] == 148 && s["hp"] == 171 && s["hd"] == 52 && Hr.pend == null);
+    Workout.finish(false);
+    return ok;
+}
+
+(:test)
 function testRecoveryEndsAtNextSet(logger) {
     T.startPress(0);
     Workout.beginSet(); Hr.now = 150; Workout.logDisplayedSet(null);
@@ -1297,7 +1360,7 @@ function testInterruptedUndoAndRedo(logger) {
     var updated = Store.sets(sid)[0];
     ok = T.ck(logger, "redo tracks a new set and starts a full rest",
         !updated["id"].equals(row["id"]) && updated["t"] > row["t"] && updated["hp"] == null
-        && updated["he"] == 120 && updated["r"] == 11 && updated["ar"] == true && Workout.restLeft() >= 59) && ok;
+        && updated["he"] == 120 && updated["r"] == 11 && updated["ar"] == true && Workout.cur["re"] == updated["t"] + 60) && ok;
     Workout.finish(false);
     return ok;
 }

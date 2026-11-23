@@ -56,19 +56,22 @@ it as a different app and your stored data is gone.
 
 | Button | Does |
 | --- | --- |
-| START | Confirm weight, begin the set, finish and log it, or skip rest |
+| START | Confirm weight, begin lifting, review the finished set, log it, or skip rest |
 | UP / DOWN | Change the highlighted number, or add/remove 15 s of rest |
-| BACK, or hold UP | Workout menu: resume, undo last set, change weight, switch or skip exercise, end, discard |
+| BACK | Return from reps to weight during setup. Switch between weight and reps during review. Open the workout menu during lifting or rest. |
+| Hold UP | Workout menu during setup, lifting, or rest: resume, undo last set, switch or skip exercise, end, discard |
 | MENU on Home | Refresh, turn rep counting on or off, clear failed uploads |
 
 A short white arc beside the START button means START does something on that
 screen, the same cue Garmin's own apps use.
 
 A new exercise starts with the weight highlighted. Press START to select
-reps, START to begin lifting, and START to finish the set and begin rest.
-Later sets of the same exercise open on reps. The final set opens the summary.
-Touch works too: tap the left or right edge to step the number, tap the
-numbers to switch between weight and reps, swipe up or down to adjust.
+reps, and START to begin lifting. Later sets open with reps selected. Press
+BACK from reps to change the weight. After lifting, press START to review.
+Use UP/DOWN to edit reps, or press BACK to edit weight. Press START again to
+log the set. Rest is timed from when you finished lifting. Logging the final
+set opens the summary. You can also tap a number to select it and adjust
+with the on-screen minus and plus or an up/down swipe.
 
 Reps prefill to the top of the target range (8-12 starts at 12), and the full
 target is always shown next to the set count. The ring on the set screen has
@@ -80,7 +83,7 @@ a set. TRACKING means samples are arriving. CHECKING means analysis is running.
 **AUTO LIVE** is a running estimate. **AUTO** is a count from a settled motion
 window. UP/DOWN adjusts the displayed reps and takes over for that set.
 When you press START to finish during a live estimate or a pending check,
-the watch briefly analyzes the captured motion before logging the set. Rest and the
+the watch briefly analyzes the captured motion before showing the set for review. Rest and the
 workout summary show the last set's logged reps and mark an automatic count
 with AUTO. When motion is ambiguous, samples are interrupted, or a set runs
 beyond the 75-second motion window, enter reps yourself. Turn the feature off
@@ -89,7 +92,9 @@ with Home MENU → Rep counting, or from the workout menu.
 It counts a rep only when the wrist goes away and comes back, in the set's
 own rhythm, size and direction. That is what keeps out picking the weight up,
 re-racking, a sip of water, walking (step counter), fidgeting with your phone,
-and raising your wrist to press START. Every logged set reports its estimate,
+and raising your wrist to press START. If the watch registers steps partway
+through a lift, it can still count a strongly periodic lifting motion that
+began before the step reading and continued through it. Every logged set reports its estimate,
 the saved reps, and whether the watch received and analyzed motion in the log
 below. The method, and a simulator that scores it on
 18 lifts plus no-set sessions, are in `tools/` (`node tools/repsim.mjs`).
@@ -116,9 +121,9 @@ reconnecting while GRIND is open.
 
 ## Heart rate and Charge (GRIND Body)
 
-While a workout is open the watch samples heart rate every 5 s and keeps the
+While a workout is open the watch samples heart rate every second and keeps the
 trace, time in each of your zones, and per set the peak, the reading when you
-logged it, and how far it fell 60 s into the rest. All of it uploads with the
+finished lifting, and how far it fell 60 s into the rest. All of it uploads with the
 workout. The set screen's status row shows your HR and zone (coral for zone 5).
 
 On open (every 15 min while open, never mid-workout, and every 15 min in the
@@ -208,7 +213,7 @@ count appears, and the watch's health. Recordings are saved to
 `watch/lab-data/` (gitignored). Once a change helps, port it to
 `source/Reps.mc` and check native vs JS parity before sideloading.
 
-**It tunes itself.** Once an exercise has 20 recorded sets, a nightly job
+**It tunes itself.** Once an exercise has 20 recorded sets with usable manual or corrected rep counts, a nightly job
 tries small changes to four of the counter's thresholds on those sets. A change
 is kept only if it counts more of your sets exactly on sets it was *not*
 tuned on (5-fold cross-validation), never adds a wrong count, and doesn't make
@@ -224,7 +229,7 @@ lab off and on, or installing a new build, gives them another chance. When the
 counter gives up on a set because the stream broke, the watch keeps recording
 the rest of that set for the lab.
 
-Adjust an AUTO count with UP/DOWN before finishing the set. Undo removes the
+Adjust an AUTO count with UP/DOWN during review before logging the set. Undo removes the
 old recording, so a repeated set has its own motion trace. The tables come from `docs/sql/66-rep-lab.sql` and
 `67-watch-telemetry.sql`; until they're applied the watch keeps its records
 and retries.

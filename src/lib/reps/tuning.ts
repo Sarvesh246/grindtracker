@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { ALGO_VERSION } from '../../../watch/tools/reps.mjs'
-import { MIN_SETS, tuneExercise } from '../../../watch/tools/tune.mjs'
+import { eligible, MIN_SETS, tuneExercise } from '../../../watch/tools/tune.mjs'
 
 /**
  * The nightly half of per-exercise rep tuning: for every exercise with enough
@@ -50,20 +50,29 @@ export async function runTuning(db: SupabaseClient, budgetMs = 45_000, now = () 
   const { data: existing, error: exErr } = await db.from('rep_tuning').select('user_id,exercise_id,algo_version,sets_used')
   if (exErr) throw new Error(`rep_tuning: ${exErr.message}`)
 
-  const queue = pending((counts ?? []) as Candidate[], (existing ?? []) as TuningRow[])
+  const previous = (existing ?? []) as TuningRow[]
+  const byExercise = new Map(previous.map(t => [`${t.user_id}|${t.exercise_id}`, t]))
+  const queue = pending((counts ?? []) as Candidate[], previous)
   report.considered = queue.length
   for (const c of queue) {
     if (now() - start > budgetMs) { report.timedOut = true; break }
     const { data, error } = await db
       .from('rep_lab_sets')
-      .select('motion_x,motion_y,motion_z,steps,logged_reps,diag,finished_at')
+      .select('motion_x,motion_y,motion_z,steps,logged_reps,diag,finished_at,auto_shown,corrected,clipped')
+      .or('auto_shown.eq.false,corrected.eq.true')
       .eq('user_id', c.user_id)
       .eq('exercise_id', c.exercise_id)
       .gte('created_at', since)
       .order('finished_at', { ascending: true })
       .limit(MAX_SETS_PER_EXERCISE)
     if (error || !data) { report.skipped++; continue }
-    const result = tuneExercise(data)
+    const labeled = data.filter(eligible)
+    const prior = byExercise.get(`${c.user_id}|${c.exercise_id}`)
+    if (prior?.algo_version === ALGO_VERSION && labeled.length < prior.sets_used + RETUNE_AFTER_NEW_SETS) {
+      report.skipped++
+      continue
+    }
+    const result = tuneExercise(labeled)
     if (!result) { report.skipped++; continue }
     const { error: upErr } = await db.from('rep_tuning').upsert({
       user_id: c.user_id,
