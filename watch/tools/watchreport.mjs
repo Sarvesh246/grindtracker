@@ -12,8 +12,8 @@
 //   memory           headroom in the 64 KB background process
 //   all-day HR       the watch's own sample rate, and what the 15-minute
 //                    averages hide
-//   sensors          which values the watch fills in, how fresh, and whether
-//                    that changed with a firmware update
+//   sensors          which values the watch fills in, how fresh they are,
+//                    and which firmware labels it reported
 //   HR revisions     whether Garmin rewrites finished 15-min buckets (71)
 //   respiration      how often the live rate is there, and its range
 //   workout HR       where the last workout's readings came from, and the
@@ -273,15 +273,20 @@ function respiration(rows) {
 
 function workoutReads(rows) {
   head('workout heart-rate reads')
-  const last = [...rows].reverse().find(r => Array.isArray(r.diag?.wk_hr))
+  const samples = rows.filter(r => Array.isArray(r.diag?.wk_hr))
+  const saved = samples.filter(r => r.diag.wk_hr_at)
+    .sort((a, b) => t(b.diag.wk_hr_at) - t(a.diag.wk_hr_at))
+  const last = saved[0]
   if (!last) {
-    console.log('No workout recorded on this build yet.')
+    console.log(samples.length
+      ? 'Only legacy counters are available. They may describe an unsaved session.'
+      : 'No saved workout counters have been uploaded yet.')
     return
   }
   const [n, miss, act, sens] = last.diag.wk_hr
-  console.log(`last workout (reported ${last.taken_at?.slice(0, 16)}): ${n} reads, ${miss} missed (${share(miss, n)})`)
+  console.log(`last saved workout segment (ended ${last.diag.wk_hr_at}): ${n} reads, ${miss} missed (${share(miss, n)})`)
   console.log(`  from the Garmin recording ${act}, from the sensor fallback ${sens}`)
-  if (n && miss === n) console.log('  ! no reading at all: the sensor never delivered heart rate')
+  if (n && miss === n) console.log('  ! this saved workout segment has no heart-rate readings')
 }
 
 function sensors(rows) {
@@ -304,20 +309,21 @@ function sensors(rows) {
     const otherText = [...other].map(([w, c]) => `${w} ${c}`).join(', ')
     console.log(`${k.padEnd(10)} ${share(filled.length, vals.length).padStart(6)}   ${(ages.length ? `${median(ages)} min` : '-').padEnd(13)} ${otherText}`)
   }
-  // Per watch: each firmware it ran, and any value that started or stopped
-  // being filled in when the firmware changed.
+  // Group reported versions. A device can alternate labels between snapshots,
+  // so a label transition alone is no evidence of a firmware update.
   for (const list of byUser(probed).values()) {
-    const builds = []
+    const groups = new Map()
     for (const r of list) {
       const id = `${r.diag.part ?? '?'} fw ${r.diag.fw ?? '?'} ciq ${r.diag.ciq ?? '?'}`
-      if (!builds.length || builds[builds.length - 1].id !== id) builds.push({ id, at: r.taken_at ?? r.received_at, rows: [] })
-      builds[builds.length - 1].rows.push(r)
+      if (!groups.has(id)) groups.set(id, [])
+      groups.get(id).push(r)
     }
-    console.log(`\nwatch: ${builds.map(b => `${b.id} (from ${b.at.slice(0, 10)})`).join(' → ')}`)
-    const filled = (rows, k) => rows.filter(r => Array.isArray(r.diag.probe[k])).length / rows.length
-    for (let i = 1; i < builds.length; i++) {
-      const changed = keys.filter(k => Math.abs(filled(builds[i - 1].rows, k) - filled(builds[i].rows, k)) >= 0.5)
-      if (changed.length) console.log(`  ! with ${builds[i].id}: ${changed.map(k => `${k} ${filled(builds[i].rows, k) >= 0.5 ? 'now filled' : 'now missing'}`).join(', ')}`)
+    console.log()
+    console.log('Reported firmware labels:')
+    for (const [id, snapshots] of groups) {
+      const first = snapshots[0]
+      const last = snapshots[snapshots.length - 1]
+      console.log(`  ${id}: ${snapshots.length} snapshots (${(first.taken_at ?? first.received_at).slice(0, 10)} to ${(last.taken_at ?? last.received_at).slice(0, 10)})`)
     }
   }
 }

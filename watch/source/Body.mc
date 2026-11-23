@@ -20,7 +20,7 @@ using Toybox.UserProfile;
 // hour, never a list of every sample.
 (:background)
 module Body {
-    const BUILD_ID = "2026-11-23c";
+    const BUILD_ID = "2026-11-23d";
     // Today's local date, YYYY-MM-DD. Logic.localDate() is this.
     function date() {
         var i = Gregorian.info(Time.now(), Time.FORMAT_SHORT);
@@ -177,8 +177,12 @@ module Body {
             }
             var per = Background.getTemporalEventRegisteredTime();
             if (per instanceof Time.Duration) { d["period_s"] = per.value(); }
-            var wk = Storage.getValue("wkhr");
-            if (wk instanceof Lang.Array && wk.size() == 4) { d["wk_hr"] = wk; }
+            var wk = Storage.getValue("wkhr_saved");
+            if (wk instanceof Lang.Array && wk.size() == 2 && wk[0] instanceof Lang.Array
+                    && wk[0].size() == 4 && wk[1] instanceof Lang.Number) {
+                d["wk_hr"] = wk[0];
+                d["wk_hr_at"] = iso(wk[1]);
+            }
         } catch (e) {
         }
         d["probe"] = probe(now);

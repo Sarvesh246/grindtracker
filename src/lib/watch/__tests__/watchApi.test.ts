@@ -514,7 +514,7 @@ describe('POST /daily', () => {
         return { data: { local_date: '2026-11-16' }, error: null }
       },
     })
-    const diag = { taken_at: '2026-11-16T19:14:03Z', wk_hr: [2400, 12, 2300, 100] }
+    const diag = { taken_at: '2026-11-16T19:14:03Z', wk_hr: [2400, 12, 2300, 88], wk_hr_at: '2026-11-16T18:55:00Z' }
     const res = await watchDaily(req('/daily', { body: { date: '2026-11-16', bucket: 5, respiration: 14, diag } }), deps)
     assert.equal(res.status, 200)
     const resp = (day as unknown as Record<string, (number | null)[]>).resp_series
