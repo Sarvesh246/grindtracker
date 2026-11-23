@@ -20,7 +20,7 @@ class TickView extends WatchUi.View {
 
     function onShow() {
         Clock.view = self;
-        if (Workout.setRunning() && !Reps.manual) { Reps.start(); }
+        if (Workout.setRunning() && !Workout.setEnded() && !Reps.manual) { Reps.start(); }
     }
 
     function onHide() {
@@ -39,12 +39,12 @@ class TickView extends WatchUi.View {
 
 class SetView extends TickView {
     var displayedOffer = null;
+    var fieldDivider = 0.5;
     function initialize() { TickView.initialize(); }
 
     function onSecond() {
         if (Reps.finalCountReady(System.getTimer())) {
-            new SetDelegate().saveSet(Reps.offer());
-            return;
+            Workout.reviewSet(Reps.job == null ? Reps.offer() : null);
         }
         TickView.onSecond();
     }
@@ -56,7 +56,8 @@ class SetView extends TickView {
         var unit = Workout.meta["u"];
         // The rep counter's number, once it is sure, unless you've set reps
         // yourself this set. Not saved until the set is logged.
-        var auto = Reps.offer();
+        var reviewing = Workout.setEnded() && Reps.finishBy == null;
+        var auto = reviewing ? c["reviewAuto"] : Reps.offer();
         displayedOffer = auto;
         Draw.clear(dc);
         Draw.status(dc, hr);
@@ -82,6 +83,7 @@ class SetView extends TickView {
         var rw = dc.getTextWidthInPixels(r, font);
         var left = cx - (ww + rw + xw + 2 * gap) / 2;
         var rx = left + ww + xw + 2 * gap;
+        fieldDivider = (left + ww + rx) / (2.0 * dc.getWidth());
         var vc = Graphics.TEXT_JUSTIFY_LEFT | Graphics.TEXT_JUSTIFY_VCENTER;
         dc.setColor(c["f"] == 0 ? Config.ACCENT : Config.FG, Graphics.COLOR_TRANSPARENT);
         dc.drawText(left, cy, font, w, vc);
@@ -95,7 +97,7 @@ class SetView extends TickView {
         dc.setColor(c["f"] == 0 ? Config.ACCENT : Config.DIM, Graphics.COLOR_TRANSPARENT);
         dc.drawText(left + ww / 2, ly, lf, c["w"].toFloat() == 0.0 ? "BODYWEIGHT" : unit.toUpper(), Draw.C);
         dc.setColor(c["f"] == 1 ? Config.ACCENT : Config.DIM, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(rx + rw / 2, ly, lf, Reps.repLabel(), Draw.C);
+        dc.drawText(rx + rw / 2, ly, lf, reviewing ? (auto == null ? "REPS" : "AUTO REPS") : Reps.repLabel(), Draw.C);
 
         // Tap columns.
         dc.setColor(Config.DIM, Graphics.COLOR_TRANSPARENT);
@@ -106,16 +108,16 @@ class SetView extends TickView {
         // never cut off (shorter forms drop words, never numbers).
         var sn = "Set " + c["sn"] + "/" + e["sets"];
         if (Workout.setRunning()) {
-            sn += "  " + Logic.fmtDuration(Logic.clamp(Workout.now() - c["setAt"], 0, 86400));
+            sn += "  " + Logic.fmtDuration(Logic.clamp((Workout.setEnded() ? c["setEnd"] : Workout.now()) - c["setAt"], 0, 86400));
         }
         var bare = Logic.bareTarget(e);
         Draw.fit(dc, 0.755, [Graphics.FONT_SMALL, Graphics.FONT_TINY],
             [sn + "  Â·  " + Logic.repsText(e), sn + "  Â·  " + bare, sn], Config.FG);
-        // Below it: the planned weight when you're off it, else what START does
-        // while that's not obvious.
+        var other = c["f"] == 0 ? "Reps" : "Weight";
         var action = Reps.finishBy != null ? "Checking final reps"
+            : reviewing ? "BACK " + other + "  ·  START Log"
             : Workout.setRunning() ? "START to finish set"
-            : (c["f"] == 0 ? "START for reps" : "START to begin set");
+            : (c["f"] == 0 ? "START for reps" : "BACK Weight  ·  START Begin");
         Draw.line(dc, 0.845, [Graphics.FONT_XTINY], action, Config.DIM);
         Draw.segments(dc, Workout.sets.size(), Workout.totalSets(), Config.ACCENT);
         Draw.startCue(dc, Config.FG);
@@ -134,16 +136,21 @@ class SetDelegate extends WatchUi.BehaviorDelegate {
 
     function bump(dir) {
         var v = current();
-        if (v == null) { return true; }
-        Workout.adjust(dir, v.displayedOffer);
+        if (v == null || Reps.finishBy != null) { return true; }
+        var shown = Workout.setEnded() ? Workout.cur["reviewAuto"] : v.displayedOffer;
+        Workout.adjust(dir, shown);
         WatchUi.requestUpdate();
         return true;
     }
 
-    // START confirms weight, begins the set, then logs the finished set.
+    // START advances from setup to lifting, review, and logging.
     function onSelect() {
         var view = current();
         if (view == null) { return true; }
+        if (Reps.finishBy != null) { return true; }
+        if (Workout.setEnded()) {
+            return saveSet(Workout.cur["reviewAuto"]);
+        }
         if (!Workout.setRunning() && Workout.cur["f"] == 0) {
             Workout.setFocus(1);
             WatchUi.requestUpdate();
@@ -156,12 +163,12 @@ class SetDelegate extends WatchUi.BehaviorDelegate {
             WatchUi.requestUpdate();
             return true;
         }
-        if (Reps.finishBy != null) { return true; }
-        if (Reps.checkFinalCount()) {
-            WatchUi.requestUpdate();
-            return true;
+        Workout.endSetMotion();
+        if (!Reps.checkFinalCount()) {
+            Workout.reviewSet(Reps.countSettled ? Reps.offer() : null);
         }
-        return saveSet(Reps.countSettled ? Reps.offer() : null);
+        WatchUi.requestUpdate();
+        return true;
     }
 
     function saveSet(offered) {
@@ -182,9 +189,10 @@ class SetDelegate extends WatchUi.BehaviorDelegate {
     }
 
     // Center zone, three columns: left quarter -1, right quarter +1, and the
-    // numbers in the middle switch between weight and reps.
+    // numbers in the middle select their own field.
     function onTap(evt) {
-        if (current() == null) { return true; }
+        var v = current();
+        if (v == null || Reps.finishBy != null) { return true; }
         var xy = evt.getCoordinates();
         var size = System.getDeviceSettings().screenWidth;
         var y = xy[1].toFloat() / size;
@@ -192,13 +200,25 @@ class SetDelegate extends WatchUi.BehaviorDelegate {
         if (y < 0.40 || y > 0.68) { return true; }
         if (x < 0.25) { return bump(-1); }
         if (x > 0.75) { return bump(1); }
-        Workout.setFocus(1 - Workout.cur["f"]);
+        Workout.setFocus(x < v.fieldDivider ? 0 : 1);
         WatchUi.requestUpdate();
         return true;
     }
 
-    function onBack() { return Reps.finishBy != null || Menus.pause(true); }
-    function onMenu() { return onBack(); }
+    function onBack() {
+        if (current() == null || Reps.finishBy != null) { return true; }
+        if (Workout.setEnded() || (!Workout.setRunning() && Workout.cur["f"] == 1)) {
+            Workout.setFocus(1 - Workout.cur["f"]);
+            WatchUi.requestUpdate();
+            return true;
+        }
+        return Menus.pause(true);
+    }
+
+    function onMenu() {
+        if (current() == null || Reps.finishBy != null || Workout.setEnded()) { return true; }
+        return Menus.pause(true);
+    }
 }
 
 // ---------------------------------------------------------------------------

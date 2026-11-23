@@ -15,6 +15,12 @@ module Tour {
         if (!ok) { failures++; System.println("tour failed at step " + step + ": " + message); }
     }
 
+    function finishAndLog() {
+        var input = new SetDelegate();
+        input.onSelect();
+        input.onSelect();
+    }
+
     function next() {
         step += 1;
         System.println("tour step " + step);
@@ -22,12 +28,25 @@ module Tour {
         else if (step == 2) { new SetDelegate().onSelect(); new SetDelegate().onPreviousPage(); } // reps focused, +1
         else if (step == 3) {
             check(!Workout.setRunning() && Workout.cur["r"] == 13, "setup edits");
-            new SetDelegate().onSelect();
+            var input = new SetDelegate();
+            input.onBack();
+            check(Workout.cur["f"] == 0, "BACK returns to weight after selecting reps");
+            input.onPreviousPage();
+            input.onSelect();
+            input.onSelect();
         } else if (step == 4) {
             check(Workout.setRunning() && Workout.sets.size() == 0 && WatchUi.getCurrentView()[0] instanceof SetView, "active set");
-            new SetDelegate().onSelect();
+            var input = new SetDelegate();
+            input.onSelect();
+            check(Workout.setEnded() && Workout.sets.size() == 0, "finish opens review");
+            input.onBack();
+            input.onPreviousPage();
+            input.onBack();
+            input.onPreviousPage();
+            input.onSelect();
         } else if (step == 5) {
-            check(Workout.inRest() && Workout.sets.size() == 1 && Workout.sets[0]["r"] == 13, "finish opens rest");
+            check(Workout.inRest() && Workout.sets.size() == 1 && Workout.sets[0]["r"] == 14
+                && Workout.sets[0]["w"] == 72.5, "review saves corrected weight and reps before rest");
             new RestDelegate().onPreviousPage();
         } else if (step == 6) {
             check(Workout.cur["rd"] == 35, "adjust rest");
@@ -51,12 +70,12 @@ module Tour {
             new PickDelegate().onSelect(new WatchUi.MenuItem("Incline Dumbbell Bench Press", null, 0, null));
         } else if (step == 12) {
             new RestDelegate().skip();
-        } else if (step == 13) { new SetDelegate().onSelect(); new SetDelegate().onSelect(); }
+        } else if (step == 13) { new SetDelegate().onSelect(); finishAndLog(); }
         else if (step == 14) { new RestDelegate().skip(); }
-        else if (step == 15) { new SetDelegate().onSelect(); new SetDelegate().onSelect(); new SetDelegate().onSelect(); }
+        else if (step == 15) { new SetDelegate().onSelect(); new SetDelegate().onSelect(); finishAndLog(); }
         else if (step == 16 || step == 18) { new RestDelegate().skip(); }
-        else if (step == 17) { new SetDelegate().onSelect(); new SetDelegate().onSelect(); new SetDelegate().onSelect(); }
-        else if (step == 19) { new SetDelegate().onSelect(); new SetDelegate().onSelect(); }
+        else if (step == 17) { new SetDelegate().onSelect(); new SetDelegate().onSelect(); finishAndLog(); }
+        else if (step == 19) { new SetDelegate().onSelect(); finishAndLog(); }
         else if (step == 20) {
             check(Workout.atSummary() && Workout.sets.size() == 5 && Workout.sets[4]["w"] == 0, "bodyweight final set");
             new SummaryDelegate().onBack();
@@ -68,7 +87,7 @@ module Tour {
             new SetDelegate().onSelect();
         } else if (step == 23) {
             check(Workout.setRunning() && Workout.sets.size() == 4, "START after undo resets the set timer");
-            new SetDelegate().onSelect();
+            finishAndLog();
         } else if (step == 24) {
             check(Workout.atSummary() && Workout.sets.size() == 5, "finishing the repeated set returns to summary");
             new SummaryDelegate().onNextPage();

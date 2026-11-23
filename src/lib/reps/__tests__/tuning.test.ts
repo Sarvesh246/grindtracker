@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { analyze, cleanParams, TUNE_DEFAULTS } from '../../../../watch/tools/reps.mjs'
-import { falsePositives, MIN_SETS, NO_SET_SLACK, tuneExercise } from '../../../../watch/tools/tune.mjs'
+import { eligible, falsePositives, MIN_SETS, NO_SET_SLACK, tuneExercise } from '../../../../watch/tools/tune.mjs'
 import { pending, RETUNE_AFTER_NEW_SETS } from '../tuning'
 
 let seed = 11
@@ -58,6 +58,13 @@ describe('rep counter tuning', () => {
     const sets = Array.from({ length: MIN_SETS - 1 }, () => row(8, 2))
     assert.equal(tuneExercise(sets), null)
     assert.equal(tuneExercise([...sets, row(8, 2, { diag: { interrupted: true } })]), null)
+  })
+
+  it('excludes accepted AUTO values from training until independently corrected', () => {
+    const accepted = row(5, 2, { auto_shown: true })
+    assert.equal(eligible(accepted), false)
+    assert.equal(eligible({ ...accepted, corrected: true, logged_reps: 15 }), true)
+    assert.equal(eligible({ ...accepted, corrected: true, clipped: true }), false)
   })
 
   it('the walking guard has a real baseline to protect', () => {

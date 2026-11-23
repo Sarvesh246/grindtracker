@@ -69,7 +69,7 @@ module Reps {
     const SAMPLE_BUDGET = 128; // maximum filter samples per timer callback
     const SETTLED_MS = 30;     // work per 50 ms timer period once the wrist is still
     const SETTLED_STEPS = 40;
-    const FINISH_MS = 1800;    // maximum wait for a count after pressing START
+    const FINISH_MS = 3500;    // maximum wait for a count after pressing START
 
     // --- live state -------------------------------------------------------
     var bx = [];
@@ -90,6 +90,7 @@ module Reps {
     var repeatedTimestamps = 0;
     var fallbackBatches = 0;
     var finishBy = null;
+    var captureEnd = null;
     var revision = 0;
     var jobRevision = 0;
     var jobSettled = false;    // the running analysis began with the wrist still
@@ -212,6 +213,7 @@ module Reps {
         rich = false;
         richCounted = false;
         finishBy = null;
+        captureEnd = null;
         analyses = 0; analysisMs = 0; longestStep = 0;
         Tape.reset();
     }
@@ -224,7 +226,7 @@ module Reps {
         d["result"] = lastResult == null ? null : lastResult[0] + (lastResult[1] ? "" : "?");
         d["interrupted"] = interrupted; d["listening"] = listening; d["manual"] = manual;
         d["analyses"] = analyses; d["analysis_ms"] = analysisMs; d["longest_callback_ms"] = longestStep;
-        d["set_ms"] = System.getTimer() - t0;
+        d["set_ms"] = (captureEnd == null ? System.getTimer() : captureEnd) - t0;
         d["rich"] = rich; d["rich_bad"] = richBad();
         d["repeated_timestamps"] = repeatedTimestamps;
         d["fallback_batches"] = fallbackBatches;
@@ -294,10 +296,9 @@ module Reps {
     function checkFinalCount() {
         if (manual || interrupted || !listening || !sawMotion || bx.size() < 48 || clipped) { return false; }
         if (job == null && !dirty && lastResult != null && jobSettled) { return false; }
-        // Keep a settled result through a brief glance. A live estimate
-        // expires here so a timeout cannot save an unfinished count.
-        glanceNext = countSettled && (jobGlance || glanceNext || movingBatches <= 2);
-        if (!glanceNext && count != null) {
+        // A fresh final window supersedes any earlier estimate.
+        glanceNext = false;
+        if (count != null) {
             count = null;
             ev(2, -1, null, null, null);
         }
@@ -360,6 +361,13 @@ module Reps {
             sensorStatus = "unavailable";
             listening = false;
         }
+    }
+
+    function finishCapture() {
+        var status = sensorStatus;
+        finishBy = null;
+        stop();
+        sensorStatus = status;
     }
 
     function stop() {
@@ -562,12 +570,13 @@ module Reps {
         // Once the wrist is still, the settled count is what the user is
         // waiting to read: spend most of each timer period on it. A step is
         // a few milliseconds of bounded work, so a callback stays far below
-        // the watchdog. Mid-lift previews take one step per period.
+        // the watchdog. Mid-lift previews get a smaller time budget.
         var startMs = System.getTimer();
         var result = job.step();
         jobSteps++;
-        for (var i = 1; result == null && movingBatches == 0 && i < SETTLED_STEPS
-                && System.getTimer() - startMs < SETTLED_MS; i++) {
+        var budget = movingBatches == 0 ? SETTLED_MS : 12;
+        var limit = movingBatches == 0 ? SETTLED_STEPS : 8;
+        for (var i = 1; result == null && i < limit && System.getTimer() - startMs < budget; i++) {
             result = job.step();
             jobSteps++;
         }
@@ -661,7 +670,7 @@ module Reps {
         return Math.sqrt(v / BLOCK);
     }
 
-    function bouts(mo, steps, n) {
+    function bouts(mo, steps, n, walkStart) {
         var nb = mo.size();
         var out = [];
         if (nb < 3) { return out; }
@@ -671,7 +680,8 @@ module Reps {
         for (var b = 0; b < nb; b++) {
             var b0 = imax(0, b - WALK_WIN / 2);
             var b1 = imin(nb - 1, b0 + WALK_WIN);
-            var walk = steps[imin(n - 1, b1 * BLOCK + BLOCK - 1)] - steps[b0 * BLOCK] >= WALK_STEPS;
+            var walk = steps != null && steps[imin(n - 1, b1 * BLOCK + BLOCK - 1)] - steps[b0 * BLOCK] >= WALK_STEPS;
+            if (walk && walkStart.size() == 0) { walkStart.add(b * BLOCK); }
             act[b] = !walk && mo[b] > thr;
         }
         var b = 0;
@@ -1014,7 +1024,7 @@ module Reps {
         return [bestN, bestCv, amp, bestT, bestAgree];
     }
 
-    function selectBout(all) {
+    function bestBout(all) {
         var best = -1;
         var bestScore = 0.0;
         for (var i = 0; i < all.size(); i++) {
@@ -1023,6 +1033,11 @@ module Reps {
             var score = r[0] * r[1];
             if (score >= bestScore) { best = i; bestScore = score; }
         }
+        return best;
+    }
+
+    function selectBout(all) {
+        var best = bestBout(all);
         if (best < 0) { return [0, false]; }
         var b = all[best];
         // A set seen only in pieces: any one piece would be an undercount.
@@ -1044,6 +1059,9 @@ module Reps {
 class RepAnalysis {
     var x; var y; var z; var steps;
     var ranges; var index = 0; var all = [];
+    var walkStart = [];
+    var anchor = null;
+    var recovering = false;
     var phase = :motion;
     var clipped;
     var motion;
@@ -1122,6 +1140,23 @@ class RepAnalysis {
         return result;
     }
 
+    // A genuine lifting rhythm that spans the step veto can recover reps
+    // falsely trimmed by the wrist's walking counter.
+    function beginStepRecovery() {
+        if (anchor == null) { return false; }
+        var full = Reps.bouts(motion, null, x.size(), []);
+        motion = null;
+        for (var i = 0; i < full.size(); i++) {
+            if (full[i][0] == anchor[0] && full[i][1] > walkStart[0]) {
+                ranges = [full[i]];
+                index = 0;
+                recovering = true;
+                return true;
+            }
+        }
+        return false;
+    }
+
     function step() {
         var end;
         switch (phase) {
@@ -1135,15 +1170,18 @@ class RepAnalysis {
             if (cursor == motion.size()) { phase = :ranges; }
             break;
         case :ranges:
-            ranges = Reps.bouts(motion, steps, x.size());
-            motion = null; steps = null;
+            ranges = Reps.bouts(motion, steps, x.size(), walkStart);
+            steps = null;
             // The set extends outside the rolling window. Withdraw even an
             // earlier offer so a partial count never becomes the set's value.
             if (clipped && ranges.size() > 0 && ranges[0][0] == 0) { return [-1, false]; }
             phase = :bout;
             break;
         case :bout:
-            if (index >= ranges.size()) { return Reps.selectBout(all); }
+            if (index >= ranges.size()) {
+                if (!recovering && beginStepRecovery()) { break; }
+                return Reps.selectBout(all);
+            }
             lo = ranges[index][0]; hi = ranges[index][1]; index++;
             if (hi - lo < 38) { break; }
             mx = 0.0; my = 0.0; mz = 0.0;
@@ -1267,7 +1305,26 @@ class RepAnalysis {
                 && hi - lo <= (cycles[0] + 3) * period * 1.3
                 && cycles[1] <= (few ? Reps.SHORT_CV : Reps.MAX_CV)
                 && cycles[0] >= Reps.MIN_REPS && cycles[2] >= Reps.MIN_AMP && cycles[4];
-            all.add([cycles[0], ac, cycles[1], period, ok]);
+            if (recovering) {
+                if (ok && ac >= 0.8 && cycles[1] <= 0.24 && Reps.fabs(period - anchor[3]) <= 0.2 * anchor[3]) {
+                    var best = Reps.bestBout(all);
+                    var largest = best < 0 ? 0 : all[best][0];
+                    var before = 0;
+                    var crossings = cycles[3];
+                    for (var i = 0; i < crossings.size(); i++) {
+                        if (lo + crossings[i] < walkStart[0]) { before++; }
+                    }
+                    if (cycles[0] >= largest + 3 && before >= 3 && crossings.size() - before >= 3) {
+                        return [cycles[0], true];
+                    }
+                }
+            } else {
+                var result = [cycles[0], ac, cycles[1], period, ok];
+                all.add(result);
+                if (anchor == null && ok && walkStart.size() > 0 && Reps.fabs(hi - walkStart[0]) <= Reps.BLOCK) {
+                    anchor = [lo, hi, ac, period];
+                }
+            }
             cycles = null; filtered = null;
             phase = :bout;
             break;
