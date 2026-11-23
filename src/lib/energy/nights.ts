@@ -86,7 +86,16 @@ export function buildNights(
   const naps: Nap[] = []
   for (const date of [...byDate.keys()].sort().reverse()) {
     const pieces: Piece[] = []
-    for (const s of byDate.get(date)!) {
+    const sessionsForDate = byDate.get(date)!
+    for (const s of sessionsForDate) {
+      // Apple Health may revise the start, changing the import ID. A newer
+      // overlapping version with the same wake time supersedes that record.
+      if (s.source === 'apple_health' && sessionsForDate.some(other =>
+        other.source === s.source && other.device_id === s.device_id && other.kind === s.kind
+        && other.revision_at > s.revision_at
+        && Math.abs(Date.parse(other.end_at) - Date.parse(s.end_at)) <= 60_000
+        && Math.min(Date.parse(other.end_at), Date.parse(s.end_at)) > Math.max(Date.parse(other.start_at), Date.parse(s.start_at))
+      )) continue
       const zone = s.timezone || 'UTC'
       const start = clockHoursFrom(date, s.start_at, zone)
       const end = clockHoursFrom(date, s.end_at, zone)

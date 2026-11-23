@@ -85,7 +85,7 @@ export function BodySignalsPanel({
   return (
     <div className={`body-signals is-${signals.level}`}>
       <div className="body-signals-head">
-        <span className="body-signals-level">{LEVEL_TEXT[signals.level]}</span>
+        <span className="body-signals-level">{signals.level === 'clear' && shown.some(s => s.off) ? 'Change noted' : LEVEL_TEXT[signals.level]}</span>
         <h3>{signals.headline}</h3>
         <p>{signals.advice}</p>
       </div>
@@ -97,7 +97,7 @@ export function BodySignalsPanel({
               <span className="body-signal-name">{s.label}</span>
               <strong>{s.value}</strong>
               <Deviation signal={s} />
-              <small>usual {s.usual}</small>
+              <small>usual {s.usual}{s.baselineNights ? ` · ${s.baselineNights} nights` : ''}</small>
             </li>
           ))}
         </ul>

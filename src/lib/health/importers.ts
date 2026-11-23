@@ -264,6 +264,13 @@ export function parseGarminNight(
   const score = num(rec(scores.overall).value) ?? num(scores.overallScore) ?? num(d.overallScore)
   const now = opts.now ?? new Date()
   const endedAgo = now.getTime() - Date.parse(end)
+  const summary = rec(root.hrvSummary)
+  const summaryHrv = summary.calendarDate == null || summary.calendarDate === (calendarDate ?? wake)
+    ? inRange(num(summary.lastNightAvg), 1, 500)
+    : null
+  const overnightHrv = inRange(num(root.avgOvernightHrv), 1, 500)
+    ?? inRange(num(d.avgOvernightHrv), 1, 500)
+    ?? summaryHrv
   return {
     ok: true,
     night: {
@@ -273,7 +280,7 @@ export function parseGarminNight(
       timezone,
       start_at: start,
       end_at: end,
-      kind: asleep >= 3 * 3600 ? 'main' : 'nap',
+      kind: 'main',
       duration_seconds: Math.min(
         Math.round(asleep),
         Math.floor((Date.parse(end) - Date.parse(start)) / 1000)
@@ -281,7 +288,7 @@ export function parseGarminNight(
       score: score != null && score >= 0 && score <= 100 ? Math.round(score) : null,
       stages: timeline.length ? timeline : null,
       stage_totals: stageTotals,
-      overnight_hrv: inRange(num(root.avgOvernightHrv) ?? num(d.avgOvernightHrv), 1, 500),
+      overnight_hrv: overnightHrv,
       respiration: inRange(num(d.averageRespirationValue) ?? num(d.averageRespiration), 1, 80),
       spo2: inRange(
         num(d.averageSpO2Value) ??

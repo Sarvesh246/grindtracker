@@ -9,7 +9,7 @@ combines them per night.
 | --- | --- | --- | --- | --- |
 | Garmin data export (zip, or `*_sleepData.json` + `*_healthStatusData.json`) | `garmin_export` | duration, stage totals, score, respiration, SpO2, naps; overnight HRV from the health-status file | manual | Settings → Sleep & health sources, parsed on the device |
 | Apple Health via an iPhone Shortcut | `apple_health` | times, stage timeline, naps (never HRV) | automatic if the Shortcut is automated | `POST /api/watch/v1/health-import` with a device token |
-| Garmin sync script (unofficial) | `garmin_unofficial` | everything Garmin Connect shows: timeline, score, HRV, respiration, SpO2 | whenever you run it (cron/launchd) | `public/tools/garmin-sleep-sync.py` → same endpoint |
+| Garmin sync script (unofficial) | `garmin_unofficial` | timeline, score, respiration and SpO2 when available, plus overnight HRV from Garmin’s nightly HRV summary | whenever you run it (cron/launchd) | `public/tools/garmin-sleep-sync.py` → same endpoint |
 
 ## How the sources are combined
 
@@ -34,6 +34,10 @@ combines them per night.
   owner-only, and nothing in the server depends on it.
 - Pausing health collection blocks every import (HTTP 409 `collection_paused`);
   deleting health data bumps the generation as before.
+- Garmin's overnight HRV needs a Garmin source. For a file import, include both
+  `sleepData.json` and `healthStatusData.json` from the same export. The
+  owner-run script also fetches the dated HRV summary when it is missing from
+  Garmin Connect's sleep response.
 - Apple Health's HRV is SDNN, a different measure from Garmin's overnight HRV, so
   it is deliberately not imported. Untyped "Asleep" samples count toward duration
   but create no stages.

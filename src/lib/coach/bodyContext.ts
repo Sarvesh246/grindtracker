@@ -417,7 +417,7 @@ export function summarizeCoachBody(input: {
     const row = days.find(d => d.local_date === date)
     const charge = date === today
       ? summary.charge
-      : computeCharge(days, sessions, date, { readiness: summary.readinessChecks, strength: summary.strengthSets })
+      : computeCharge(days, sessions, date, { readiness: summary.readinessChecks, strength: summary.strengthSets, overnightHrv: new Map(Object.entries(summary.overnightHrv ?? {})) })
     return { date, charge: charge?.score ?? null, resting_hr: row?.resting_hr ?? null }
   })
 

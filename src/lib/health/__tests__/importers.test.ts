@@ -126,6 +126,23 @@ describe('Garmin sleep parsing', () => {
     assert.equal(n.stages?.[3].start, '2026-11-16T08:30:00.000Z')
   })
 
+  it('accepts only the dated Garmin nightly HRV average and keeps a short main sleep', () => {
+    const input = {
+      ...apiNight, avgOvernightHrv: 0,
+      dailySleepDTO: { ...apiNight.dailySleepDTO, sleepTimeSeconds: 7000 },
+      hrvSummary: { calendarDate: '2026-11-16', lastNightAvg: 32, weeklyAvg: 45 },
+    }
+    const parsed = parseGarminNight(input, 'garmin_unofficial', { now: NOW })
+    assert.ok(parsed.ok)
+    assert.equal(parsed.night.overnight_hrv, 32)
+    assert.equal(parsed.night.kind, 'main')
+    const wrongDate = parseGarminNight({
+      ...input, hrvSummary: { ...input.hrvSummary, calendarDate: '2026-11-15' },
+    }, 'garmin_unofficial', { now: NOW })
+    assert.ok(wrongDate.ok)
+    assert.equal(wrongDate.night.overnight_hrv, null)
+  })
+
   it('maps an export night (totals only) and keeps the stage timeline honest as null', () => {
     const r = parseGarminExportText(
       JSON.stringify([exportNight, { calendarDate: '2026-11-15', deepSleepSeconds: 60 }]),

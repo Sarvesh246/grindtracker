@@ -5,7 +5,7 @@ import type { Confidence, EnergyCheckin, Night } from './types'
  * docs/ENERGY.md for the sources behind every constant.
  */
 
-export const MODEL_VERSION = 3
+export const MODEL_VERSION = 4
 
 /** How far back to look for nights; shared by the page read and the cron read. */
 export const LOOKBACK_DAYS = 28

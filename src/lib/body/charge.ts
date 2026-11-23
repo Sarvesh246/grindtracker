@@ -2,13 +2,14 @@ import { hrvScore, summarizeReadiness, type ReadinessCheck, type ReadinessSummar
 import { clamp, daysBetween, loadBalance, loadScore } from './load'
 import { respirationBaseline, restingRespiration } from './respiration'
 import { strengthLoad, strengthScore, type RecoverySignals, type StrengthLoad, type StrengthSet } from './strength'
+import { shiftDate } from '@/lib/health/model'
 import type { DailyBody, LoadSession } from './types'
 
 /**
  * Charge: how ready you are to train today, 0–100, with its working shown.
  *
  *   Body Battery morning peak   27%   the value itself
- *   HRV check vs your usual     18%   at or above usual → 90–100, −1 SD → 60
+ *   HRV vs its own usual        18%   at or above usual → 90–100, −1 SD → 60
  *   Recovery time left          18%   0 h → 100, 48 h → 0
  *   Resting HR vs 30-day usual  13.5% −3 bpm or lower → 100, +7 → 0
  *   Resting respiration vs      10%   at or under usual → 100, +3 breaths/min
@@ -56,6 +57,7 @@ const WEIGHTS: Record<ChargeKey, number> = { body_battery: 0.27, hrv: 0.18, reco
 /** Optional inputs beyond daily_body and sessions. */
 export interface ChargeExtras {
   readiness?: ReadinessCheck[]
+  overnightHrv?: ReadonlyMap<string, number>
   strength?: StrengthSet[]
 }
 
@@ -68,25 +70,44 @@ function bbUsual(days: DailyBody[], today: string): number | null {
   return v.length >= 3 ? v.reduce((a, b) => a + b, 0) / v.length : null
 }
 
+/** Garmin nightly averages and morning spot checks keep separate baselines. */
+function overnightDeviation(readings: ChargeExtras['overnightHrv'], today: string) {
+  const ms = readings?.get(today)
+  if (!readings || typeof ms !== 'number' || !Number.isFinite(ms) || ms <= 0) return null
+  const from = shiftDate(today, -28)
+  const prior = [...readings].filter(([date, value]) => date >= from && date < today && Number.isFinite(value) && value > 0)
+    .map(([, value]) => value)
+  if (prior.length < 7) return null
+  const median = (values: number[]) => {
+    const sorted = [...values].sort((a, b) => a - b)
+    return (sorted[Math.floor((sorted.length - 1) / 2)] + sorted[Math.ceil((sorted.length - 1) / 2)]) / 2
+  }
+  const usual = median(prior)
+  const spread = Math.max(4, 1.4826 * median(prior.map(v => Math.abs(v - usual))))
+  return { ms, usual, z: (ms - usual) / spread }
+}
+
 /** Readiness and lifting load for `today`, with the recovery signals that
  *  decide the lifting advice. One place, so Charge, the load card, the Coach
  *  and the watch can never disagree. */
 export function bodyExtras(days: DailyBody[], today: string, extras: ChargeExtras = {}): {
   readiness: ReadinessSummary | null
   strength: StrengthLoad | null
+  overnightHrv: ReturnType<typeof overnightDeviation>
 } {
   const readiness = extras.readiness?.length ? summarizeReadiness(extras.readiness, today) : null
+  const overnightHrv = overnightDeviation(extras.overnightHrv, today)
   const row = days.find(d => d.local_date === today)
   const baseline = restingBaseline(days, today)
   const signals: RecoverySignals = {
     restingDelta: row?.resting_hr != null && baseline != null ? row.resting_hr - baseline : null,
     hrvWeekZ: readiness?.weekZ ?? null,
-    hrvZ: readiness?.z ?? null,
+    hrvZ: overnightHrv?.z ?? readiness?.z ?? null,
     bbToday: row?.bb_wake ?? row?.bb_high ?? null,
     bbUsual: bbUsual(days, today),
   }
   const strength = extras.strength?.length ? strengthLoad(extras.strength, today, signals) : null
-  return { readiness, strength }
+  return { readiness, strength, overnightHrv }
 }
 const MIN_BASELINE_DAYS = 5
 
@@ -111,7 +132,7 @@ export function restingBaseline(days: DailyBody[], today: string): number | null
 export function computeCharge(days: DailyBody[], sessions: LoadSession[], today: string, extras: ChargeExtras = {}): Charge | null {
   const row = days.find(d => d.local_date === today)
   const raw: Omit<ChargeInput, 'weight'>[] = []
-  const { readiness, strength } = bodyExtras(days, today, extras)
+  const { readiness, strength, overnightHrv } = bodyExtras(days, today, extras)
 
   const bb = row?.bb_wake ?? row?.bb_high ?? null
   if (bb != null) {
@@ -128,7 +149,15 @@ export function computeCharge(days: DailyBody[], sessions: LoadSession[], today:
     })
   }
 
-  if (readiness?.today && readiness.z != null && readiness.baseline) {
+  if (overnightHrv) {
+    raw.push({
+      key: 'hrv',
+      label: 'Overnight HRV',
+      value: `${Math.round(overnightHrv.ms)} ms`,
+      score: hrvScore(overnightHrv.z),
+      phrase: `overnight HRV was ${Math.round(overnightHrv.ms)} ms versus your usual ${Math.round(overnightHrv.usual)} ms`,
+    })
+  } else if (readiness?.today && readiness.z != null && readiness.baseline) {
     const { lowMs, highMs } = readiness.baseline
     raw.push({
       key: 'hrv',

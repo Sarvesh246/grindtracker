@@ -161,6 +161,15 @@ describe('Charge with the new inputs', () => {
     assert.match(low.advice, /HRV is under your usual/)
   })
 
+  it('uses overnight HRV as one Charge input against its own baseline', () => {
+    const overnightHrv = new Map<string, number>(Array.from({ length: 8 }, (_, i) => [shift(TODAY, -i - 1), 48]))
+    overnightHrv.set(TODAY, 29)
+    const result = computeCharge(days, [], TODAY, { readiness: checks(58), overnightHrv })!
+    const inputs = result.inputs.filter(i => i.key === 'hrv')
+    assert.deepEqual(inputs.map(i => [i.label, i.value]), [['Overnight HRV', '29 ms']])
+    assert.ok(inputs[0].score < 40)
+  })
+
   it('without readiness checks it is unchanged in shape', () => {
     const c = computeCharge(days, [], TODAY)!
     assert.equal(c.inputs.some(i => i.key === 'hrv'), false)

@@ -93,7 +93,7 @@ export default function TodaySheet({
         date,
         charge: date === today
           ? charge
-          : computeCharge(days, sessions, date, { readiness: summary.readinessChecks, strength: summary.strengthSets }),
+          : computeCharge(days, sessions, date, { readiness: summary.readinessChecks, strength: summary.strengthSets, overnightHrv: new Map(Object.entries(summary.overnightHrv ?? {})) }),
       }
     }),
     [days, sessions, today, charge, summary.readinessChecks, summary.strengthSets],

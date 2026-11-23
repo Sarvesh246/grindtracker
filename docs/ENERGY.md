@@ -9,7 +9,8 @@ Code: `src/lib/energy/` (pure model, unit-tested in `__tests__/energy.test.ts`),
 All maths runs in **clock hours relative to the day's local midnight**: 7.5 means 07:30, -1 means 23:00 the night before. `time.ts` converts using wall-clock time, so a DST night still reads 23:00 → 07:00.
 
 1. **Nights** (`nights.ts`, `buildNights`). Covers the last 28 days, newest first, with each record read in its own timezone. For each wake date:
-   - Records that overlap in time are **one block**. That's the same sleep seen by Garmin and Apple, even when one source calls it a nap. The block counts the longest record's sleep, never the sum.
+   - A newer Apple Health record with the same wake time supersedes an overlapping older revision, even when the start and import ID changed.
+   - Remaining overlapping records form one block. Each portion of time contributes at most once, even if one source calls it a nap.
    - Blocks within **2h** of the main block are chained into one **broken night**: onset is the first start, wake the last end, and sleep the sum of the blocks.
    - Later daytime blocks of 10 min or more are **naps**.
    - A date with only naps on record produces no night.

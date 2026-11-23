@@ -548,7 +548,7 @@ describe('POST /daily', () => {
     assert.equal((await watchDaily(req('/daily', { body: { date: '2026-11-16', bucket: 30 } }), deps)).status, 200)
     assert.equal(queued.length, 1)
     const payload = (queued[0] as { p_payload: { title: string; url: string } }).p_payload
-    assert.match(payload.title, /fighting something/)
+    assert.match(payload.title, /overnight strain/)
     assert.equal(payload.url, '/progress/health')
     assert.equal((await watchDaily(req('/daily', { body: { date: '2026-11-16', bucket: 70 } }), deps)).status, 200)
     assert.equal(queued.length, 1)

@@ -89,8 +89,17 @@ def main() -> None:
         except Exception as err:
             print(f"{day}: skipped ({err})", file=sys.stderr)
             continue
-        if data and (data.get("dailySleepDTO") or {}).get("sleepTimeSeconds"):
-            nights.append(data)
+        sleep = (data or {}).get("dailySleepDTO") or {}
+        if not sleep.get("sleepTimeSeconds"):
+            continue
+        if not (data.get("avgOvernightHrv") or sleep.get("avgOvernightHrv") or data.get("hrvSummary")):
+            try:
+                hr = api.get_hrv_data(day) or {}
+                if hr.get("hrvSummary"):
+                    data["hrvSummary"] = hr["hrvSummary"]
+            except Exception as err:
+                print(f"{day}: overnight HRV unavailable ({type(err).__name__})", file=sys.stderr)
+        nights.append(data)
     print(f"Fetched {len(nights)} nights from Garmin.")
     if args.dry_run or not nights:
         return
