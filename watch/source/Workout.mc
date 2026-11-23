@@ -241,7 +241,8 @@ module Workout {
         var e = ex();
         if (Reps.manual) { offered = null; }
         var reps = offered == null ? cur["r"] : offered;
-        var endedAt = setEnded() ? cur["setEnd"] : now();
+        var loggedAt = now();
+        var endedAt = setEnded() ? cur["setEnd"] : loggedAt;
         // `ra`: what the rep counter made of this set (null: no confident
         // count). Kept on the watch only, to measure the counter against
         // what was logged; never uploaded.
@@ -255,7 +256,7 @@ module Workout {
         sets.add(s);
         // Rep lab: the live window is still open here; it closes below.
         Lab.capture(cur["sid"], s, e, offered != null, cur["setAt"], meta["u"]);
-        Hr.onSetLogged(sets.size() - 1, s["t"]);
+        Hr.onSetLogged(sets.size() - 1, endedAt, loggedAt);
         Health.mark("logged");
         var done = advanceAfterSet(e, s["t"]);
         // No lap after the last set: it would leave an empty one in Connect.

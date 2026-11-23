@@ -1360,7 +1360,7 @@ function testInterruptedUndoAndRedo(logger) {
     var updated = Store.sets(sid)[0];
     ok = T.ck(logger, "redo tracks a new set and starts a full rest",
         !updated["id"].equals(row["id"]) && updated["t"] > row["t"] && updated["hp"] == null
-        && updated["he"] == 120 && updated["r"] == 11 && updated["ar"] == true && Workout.restLeft() >= 59) && ok;
+        && updated["he"] == 120 && updated["r"] == 11 && updated["ar"] == true && Workout.cur["re"] == updated["t"] + 60) && ok;
     Workout.finish(false);
     return ok;
 }

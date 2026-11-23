@@ -91,10 +91,10 @@ module Hr {
         pend = null;
     }
 
-    function onSetLogged(i, t) {
+    function onSetLogged(i, t, loggedAt) {
         if (sid == null) { return; }
         closeRecovery();
-        var age = Workout.now() - t;
+        var age = loggedAt - t;
         var atEnd = idx(t);
         var endHr = Logic.peakIn(trace, atEnd, atEnd);
         if (endHr == null) { endHr = Logic.peakIn(trace, atEnd - 1, atEnd - 1); }
