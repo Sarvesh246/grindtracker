@@ -87,16 +87,18 @@ export default function TodaySheet({
   const hasTide = !!todayRow && [...(todayRow.bb_series ?? []), ...(todayRow.stress_series ?? [])].some(v => v != null)
 
   const week = useMemo(
-    () => Array.from({ length: 7 }, (_, i) => {
-      const date = shiftKey(today, i - 6)
-      return {
-        date,
-        charge: date === today
-          ? charge
-          : computeCharge(days, sessions, date, { readiness: summary.readinessChecks, strength: summary.strengthSets, overnightHrv: new Map(Object.entries(summary.overnightHrv ?? {})) }),
+    () => {
+      const extras = {
+        readiness: summary.readinessChecks,
+        strength: summary.strengthSets,
+        overnightHrv: new Map(Object.entries(summary.overnightHrv ?? {})),
       }
-    }),
-    [days, sessions, today, charge, summary.readinessChecks, summary.strengthSets],
+      return Array.from({ length: 7 }, (_, i) => {
+        const date = shiftKey(today, i - 6)
+        return { date, charge: date === today ? charge : computeCharge(days, sessions, date, extras) }
+      })
+    },
+    [days, sessions, today, charge, summary.readinessChecks, summary.strengthSets, summary.overnightHrv],
   )
   const weekSentence = useMemo(() => {
     const scored = week.filter(d => d.charge)

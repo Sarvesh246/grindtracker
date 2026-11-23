@@ -92,7 +92,9 @@ def main() -> None:
         sleep = (data or {}).get("dailySleepDTO") or {}
         if not sleep.get("sleepTimeSeconds"):
             continue
-        if not (data.get("avgOvernightHrv") or sleep.get("avgOvernightHrv") or data.get("hrvSummary")):
+        summary = data.get("hrvSummary") or {}
+        reported = (data.get("avgOvernightHrv"), sleep.get("avgOvernightHrv"), summary.get("lastNightAvg"))
+        if not any(isinstance(value, (int, float)) and 1 <= value <= 500 for value in reported):
             try:
                 hr = api.get_hrv_data(day) or {}
                 if hr.get("hrvSummary"):
