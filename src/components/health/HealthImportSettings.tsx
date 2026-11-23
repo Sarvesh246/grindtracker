@@ -264,7 +264,7 @@ export default function HealthImportSettings() {
   "token": "gwt_…",
   "samples": "2026-11-15T23:40:00-06:00 | 2026-11-16T01:10:00-06:00 | Core\\n2026-11-16T01:10:00-06:00 | 2026-11-16T02:10:00-06:00 | Deep"
 }`
-  const scriptEnv = `pip install garminconnect
+  const scriptEnv = `pip install "garminconnect>=0.3,<0.4"
 export GRIND_URL="${origin}"
 export GRIND_TOKEN="${token || 'gwt_… (create a token above)'}"
 python3 garmin-sleep-sync.py --days 14`
