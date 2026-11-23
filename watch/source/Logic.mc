@@ -294,11 +294,12 @@ module Logic {
         return dn;
     }
 
-    // The most recent logged set of an exercise, or null.
-    function lastSetFor(sets, exId) {
+    // The most recent logged set of an exercise, optionally ignoring AUTO reps.
+    function lastSetFor(sets, exId, manualOnly) {
         if (sets == null) { return null; }
         for (var i = sets.size() - 1; i >= 0; i--) {
-            if (sets[i]["e"].equals(exId)) { return sets[i]; }
+            var set = sets[i];
+            if (set["e"].equals(exId) && (!manualOnly || set["ar"] != true)) { return set; }
         }
         return null;
     }

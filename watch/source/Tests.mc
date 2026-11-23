@@ -302,6 +302,52 @@ function testWorkoutFlow(logger) {
 }
 
 (:test)
+function testExercisePickerKeepsRepFallbackAndCurrentSet(logger) {
+    Workout.start({ "id" => "pull", "name" => "Pull", "unit" => "lbs", "ex" => [
+        { "id" => "face", "name" => "Face Pulls", "sets" => 4, "reps" => 15, "weight" => 27.5, "rest" => 90 },
+        { "id" => "curl", "name" => "Preacher Curl", "sets" => 3, "reps" => 12, "weight" => 22.5, "rest" => 90 }
+    ] });
+    Workout.beginSet();
+    Workout.endSetMotion();
+    Workout.reviewSet(5);
+    Workout.logDisplayedSet(5);
+    var restEnd = Workout.cur["re"];
+    Workout.choose(1);
+    Workout.choose(0);
+    var ok = T.ck(logger, "returns to the rep target after an AUTO-only set",
+        Workout.cur["r"] == 15 && Workout.cur["w"] == 27.5 && Workout.cur["sn"] == 2
+        && Workout.cur["re"] == restEnd && Workout.sets[0]["r"] == 5);
+    Workout.endRest();
+    Workout.setFocus(1);
+    Workout.adjust(13 - Workout.cur["r"], null);
+    Workout.beginSet();
+    Workout.endSetMotion();
+    Workout.reviewSet(null);
+    Workout.logDisplayedSet(null);
+    Workout.endRest();
+    Workout.setFocus(0);
+    Workout.adjust(1, null);
+    Workout.beginSet();
+    Workout.endSetMotion();
+    Workout.reviewSet(6);
+    Workout.logDisplayedSet(6);
+    Workout.choose(1);
+    Workout.choose(0);
+    ok = T.ck(logger, "returns to the latest load and latest manual rep value",
+        Workout.cur["r"] == 13 && Workout.cur["w"] == 32.5 && Workout.cur["sn"] == 4) && ok;
+    Workout.endRest();
+    Workout.beginSet();
+    var started = Workout.cur["setAt"];
+    Workout.setFocus(0);
+    Workout.adjust(-1, null);
+    Workout.choose(0);
+    ok = T.ck(logger, "selecting the current exercise leaves the set running with its edited load",
+        Workout.cur["setAt"] == started && Workout.cur["w"] == 27.5 && Workout.cur["f"] == 0) && ok;
+    Workout.finish(false);
+    return ok;
+}
+
+(:test)
 function testDayPicker(logger) {
     // Start clean: a real run in the same simulator may have cached days.
     Store.del("wk"); Store.del("wk_pull"); Store.del("wk_push"); Store.del("wk_legs");
