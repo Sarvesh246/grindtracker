@@ -5,8 +5,8 @@ using Toybox.UserProfile;
 // tick while a workout is open. Keeps
 //   - a trace, one reading per HR_STEP seconds from the session start,
 //   - seconds in each of the user's zones,
-//   - per set: the peak (60 s before it was logged to 20 s after, since
-//     wrist HR lags the effort), the reading when it was logged, and how far
+//   - per set: the peak (60 s before lifting ends to 20 s after, since
+//     wrist HR lags the effort), the end-of-lift reading, and how far
 //     HR fell 60 s into the rest.
 // Stored under h_<sid> every couple of minutes, so a crash loses little.
 module Hr {
@@ -16,7 +16,7 @@ module Hr {
     var zs = null;
     var zones = null;
     var now = null;       // latest reading, or null
-    var pend = null;      // { "i" set index, "t" logged at, "pk" peak, "pkDone" }
+    var pend = null;      // { "i" set index, "t" lifting ended at, "pk" peak, "pkDone" }
     var lastPeak = null;  // peak of the most recent set, for smart rest
     var buzzed = false;   // smart rest already announced this rest
     var unsaved = 0;
@@ -94,13 +94,29 @@ module Hr {
     function onSetLogged(i, t) {
         if (sid == null) { return; }
         closeRecovery();
-        var j = idx(t);
-        var pk = Logic.peakIn(trace, j - 60 / Config.HR_STEP, j);
-        if (now != null && (pk == null || now > pk)) { pk = now; }
-        if (now != null) { patchSet(i, "he", now); }
-        pend = pk == null ? null : { "i" => i, "t" => t, "pk" => pk, "pkDone" => false };
+        var age = Workout.now() - t;
+        var atEnd = idx(t);
+        var endHr = Logic.peakIn(trace, atEnd, atEnd);
+        if (endHr == null) { endHr = Logic.peakIn(trace, atEnd - 1, atEnd - 1); }
+        if (endHr == null && age == 0) { endHr = now; }
+        if (endHr != null) { patchSet(i, "he", endHr); }
+
+        // The review may already span part of the rest. Use the recorded
+        // samples in each window, then watch for any reading still ahead.
+        var pk = Logic.peakIn(trace, atEnd - 60 / Config.HR_STEP, idx(t + 20));
+        if (endHr != null && (pk == null || endHr > pk)) { pk = endHr; }
         lastPeak = pk;
         buzzed = false;
+        if (pk == null) { return; }
+        var peakReady = age >= 20;
+        if (peakReady) { patchSet(i, "hp", pk); }
+        if (age >= 60) {
+            var atRest = idx(t + 60);
+            var restHr = Logic.peakIn(trace, atRest, atRest);
+            if (restHr != null) { patchSet(i, "hd", pk - restHr); }
+            if (restHr != null || age > 60) { return; }
+        }
+        pend = { "i" => i, "t" => t, "pk" => pk, "pkDone" => peakReady };
     }
 
     // The set at index i was taken back: stop tracking its peak and drop.

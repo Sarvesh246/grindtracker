@@ -1295,6 +1295,28 @@ function testSavedWorkoutSyncTakesPriority(logger) {
 }
 
 (:test)
+function testSetReviewUsesHeartRateAtEndOfLifting(logger) {
+    T.startPress(90);
+    Workout.beginSet();
+    Workout.endSetMotion();
+    var end = Workout.now() - 70;
+    Workout.cur["setEnd"] = end;
+    Hr.st = end - 30;
+    Logic.traceSet(Hr.trace, Hr.idx(end), 148);
+    Logic.traceSet(Hr.trace, Hr.idx(end + 15), 171);
+    Logic.traceSet(Hr.trace, Hr.idx(end + 30), 185);
+    Logic.traceSet(Hr.trace, Hr.idx(end + 60), 119);
+    Hr.now = 106;
+    Workout.reviewSet(null);
+    Workout.logDisplayedSet(null);
+    var s = Workout.sets[0];
+    var ok = T.ck(logger, "delayed review uses end HR and the original rest windows",
+        s["he"] == 148 && s["hp"] == 171 && s["hd"] == 52 && Hr.pend == null);
+    Workout.finish(false);
+    return ok;
+}
+
+(:test)
 function testRecoveryEndsAtNextSet(logger) {
     T.startPress(0);
     Workout.beginSet(); Hr.now = 150; Workout.logDisplayedSet(null);

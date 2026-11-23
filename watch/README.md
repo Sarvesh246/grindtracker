@@ -121,9 +121,9 @@ reconnecting while GRIND is open.
 
 ## Heart rate and Charge (GRIND Body)
 
-While a workout is open the watch samples heart rate every 5 s and keeps the
+While a workout is open the watch samples heart rate every second and keeps the
 trace, time in each of your zones, and per set the peak, the reading when you
-logged it, and how far it fell 60 s into the rest. All of it uploads with the
+finished lifting, and how far it fell 60 s into the rest. All of it uploads with the
 workout. The set screen's status row shows your HR and zone (coral for zone 5).
 
 On open (every 15 min while open, never mid-workout, and every 15 min in the
