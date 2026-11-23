@@ -511,6 +511,7 @@ module Workout {
             Hr.end(true);
             Store.putMeta(meta);
             Store.enqueue(sid);
+            Recorder.saveCompletedCounts(meta["en"]);
             Probe.log("save");
             Recorder.stop(true);
             Health.workoutEnd(sid, sets.size(), true, $.gNet);

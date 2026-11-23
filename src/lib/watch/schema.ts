@@ -178,9 +178,10 @@ export const watchDailySchema = z.strictObject({
       prev_bg_code: z.int().min(-1000).max(1000).nullish(),
       /** The background event period, seconds. */
       period_s: z.int().min(0).max(86_400).nullish(),
-      /** The last workout's heart-rate reads: [reads, misses, from the
-       *  recording, from the sensor fallback]. */
+      /** The last saved workout segment's heart-rate reads: [reads, misses,
+       *  from the recording, from the sensor fallback]. */
       wk_hr: z.tuple([z.int().min(0), z.int().min(0), z.int().min(0), z.int().min(0)]).nullish(),
+      wk_hr_at: isoUtc.nullish(),
       /** Per sensor value: [value, age in minutes], or a code: -1 empty,
        *  -2 threw, -3 not on this firmware. */
       probe: z

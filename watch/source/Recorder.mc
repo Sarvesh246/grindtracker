@@ -13,10 +13,9 @@ module Recorder {
     var hrSum = 0;
     var hrN = 0;
     var hrMax = 0;
-    // This workout's heart-rate reads: [reads, misses, from the recording,
-    // from the sensor fallback]. The one watch workout before these existed
-    // logged zero seconds in every zone, so the next diagnostics snapshot
-    // carries them (Body.diag, "wk_hr") to show where readings come from.
+    // This recording segment's heart-rate reads: [reads, misses, from the
+    // recording, from the sensor fallback]. Only a saved workout promotes
+    // its counters to the next diagnostics snapshot.
     var wk = [0, 0, 0, 0];
 
     function start() {
@@ -138,16 +137,14 @@ module Recorder {
         }
     }
 
-    // Kept for the next day snapshot's diagnostics.
-    function saveCounts() {
+    function saveCompletedCounts(endedAt) {
         try {
-            if (wk[0] > 0) { Storage.setValue("wkhr", wk); }
+            if (wk[0] > 0) { Storage.setValue("wkhr_saved", [wk, endedAt]); }
         } catch (e) {
         }
     }
 
     function stop(save) {
-        saveCounts();
         enableHr(false);
         if (session == null) { return; }
         try {

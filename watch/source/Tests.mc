@@ -1745,11 +1745,28 @@ function testDailyDiagnostics(logger) {
         && !Body.spo2Fresh(31) && !Body.spo2Fresh(-1) && !Body.spo2Fresh(null)) && ok;
     ok = T.ck(logger, "spo2, when sent, is in range", d["spo2"] == null || (d["spo2"] >= 50 && d["spo2"] <= 100)) && ok;
     ok = T.ck(logger, "respiration, when sent, is in range", d["respiration"] == null || (d["respiration"] >= 4 && d["respiration"] <= 60)) && ok;
-    var prevWk = Storage.getValue("wkhr");
-    Storage.setValue("wkhr", [10, 2, 7, 1]);
-    var wk = Body.diag(Time.now().value())["wk_hr"];
-    ok = T.ck(logger, "diag carries the last workout's HR reads", wk instanceof Lang.Array && wk.size() == 4 && wk[1] == 2) && ok;
-    if (prevWk == null) { Storage.deleteValue("wkhr"); } else { Storage.setValue("wkhr", prevWk); }
+    return ok;
+}
+
+(:test)
+function testWorkoutHrDiagnosticsOnlyUpdateOnSave(logger) {
+    var previous = Storage.getValue("wkhr_saved");
+    var endedAt = Time.now().value() - 600;
+    Storage.setValue("wkhr_saved", [[2400, 2, 2398, 0], endedAt]);
+    T.startPress(0);
+    Recorder.wk = [40, 40, 0, 0];
+    Hr.save();
+    Workout.finish(false);
+    var diag = Body.diag(Time.now().value());
+    var ok = T.ck(logger, "autosaving and discarding cannot replace saved workout diagnostics",
+        diag["wk_hr"][0] == 2400 && Body.iso(endedAt).equals(diag["wk_hr_at"]));
+
+    Recorder.wk = [600, 2, 590, 8];
+    Recorder.saveCompletedCounts(endedAt + 300);
+    diag = Body.diag(Time.now().value());
+    ok = T.ck(logger, "a saved workout publishes its count and actual end time",
+        diag["wk_hr"][0] == 600 && Body.iso(endedAt + 300).equals(diag["wk_hr_at"])) && ok;
+    if (previous == null) { Storage.deleteValue("wkhr_saved"); } else { Storage.setValue("wkhr_saved", previous); }
     return ok;
 }
 
