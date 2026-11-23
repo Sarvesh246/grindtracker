@@ -1,6 +1,7 @@
 using Toybox.Lang;
 using Toybox.System;
 using Toybox.Time;
+using Toybox.WatchUi;
 
 // The active workout: where you are, what you've logged. Every change that
 // matters is written to storage before the UI moves on.
@@ -165,6 +166,13 @@ module Workout {
         cur["reviewAuto"] = offered;
         saveCur();
         Reps.finishCapture();
+    }
+
+    function completeRepReview(now) {
+        if (!setEnded() || !Reps.finalCountReady(now)) { return false; }
+        reviewSet(Reps.job == null ? Reps.offer() : null);
+        WatchUi.requestUpdate();
+        return true;
     }
 
     function beginSet() {

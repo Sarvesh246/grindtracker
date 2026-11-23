@@ -80,10 +80,13 @@ weight of 0 shows as BW (bodyweight).
 
 **Rep counting.** The watch reads wrist motion between starting and finishing
 a set. TRACKING means samples are arriving. CHECKING means analysis is running.
+Dashes show that the watch has no live estimate yet. The set target stays visible below.
 **AUTO LIVE** is a running estimate. **AUTO** is a count from a settled motion
 window. UP/DOWN adjusts the displayed reps and takes over for that set.
 When you press START to finish during a live estimate or a pending check,
-the watch briefly analyzes the captured motion before showing the set for review. Rest and the
+the watch briefly analyzes the captured motion before showing the set for review. The review
+shows AUTO REPS when there is a confident count, or MANUAL REPS with the
+editable fallback when there is no count. Rest and the
 workout summary show the last set's logged reps and mark an automatic count
 with AUTO. When motion is ambiguous, samples are interrupted, or a set runs
 beyond the 75-second motion window, enter reps yourself. Turn the feature off

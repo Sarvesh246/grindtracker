@@ -20,7 +20,7 @@ using Toybox.UserProfile;
 // hour, never a list of every sample.
 (:background)
 module Body {
-    const BUILD_ID = "2026-11-23b";
+    const BUILD_ID = "2026-11-23c";
     // Today's local date, YYYY-MM-DD. Logic.localDate() is this.
     function date() {
         var i = Gregorian.info(Time.now(), Time.FORMAT_SHORT);

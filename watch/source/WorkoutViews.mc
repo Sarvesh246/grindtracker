@@ -43,10 +43,14 @@ class SetView extends TickView {
     function initialize() { TickView.initialize(); }
 
     function onSecond() {
-        if (Reps.finalCountReady(System.getTimer())) {
-            Workout.reviewSet(Reps.job == null ? Reps.offer() : null);
-        }
+        Workout.completeRepReview(System.getTimer());
         TickView.onSecond();
+    }
+
+    function repText(c, auto, reviewing) {
+        if (auto != null) { return auto.toString(); }
+        if (!reviewing && Workout.setRunning() && Reps.awaitingOffer()) { return "--"; }
+        return c["r"].toString();
     }
 
     function onUpdate(dc) {
@@ -66,7 +70,7 @@ class SetView extends TickView {
         // Hero: weight and reps, each with its label underneath. The value
         // UP/DOWN changes is lime, number and label both.
         var w = Logic.fmtLoad(c["w"]);
-        var r = (auto == null ? c["r"] : auto).toString();
+        var r = repText(c, auto, reviewing);
         var cy = Draw.yAt(dc, 0.50);
         var cx = dc.getWidth() / 2;
         var xw = dc.getTextWidthInPixels("x", Graphics.FONT_SMALL);
@@ -97,7 +101,7 @@ class SetView extends TickView {
         dc.setColor(c["f"] == 0 ? Config.ACCENT : Config.DIM, Graphics.COLOR_TRANSPARENT);
         dc.drawText(left + ww / 2, ly, lf, c["w"].toFloat() == 0.0 ? "BODYWEIGHT" : unit.toUpper(), Draw.C);
         dc.setColor(c["f"] == 1 ? Config.ACCENT : Config.DIM, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(rx + rw / 2, ly, lf, reviewing ? (auto == null ? "REPS" : "AUTO REPS") : Reps.repLabel(), Draw.C);
+        dc.drawText(rx + rw / 2, ly, lf, reviewing ? (auto == null ? "MANUAL REPS" : "AUTO REPS") : Reps.repLabel(), Draw.C);
 
         // Tap columns.
         dc.setColor(Config.DIM, Graphics.COLOR_TRANSPARENT);
