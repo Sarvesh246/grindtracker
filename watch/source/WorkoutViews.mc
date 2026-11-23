@@ -115,9 +115,9 @@ class SetView extends TickView {
             [sn + "  ·  " + Logic.repsText(e), sn + "  ·  " + bare, sn], Config.FG);
         var other = c["f"] == 0 ? "Reps" : "Weight";
         var action = Reps.finishBy != null ? "Checking final reps"
-            : reviewing ? "BACK " + other + "  �  START Log"
+            : reviewing ? "BACK " + other + "  ·  START Log"
             : Workout.setRunning() ? "START to finish set"
-            : (c["f"] == 0 ? "START for reps" : "BACK Weight  �  START Begin");
+            : (c["f"] == 0 ? "START for reps" : "BACK Weight  ·  START Begin");
         Draw.line(dc, 0.845, [Graphics.FONT_XTINY], action, Config.DIM);
         Draw.segments(dc, Workout.sets.size(), Workout.totalSets(), Config.ACCENT);
         Draw.startCue(dc, Config.FG);
