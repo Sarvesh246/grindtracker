@@ -1104,99 +1104,6 @@ export default function HomeDashboard({
         )
       })}
 
-      {/* Primary CTA — start the suggested day. Hidden for a zero-workout user,
-          whose single primary action is the welcome hero above, and hidden while
-          a workout is in progress (the resume block owns the slot). This keeps one
-          clear next step instead of competing "start" affordances. */}
-      {noActiveForUi && !isNewUser && (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-      <button className="hover-cta"
-        data-onboard="home-cta"
-        data-haptic="medium"
-        onClick={() => router.push(hasDays ? logDayHref(nextDay) : '/log')}
-        title={hasDays ? DAY_MUSCLES[nextDay] : undefined}
-        style={{
-          position: 'relative',
-          width: '100%',
-          minHeight: '96px',
-          padding: '0 24px',
-          backgroundColor: 'var(--accent)',
-          color: 'var(--on-accent)',
-          border: 'none',
-          borderRadius: '20px',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '18px',
-          transition: 'opacity 150ms ease',
-        }}
-      >
-        <span style={{ flexShrink: 0 }}>
-          <DayIcon
-            dayKey={hasDays ? nextDay : undefined}
-            kind={hasDays ? undefined : 'default'}
-            size={32}
-            color="var(--on-accent)"
-          />
-        </span>
-        <span style={{ flex: 1, textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <span style={{
-            fontFamily: "'Bebas Neue', sans-serif",
-            fontSize: '28px',
-            letterSpacing: '1px',
-            lineHeight: 1,
-          }}>
-            {hasDays ? `START ${dayLabel(nextDay)}` : 'CREATE YOUR FIRST DAY'}
-          </span>
-          <span style={{
-            fontSize: '12px',
-            fontWeight: 500,
-            color: 'var(--on-accent)',
-            opacity: 0.7,
-            lineHeight: 1.2,
-          }}>
-            {hasDays ? exercisePreview : 'Set up your workout days to get started'}
-          </span>
-        </span>
-        <span style={{ flexShrink: 0 }}><ChevronRight color="var(--on-accent)" /></span>
-      </button>
-
-      {/* Skip — advances the rotation pointer past today's suggested day
-          without logging anything (e.g. already did legs off-app, or just
-          taking a planned day off). Only meaningful with more than one day
-          in the loop; a single-day rotation would just suggest itself again. */}
-      {hasDays && (
-        <button
-          className="press hover-text-secondary"
-          data-haptic="light"
-          onClick={handleSkipDay}
-          disabled={skippingDay}
-          style={{
-            position: 'relative',
-            alignSelf: 'center',
-            height: '40px',
-            padding: '0 14px',
-            background: 'none',
-            border: 'none',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-            cursor: skippingDay ? 'default' : 'pointer',
-            color: 'var(--text-muted)',
-            fontFamily: "'DM Sans', sans-serif",
-            fontSize: '13px',
-            fontWeight: 600,
-            opacity: skippingDay ? 0.6 : 1,
-          }}
-
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polygon points="5 4 15 12 5 20 5 4" /><line x1="19" y1="5" x2="19" y2="19" />
-          </svg>
-          {skippingDay ? 'Skipping…' : `Skip ${dayLabel(nextDay)}`}
-        </button>
-      )}
-      </div>
-      )}
-
       {statsUnavailable && cachedStatsAt && (
         <p className="home-cache-age" role="status">
           Stats saved on this device · {new Date(cachedStatsAt).toLocaleString()}
@@ -1458,6 +1365,99 @@ export default function HomeDashboard({
             </button>
           </div>
         </div>
+      )}
+
+      {/* Primary CTA — start the suggested day. Hidden for a zero-workout user,
+          whose single primary action is the welcome hero above, and hidden while
+          a workout is in progress (the resume block owns the slot). This keeps one
+          clear next step instead of competing "start" affordances. */}
+      {noActiveForUi && !isNewUser && (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      <button className="hover-cta"
+        data-onboard="home-cta"
+        data-haptic="medium"
+        onClick={() => router.push(hasDays ? logDayHref(nextDay) : '/log')}
+        title={hasDays ? DAY_MUSCLES[nextDay] : undefined}
+        style={{
+          position: 'relative',
+          width: '100%',
+          minHeight: '96px',
+          padding: '0 24px',
+          backgroundColor: 'var(--accent)',
+          color: 'var(--on-accent)',
+          border: 'none',
+          borderRadius: '20px',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '18px',
+          transition: 'opacity 150ms ease',
+        }}
+      >
+        <span style={{ flexShrink: 0 }}>
+          <DayIcon
+            dayKey={hasDays ? nextDay : undefined}
+            kind={hasDays ? undefined : 'default'}
+            size={32}
+            color="var(--on-accent)"
+          />
+        </span>
+        <span style={{ flex: 1, textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <span style={{
+            fontFamily: "'Bebas Neue', sans-serif",
+            fontSize: '28px',
+            letterSpacing: '1px',
+            lineHeight: 1,
+          }}>
+            {hasDays ? `START ${dayLabel(nextDay)}` : 'CREATE YOUR FIRST DAY'}
+          </span>
+          <span style={{
+            fontSize: '12px',
+            fontWeight: 500,
+            color: 'var(--on-accent)',
+            opacity: 0.7,
+            lineHeight: 1.2,
+          }}>
+            {hasDays ? exercisePreview : 'Set up your workout days to get started'}
+          </span>
+        </span>
+        <span style={{ flexShrink: 0 }}><ChevronRight color="var(--on-accent)" /></span>
+      </button>
+
+      {/* Skip — advances the rotation pointer past today's suggested day
+          without logging anything (e.g. already did legs off-app, or just
+          taking a planned day off). Only meaningful with more than one day
+          in the loop; a single-day rotation would just suggest itself again. */}
+      {hasDays && (
+        <button
+          className="press hover-text-secondary"
+          data-haptic="light"
+          onClick={handleSkipDay}
+          disabled={skippingDay}
+          style={{
+            position: 'relative',
+            alignSelf: 'center',
+            height: '40px',
+            padding: '0 14px',
+            background: 'none',
+            border: 'none',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+            cursor: skippingDay ? 'default' : 'pointer',
+            color: 'var(--text-muted)',
+            fontFamily: "'DM Sans', sans-serif",
+            fontSize: '13px',
+            fontWeight: 600,
+            opacity: skippingDay ? 0.6 : 1,
+          }}
+
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polygon points="5 4 15 12 5 20 5 4" /><line x1="19" y1="5" x2="19" y2="19" />
+          </svg>
+          {skippingDay ? 'Skipping…' : `Skip ${dayLabel(nextDay)}`}
+        </button>
+      )}
+      </div>
       )}
 
       {/* Rest today — secondary to Start. One-off skip that spends a configured
