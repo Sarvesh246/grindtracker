@@ -40,7 +40,8 @@ export function useHealthSummary(date: string | null) {
           client,
           user.id,
           date,
-          Intl.DateTimeFormat().resolvedOptions().timeZone
+          Intl.DateTimeFormat().resolvedOptions().timeZone,
+          { includeGarminDetails: true }
         )
         if (!disposed && request === generation) {
           if (data.body.available) setState({ date, data })

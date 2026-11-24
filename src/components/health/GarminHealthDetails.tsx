@@ -26,7 +26,7 @@ export function GarminHealthDetails({ data, date }: { data: HealthSummary['garmi
   const pickKey = [date, metric?.[0], range].join(':')
   const latest = values.findLastIndex(v => v != null)
   const index = picked?.key === pickKey ? picked.index : Math.max(0, latest)
-  const day = data.selected
+  const day = object(data.selected)
   const oxygen = number(days.get(date)?.sleep_spo2, 50, 100)
   const measurements = selectedMetrics.flatMap(([k, name, unit]) => {
     const v = number(day[k])
