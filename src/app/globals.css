@@ -7758,3 +7758,14 @@ html.light .progress-tabs-thumb { background: var(--surface-elevated); box-shado
   animation: none;
   box-shadow: none;
 }
+/* Docked, it shrinks to sit inside the bar like one of its buttons; it grows
+   back to full size as soon as it's lifted out. */
+.coach-fab__float {
+  transition: transform 420ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.coach-fab--in-nav .coach-fab__float {
+  transform: scale(0.8);
+}
+html.reduce-motion .coach-fab__float {
+  transition: none;
+}
