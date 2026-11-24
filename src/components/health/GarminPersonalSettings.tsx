@@ -104,14 +104,14 @@ export default function GarminPersonalSettings() {
   const capabilities = probe ?? connection?.capabilities
   const last = connection?.last_success_at
   const backfilling = !!connection?.backfill_date && !!connection.backfill_end &&
-    connection.backfill_date <= connection.backfill_end
+    connection.backfill_date >= connection.backfill_end
   return (
     <details className="hi-card" open>
       <summary>Garmin Connect Personal</summary>
       <p>Syncs after your watch uploads to Garmin Connect.</p>
       <p>{connection?.enabled ? paused ? 'Health collection paused' : 'Connected' : 'Disconnected or paused'}</p>
       {last && <p>Last successful sync <time dateTime={last}>{new Date(last).toLocaleString()}</time></p>}
-      {backfilling && <p>Importing history. Last date reached {connection?.backfill_date}.</p>}
+      {backfilling && <p>Importing history. Next date {connection?.backfill_date}.</p>}
       {connection?.last_error && <p>{messages[connection.last_error] ?? 'Garmin sync needs attention.'}</p>}
       {loaded && (
         <div className="hi-actions">

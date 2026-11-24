@@ -71,13 +71,13 @@ export async function syncGarmin(config: Config, manual = false) {
     const nightly = job.last_reconciled_date !== today
     const first = shiftDate(today, nightly ? -7 : -2)
     const active = await collectRange(api, first, today, zone, job.scopes, now, true)
-    let cursor = job.backfill_date ?? shiftDate(today, -89)
-    const limit = job.backfill_end ?? shiftDate(today, -8)
-    // Fetch recent dates first. Backfill moves forward only when its write commits.
-    const historyEnd = cursor <= limit ? [shiftDate(cursor, 1), limit].sort()[0] : null
-    const history = historyEnd
-      ? await collectRange(api, cursor, historyEnd, zone, job.scopes, now, false) : null
-    if (historyEnd) cursor = shiftDate(historyEnd, 1)
+    let cursor = job.backfill_date ?? shiftDate(today, -8)
+    const limit = job.backfill_end ?? shiftDate(today, -89)
+    // Start with the closest missing dates so the overnight baseline fills first.
+    const historyStart = cursor >= limit ? [shiftDate(cursor, -1), limit].sort().at(-1)! : null
+    const history = historyStart
+      ? await collectRange(api, historyStart, cursor, zone, job.scopes, now, false) : null
+    if (historyStart) cursor = shiftDate(historyStart, -1)
 
     const combined = await enrichActivities(db, api, userId, job.connection_id,
       [...active.activities, ...(history?.activities ?? [])], job.scopes.includes('gps'))
@@ -92,7 +92,7 @@ export async function syncGarmin(config: Config, manual = false) {
     const result = await db.rpc('garmin_personal_finish', {
       ...envelope, p_batch: batches, p_days: days, p_activities: combined, p_zone: zone,
       p_backfill_date: cursor, p_backfill_end: limit, p_reconciled: today, p_error: null,
-      p_due_at: new Date(Date.now() + (cursor <= limit ? 5 : 30) * 60_000).toISOString()
+      p_due_at: new Date(Date.now() + (cursor >= limit ? 5 : 30) * 60_000).toISOString()
     })
     if (result.error) throw new Error('storage')
     return result.data ? { status: 'synced' as const, days: days.length, activities: combined.length }
