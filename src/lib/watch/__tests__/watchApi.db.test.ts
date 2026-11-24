@@ -516,6 +516,61 @@ describe('watch API against the real schema', { skip: !baseUrl && 'set PARITY_DA
       assert.ok(Number(db(`select xp_earned from sessions where id = '${S1}'`)) >= before)
     })
 
+    it('editing a finished watch workout in Log → Past keeps its real times and per-set watch data (migration 83)', async () => {
+      // A separate, older workout so the sessions the other tests share stay as they are.
+      const S2 = id('s2-past-edit')
+      const daysAgo = 5 * 24 * 60
+      const uploaded = await watchSessions(request('/sessions', aliceToken, {
+        id: S2, workout_id: 'push', started_at: iso(daysAgo + 60), ended_at: iso(daysAgo + 30), utc_offset_seconds: 0,
+        sets: [
+          set('p1', id('bench'), 1, 140, daysAgo + 55),
+          set('p2', id('bench'), 2, 0, daysAgo + 50, { unit: 'kg', weight: 61.2 }),
+          set('p3', id('ohp'), 1, 95, daysAgo + 45),
+        ],
+      }), deps)
+      assert.equal(uploaded.status, 201)
+      const date = db(`select local_date from sessions where id = '${S2}'`)
+      const times = () => db(`select started_at || ' ' || completed_at from sessions where id = '${S2}'`)
+      db(`update session_logs set hr_peak = 150, hr_end = 120, hr_rest_drop_60 = 28 where id = '${id('p1')}'`)
+      const before = times()
+      assert.ok(!before.includes('12:00:00+00'), 'the watch session has real times')
+
+      // Set 1 heavier, sets 2 and 3 as they were, one new set: what log/past sends.
+      const logs = [
+        { exercise_id: id('bench'), set_number: 1, weight: 145, reps: 8 },
+        { exercise_id: id('bench'), set_number: 2, weight: 134.9227, reps: 8 },
+        { exercise_id: id('ohp'), set_number: 1, weight: 95, reps: 8 },
+        { exercise_id: id('ohp'), set_number: 2, weight: 95, reps: 6 },
+      ]
+      const edit = () => asUser(ALICE, `select upsert_past_session('push', '${date}', '${JSON.stringify(logs)}'::json, '${S2}', null);`)
+      edit()
+
+      assert.equal(times(), before, 'start and finish are not reset to the noon placeholder')
+      assert.equal(db(`select source from sessions where id = '${S2}'`), 'watch')
+      assert.equal(db(`select count(*) from session_logs where session_id = '${S2}' and id in ('${id('p1')}', '${id('p2')}', '${id('p3')}')`), '3', 'sets still in the list keep their ids')
+      assert.equal(
+        db(`select source || ',' || hr_peak || ',' || hr_end || ',' || hr_rest_drop_60 || ',' || rest_seconds || ',' || weight from session_logs where id = '${id('p1')}'`),
+        'watch,150,120,28,90,145',
+        'heart rate and rest survive; the new weight is stored',
+      )
+      assert.equal(
+        db(`select coalesce(entered_weight::text, 'null') || ',' || coalesce(entered_unit, 'null') from session_logs where id = '${id('p1')}'`),
+        'null,null',
+        'a changed weight no longer claims what was typed on the watch',
+      )
+      assert.equal(db(`select entered_weight || ',' || entered_unit from session_logs where id = '${id('p2')}'`), '61.2,kg', 'an unchanged weight keeps what was typed on the watch')
+      assert.equal(db(`select source from session_logs where session_id = '${S2}' and exercise_id = '${id('ohp')}' and set_number = 2`), 'web', 'a set added in the editor is a web set')
+
+      // Saving the same list again changes nothing.
+      edit()
+      assert.equal(times(), before)
+      assert.equal(db(`select hr_peak from session_logs where id = '${id('p1')}'`), '150')
+
+      // Leave the shared account as the next tests expect it.
+      db(`delete from sessions where id = '${S2}'`)
+      db(`select grind_recompute_stats('${ALICE}', current_date)`)
+    })
+
     it('watch data appears in the web app history reads', () => {
       // log/past, Home and Progress read sessions + session_logs under RLS.
       const rows = asUser(ALICE, `

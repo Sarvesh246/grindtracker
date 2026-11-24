@@ -184,6 +184,14 @@ module Reps {
         return 0;
     }
 
+    // A batch whose shape is wrong (no accelerometer part, an impossible
+    // sample count) is something the extra sensors can cause. A late batch or
+    // odd timestamps happen without them.
+    function blamesExtraSensors(reason) {
+        return reason.equals("missing accelerometer") || reason.equals("invalid sample count")
+            || reason.equals("unexpected sample count");
+    }
+
     function cancelAnalysis() {
         if (worker != null) { worker.stop(); worker = null; }
         job = null;
@@ -267,9 +275,12 @@ module Reps {
     function inputGap(reason, detail) {
         ev(4, gapCode(reason), null, null, null);
         // The extra sensors are the newest thing on this path: if the stream
-        // misbehaves while they're on, count it, and after two such sets
-        // stop asking for them (Lab.RICH_BAD_MAX).
-        if (rich && !richCounted && sawMotion) { richCounted = true; strikeRich(); }
+        // is malformed while they're on, count it, and after two such sets
+        // stop asking for them (Lab.RICH_BAD_MAX). Late batches and timestamp
+        // trouble are not counted: 2026-11-23d logged them at the same rate
+        // with the extra sensors on (2 of 11 sets) and off (2 of 11), so
+        // switching them off only cost the rest of the workout its compass data.
+        if (rich && !richCounted && sawMotion && blamesExtraSensors(reason)) { richCounted = true; strikeRich(); }
         interrupted = sawMotion;
         if (interrupted || !sensorStatus.equals(reason)) {
             System.println("reps: " + reason + " (" + detail + ") after " + batches + " batches");

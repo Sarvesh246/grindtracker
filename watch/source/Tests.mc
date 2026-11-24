@@ -1578,12 +1578,22 @@ function testRichSensorsBackOff(logger) {
     Store.del("rb");
     Reps.reset();
     Reps.rich = true; Reps.richCounted = false; Reps.listening = true; Reps.sawMotion = true;
-    Reps.inputGap("sample gap", 300);
+    Reps.inputGap("invalid sample count", 300);
     Reps.reset();
     Reps.rich = true; Reps.richCounted = false; Reps.listening = true; Reps.sawMotion = true;
-    Reps.inputGap("sample gap", 300);
-    Reps.inputGap("sample gap", 300);
+    Reps.inputGap("missing accelerometer", null);
+    Reps.inputGap("invalid sample count", 300);
     var ok = T.ck(logger, "two broken sets counted once each", Reps.richBad() == 2);
+    // Late batches and timestamp trouble happen without the extra sensors too.
+    Store.del("rb");
+    var calm = ["sample gap", "sensor timeout", "invalid sample interval", "unexpected sample spacing"];
+    for (var i = 0; i < calm.size(); i++) {
+        Reps.reset();
+        Reps.rich = true; Reps.richCounted = false; Reps.listening = true; Reps.sawMotion = true;
+        Reps.inputGap(calm[i], 2000);
+    }
+    ok = T.ck(logger, "late batches and timestamp trouble are not blamed on the extra sensors", Reps.richBad() == 0) && ok;
+    Store.put("rb", [Lab.VERSION, 2]);
     Lab.setEnabled(true);
     ok = T.ck(logger, "switching Rep lab on resets it", Reps.richBad() == 0) && ok;
     Store.put("rb", 2);
