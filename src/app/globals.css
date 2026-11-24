@@ -1790,6 +1790,8 @@ html.reduce-motion .grind-sheet-backdrop[data-closing='true'] {
 .progress-layout,
 .progress-related {
   display: grid;
+  /* An implicit auto column grows to its widest child, so the chart card ran 2px past the gutter. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
 }
 
@@ -2259,6 +2261,9 @@ html.reduce-motion .grind-sheet-backdrop[data-closing='true'] {
 }
 .home-garmin-morning span { color: var(--text-secondary); font-size: 0.875rem; }
 .progress-garmin-entry { margin-block: 0.75rem; }
+.home-garmin-morning { margin-top: 16px; padding: 18px 24px; border-radius: 20px; }
+/* In the Recovery pane the grid gap already spaces it like its neighbours. */
+.progress-pane > .progress-garmin-entry { margin-block: 0; }
 .settings-device-status {
   display: flex;
   align-items: center;
@@ -7722,4 +7727,26 @@ html.reduce-motion .body-breathe { animation: none !important; }
 html.light .progress-tabs-thumb { background: var(--surface-elevated); box-shadow: var(--card-shadow, none); }
 @media (max-width: 767px) {
   .progress-workspace .progress-heading h1 { font-size: 40px; }
+}
+
+/* One desktop container for the main tabs (and Recovery under Progress), so the
+   content edge doesn't jump sideways between Home, Log, Progress, Profile and
+   Ranks. Matches Home's 1400px / 32px; !important beats the pages' inline
+   phone padding. */
+@media (min-width: 1024px) {
+  .page--dashboard,
+  .page--profile,
+  .page--ranks,
+  .page--progress.progress-workspace,
+  .page--wide:has(> .day-grid, .day-grid),
+  .health-page.rcv-page {
+    max-width: 1400px !important;
+    padding-left: 32px !important;
+    padding-right: 32px !important;
+  }
+  /* Short pages have no scrollbar, so centered content sat 7px right of tall ones. */
+  .app-main { scrollbar-gutter: stable; }
+  .page--wide .day-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  /* The sidebar Recovery card wrapped "8h 9m" at 280px. */
+  .progress-layout { grid-template-columns: clamp(260px, 24vw, 320px) minmax(0, 1fr); }
 }
