@@ -94,7 +94,10 @@ export function computeFitnessAge(input: FitnessAgeInput): FitnessAgeOutcome {
       strength,
       recovery,
       grind,
-      autoCalibrations: detected,
+      autoCalibrations: detected.map(c => ({
+        ...c,
+        status: input.calibrations.some(s => s.activity_id === c.activity_id && s.status === 'rejected') ? 'rejected' as const : 'accepted' as const,
+      })),
       calibrate: {
         cardio: status(cardio?.confidence, anchors.some(a => a.kind !== 'grip')),
         strength: status(strength?.confidence, anchors.some(a => a.kind === 'grip')),

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { getFitnessAge } from '@/lib/body/fitnessAge/queries'
+import { getFitnessAge, readFitnessProfile } from '@/lib/body/fitnessAge/queries'
 import { validateCalibration, validateProfile, validateToday } from '@/lib/body/fitnessAge/validate'
 import { localDateKey } from '@/lib/utils/formatting'
 
@@ -32,7 +32,8 @@ export async function GET(request: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const today = validateToday(new URL(request.url).searchParams.get('today'), localDateKey(new Date()))
   try {
-    return NextResponse.json(await getFitnessAge(supabase, user.id, today))
+    const [outcome, profile] = await Promise.all([getFitnessAge(supabase, user.id, today), readFitnessProfile(supabase, user.id)])
+    return NextResponse.json({ ...outcome, profile: profile.profile })
   } catch (error) {
     console.error('[grind] fitness age', error)
     return NextResponse.json({ error: 'Failed to compute fitness age' }, { status: 500 })

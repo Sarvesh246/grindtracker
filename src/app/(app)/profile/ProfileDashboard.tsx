@@ -9,6 +9,7 @@ import { localDateKey } from '@/lib/utils/formatting'
 import { ALL_BADGES, formatBadgeDescription } from '@/lib/utils/badges'
 import BadgeIcon from '@/components/BadgeIcon'
 import BodyWeightCard from './BodyWeightCard'
+import FitnessAgeCard from './FitnessAgeCard'
 import ShareCard from '@/app/(app)/leaderboard/ShareCard'
 import { useUnit } from '@/lib/contexts/UnitContext'
 import { useToast } from '@/lib/contexts/ToastContext'
@@ -664,6 +665,8 @@ export default function ProfileDashboard({
       </>)}
 
       <BodyWeightCard />
+
+      <FitnessAgeCard />
 
       {/* Badges */}
       <div style={{ marginBottom: '32px' }}>
