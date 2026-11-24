@@ -1,4 +1,5 @@
 'use client'
+import GarminPersonalSettings from './GarminPersonalSettings'
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createClient, getClientUser } from '@/lib/supabase/client'
 import { useDemoMode } from '@/lib/contexts/DemoModeContext'
@@ -117,7 +118,7 @@ function TokenMaker({ name, onToken }: { name: string; onToken: (token: string) 
   )
 }
 
-export default function HealthImportSettings() {
+export default function HealthImportSettings({ garminPersonalAvailable }: { garminPersonalAvailable?: boolean } = {}) {
   const client = useMemo(() => createClient(), [])
   const { demoMode } = useDemoMode()
   const [sources, setSources] = useState<Summary[]>([])
@@ -279,6 +280,8 @@ py .\\garmin-sleep-sync.py --days 7 --require-hrv`
         Import sleep from one or more sources. GRIND combines them for each night, using the
         most detailed source first and filling gaps from the others.
       </p>
+
+      {garminPersonalAvailable && !demoMode && <GarminPersonalSettings />}
 
       {sources.length > 0 && (
         <ul className="hi-sources" aria-label="Imported sleep by source">

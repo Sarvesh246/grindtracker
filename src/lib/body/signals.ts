@@ -50,6 +50,8 @@ export interface Signal {
 
 export interface BodySignals {
   date: string
+  source?: 'garmin_personal'
+  symptomsOnsetAt?: string | null
   level: SignalLevel
   /** Signals with a usual to compare against, worst first. */
   signals: Signal[]
@@ -70,6 +72,7 @@ export interface BodySignals {
 export interface SignalLabel {
   local_date: string
   tags: string[]
+  symptoms_onset_at?: string | null
 }
 
 export interface SignalExtras {
@@ -115,6 +118,11 @@ function median(v: number[]): number {
   const s = [...v].sort((a, b) => a - b)
   const m = Math.floor(s.length / 2)
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2
+}
+
+export function robustDeviation(values: number[], floor: number) {
+  const center = median(values)
+  return { center, spread: Math.max(floor, 1.4826 * median(values.map(v => Math.abs(v - center)))) }
 }
 
 function nightValues(series: (number | null)[] | null | undefined, min: number): number[] | null {
@@ -210,7 +218,7 @@ function capitalize(s: string): string {
 
 /** Ordinary reasons for overnight strain found in the data: a long or hard
  *  session the day before, or what you already said about the morning. */
-function explain(date: string, extras: SignalExtras): string[] {
+export function recentTrainingContext(date: string, extras: Pick<SignalExtras, 'sessions'>): string[] {
   const out: string[] = []
   const yesterday = shiftDate(date, -1)
   for (const s of extras.sessions ?? []) {
@@ -266,10 +274,8 @@ function signalsFor(date: string, extras: SignalExtras, lookup: NightLookup): Bo
     const preliminary = spec.key === 'sleeping_hr' && aligned
       && prior.length >= MIN_PRELIMINARY_HR_NIGHTS && prior.length < MIN_BASELINE_NIGHTS
     if (now == null || (!preliminary && prior.length < MIN_BASELINE_NIGHTS)) continue
-    const center = median(prior)
     // With a short reference window, require at least 6 bpm before marking HR off.
-    const floor = preliminary ? 3 : spec.floor
-    const spread = Math.max(floor, 1.4826 * median(prior.map(v => Math.abs(v - center))))
+    const { center, spread } = robustDeviation(prior, preliminary ? 3 : spec.floor)
     const z = (spec.worse * (now - center)) / spread
     signals.push({
       key: spec.key,
@@ -317,7 +323,7 @@ function signalsFor(date: string, extras: SignalExtras, lookup: NightLookup): Bo
   }
 
   const labels = (extras.labels ?? []).find(l => l.local_date === date)?.tags ?? []
-  const explanations = explain(date, extras)
+  const explanations = recentTrainingContext(date, extras)
 
   let level: SignalLevel
   if (core.size >= 2 && (support.size >= 3 || farOff || hrTwoNights)) level = 'strong'

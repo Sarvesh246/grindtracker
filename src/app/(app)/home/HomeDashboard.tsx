@@ -36,6 +36,8 @@ import { reportError } from '@/lib/utils/reportError'
 import { logDayHref } from '@/lib/utils/dayKeys'
 import TodayLabel from '@/components/TodayLabel'
 import ChargeRing from '@/components/body/ChargeRing'
+import Link from 'next/link'
+import { durationShort } from '@/lib/health/model'
 import TodaySheet from '@/components/body/TodaySheet'
 import { useBodySummary } from '@/components/body/useBodySummary'
 
@@ -1761,6 +1763,12 @@ export default function HomeDashboard({
               </div>
             </div>
           </div>
+        )}
+        {body?.garminMorning && (
+          <Link className="home-garmin-morning" href="/progress/health#signals">
+            <strong>{body.signals?.source === 'garmin_personal' && body.signals.level === 'mild' ? body.signals.headline : 'Last night'}</strong>
+            <span>{durationShort(body.garminMorning.durationSeconds)} of sleep{body.garminMorning.score == null ? '' : ` · Sleep score ${body.garminMorning.score}`}</span>
+          </Link>
         )}
         {body?.charge && (
           <div className="home-recovery">

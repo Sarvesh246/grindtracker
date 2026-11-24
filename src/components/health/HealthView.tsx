@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import Link from 'next/link'
 import { BodySignalsPanel } from './BodySignalsPanel'
+import { GarminHealthDetails } from './GarminHealthDetails'
 import type { BodySummary } from '@/lib/body/queries'
 import { receivedText } from '@/lib/health/intraday'
 import type { HealthSummary } from '@/lib/health/queries'
@@ -1086,7 +1087,7 @@ export function HealthView({
                 <SleepSummary data={data} date={date} today={today} />
                 <RecoveryBreakdown body={data.body} />
               </div>
-              {body?.signals && date === today && (
+              {body?.signals && (date === today || body.signals.source === 'garmin_personal') && (
                 <Panel title="Body signals" id="signals" index={4}>
                   <BodySignalsPanel
                     key={body.signals.date}
@@ -1140,6 +1141,7 @@ export function HealthView({
               <Panel title="Trends" index={6}>
                 <HealthTrend data={data} date={date} />
               </Panel>
+              <GarminHealthDetails data={data.garmin} date={date} />
             </div>
           )}
           <footer className="health-footer">Not medical advice.</footer>

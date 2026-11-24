@@ -441,7 +441,9 @@ export default function ProgressPage() {
           />
         </div>
 
-        <div style={{ padding: '8px 16px' }}><HealthEntry body={body} /></div>
+        <div style={{ padding: '8px 16px' }}><HealthEntry body={body} />
+          {body?.hasGarminActivities && <Link href="/progress/garmin" className="progress-garmin-entry">Garmin activities</Link>}
+        </div>
         <div style={{
           display: 'flex', flexDirection: 'column', alignItems: 'center',
           textAlign: 'center', gap: '16px', padding: '48px 24px 40px',
@@ -661,6 +663,7 @@ export default function ProgressPage() {
         <aside className="progress-related" aria-label="Photos and recovery">
           <PhotoEntryCard count={photoCount} latestDate={latestPhotoDate} thumb={latestPhotoThumb} />
           <HealthEntry body={body} />
+          {body?.hasGarminActivities && <Link href="/progress/garmin" className="progress-garmin-entry">Garmin activities</Link>}
           {body?.strength ? <LoadGauge load={body.strength} /> : body?.hasWatch && body.load && <LoadGauge load={body.load} />}
         </aside>
       </div>

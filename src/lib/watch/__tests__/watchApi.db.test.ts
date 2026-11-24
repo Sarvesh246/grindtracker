@@ -110,6 +110,55 @@ const iso = (minutesAgo: number) => new Date(clock.getTime() - minutesAgo * 60_0
 const codeOf = async (res: Response) => ((await res.json()) as { error: { code: string } }).error.code
 
 describe('watch API against the real schema', { skip: !baseUrl && 'set PARITY_DATABASE_URL to run' }, () => {
+  describe('Garmin Personal write boundaries', () => {
+    const owner = randomUUID(), other = randomUUID()
+    const state = () => serviceRpc('garmin_personal_claim', { p_user: owner, p_manual: true })
+    const configure = (action: string) => serviceRpc('garmin_personal_configure', {
+      p_user: owner, p_action: action, p_zone: 'America/Chicago', p_capabilities: { sleep: true },
+    })
+    const finish = (job: { lease_id: string; generation: number }, days?: Record<string, unknown>[]) => serviceRpc('garmin_personal_finish', {
+      p_user: owner, p_lease: job.lease_id, p_generation: job.generation, p_batch: [],
+      p_days: days ?? [{ date: '2026-11-18', measurements: { steps: 0 }, food: { total: 30 }, cycle: { phase: 'fixture' } }],
+      p_activities: [], p_zone: 'America/Chicago', p_backfill_date: '2026-11-18',
+      p_backfill_end: '2026-11-20', p_reconciled: '2026-11-23', p_error: null,
+      p_due_at: new Date(Date.now() - 1000).toISOString(),
+    })
+
+    before(() => {
+      db(`insert into auth.users(id,email) values ('${owner}','garmin-owner@test'), ('${other}','other-owner@test')`)
+    })
+
+    it('allows exactly one lease and blocks a late write after a pause or deletion', async () => {
+      assert.equal((await configure('enable')).error, null)
+      const [first, second] = await Promise.all([state(), state()])
+      assert.equal(Number(!!first.data) + Number(!!second.data), 1)
+      const job = (first.data ?? second.data) as Parameters<typeof finish>[0]
+      assert.equal((await configure('pause')).error, null)
+      assert.equal((await finish(job)).data, false)
+      assert.equal((await configure('enable')).error, null)
+      const pending = (await state()).data as Parameters<typeof finish>[0]
+      assert.equal((await finish(pending)).data, true)
+      assert.equal(asUser(owner, `select measurements->>'steps' from public.garmin_personal_days`), '0')
+      assert.equal(asUser(owner, `select count(*) from public.garmin_personal_days where food is not null or cycle is not null`), '0')
+      assert.equal(asUser(other, `select count(*) from public.garmin_personal_days where user_id = '${owner}'`), '0')
+      assert.throws(() => asUser(other, `select public.garmin_personal_claim('${owner}', true)`))
+      assert.throws(() => asUser(owner, `update public.garmin_personal_days set measurements = '{}'`))
+      const dense = (await state()).data as Parameters<typeof finish>[0]
+      const trace = Array.from({ length: 1600 }, (_, i) => [1795046400000 + i * 60_000, 60])
+      const days = Array.from({ length: 10 }, (_, i) => ({
+        date: '2026-11-' + (14 + i), measurements: { hr_trace: trace, battery_trace: trace }
+      }))
+      const written = await finish(dense, days)
+      assert.equal(written.error, null)
+      assert.equal(written.data, true)
+      assert.equal(asUser(owner, 'select count(*) from public.garmin_personal_days'), '10')
+      const inflight = (await state()).data as Parameters<typeof finish>[0]
+      asUser(owner, 'select public.delete_body_data()')
+      assert.equal((await finish(inflight)).data, false)
+      assert.equal(asUser(owner, 'select count(*) from public.garmin_personal_days'), '0')
+    })
+  })
+
   describe('health foundation isolation and ingestion', () => {
     const healthUser = randomUUID(), healthDevice = randomUUID(), connection = randomUUID()
     const batchId = randomUUID()

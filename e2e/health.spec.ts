@@ -92,6 +92,19 @@ for (const view of ['sleep', 'metric'])
     )
     await page.screenshot({ path: info.outputPath(`${view}-large.png`), fullPage: true })
   })
+test('Garmin trends display coverage and keyboard controls on a narrow screen', async ({ page }) => {
+  await render(page, { state: 'garmin', width: 320 })
+  const section = page.getByRole('region', { name: 'Garmin Connect measurements' })
+  await expect(section).toBeVisible()
+  await section.getByLabel('Measurement').selectOption('overnight_hrv')
+  await section.getByRole('button', { name: '7D', exact: true }).click()
+  await expect(section).toContainText('1/7 days with readings')
+  await expect(section).toContainText('49 ms')
+  await section.getByText(/Measurements for /).click()
+  await expect(section.getByText('45–55 ms')).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+})
+
 test('date navigation, stage keyboard, table alternatives and editable Coach suggestion', async ({
   page
 }) => {

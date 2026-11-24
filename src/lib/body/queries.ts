@@ -7,6 +7,8 @@ import { hrRange, type HrRange } from './hrRange'
 import { computeSignals, signalTrackRecord, type BodySignals, type SignalLabel } from './signals'
 import { overnightReadings, readRecoveryNights, SIGNAL_HISTORY_DAYS, type RecoveryNight } from './sleep'
 import type { BodySync, DailyBody, LoadSession } from './types'
+import { garminSignalRecord, garminSignals } from './garminSignals'
+import { overlayGarminBody, readGarminBody } from '@/lib/health/garmin/queries'
 
 /**
  * The one read every body surface shares. Works with either Supabase client
@@ -34,6 +36,8 @@ export interface BodySummary {
   load: LoadBalance | null
   /** Imported Garmin HRV averages by wake date. */
   overnightHrv?: Record<string, number>
+  garminMorning?: { date: string; durationSeconds: number; score: number | null }
+  hasGarminActivities?: boolean
   /** Morning HRV checks (migration 68), the last 60 days. */
   readinessChecks: ReadinessCheck[]
   readiness: ReadinessSummary | null
@@ -122,14 +126,12 @@ async function readNightSeries(supabase: SupabaseClient, userId: string, today: 
 
 /** What you said flagged mornings were (migration 72); none before it. Null on a failed read. */
 async function readSignalLabels(supabase: SupabaseClient, userId: string, today: string): Promise<SignalLabel[] | null> {
-  const { data, error } = await supabase
-    .from('body_signal_labels')
-    .select('local_date,tags')
-    .eq('user_id', userId)
-    .gte('local_date', shiftKey(today, -120))
-    .lte('local_date', today)
-  if (error) return absentTable(error) ? [] : null
-  return (data ?? []) as SignalLabel[]
+  const read = (columns: string) => supabase.from('body_signal_labels').select(columns)
+    .eq('user_id', userId).gte('local_date', shiftKey(today, -120)).lte('local_date', today)
+  let result = await read('local_date,tags,symptoms_onset_at')
+  if (result.error?.code === '42703') result = await read('local_date,tags')
+  if (result.error) return absentTable(result.error) ? [] : null
+  return (result.data ?? []) as unknown as SignalLabel[]
 }
 
 /** Today's raw all-day heart-rate samples (migration 70), as a 15-min range. */
@@ -215,7 +217,7 @@ export async function getBodySummary(supabase: SupabaseClient, userId: string, t
         .lte('local_date', today),
       supabase.from('body_prefs').select('coach_uses_body,smart_rest').eq('user_id', userId).maybeSingle(),
     ])
-    const [readinessRead, strengthSets, intraday, syncs, night, todayHrRange, labelsRead, sleepNights] = await Promise.all([
+    const [readinessRead, strengthSets, intraday, syncs, night, todayHrRange, labelsRead, sleepNights, cloud] = await Promise.all([
       readReadiness(supabase, userId, today).catch(() => null),
       readStrengthSets(supabase, userId, today).catch(() => []),
       readIntraday(supabase, userId, today).catch(() => new Map<string, Partial<DailyBody>>()),
@@ -224,15 +226,20 @@ export async function getBodySummary(supabase: SupabaseClient, userId: string, t
       readTodayHrRange(supabase, userId, today).catch(() => null),
       readSignalLabels(supabase, userId, today).catch(() => null),
       readRecoveryNights(supabase, userId, today).catch(() => new Map<string, RecoveryNight>()),
+      readGarminBody(supabase, userId, today).catch(() => ({ rows: [], traces: {}, hasActivities: false })),
     ])
     const readinessChecks = readinessRead ?? []
     const labels = labelsRead ?? []
     if (daysRes.error || sessRes.error) return emptyBodySummary(today)
-    const days = ((daysRes.data ?? []) as DailyBody[]).map(d => ({
+    const watchDays = ((daysRes.data ?? []) as DailyBody[]).map(d => ({
       ...d,
       ...intraday.get(d.local_date),
       ...night.get(d.local_date),
     }))
+    const days = overlayGarminBody(watchDays, cloud, today)
+    const garminNights = new Map(cloud.rows.filter(r => typeof r.sleep_end === 'string').map(r => [r.local_date, r]))
+    const morning = garminNights.get(today)
+    const duration = morning?.sleep_duration_seconds
     const sessions = (sessRes.data ?? []) as LoadSession[]
     const hasWatch = days.length > 0 || sessions.some(s => s.zone_seconds != null) || readinessChecks.length > 0
     const overnightHrv = overnightReadings(sleepNights)
@@ -251,6 +258,10 @@ export async function getBodySummary(supabase: SupabaseClient, userId: string, t
       // would otherwise get a gauge they never asked for.
       load: hasWatch ? loadBalance(sessions, today) : null,
       overnightHrv: Object.fromEntries(overnightHrv),
+      hasGarminActivities: cloud.hasActivities,
+      garminMorning: morning?.sleep_status === 'final' && typeof duration === 'number'
+        ? { date: today, durationSeconds: duration, score: typeof morning.sleep_score === 'number' ? morning.sleep_score : null }
+        : undefined,
       readinessChecks,
       readiness,
       strengthSets,
@@ -259,8 +270,10 @@ export async function getBodySummary(supabase: SupabaseClient, userId: string, t
       // A failed consent read must never silently re-enable Coach health access.
       syncs,
       todayHrRange,
-      signals: hasWatch || sleepNights.size > 0 ? computeSignals(days, today, signalExtras) : null,
-      signalRecord: hasWatch || sleepNights.size > 0 ? signalTrackRecord(days, today, signalExtras) : null,
+      signals: garminNights.size ? garminSignals(garminNights, today, labels, sessions)
+        : hasWatch || sleepNights.size > 0 ? computeSignals(days, today, signalExtras) : null,
+      signalRecord: garminNights.size ? garminSignalRecord(garminNights, today, labels)
+        : hasWatch || sleepNights.size > 0 ? signalTrackRecord(days, today, signalExtras) : null,
       readinessError: readinessRead === null,
       labelsError: labelsRead === null,
       prefs: prefsRes.error ? { ...DEFAULT_BODY_PREFS, coach_uses_body: false } : (prefsRes.data as BodyPrefs | null) ?? DEFAULT_BODY_PREFS,
