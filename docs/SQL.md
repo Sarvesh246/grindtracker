@@ -113,6 +113,7 @@ so pasting a migration records it. Copy that line into every new migration —
 | [82-garmin-personal-sync.sql](sql/82-garmin-personal-sync.sql) | 82 | Owner-scoped Garmin Connect sync, leased ingestion, optional private datasets, and scheduled refresh. |
 | [83-past-edit-keeps-watch-data.sql](sql/83-past-edit-keeps-watch-data.sql) | 83 | `upsert_past_session` keeps a workout's real start/finish and each surviving set's id, source, rest and heart-rate numbers when a finished workout is edited, so a Log → Past edit no longer detaches it from its Garmin activity. |
 
+| [84-fitness-age.sql](sql/84-fitness-age.sql) | 84 | `fitness_profile` (birth date, sex, height) and `fitness_calibrations` (5 km / Cooper / lab / grip anchors, plus accept/reject decisions on auto-detected 5 km runs), both owner-only, for fitness age ([FITNESS-AGE-RESEARCH.md](FITNESS-AGE-RESEARCH.md)). |
 See also [PUSH.md](PUSH.md) for VAPID keys, Vercel env, and cron setup.
 See [COACH.md](COACH.md) for Gemini env, rate limits, `/api/coach/chat`, and
 confirm-before-apply Coach actions (`docs/sql/36-coach-actions.sql`).
