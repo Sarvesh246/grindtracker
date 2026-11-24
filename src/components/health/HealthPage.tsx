@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { localDateKey } from '@/lib/utils/formatting'
 import { getUiState, setUiState } from '@/lib/cache/appDataCache'
 import { validDate, type HealthMetric } from '@/lib/health/model'
-import { HealthDateHeader, HealthView } from './HealthView'
+import { HealthView } from './HealthView'
 import { useHealthSummary } from './useHealthSummary'
 import { ChevronLeft } from '@/components/ui/Icons'
 import './health.css'
@@ -57,22 +57,7 @@ function HealthPageContent({ requestedDate, view = 'overview', metric }: HealthP
   }, [path])
   const state = useHealthSummary(date)
   return (
-    <div className="page health-page">
-      {date && today && (
-        <HealthDateHeader
-          date={date}
-          today={today}
-          view={view}
-          availableDates={[
-            ...(state.data?.body.days.map((d) => d.local_date) ?? []),
-            ...(state.data?.sleeps.map((s) => s.wake_date) ?? [])
-          ]}
-          onDate={(next) => {
-            if (validDate(next) && next <= today)
-              router.replace(`${path}?date=${next}`, { scroll: false })
-          }}
-        />
-      )}
+    <div className="page health-page rcv-page">
       {state.demoMode ? (
         <section className="health-panel">
           <h2>Health is private</h2>
@@ -83,12 +68,19 @@ function HealthPageContent({ requestedDate, view = 'overview', metric }: HealthP
         </section>
       ) : date && today ? (
         <HealthView
-          {...state}
+          data={state.data}
+          error={state.error}
+          updating={state.updating}
+          charges={state.charges}
           date={date}
           today={today}
           view={view}
           metric={metric}
           onRefresh={state.refresh}
+          onDate={(next) => {
+            if (validDate(next) && next <= today)
+              router.replace(`${path}?date=${next}`, { scroll: false })
+          }}
         />
       ) : (
         <div className="health-skeleton" aria-label="Loading local date" role="status">

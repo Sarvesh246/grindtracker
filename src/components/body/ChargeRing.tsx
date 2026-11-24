@@ -1,6 +1,7 @@
 'use client'
 import type { CSSProperties } from 'react'
 import type { Charge } from '@/lib/body'
+import '@/components/health/recovery/recovery.css'
 
 /**
  * Charge on Home: a small ring + the advice sentence, sitting inside the Up
@@ -74,45 +75,41 @@ export function adviceBody(charge: Charge): string {
   return charge.advice.replace(/^(Primed|Steady|Easy)\.\s*/, '')
 }
 
+const CALL_ICON = {
+  primed: 'M13 2 4 14h7l-1 8 9-12h-7Z',
+  steady: 'M4 14a8 8 0 0 1 16 0M12 14l4-4',
+  easy: 'M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z'
+} as const
+const CALL_DAY = { primed: 'Push day', steady: 'Steady day', easy: 'Easy day' } as const
+const CALL_LEVEL = { primed: 2, steady: 1, easy: 0 } as const
+
+/** Home: today's call above Up Next. The verdict reads first; tapping opens the Today sheet. */
 export default function ChargeRing({ charge, onOpen }: { charge: Charge | null; onOpen: () => void }) {
   if (!charge) return null
   return (
     <button
       type="button"
-      className="press-card swap-in"
+      className="rcv-strip swap-in"
+      data-band={charge.band}
       data-haptic="light"
       onClick={onOpen}
       aria-label={`Charge ${charge.score}, ${charge.bandLabel}. ${charge.advice} Open your day.`}
-      style={{
-        position: 'relative',
-        width: '100%',
-        minHeight: '64px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '14px',
-        padding: '6px 6px 6px 2px',
-        background: 'none',
-        border: 'none',
-        cursor: 'pointer',
-        textAlign: 'left',
-        fontFamily: 'var(--font-sans)',
-      }}
     >
-      <Ring score={charge.score} />
-      <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '3px' }}>
-        <span style={{
-          fontSize: '11px',
-          letterSpacing: 'var(--tracking-label)',
-          textTransform: 'uppercase',
-          fontWeight: 600,
-          color: 'var(--text-muted)',
-        }}>
-          Charge <span aria-hidden="true">·</span>{' '}
-          <span style={{ color: 'var(--accent-text)' }}>{charge.bandLabel}</span>
+      <span className="rcv-strip-icon" aria-hidden="true">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d={CALL_ICON[charge.band]} />
+        </svg>
+      </span>
+      <span className="rcv-strip-body">
+        <strong>
+          {CALL_DAY[charge.band]} <span aria-hidden="true">·</span> Charge {charge.score}
+        </strong>
+        <span className="rcv-pips" aria-hidden="true">
+          {[0, 1, 2].map((i) => (
+            <i key={i} data-on={i === CALL_LEVEL[charge.band]} />
+          ))}
         </span>
-        <span style={{ fontSize: '13px', lineHeight: 1.4, color: 'var(--text-secondary)' }}>
-          {adviceBody(charge)}
-        </span>
+        <span>{adviceBody(charge)}</span>
       </span>
       <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
         <polyline points="9 18 15 12 9 6" />

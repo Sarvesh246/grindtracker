@@ -3,7 +3,7 @@ import React, { useState } from 'react'
 import { date, data } from './healthData'
 import { createRoot } from 'react-dom/client'
 import { emptyBodySummary } from '../../src/lib/body/queries'
-import { HealthDateHeader, HealthView } from '../../src/components/health/HealthView'
+import { HealthView } from '../../src/components/health/HealthView'
 import { subscribeOpenCoach } from '../../src/lib/coach/openCoachBus'
 
 declare global {
@@ -32,15 +32,17 @@ function Fixture() {
         }
       : state === 'partial'
         ? { ...data, sleeps: [], sleepState: 'not_enabled' as const }
-        : state === 'garmin' ? {
-          ...data,
-          garmin: {
-            history: [{ local_date: date, overnight_hrv: 49, weight_kg: 80, sleep_spo2: 96 }],
-            selected: { hrv_status: 'BALANCED', hrv_baseline_low: 45, hrv_baseline_high: 55 }
-          }
-        } : data
+        : state === 'garmin'
+          ? {
+              ...data,
+              garmin: {
+                history: [{ local_date: date, overnight_hrv: 49, weight_kg: 80, sleep_spo2: 96 }],
+                selected: { hrv_status: 'BALANCED', hrv_baseline_low: 45, hrv_baseline_high: 55 }
+              }
+            }
+          : data
   return (
-    <div className="page health-page">
+    <div className="page health-page rcv-page">
       <p className="health-muted" style={{ marginBottom: 16 }}>
         SYNTHETIC DATA · UI REVIEW ONLY
       </p>
@@ -49,7 +51,6 @@ function Fixture() {
           <HealthEntry body={value.body} />
         </div>
       )}
-      <HealthDateHeader date={selected} today="2026-11-17" view={view} onDate={setSelected} />
       <HealthView
         data={state === 'loading' || state === 'error' ? null : value}
         date={selected}
@@ -61,6 +62,7 @@ function Fixture() {
         onRefresh={() => {
           window.healthFixture.refreshes++
         }}
+        onDate={setSelected}
       />
     </div>
   )

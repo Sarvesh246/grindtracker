@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useMemo, useState, type KeyboardEvent } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -19,6 +19,12 @@ import { HealthEntry } from '@/components/health/HealthEntry'
 import { CACHE_KEYS, getUiState, setUiState } from '@/lib/cache/appDataCache'
 import { useCachedQuery } from '@/lib/cache/useCachedQuery'
 
+type ProgressTab = 'lifts' | 'recovery' | 'body'
+const PROGRESS_TABS: { id: ProgressTab; label: string }[] = [
+  { id: 'lifts', label: 'Lifts' },
+  { id: 'recovery', label: 'Recovery' },
+  { id: 'body', label: 'Body' },
+]
 const ProgressChart = dynamic(() => import('./ProgressChart'), {
   ssr: false,
   loading: () => (
@@ -119,6 +125,15 @@ export default function ProgressPage() {
   const [metric, setMetric] = useState<Metric>('weight')
   // GRIND Body: null unless this user has watch data (and migration 59 is in).
   const body = useBodySummary()
+  // Phone layout: Lifts, Recovery and Body each get the whole screen. Desktop
+  // shows all three side by side and hides the tabs.
+  const [tab, setTab] = useState<ProgressTab>(() =>
+    typeof window === 'undefined' ? 'lifts' : (getUiState<ProgressTab>('progress:tab') ?? 'lifts')
+  )
+  const pickTab = (next: ProgressTab) => {
+    setTab(next)
+    setUiState('progress:tab', next)
+  }
 
   const { data: allExercises = [], loading: loadingExercises } = useCachedQuery<Exercise[]>(
     CACHE_KEYS.exercises,
@@ -400,7 +415,9 @@ export default function ProgressPage() {
   // Walkthrough (hook must run before the early returns below). Only
   // active once exercises exist — the blank-slate hero has nothing to point at.
   const progressSteps: TourStep[] = [
-    { target: 'progress-photos', title: 'Progress photos', body: 'Log physique photos here and compare them over time.' },
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches
+      ? { target: 'progress-tabs', title: 'Lifts, recovery and body', body: 'Switch between your lift charts, today’s recovery and progress photos.' }
+      : { target: 'progress-photos', title: 'Progress photos', body: 'Log physique photos here and compare them over time.' },
     { target: 'progress-selector', title: 'Pick what to chart', body: 'Choose a workout day and exercise.' },
     { target: 'progress-chart', title: 'Read your chart', body: 'Switch metrics above the plot. Each point is a workout session, and highlighted points mark PRs.' },
   ]
@@ -525,7 +542,25 @@ export default function ProgressPage() {
         <TodayLabel />
       </header>
 
-      <div className="progress-layout">
+      <nav className="progress-tabs" role="tablist" aria-label="Progress sections" data-onboard="progress-tabs">
+        <span className="progress-tabs-thumb" aria-hidden="true" style={{ '--tab': PROGRESS_TABS.findIndex(t => t.id === tab) } as CSSProperties} />
+        {PROGRESS_TABS.map(t => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            id={`progress-tab-${t.id}`}
+            aria-selected={tab === t.id}
+            className="press"
+            data-haptic="light"
+            onClick={() => pickTab(t.id)}
+          >
+            {t.label}
+          </button>
+        ))}
+      </nav>
+
+      <div className="progress-layout" data-tab={tab}>
         <section className="progress-filters" data-onboard="progress-selector" aria-label="Chart filters">
           <div className="progress-selectors">
             <label>
@@ -661,10 +696,14 @@ export default function ProgressPage() {
         </div>
 
         <aside className="progress-related" aria-label="Photos and recovery">
-          <PhotoEntryCard count={photoCount} latestDate={latestPhotoDate} thumb={latestPhotoThumb} />
-          <HealthEntry body={body} />
-          {body?.hasGarminActivities && <Link href="/progress/garmin" className="progress-garmin-entry">Garmin activities</Link>}
-          {body?.strength ? <LoadGauge load={body.strength} /> : body?.hasWatch && body.load && <LoadGauge load={body.load} />}
+          <div className="progress-pane" data-pane="recovery">
+            <HealthEntry body={body} />
+            {body?.hasGarminActivities && <Link href="/progress/garmin" className="progress-garmin-entry">Garmin activities</Link>}
+            {body?.strength ? <LoadGauge load={body.strength} /> : body?.hasWatch && body.load && <LoadGauge load={body.load} />}
+          </div>
+          <div className="progress-pane" data-pane="body">
+            <PhotoEntryCard count={photoCount} latestDate={latestPhotoDate} thumb={latestPhotoThumb} />
+          </div>
         </aside>
       </div>
     </div>

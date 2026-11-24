@@ -1,49 +1,40 @@
 'use client'
+import { useMemo, type CSSProperties } from 'react'
 import Link from 'next/link'
 import type { BodySummary } from '@/lib/body/queries'
 import { dateLabel } from '@/lib/health/model'
 import { setUiState } from '@/lib/cache/appDataCache'
-import { Ring } from '@/components/body/ChargeRing'
 import { ChevronRight } from '@/components/ui/Icons'
+import { BAND, drivers, hm, weekCharges } from './recovery/model'
+import { useCountUp } from './recovery/motion'
 import './health-entry.css'
+import './recovery/recovery.css'
 
+const RING_R = 39.5
+const RING_C = 2 * Math.PI * RING_R
+
+/** Progress → Recovery: today's Charge, the call, the week and three numbers. */
 export function HealthEntry({ body }: { body: BodySummary | null }) {
+  const charge = body?.charge ?? null
+  const shown = useCountUp(charge?.score ?? null, 1300, 250)
+  const week = useMemo(() => (body?.available ? weekCharges(body) : null), [body])
   if (process.env.NEXT_PUBLIC_HEALTH_PAGE_ENABLED === 'false') return null
   const latest = body?.days.at(-1)
-  const charge = body?.charge ?? null
-  const glance = [
-    latest?.resting_hr != null && {
-      label: 'Resting HR',
-      value: `${latest.resting_hr}`,
-      unit: 'bpm'
-    },
-    latest?.bb_latest != null && {
-      label: 'Body Battery',
-      value: `${latest.bb_latest}`,
-      unit: ''
-    },
-    latest?.steps != null && {
-      label: 'Steps',
-      value: latest.steps.toLocaleString(),
-      unit: ''
-    }
-  ].filter((g): g is { label: string; value: string; unit: string } => !!g)
-  return (
-    <Link
-      href="/progress/health"
-      className="health-entry press-card"
-      data-haptic="light"
-      onClick={() =>
-        setUiState('progress:health-return', {
-          scroll: document.querySelector('.app-main')?.scrollTop ?? 0,
-          ready: false
-        })
-      }
-    >
-      <span className="health-entry-lead" aria-hidden="true">
-        {charge ? (
-          <Ring score={charge.score} size={56} stroke={6} />
-        ) : (
+  const today = body?.todayRow ?? null
+  const remember = () =>
+    setUiState('progress:health-return', {
+      scroll: document.querySelector('.app-main')?.scrollTop ?? 0,
+      ready: false
+    })
+  if (!charge || !body)
+    return (
+      <Link
+        href="/progress/health"
+        className="health-entry press-card"
+        data-haptic="light"
+        onClick={remember}
+      >
+        <span className="health-entry-lead" aria-hidden="true">
           <span className="health-entry-icon">
             <svg
               width="26"
@@ -59,30 +50,112 @@ export function HealthEntry({ body }: { body: BodySummary | null }) {
               <path d="M4 12h4l2-4 3 8 2-4h5" />
             </svg>
           </span>
-        )}
-      </span>
-      <span className="health-entry-body">
-        <strong>Health & recovery</strong>
-        <span className="health-entry-sub">
-          {charge
-            ? `Charge ${charge.score} · ${charge.bandLabel}${latest ? ` · ${dateLabel(latest.local_date)}` : ''}`
-            : latest
-              ? dateLabel(latest.local_date)
-              : 'Sleep, recovery and activity'}
         </span>
-        {glance.length > 0 && (
-          <span className="health-entry-glance">
-            {glance.map((g) => (
-              <span key={g.label}>
-                <b>{g.value}</b>
-                {g.unit && <small>{g.unit}</small>}
-                <em>{g.label}</em>
-              </span>
-            ))}
+        <span className="health-entry-body">
+          <strong>Recovery</strong>
+          <span className="health-entry-sub">
+            {latest ? dateLabel(latest.local_date) : 'Sleep, recovery and activity'}
           </span>
+        </span>
+        <ChevronRight size={20} className="health-arrow" />
+      </Link>
+    )
+  const meta = BAND[charge.band]
+  const reasons = drivers(charge.inputs)
+    .filter((d) => d.effect !== 'neutral')
+    .slice(0, 2)
+    .map((d) => `${d.label} ${d.value}`)
+  const hrv = body.overnightHrv?.[body.today]
+  const minis = [
+    body.garminMorning && {
+      label: 'Sleep',
+      value: hm(body.garminMorning.durationSeconds),
+      unit: ''
+    },
+    hrv != null && { label: 'HRV', value: String(Math.round(hrv)), unit: 'ms' },
+    today?.resting_hr != null && { label: 'Rest HR', value: String(today.resting_hr), unit: 'bpm' },
+    today?.bb_latest != null && { label: 'Battery', value: String(today.bb_latest), unit: '' },
+    today?.steps != null && { label: 'Steps', value: today.steps.toLocaleString('en-US'), unit: '' }
+  ]
+    .filter((m): m is { label: string; value: string; unit: string } => !!m)
+    .slice(0, 3)
+  const value = shown ?? 0
+  return (
+    <Link
+      href="/progress/health"
+      className="rcv-entry"
+      data-band={charge.band}
+      data-haptic="light"
+      onClick={remember}
+      aria-label={`Recovery: Charge ${charge.score}, ${charge.bandLabel}. ${meta.headline} Open Recovery.`}
+    >
+      <div className="rcv-entry-top">
+        <div className="rcv-entry-ring" aria-hidden="true">
+          <svg viewBox="0 0 88 88">
+            <circle cx="44" cy="44" r={RING_R} />
+            <circle
+              cx="44"
+              cy="44"
+              r={RING_R}
+              strokeDasharray={RING_C}
+              strokeDashoffset={RING_C * (1 - value / 100)}
+            />
+          </svg>
+          <strong>{shown}</strong>
+        </div>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <span className="rcv-entry-eyebrow">
+            <i aria-hidden="true" />
+            {meta.label} · Charge
+          </span>
+          <span className="rcv-entry-head">{meta.headline}</span>
+          {reasons.length > 0 && <span className="rcv-entry-sub">{reasons.join(' · ')}</span>}
+        </div>
+      </div>
+      <div className="rcv-entry-mid">
+        {week && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <span
+              style={{
+                fontSize: 10,
+                letterSpacing: '0.14em',
+                textTransform: 'uppercase',
+                fontWeight: 600,
+                color: 'var(--text-muted)'
+              }}
+            >
+              Last 7 days
+            </span>
+            <div className="rcv-bars" aria-hidden="true">
+              {[...week].map(([day, c], i) => (
+                <i
+                  key={day}
+                  data-band={c?.band ?? 'none'}
+                  data-current={day === body.today}
+                  style={{ height: `${c ? Math.max(8, c.score) : 6}%`, '--i': i } as CSSProperties}
+                />
+              ))}
+            </div>
+          </div>
         )}
-      </span>
-      <ChevronRight size={20} className="health-arrow" />
+        <span className="rcv-open" aria-hidden="true">
+          Open
+          <ChevronRight size={16} />
+        </span>
+      </div>
+      {minis.length > 0 && (
+        <div className="rcv-minis">
+          {minis.map((m) => (
+            <span key={m.label}>
+              <em>{m.label}</em>
+              <b>
+                {m.value}
+                {m.unit && <small>{m.unit}</small>}
+              </b>
+            </span>
+          ))}
+        </div>
+      )}
     </Link>
   )
 }

@@ -3,6 +3,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createClient, getClientUser } from '@/lib/supabase/client'
 import { useDemoMode } from '@/lib/contexts/DemoModeContext'
 import { getHealthSummary, type HealthSummary } from '@/lib/health/queries'
+import type { Charge } from '@/lib/body/charge'
+import { weekCharges } from './recovery/model'
+
+const EMPTY: ReadonlyMap<string, Charge | null> = new Map()
 
 export function useHealthSummary(date: string | null) {
   const client = useMemo(() => createClient(), [])
@@ -12,6 +16,9 @@ export function useHealthSummary(date: string | null) {
   const [updating, setUpdating] = useState(false)
   const owner = useRef<string | null>(null)
   const [retry, setRetry] = useState(0)
+  // Each morning's Charge seen so far, so the day strip keeps its bars while
+  // you browse back (a summary only knows days up to its own date).
+  const [charges, setCharges] = useState<ReadonlyMap<string, Charge | null>>(new Map())
   const refresh = useCallback(() => setRetry((n) => n + 1), [])
 
   useEffect(() => {
@@ -30,6 +37,7 @@ export function useHealthSummary(date: string | null) {
         if (disposed || request !== generation) return
         if (owner.current !== user?.id) {
           setState(null)
+          setCharges(new Map())
           owner.current = user?.id ?? null
         }
         if (!user) {
@@ -44,7 +52,10 @@ export function useHealthSummary(date: string | null) {
           { includeGarminDetails: true }
         )
         if (!disposed && request === generation) {
-          if (data.body.available) setState({ date, data })
+          if (data.body.available) {
+            setState({ date, data })
+            setCharges((old) => new Map([...old, ...weekCharges(data.body, date)]))
+          }
           setError(!data.body.available)
         }
       } catch {
@@ -62,6 +73,7 @@ export function useHealthSummary(date: string | null) {
         ++generation
         owner.current = session?.user.id ?? null
         setState(null)
+        setCharges(new Map())
         setError(false)
         // Never perform Supabase work inside its auth lock callback.
         setTimeout(() => {
@@ -89,6 +101,7 @@ export function useHealthSummary(date: string | null) {
     error,
     updating,
     refresh,
-    demoMode
+    demoMode,
+    charges: demoMode ? EMPTY : charges
   }
 }
