@@ -413,7 +413,7 @@ export function SleepDetail({ data, date }: { data: HealthSummary; date: string 
   const stageMax =
     Math.max(...stageRows.map((s) => Math.max(totals[s] ?? 0, usual[s]?.[1] ?? 0)), 1) * 1.15
   return (
-    <div className="rcv-detail">
+    <div className="rcv-detail rcv-nightview">
       <div className="rcv-col">
         <section
           className="rcv-night rcv-rise"
@@ -442,10 +442,6 @@ export function SleepDetail({ data, date }: { data: HealthSummary; date: string 
               Efficiency <b>{Math.round((sleep.duration_seconds / inBed) * 100)}%</b>
             </span>
           </div>
-          <p className="rcv-muted" style={{ fontSize: 13 }}>
-            {clockLabel(sleep.start_at, sleep.timezone)} –{' '}
-            {clockLabel(sleep.end_at, sleep.timezone)} · {sleep.timezone}
-          </p>
         </section>
         {sleep.stages?.length ? (
           <section
@@ -457,8 +453,9 @@ export function SleepDetail({ data, date }: { data: HealthSummary; date: string 
               <h2 id="rcv-stages" className="rcv-label rcv-label--strong">
                 Stages
               </h2>
-              <span className="rcv-mono rcv-muted" style={{ fontSize: 12 }}>
-                {dateLabel(date)}
+              <span className="rcv-mono rcv-muted" style={{ fontSize: 12 }} title={sleep.timezone}>
+                {clockLabel(sleep.start_at, sleep.timezone)} –{' '}
+                {clockLabel(sleep.end_at, sleep.timezone)}
               </span>
             </div>
             <Hypnogram sleep={sleep} />

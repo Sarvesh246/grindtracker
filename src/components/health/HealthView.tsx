@@ -189,6 +189,9 @@ export function HealthView({
         backLabel={view === 'overview' ? 'Progress' : 'Recovery'}
         sync={syncState(data, error, updating, now)}
         onRefresh={onRefresh}
+        eyebrow={view === 'metric' ? 'Vitals' : undefined}
+        deskPrefix={view === 'overview' ? 'Progress' : undefined}
+        calendar={view === 'metric' ? undefined : { availableDates, onDate }}
       >
         {view !== 'metric' && (
           <WeekStrip
@@ -233,7 +236,7 @@ export function HealthView({
           <SleepCard data={data} date={date} today={today} />
           <DayCard data={data} date={date} today={today} />
           {data.history.length > 0 ? (
-            <Vitals data={data} date={date} />
+            <Vitals data={data} date={date} today={today} />
           ) : data.historyError ? (
             <section className="rcv-card rcv-card-pad rcv-a-vitals">
               <p className="rcv-muted" role="alert">

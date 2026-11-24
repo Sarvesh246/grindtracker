@@ -58,6 +58,7 @@ export function MoonIcon({ size = 14 }: { size?: number }) {
     </svg>
   )
 }
+/** Kept for screens that open the calendar from an icon. */
 export function CalendarIcon() {
   return (
     <svg
@@ -121,40 +122,68 @@ export interface SyncState {
   label: string
 }
 
+/**
+ * Title row: back, the date (tap it for the calendar), the title and the sync
+ * pill that refreshes. On desktop the row opens out so the day strip and the
+ * pill sit beside the title.
+ */
 export function RecoveryHeader({
   title,
+  eyebrow,
+  deskPrefix,
   date,
   today,
   backHref,
   backLabel,
   sync,
   onRefresh,
+  calendar,
   children
 }: {
   title: string
+  /** Replaces the date eyebrow (the metric view says "Vitals"). */
+  eyebrow?: string
+  /** Desktop-only words before the date, e.g. "Progress". */
+  deskPrefix?: string
   date: string
   today: string
   backHref: string
   backLabel: string
   sync: SyncState
   onRefresh: () => void
+  calendar?: { availableDates: string[]; onDate: (date: string) => void }
   children?: ReactNode
 }) {
+  const [open, setOpen] = useState(false)
+  const when = date === today ? `Today · ${dateLabel(date)}` : dateLabel(date)
   return (
     <header className="rcv-headbar rcv-rise" style={{ '--i': 0 } as CSSProperties}>
       <div className="rcv-top">
         <Link
           href={backHref}
-          className="rcv-icon-btn"
+          className={`rcv-icon-btn rcv-back${backLabel === 'Progress' ? ' rcv-back--overview' : ''}`}
           aria-label={`Back to ${backLabel}`}
           data-haptic="light"
         >
           <ChevronLeft size={20} />
         </Link>
-        <div style={{ flex: 1 }}>
-          <p className="rcv-label">
-            {date === today ? `Today · ${dateLabel(date)}` : dateLabel(date)}
-          </p>
+        <div className="rcv-title">
+          {eyebrow ? (
+            <p className="rcv-label">{eyebrow}</p>
+          ) : calendar ? (
+            <button
+              type="button"
+              className="rcv-label rcv-date-btn"
+              aria-label="Choose health date"
+              data-haptic="light"
+              onClick={() => setOpen(true)}
+            >
+              {deskPrefix && <span className="rcv-only-desk">{deskPrefix} · </span>}
+              {when}
+            </button>
+          ) : (
+            <p className="rcv-label">{when}</p>
+          )}
           <h1>{title}</h1>
         </div>
         <button
@@ -171,11 +200,58 @@ export function RecoveryHeader({
         </button>
       </div>
       {children}
+      {calendar && (
+        <Dialog
+          open={open}
+          onClose={() => setOpen(false)}
+          labelledBy="health-calendar-title"
+          panelStyle={{ maxWidth: 440 }}
+        >
+          <div className="health-page health-calendar">
+            <div className="health-section-head">
+              <h2 id="health-calendar-title">Choose a date</h2>
+              <button aria-label="Close date picker" onClick={() => setOpen(false)}>
+                <CloseIcon size={18} />
+              </button>
+            </div>
+            <label>
+              Selected health date
+              <input
+                aria-label="Selected health date"
+                type="date"
+                value={date}
+                max={today}
+                onChange={(e) => {
+                  if (e.target.value && e.target.value <= today) calendar.onDate(e.target.value)
+                }}
+              />
+            </label>
+            <div className="health-calendar-grid">
+              {Array.from({ length: 28 }, (_, i) => shiftDate(today, i - 27)).map((key) => (
+                <button
+                  key={key}
+                  data-haptic="light"
+                  aria-pressed={date === key}
+                  aria-label={`${dateLabel(key)}${calendar.availableDates.includes(key) ? ', records available' : ''}`}
+                  onClick={() => {
+                    calendar.onDate(key)
+                    setOpen(false)
+                  }}
+                >
+                  <span>{new Date(`${key}T12:00:00`).getDate()}</span>
+                  <i aria-hidden="true" data-on={calendar.availableDates.includes(key)} />
+                </button>
+              ))}
+            </div>
+            <button onClick={() => setOpen(false)}>Done</button>
+          </div>
+        </Dialog>
+      )}
     </header>
   )
 }
 
-/** Seven days with each morning's Charge as a bar, plus the full calendar. */
+/** Seven days with each morning's Charge as a bar. */
 export function WeekStrip({
   date,
   today,
@@ -189,7 +265,6 @@ export function WeekStrip({
   availableDates: string[]
   onDate: (date: string) => void
 }) {
-  const [calendarOpen, setCalendarOpen] = useState(false)
   const days = weekWindow(date, today)
   return (
     <nav
@@ -200,6 +275,7 @@ export function WeekStrip({
       {days.map((key) => {
         const when = new Date(`${key}T12:00:00`)
         const charge = charges.get(key) ?? null
+        const has = availableDates.includes(key)
         return (
           <button
             key={key}
@@ -209,7 +285,7 @@ export function WeekStrip({
             data-today={key === today}
             data-band={charge?.band ?? 'none'}
             aria-pressed={key === date}
-            aria-label={`${dateLabel(key)}${charge ? `, Charge ${charge.score}, ${charge.bandLabel}` : availableDates.includes(key) ? ', records available' : ''}`}
+            aria-label={`${dateLabel(key)}${charge ? `, Charge ${charge.score}, ${charge.bandLabel}` : has ? ', records available' : ''}`}
             onClick={() => onDate(key)}
           >
             <span aria-hidden="true">
@@ -217,69 +293,16 @@ export function WeekStrip({
             </span>
             <span className="rcv-col" aria-hidden="true">
               <i
-                style={{
-                  height: `${charge ? Math.max(8, charge.score) : availableDates.includes(key) ? 8 : 0}%`
-                }}
+                style={
+                  { '--h': `${charge ? Math.max(8, charge.score) : has ? 8 : 0}%` } as CSSProperties
+                }
+                data-empty={!charge && !has}
               />
             </span>
             <b aria-hidden="true">{when.getDate()}</b>
           </button>
         )
       })}
-      <button
-        type="button"
-        className="rcv-icon-btn"
-        aria-label="Choose health date"
-        data-haptic="light"
-        onClick={() => setCalendarOpen(true)}
-      >
-        <CalendarIcon />
-      </button>
-      <Dialog
-        open={calendarOpen}
-        onClose={() => setCalendarOpen(false)}
-        labelledBy="health-calendar-title"
-        panelStyle={{ maxWidth: 440 }}
-      >
-        <div className="health-page health-calendar">
-          <div className="health-section-head">
-            <h2 id="health-calendar-title">Choose a date</h2>
-            <button aria-label="Close date picker" onClick={() => setCalendarOpen(false)}>
-              <CloseIcon size={18} />
-            </button>
-          </div>
-          <label>
-            Selected health date
-            <input
-              aria-label="Selected health date"
-              type="date"
-              value={date}
-              max={today}
-              onChange={(e) => {
-                if (e.target.value && e.target.value <= today) onDate(e.target.value)
-              }}
-            />
-          </label>
-          <div className="health-calendar-grid">
-            {Array.from({ length: 28 }, (_, i) => shiftDate(today, i - 27)).map((key) => (
-              <button
-                key={key}
-                data-haptic="light"
-                aria-pressed={date === key}
-                aria-label={`${dateLabel(key)}${availableDates.includes(key) ? ', records available' : ''}`}
-                onClick={() => {
-                  onDate(key)
-                  setCalendarOpen(false)
-                }}
-              >
-                <span>{new Date(`${key}T12:00:00`).getDate()}</span>
-                <i aria-hidden="true" data-on={availableDates.includes(key)} />
-              </button>
-            ))}
-          </div>
-          <button onClick={() => setCalendarOpen(false)}>Done</button>
-        </div>
-      </Dialog>
     </nav>
   )
 }

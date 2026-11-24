@@ -265,11 +265,10 @@ export function clockMinutes(iso: string, timeZone: string): number {
  * wake is bed plus the real elapsed time, so a 23:00-12:00 sleep stays
  * -60..720 instead of folding the wake into the previous evening.
  */
-export function sleepSpan(night: {
-  start_at: string
-  end_at: string
-  timezone: string
-}): { bed: number; wake: number } {
+export function sleepSpan(night: { start_at: string; end_at: string; timezone: string }): {
+  bed: number
+  wake: number
+} {
   const bed = clockMinutes(night.start_at, night.timezone)
   const elapsed = (new Date(night.end_at).getTime() - new Date(night.start_at).getTime()) / 60000
   return { bed, wake: bed + Math.max(0, Math.round(elapsed)) }
@@ -384,4 +383,22 @@ export function areaPath(
   })
   if (start >= 0) close(values.length - 1)
   return d
+}
+
+/**
+ * The hero's one sentence: what helped most and what held Charge back most,
+ * in the inputs' own words ("You woke with Body Battery at 88 and nothing's
+ * holding you back.").
+ */
+export function ledeFor(charge: Charge): string {
+  const list = [...charge.inputs].sort(
+    (a, b) => Math.abs(b.score - 50) * b.weight - Math.abs(a.score - 50) * a.weight
+  )
+  const helped = list.find((i) => i.score >= 60)
+  const held = list.find((i) => i.score < 40)
+  const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+  if (helped && held) return `${cap(helped.phrase)}, but ${held.phrase}.`
+  if (helped) return `${cap(helped.phrase)} and nothing’s holding you back.`
+  if (held) return `${cap(held.phrase)}. Give it a day.`
+  return 'Everything is sitting near your usual.'
 }

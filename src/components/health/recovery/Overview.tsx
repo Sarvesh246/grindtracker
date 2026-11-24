@@ -1,5 +1,5 @@
 'use client'
-import { useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import Link from 'next/link'
 import type { Charge } from '@/lib/body/charge'
 import type { HealthSummary } from '@/lib/health/queries'
@@ -14,13 +14,14 @@ import {
   stageSeconds,
   STAGE_NAMES,
   type HealthMetric,
+  type SleepSession,
   type SleepStageName
 } from '@/lib/health/model'
 import { stepCurve } from '@/lib/health/intraday'
 import { ChevronRight } from '@/components/ui/Icons'
 import { ArrowUpRight, CoachButton, ChevronDownSmall, MoonIcon } from './Chrome'
 import {
-  adviceText,
+  ledeFor,
   areaPath,
   BAND,
   bucketClock,
@@ -130,7 +131,7 @@ export function ChargeHero({
         <h2 id="rcv-headline">{meta?.headline ?? 'Not enough data yet.'}</h2>
         <p>
           {charge
-            ? adviceText(charge)
+            ? ledeFor(charge)
             : connect
               ? 'Sleep, recovery and daily activity from your Garmin.'
               : 'Charge needs at least two watch readings, like Body Battery and resting HR.'}
@@ -290,6 +291,40 @@ export function Duration({
   )
 }
 
+/** Desktop sleep card: the night's stages as four compact lanes. */
+function MiniHypnogram({ sleep }: { sleep: SleepSession }) {
+  const start = Date.parse(sleep.start_at)
+  const total = Math.max(1, Date.parse(sleep.end_at) - start)
+  const lane: Record<SleepStageName, number> = { awake: 0, rem: 1, light: 2, deep: 3 }
+  return (
+    <div className="rcv-mini-hyp rcv-only-desk rcv-wipe" aria-hidden="true">
+      <div>
+        <span>Awake</span>
+        <span>REM</span>
+        <span>Light</span>
+        <span>Deep</span>
+      </div>
+      <svg viewBox="0 0 1000 88" preserveAspectRatio="none">
+        {(sleep.stages ?? []).map((st, i) => {
+          const x0 = ((Date.parse(st.start) - start) / total) * 1000
+          const x1 = ((Date.parse(st.end) - start) / total) * 1000
+          return (
+            <rect
+              key={i}
+              x={x0}
+              y={lane[st.stage] * 22 + 4}
+              width={Math.max(2, x1 - x0 - 2)}
+              height={14}
+              rx={3}
+              style={{ fill: STAGE_COLOR[st.stage] }}
+            />
+          )
+        })}
+      </svg>
+    </div>
+  )
+}
+
 export function SleepCard({
   data,
   date,
@@ -314,7 +349,15 @@ export function SleepCard({
           ? 'Last night'
           : `Sleep · ${new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short' })}`}
       </span>
-      {sleep && <ChevronRight size={18} className="rcv-muted" />}
+      {sleep && (
+        <>
+          <ChevronRight size={18} className="rcv-muted rcv-only-mobile" />
+          <span className="rcv-only-desk rcv-muted" style={{ fontSize: 12 }}>
+            {clockLabel(sleep.start_at, sleep.timezone)} –{' '}
+            {clockLabel(sleep.end_at, sleep.timezone)}
+          </span>
+        </>
+      )}
     </div>
   )
   if (!sleep)
@@ -374,7 +417,11 @@ export function SleepCard({
       </div>
       {parts.length > 0 && (
         <>
-          <div className="rcv-stagebar" aria-hidden="true">
+          {sleep.stages?.length ? <MiniHypnogram sleep={sleep} /> : null}
+          <div
+            className={`rcv-stagebar${sleep.stages?.length ? ' rcv-only-mobile' : ''}`}
+            aria-hidden="true"
+          >
             {parts.map((s, i) => (
               <span
                 key={s}
@@ -401,7 +448,7 @@ export function SleepCard({
           </div>
         </>
       )}
-      <div className="rcv-split">
+      <div className="rcv-split rcv-only-mobile">
         <span>
           Asleep <b>{clockLabel(sleep.start_at, sleep.timezone)}</b>
         </span>
@@ -436,7 +483,6 @@ export function DayCard({
   today: string
 }) {
   const row = data.body.todayRow
-  const [series, setSeries] = useState<Series>('bb')
   const [ref, width] = useWidth<HTMLDivElement>(342)
   const sets: Record<Series, (number | null)[]> = {
     bb: row?.bb_series ?? [],
@@ -444,7 +490,7 @@ export function DayCard({
     steps: stepCurve(row?.steps_series ?? [])
   }
   const options = (Object.keys(sets) as Series[]).filter((k) => sets[k].some((v) => v != null))
-  const active: Series = options.includes(series) ? series : (options[0] ?? 'bb')
+  const active: Series = options[0] ?? 'bb'
   const values = Array.from({ length: 96 }, (_, i) => sets[active][i] ?? null)
   const stress = Array.from({ length: 96 }, (_, i) => row?.stress_series?.[i] ?? null)
   const last = lastIndex(values)
@@ -495,7 +541,9 @@ export function DayCard({
       : active === 'steps'
         ? Math.round(v).toLocaleString('en-US')
         : String(Math.round(v))
-  const peak = active === 'bb' ? row.bb_high : present.length ? Math.max(...present) : null
+  const peak =
+    active === 'bb' ? (row.bb_wake ?? row.bb_high) : present.length ? Math.max(...present) : null
+  const hasStress = stress.some((v) => v != null)
   const isToday = date === today
   const unit = active === 'hr' ? 'bpm' : ''
   const key = `${date}:${active}:${width}`
@@ -506,57 +554,53 @@ export function DayCard({
       id="day"
       aria-labelledby="rcv-day-title"
     >
-      <div className="rcv-card-head" style={{ alignItems: 'flex-start', flexWrap: 'wrap' }}>
+      <div className="rcv-card-head" style={{ alignItems: 'flex-start' }}>
         <div>
           <h2 id="rcv-day-title" className="rcv-label rcv-label--strong">
             {SERIES_LABEL[active]}
+            {active === 'bb' && hasStress && <span className="rcv-only-desk"> &amp; stress</span>}
           </h2>
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'baseline',
-              gap: 8,
-              marginTop: 6
-            }}
-          >
-            <strong
-              className="rcv-mono"
-              style={{
-                fontSize: 36,
-                fontWeight: 500,
-                letterSpacing: '-.03em',
-                lineHeight: 1
-              }}
-            >
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 6 }}>
+            <strong className="rcv-mono rcv-day-value">
               {last >= 0 ? fmt(values[last]) : '—'}
             </strong>
             <span className="rcv-muted" style={{ fontSize: 13 }}>
               {unit && `${unit} · `}
-              {isToday ? `at ${bucketClock(last)}` : 'end of day'}
-              {peak != null && active !== 'steps' ? ` · peak ${Math.round(peak)}` : ''}
+              {isToday ? 'now' : 'at midnight'}
+              {peak != null && active !== 'steps' ? ` · peaked at ${Math.round(peak)}` : ''}
+              {active === 'bb' && row.bb_wake != null && (
+                <span className="rcv-only-desk"> on waking</span>
+              )}
             </span>
           </div>
         </div>
-        {options.length > 1 && (
-          <div className="rcv-seg" role="group" aria-label="Day series" style={{ minWidth: 220 }}>
-            <span
-              className="rcv-seg-thumb"
-              aria-hidden="true"
-              style={thumbStyle(options.indexOf(active), options.length)}
-            />
-            {options.map((k) => (
-              <button
-                key={k}
-                type="button"
-                aria-pressed={k === active}
-                data-haptic="light"
-                onClick={() => setSeries(k)}
-              >
-                {k === 'bb' ? 'Battery' : k === 'hr' ? 'HR' : 'Steps'}
-              </button>
-            ))}
-          </div>
-        )}
+        <span className="rcv-legend" aria-hidden="true">
+          <span className="rcv-only-desk">
+            <i style={{ width: 14, height: 3, borderRadius: 2, background: 'var(--accent)' }} />
+            {active === 'bb' ? 'Battery' : SERIES_LABEL[active]}
+          </span>
+          {usual && (
+            <span>
+              <i
+                style={{ width: 14, height: 8, borderRadius: 3, background: 'var(--rcv-track)' }}
+              />
+              Your usual
+            </span>
+          )}
+          {hasStress && (
+            <span className="rcv-only-desk">
+              <i
+                style={{
+                  width: 8,
+                  height: 12,
+                  borderRadius: 2,
+                  background: 'var(--health-stress)'
+                }}
+              />
+              Stress
+            </span>
+          )}
+        </span>
       </div>
       <div
         ref={ref}
@@ -697,7 +741,7 @@ export function DayCard({
             </>
           )}
         </svg>
-        {stress.some((v) => v != null) && (
+        {hasStress && (
           <div className="rcv-stress" aria-hidden="true">
             {stress.map((v, i) => (
               <i
@@ -714,6 +758,29 @@ export function DayCard({
             ))}
           </div>
         )}
+        {scrub.index != null && (
+          <span
+            className="rcv-bubble rcv-only-desk"
+            role="status"
+            style={{
+              top: 8,
+              left: `${Math.max(16, Math.min(84, (x(scrub.index) / width) * 100))}%`
+            }}
+          >
+            <b>{bucketClock(scrub.index)}</b>
+            {active === 'bb' ? 'Battery' : SERIES_LABEL[active]} <b>{fmt(values[scrub.index])}</b>
+            {hasStress && (
+              <>
+                Stress <b>{stress[scrub.index] ?? '—'}</b>
+              </>
+            )}
+            {usual && usual.low[scrub.index] != null && usual.high[scrub.index] != null && (
+              <span style={{ opacity: 0.6 }}>
+                usual {Math.round(usual.low[scrub.index]!)}–{Math.round(usual.high[scrub.index]!)}
+              </span>
+            )}
+          </span>
+        )}
         <div className="rcv-axis" aria-hidden="true">
           <span>12A</span>
           <span>6A</span>
@@ -722,7 +789,7 @@ export function DayCard({
           <span>12A</span>
         </div>
       </div>
-      <div className="rcv-readout" aria-live="polite">
+      <div className="rcv-readout rcv-only-mobile" aria-live="polite">
         <span className="rcv-mono" style={{ color: 'var(--text-primary)', minWidth: 64 }}>
           {at == null ? '—' : scrub.index == null && isToday ? 'Now' : bucketClock(at)}
         </span>
@@ -730,7 +797,7 @@ export function DayCard({
           {active === 'bb' ? 'Battery' : SERIES_LABEL[active]}{' '}
           <b>{at == null ? '—' : fmt(values[at])}</b>
         </span>
-        {stress.some((v) => v != null) && (
+        {hasStress && (
           <span>
             Stress{' '}
             <b style={{ color: 'var(--health-stress)' }}>
@@ -750,42 +817,105 @@ export function DayCard({
   )
 }
 
-const VITALS: HealthMetric[] = [
+const VITALS_RANGE: HealthMetric[] = [
   'resting_hr',
   'overnight_hrv',
-  'bb_latest',
-  'stress_avg',
-  'recovery_hours',
-  'steps',
-  'active_minutes',
   'spo2',
-  'floors'
+  'stress_avg',
+  'bb_latest',
+  'recovery_hours'
 ]
+const VITALS_TOTAL: HealthMetric[] = ['steps', 'active_minutes', 'floors']
 
-export function Vitals({ data, date }: { data: HealthSummary; date: string }) {
-  const shown = VITALS.filter((m) => data.history.some((d) => metricValue(d, m) != null))
+/** Today against the last 14 days, with the usual band behind the line (desktop tiles). */
+function Spark14({
+  data,
+  date,
+  metric,
+  low,
+  high
+}: {
+  data: HealthSummary
+  date: string
+  metric: HealthMetric
+  low?: number
+  high?: number
+}) {
+  const values = Array.from({ length: 14 }, (_, i) =>
+    metricValue(data.history.find((d) => d.local_date === shiftDate(date, i - 13)) ?? null, metric)
+  )
+  const present = values.filter((v): v is number => v != null)
+  if (present.length < 2) return <span className="rcv-only-desk" style={{ height: 40 }} />
+  let lo = Math.min(...present, ...(low != null ? [low] : []))
+  let hi = Math.max(...present, ...(high != null ? [high] : []))
+  const pad = (hi - lo) * 0.15 || 1
+  lo -= pad
+  hi += pad
+  const y = (v: number) => 40 - ((v - lo) / (hi - lo)) * 40
+  return (
+    <svg
+      className="rcv-only-desk rcv-wipe"
+      viewBox="0 0 130 40"
+      preserveAspectRatio="none"
+      style={{ width: '100%', height: 40 }}
+      aria-hidden="true"
+    >
+      {low != null && high != null && (
+        <rect
+          x={0}
+          y={y(high)}
+          width={130}
+          height={Math.max(1, y(low) - y(high))}
+          rx={3}
+          style={{ fill: 'var(--rcv-track)' }}
+        />
+      )}
+      <path
+        d={linePath(values, (i) => (i / 13) * 130, y)}
+        vectorEffect="non-scaling-stroke"
+        style={{
+          fill: 'none',
+          stroke: 'var(--text-secondary)',
+          strokeWidth: 1.75,
+          strokeLinejoin: 'round',
+          strokeLinecap: 'round'
+        }}
+      />
+    </svg>
+  )
+}
+
+export function Vitals({
+  data,
+  date,
+  today
+}: {
+  data: HealthSummary
+  date: string
+  today: string
+}) {
+  const has = (m: HealthMetric) => data.history.some((d) => metricValue(d, m) != null)
+  const ranged = VITALS_RANGE.filter(has)
+  const total = VITALS_TOTAL.find(has)
+  const shown = [...ranged.slice(0, total ? 5 : 6), ...(total ? [total] : [])]
   if (!shown.length) return null
   return (
     <section
       className="rcv-a-vitals rcv-rise"
-      style={
-        {
-          '--i': 7,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 12
-        } as CSSProperties
-      }
+      style={{ '--i': 7, display: 'flex', flexDirection: 'column', gap: 12 } as CSSProperties}
       aria-labelledby="rcv-vitals"
     >
       <div className="rcv-section-head">
         <h2 id="rcv-vitals">Vitals</h2>
-        <span>vs your usual</span>
+        <span>
+          <span className="rcv-only-mobile">vs your usual</span>
+          <span className="rcv-only-desk">Today vs your usual · 14-day line</span>
+        </span>
       </div>
       <div className="rcv-tiles">
         {shown.map((m, i) => {
           const r = reading(data.history, data.sleeps, m, date)
-          const unit = shortUnit(m)
+          const unit = m === 'steps' && date === today ? 'so far' : shortUnit(m)
           return (
             <Link
               key={m}
@@ -796,20 +926,21 @@ export function Vitals({ data, date }: { data: HealthSummary; date: string }) {
             >
               <span className="rcv-tile-top">
                 {METRICS[m].short}
-                <ArrowUpRight />
+                <span className="rcv-only-mobile" style={{ display: 'flex' }}>
+                  <ArrowUpRight />
+                </span>
               </span>
               <span className="rcv-tile-value">
                 {r.value == null ? '—' : formatMetric(r.value, m)}
                 {r.value != null && unit && <small>{unit}</small>}
               </span>
-              <span className="rcv-range" data-volume={isVolume(m)} aria-hidden="true">
+              <span
+                className="rcv-range rcv-only-mobile"
+                data-volume={isVolume(m)}
+                aria-hidden="true"
+              >
                 {r.track && r.track.bandWidth > 0 && (
-                  <span
-                    style={{
-                      left: `${r.track.bandLeft}%`,
-                      width: `${r.track.bandWidth}%`
-                    }}
-                  />
+                  <span style={{ left: `${r.track.bandLeft}%`, width: `${r.track.bandWidth}%` }} />
                 )}
                 {r.track && (
                   <i
@@ -818,7 +949,11 @@ export function Vitals({ data, date }: { data: HealthSummary; date: string }) {
                   />
                 )}
               </span>
-              <span className="rcv-tile-state">{r.text}</span>
+              <Spark14 data={data} date={date} metric={m} low={r.base?.low} high={r.base?.high} />
+              <span className="rcv-tile-state">
+                <i className="rcv-only-desk" data-standing={r.standing} aria-hidden="true" />
+                {r.text}
+              </span>
             </Link>
           )
         })}
@@ -827,80 +962,116 @@ export function Vitals({ data, date }: { data: HealthSummary; date: string }) {
   )
 }
 
+type FitnessAge = { age: number; actual: number }
+
 export function LongGame({ data, date }: { data: HealthSummary; date: string }) {
+  const [fitness, setFitness] = useState<FitnessAge | null>(null)
+  useEffect(() => {
+    let live = true
+    fetch(`/api/fitness-age?today=${date}`, { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body) => {
+        const grind = body?.ok ? body.result?.grind : null
+        if (live && grind && typeof grind.age === 'number' && typeof body.result.age === 'number')
+          setFitness({ age: grind.age, actual: body.result.age })
+      })
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [date])
   const points = data.history
     .filter((d) => d.local_date > shiftDate(date, -90) && d.local_date <= date)
     .map((d) => metricValue(d, 'vo2max'))
     .filter((v): v is number => v != null)
-  if (points.length < 2) return null
+  if (points.length < 2 && !fitness) return null
   const lo = Math.min(...points) - 0.5
   const hi = Math.max(...points) + 0.5
+  const px = (i: number) => (i / Math.max(1, points.length - 1)) * 136 + 2
+  const py = (v: number) => 40 - ((v - lo) / (hi - lo)) * 32
   const path = points
-    .map(
-      (v, i) =>
-        `${i ? 'L' : 'M'}${((i / (points.length - 1)) * 196 + 2).toFixed(1)} ${(42 - ((v - lo) / (hi - lo)) * 38).toFixed(1)}`
-    )
+    .map((v, i) => `${i ? 'L' : 'M'}${px(i).toFixed(1)} ${py(v).toFixed(1)}`)
     .join('')
-  const latest = points.at(-1)!
-  const change = latest - points[0]
+  const latest = points.at(-1)
+  const change = latest != null ? latest - points[0] : 0
+  const gap = fitness ? Math.round(fitness.actual) - Math.round(fitness.age) : 0
   return (
     <section
       className="rcv-card rcv-card-pad rcv-a-long rcv-rise"
       style={{ '--i': 8 } as CSSProperties}
-      aria-label="VO₂ max over 90 days"
+      aria-label="Fitness age and VO₂ max"
     >
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'minmax(0,1fr) minmax(0,1.3fr)',
-          gap: 16,
-          alignItems: 'end'
-        }}
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <span className="rcv-label rcv-label--strong">VO₂ max · 90 days</span>
-          <span>
-            <strong className="rcv-display" style={{ fontSize: 52, lineHeight: 0.9 }}>
-              {formatMetric(latest, 'vo2max')}
-            </strong>
-            <span className="rcv-muted" style={{ fontSize: 13, marginLeft: 6 }}>
-              ml/kg/min
-            </span>
-          </span>
-          <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-            {Math.abs(change) < 0.05
-              ? 'Holding steady'
-              : `${change > 0 ? '+' : '−'}${Math.abs(change).toFixed(1)} over this window`}
-          </span>
+      <div className="rcv-long">
+        <div>
+          <span className="rcv-label rcv-label--strong">Fitness age</span>
+          {fitness ? (
+            <>
+              <span>
+                <strong className="rcv-display" style={{ fontSize: 52, lineHeight: 0.9 }}>
+                  {Math.round(fitness.age)}
+                </strong>
+                <span className="rcv-muted" style={{ fontSize: 13, marginLeft: 6 }}>
+                  yrs
+                </span>
+              </span>
+              <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                {gap === 0
+                  ? 'Same as your age'
+                  : `${Math.abs(gap)} ${gap > 0 ? 'younger' : 'older'} than you are`}
+              </span>
+            </>
+          ) : (
+            <Link className="rcv-link" href="/profile" style={{ fontSize: 13 }}>
+              Set it up
+              <ChevronRight size={14} />
+            </Link>
+          )}
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <svg
-            viewBox="0 0 200 46"
-            style={{ width: '100%', height: 46 }}
-            aria-hidden="true"
-            preserveAspectRatio="none"
-            className="rcv-wipe"
-          >
-            <path
-              d={path}
-              vectorEffect="non-scaling-stroke"
-              style={{
-                fill: 'none',
-                stroke: 'var(--accent)',
-                strokeWidth: 2,
-                strokeLinecap: 'round',
-                strokeLinejoin: 'round'
-              }}
-            />
-          </svg>
-          <Link
-            className="rcv-link"
-            href="/profile"
-            style={{ alignSelf: 'flex-end', fontSize: 13 }}
-          >
-            Fitness age
-            <ChevronRight size={14} />
-          </Link>
+        <div>
+          <span className="rcv-label rcv-label--strong">VO₂ max · 90d</span>
+          {points.length >= 2 ? (
+            <>
+              <svg viewBox="0 0 140 44" style={{ width: '100%', height: 44 }} aria-hidden="true">
+                <path
+                  d={path}
+                  pathLength={1}
+                  className="rcv-draw"
+                  style={{
+                    fill: 'none',
+                    stroke: 'var(--accent)',
+                    strokeWidth: 2,
+                    strokeLinecap: 'round',
+                    strokeLinejoin: 'round'
+                  }}
+                />
+                <circle
+                  cx={px(points.length - 1)}
+                  cy={py(latest!)}
+                  r={3.5}
+                  style={{ fill: 'var(--accent)' }}
+                />
+              </svg>
+              <span className="rcv-mono" style={{ fontSize: 14 }}>
+                {formatMetric(latest!, 'vo2max')}{' '}
+                <span
+                  style={{
+                    color: 'var(--text-muted)',
+                    fontFamily: 'var(--font-sans)',
+                    fontSize: 12
+                  }}
+                >
+                  ml/kg/min
+                  {Math.abs(change) >= 0.05
+                    ? ` · ${change > 0 ? '+' : '−'}${Math.abs(change).toFixed(1)}`
+                    : ''}
+                </span>
+              </span>
+            </>
+          ) : (
+            <span className="rcv-muted" style={{ fontSize: 13 }}>
+              No estimate yet
+            </span>
+          )}
         </div>
       </div>
     </section>
