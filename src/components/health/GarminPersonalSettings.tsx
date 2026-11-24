@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { GarminScope } from '@/lib/health/garmin/collect'
+import { dateLabel } from '@/lib/health/model'
+import './health-import.css'
 
 const endpoint = '/api/health/garmin-personal'
 
@@ -23,6 +25,11 @@ type Action = { action: 'probe' | 'enable' | 'pause' | 'disconnect' | 'sync' | '
 const scopeLabels = [
   ['food', 'Food logs'], ['cycle', 'Cycle or pregnancy data'], ['gps', 'GPS routes']
 ] as const
+const scopeHints = {
+  food: 'Meals and nutrition you log in Garmin.',
+  cycle: 'Stays private to you, never shown to friends.',
+  gps: 'Map traces from outdoor activities.'
+} as const
 const coverage = {
   sleep: 'Sleep totals and score', sleep_stages: 'Sleep stage timeline', sleeping_hr: 'Sleeping heart rate',
   overnight_hrv: 'Overnight HRV', sleep_respiration: 'Overnight breathing', sleep_spo2: 'Overnight oxygen',
@@ -105,64 +112,106 @@ export default function GarminPersonalSettings() {
   const last = connection?.last_success_at
   const backfilling = !!connection?.backfill_date && !!connection.backfill_end &&
     connection.backfill_date >= connection.backfill_end
+  const needsAttention = !!connection?.last_error
+  const tone = !connection?.enabled ? 'off' : paused ? 'warn' : needsAttention ? 'bad' : 'on'
+  const stateLabel = !connection?.enabled ? 'Not connected'
+    : paused ? 'Collection paused' : needsAttention ? 'Needs attention' : 'Connected'
+  const when = (iso: string) => new Date(iso).toLocaleString(undefined, {
+    month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
+  })
+  const toggles = connection?.enabled ? [
+    ...scopeLabels.map(([scope, name]) => ({
+      id: scope, name, hint: scopeHints[scope],
+      checked: connection.scopes.includes(scope),
+      change: (on: boolean): Action => ({ action: 'scopes', scopes: on
+        ? [...connection.scopes, scope] : connection.scopes.filter(s => s !== scope) })
+    })),
+    ...(pushAvailable ? [{
+      id: 'push', name: 'Private outlier notifications', hint: 'A quiet heads-up when a night looks unusual.',
+      checked: connection.push_enabled,
+      change: (on: boolean): Action => ({ action: on ? 'push_on' : 'push_off' })
+    }] : [])
+  ] : []
   return (
-    <details className="hi-card" open>
-      <summary>Garmin Connect Personal</summary>
-      <p>Syncs after your watch uploads to Garmin Connect.</p>
-      <p>{connection?.enabled ? paused ? 'Health collection paused' : 'Connected' : 'Disconnected or paused'}</p>
-      {last && <p>Last successful sync <time dateTime={last}>{new Date(last).toLocaleString()}</time></p>}
-      {backfilling && <p>Importing history. Next date {connection?.backfill_date}.</p>}
-      {connection?.last_error && <p>{messages[connection.last_error] ?? 'Garmin sync needs attention.'}</p>}
-      {loaded && (
-        <div className="hi-actions">
-          <button type="button" className="hi-primary" disabled={busy} onClick={() => void run({ action: 'probe' })}>Check connection</button>
-          {connection?.enabled ? (
-            <>
-              {connection.last_error === 'credentials' ? (
-                <button type="button" className="hi-primary" disabled={busy || paused} onClick={() => void run({ action: 'enable' })}>Reconnect</button>
-              ) : (
-                <button type="button" className="hi-primary" disabled={busy || paused} onClick={() => void run({ action: 'sync' })}>Sync now</button>
-              )}
-              <button type="button" className="hi-primary" disabled={busy} onClick={() => void run({ action: 'pause' })}>Pause Garmin</button>
-            </>
-          ) : (
-            <button type="button" className="hi-primary" disabled={busy || paused} onClick={() => void run({ action: 'enable' })}>Connect and sync</button>
+    <section className="gp" aria-labelledby="gp-title" aria-busy={busy}>
+      <header className="gp-head">
+        <div className="gp-titles">
+          <h3 id="gp-title">Garmin Connect Personal</h3>
+          <p>Syncs after your watch uploads to Garmin Connect.</p>
+        </div>
+        {loaded && <span className="gp-pill" data-tone={tone}>{stateLabel}</span>}
+      </header>
+
+      {loaded && (last || backfilling) && (
+        <dl className="gp-meta">
+          {last && (
+            <div>
+              <dt>Last sync</dt>
+              <dd><time dateTime={last}>{when(last)}</time></dd>
+            </div>
           )}
-          {connection && <button type="button" className="hi-primary" disabled={busy}
-            onClick={() => void run({ action: 'disconnect' })}>Disconnect</button>}
+          {backfilling && (
+            <div>
+              <dt>Importing history</dt>
+              <dd>Next date {dateLabel(connection!.backfill_date!)}</dd>
+            </div>
+          )}
+        </dl>
+      )}
+      {connection?.last_error && (
+        <p className="gp-alert" role="alert">{messages[connection.last_error] ?? 'Garmin sync needs attention.'}</p>
+      )}
+
+      {loaded && (
+        <div className="gp-actions">
+          {connection?.enabled ? (
+            connection.last_error === 'credentials' ? (
+              <button type="button" className="gp-btn gp-btn-main" disabled={busy || paused} onClick={() => void run({ action: 'enable' })}>Reconnect</button>
+            ) : (
+              <button type="button" className="gp-btn gp-btn-main" disabled={busy || paused} onClick={() => void run({ action: 'sync' })}>Sync now</button>
+            )
+          ) : (
+            <button type="button" className="gp-btn gp-btn-main" disabled={busy || paused} onClick={() => void run({ action: 'enable' })}>Connect and sync</button>
+          )}
+          <button type="button" className="gp-btn" disabled={busy} onClick={() => void run({ action: 'probe' })}>Check connection</button>
+          {connection?.enabled && (
+            <button type="button" className="gp-btn" disabled={busy} onClick={() => void run({ action: 'pause' })}>Pause Garmin</button>
+          )}
+          {connection && (
+            <button type="button" className="gp-btn gp-btn-quiet" disabled={busy} onClick={() => void run({ action: 'disconnect' })}>Disconnect</button>
+          )}
         </div>
       )}
-      {connection?.enabled && (
-        <fieldset disabled={busy || paused} className="garmin-scopes">
+
+      {toggles.length > 0 && (
+        <fieldset disabled={busy || paused} className="gp-toggles">
           <legend>Optional private imports</legend>
-          {scopeLabels.map(([scope, name]) => (
-            <label key={scope}>
-              <input type="checkbox" checked={connection.scopes.includes(scope)}
-                onChange={e => void run({ action: 'scopes', scopes: e.target.checked
-                  ? [...connection.scopes, scope] : connection.scopes.filter(s => s !== scope) })} />
-              {name}
+          {toggles.map(t => (
+            <label key={t.id} className="gp-toggle">
+              <span className="gp-toggle-text">
+                <span>{t.name}</span>
+                <small>{t.hint}</small>
+              </span>
+              <input type="checkbox" checked={t.checked} onChange={e => void run(t.change(e.target.checked))} />
             </label>
           ))}
         </fieldset>
       )}
-      {connection?.enabled && pushAvailable && (
-        <label>
-          <input type="checkbox" disabled={busy || paused} checked={connection.push_enabled}
-            onChange={event => void run({ action: event.target.checked ? 'push_on' : 'push_off' })} />
-          {' '}Private outlier notifications
-        </label>
-      )}
+
       {capabilities && (
-        <details>
+        <details className="gp-coverage">
           <summary>Latest Garmin coverage check</summary>
-          <ul className="hi-sources">
+          <ul>
             {Object.entries(coverage).map(([id, name]) => (
-              <li key={id}><span>{name}</span><b>{capabilities[id] ? 'Available' : 'No sample returned'}</b></li>
+              <li key={id} data-ok={capabilities[id] ? 'true' : 'false'}>
+                <span>{name}</span>
+                <b>{capabilities[id] ? 'Available' : 'No sample returned'}</b>
+              </li>
             ))}
           </ul>
         </details>
       )}
-      <p role="status">{busy ? 'Contacting Garmin…' : status}</p>
-    </details>
+      <p role="status" className="gp-status">{busy ? 'Contacting Garmin…' : status}</p>
+    </section>
   )
 }
