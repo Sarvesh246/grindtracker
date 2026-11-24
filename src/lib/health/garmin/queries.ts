@@ -28,14 +28,16 @@ const projection = (keys: readonly string[]) => ['local_date', ...keys.map(k => 
 type BodyRow = GarminSignalNight & Record<string, unknown>
 
 export async function readGarminBody(client: SupabaseClient, userId: string, date: string) {
-  const [rows, current] = await Promise.all([
+  const [rows, current, activities] = await Promise.all([
     client.from('garmin_personal_days').select(projection(bodyFields))
       .eq('user_id', userId).gte('local_date', shiftDate(date, -56)).lte('local_date', date).order('local_date'),
     client.from('garmin_personal_days')
       .select('hr_trace:measurements->hr_trace,battery_trace:measurements->battery_trace,time_zone:measurements->time_zone')
-      .eq('user_id', userId).eq('local_date', date).maybeSingle()
+      .eq('user_id', userId).eq('local_date', date).maybeSingle(),
+    client.from('garmin_personal_activities').select('provider_id').eq('user_id', userId).limit(1)
   ])
-  return { rows: (rows.data ?? []) as unknown as BodyRow[], traces: object(current.data) }
+  return { rows: (rows.data ?? []) as unknown as BodyRow[], traces: object(current.data),
+    hasActivities: !!activities.data?.length }
 }
 
 function buckets(input: unknown, date: string, zone: unknown) {

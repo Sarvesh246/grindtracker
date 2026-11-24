@@ -118,7 +118,11 @@ export default function GarminPersonalSettings() {
           <button type="button" className="hi-primary" disabled={busy} onClick={() => void run({ action: 'probe' })}>Check connection</button>
           {connection?.enabled ? (
             <>
-              <button type="button" className="hi-primary" disabled={busy || paused} onClick={() => void run({ action: 'sync' })}>Sync now</button>
+              {connection.last_error === 'credentials' ? (
+                <button type="button" className="hi-primary" disabled={busy || paused} onClick={() => void run({ action: 'enable' })}>Reconnect</button>
+              ) : (
+                <button type="button" className="hi-primary" disabled={busy || paused} onClick={() => void run({ action: 'sync' })}>Sync now</button>
+              )}
               <button type="button" className="hi-primary" disabled={busy} onClick={() => void run({ action: 'pause' })}>Pause Garmin</button>
             </>
           ) : (

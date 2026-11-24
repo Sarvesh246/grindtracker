@@ -116,9 +116,9 @@ describe('watch API against the real schema', { skip: !baseUrl && 'set PARITY_DA
     const configure = (action: string) => serviceRpc('garmin_personal_configure', {
       p_user: owner, p_action: action, p_zone: 'America/Chicago', p_capabilities: { sleep: true },
     })
-    const finish = (job: { lease_id: string; generation: number }) => serviceRpc('garmin_personal_finish', {
+    const finish = (job: { lease_id: string; generation: number }, days?: Record<string, unknown>[]) => serviceRpc('garmin_personal_finish', {
       p_user: owner, p_lease: job.lease_id, p_generation: job.generation, p_batch: [],
-      p_days: [{ date: '2026-11-18', measurements: { steps: 0 }, food: { total: 30 }, cycle: { phase: 'fixture' } }],
+      p_days: days ?? [{ date: '2026-11-18', measurements: { steps: 0 }, food: { total: 30 }, cycle: { phase: 'fixture' } }],
       p_activities: [], p_zone: 'America/Chicago', p_backfill_date: '2026-11-18',
       p_backfill_end: '2026-11-20', p_reconciled: '2026-11-23', p_error: null,
       p_due_at: new Date(Date.now() - 1000).toISOString(),
@@ -143,6 +143,15 @@ describe('watch API against the real schema', { skip: !baseUrl && 'set PARITY_DA
       assert.equal(asUser(other, `select count(*) from public.garmin_personal_days where user_id = '${owner}'`), '0')
       assert.throws(() => asUser(other, `select public.garmin_personal_claim('${owner}', true)`))
       assert.throws(() => asUser(owner, `update public.garmin_personal_days set measurements = '{}'`))
+      const dense = (await state()).data as Parameters<typeof finish>[0]
+      const trace = Array.from({ length: 1600 }, (_, i) => [1795046400000 + i * 60_000, 60])
+      const days = Array.from({ length: 10 }, (_, i) => ({
+        date: '2026-11-' + (14 + i), measurements: { hr_trace: trace, battery_trace: trace }
+      }))
+      const written = await finish(dense, days)
+      assert.equal(written.error, null)
+      assert.equal(written.data, true)
+      assert.equal(asUser(owner, 'select count(*) from public.garmin_personal_days'), '10')
       const inflight = (await state()).data as Parameters<typeof finish>[0]
       asUser(owner, 'select public.delete_body_data()')
       assert.equal((await finish(inflight)).data, false)

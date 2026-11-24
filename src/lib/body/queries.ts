@@ -37,6 +37,7 @@ export interface BodySummary {
   /** Imported Garmin HRV averages by wake date. */
   overnightHrv?: Record<string, number>
   garminMorning?: { date: string; durationSeconds: number; score: number | null }
+  hasGarminActivities?: boolean
   /** Morning HRV checks (migration 68), the last 60 days. */
   readinessChecks: ReadinessCheck[]
   readiness: ReadinessSummary | null
@@ -225,7 +226,7 @@ export async function getBodySummary(supabase: SupabaseClient, userId: string, t
       readTodayHrRange(supabase, userId, today).catch(() => null),
       readSignalLabels(supabase, userId, today).catch(() => null),
       readRecoveryNights(supabase, userId, today).catch(() => new Map<string, RecoveryNight>()),
-      readGarminBody(supabase, userId, today).catch(() => ({ rows: [], traces: {} })),
+      readGarminBody(supabase, userId, today).catch(() => ({ rows: [], traces: {}, hasActivities: false })),
     ])
     const readinessChecks = readinessRead ?? []
     const labels = labelsRead ?? []
@@ -257,6 +258,7 @@ export async function getBodySummary(supabase: SupabaseClient, userId: string, t
       // would otherwise get a gauge they never asked for.
       load: hasWatch ? loadBalance(sessions, today) : null,
       overnightHrv: Object.fromEntries(overnightHrv),
+      hasGarminActivities: cloud.hasActivities,
       garminMorning: morning?.sleep_status === 'final' && typeof duration === 'number'
         ? { date: today, durationSeconds: duration, score: typeof morning.sleep_score === 'number' ? morning.sleep_score : null }
         : undefined,

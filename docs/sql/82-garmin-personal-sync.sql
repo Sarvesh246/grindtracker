@@ -204,7 +204,9 @@ begin
     return true;
   end if;
 
-  if pg_column_size(p_days) > 250000 or pg_column_size(p_activities) > 2000000 then
+  -- Up to ten dates with two complete minute-level traces per date.
+  if jsonb_array_length(p_days) > 10 or pg_column_size(p_days) > 2000000
+    or pg_column_size(p_activities) > 2000000 then
     raise exception 'GARMIN_BATCH_TOO_LARGE';
   end if;
   if jsonb_array_length(p_batch) > 12 then raise exception 'GARMIN_BATCH_TOO_LARGE'; end if;
