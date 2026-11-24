@@ -197,7 +197,7 @@ export function HealthView({
     view === 'sleep' ? 'Sleep' : view === 'metric' && metric ? METRICS[metric].short : 'Recovery'
   const coachDraft = `Give me my body readout for ${date}: what my recovery, sleep, HRV, resting HR, stress and Body Battery mean together compared with my usual, what changed and why, and how hard I should train today.`
   return (
-    <div className="rcv">
+    <div className="rcv" data-view={view}>
       <RecoveryHeader
         title={title}
         date={date}
@@ -235,10 +235,10 @@ export function HealthView({
         )
       ) : view === 'sleep' ? (
         <>
-          <SleepDetail data={data} date={date} today={today} />
+          <SleepDetail key={date} data={data} date={date} today={today} />
         </>
       ) : view === 'metric' && metric ? (
-        <MetricDetail data={data} date={date} today={today} metric={metric} />
+        <MetricDetail key={metric} data={data} date={date} today={today} metric={metric} />
       ) : (
         <div className="rcv-overview">
           <ChargeHero
@@ -249,11 +249,11 @@ export function HealthView({
             }
             connect={!data.body.hasWatch && !data.sleeps.length && data.sleepState !== 'error'}
           />
-          {data.body.charge && <DriversCard charge={data.body.charge} />}
-          <SleepCard data={data} date={date} today={today} />
-          <DayCard data={data} date={date} today={today} />
+          {data.body.charge && <DriversCard key={`d${date}`} charge={data.body.charge} />}
+          <SleepCard key={`s${date}`} data={data} date={date} today={today} />
+          <DayCard key={`b${date}`} data={data} date={date} today={today} />
           {data.history.length > 0 ? (
-            <Vitals data={data} date={date} today={today} />
+            <Vitals key={`v${date}`} data={data} date={date} today={today} />
           ) : data.historyError ? (
             <section className="rcv-card rcv-card-pad rcv-a-vitals">
               <p className="rcv-muted" role="alert">

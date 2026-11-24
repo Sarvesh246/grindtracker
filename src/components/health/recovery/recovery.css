@@ -2066,3 +2066,97 @@ html:not(.light) .rcv-nightview .rcv-seg {
     background: #0b0c10;
   }
 }
+
+/* ───────── Canvas parity, pass 3 ───────── */
+/* Stacked phone cards sat 2px apart; the canvas leaves ~15px between them. */
+@media (max-width: 1023px) {
+  .rcv-overview,
+  .rcv-detail,
+  .rcv-detail > .rcv-col {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .rcv-overview > .rcv-a-hero {
+    gap: 24px !important;
+  }
+  /* Detail artboards have no sync pill; an error still shows it as Retry. */
+  .rcv[data-view='sleep'] .rcv-sync:not([data-state='error']),
+  .rcv[data-view='metric'] .rcv-sync:not([data-state='error']) {
+    display: none;
+  }
+}
+@media (min-width: 1024px) {
+  .rcv-a-drivers .rcv-driver-name > i {
+    display: none;
+  }
+}
+/* Big readings are DM Sans on the canvas; mono stays for small figures. */
+.rcv-value-hero strong,
+.rcv-night .rcv-huge {
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.035em;
+}
+.rcv-value-hero strong {
+  font-size: 80px;
+}
+/* The night glow belongs to the page, not a box behind the hero. */
+@media (max-width: 1023px) {
+  html:not(.light) .health-page.rcv-page:has(.rcv-nightview) {
+    background:
+      radial-gradient(120% 420px at 100% 0%, rgba(58, 66, 104, 0.42), transparent 70%),
+      #0b0c10;
+  }
+}
+.rcv-night::before {
+  display: none;
+}
+.rcv-pills > span[data-tone='rem'] {
+  color: color-mix(in srgb, var(--sleep-rem) 70%, var(--text-primary));
+}
+.rcv-entry-head,
+.rcv-minis b {
+  color: var(--text-primary);
+}
+
+/* ───────── Motion: interaction polish ───────── */
+/* Fold-outs open and close with their height instead of snapping. */
+.rcv details.rcv-details {
+  interpolate-size: allow-keywords;
+}
+.rcv details.rcv-details::details-content {
+  block-size: 0;
+  overflow: clip;
+  opacity: 0;
+  transition:
+    block-size 420ms var(--rcv-ease),
+    opacity 300ms ease,
+    content-visibility 420ms allow-discrete;
+}
+.rcv details.rcv-details[open]::details-content {
+  block-size: auto;
+  opacity: 1;
+}
+.rcv details.rcv-details > summary {
+  transition: color 200ms ease;
+}
+.rcv details.rcv-details > summary:hover {
+  color: var(--accent-text);
+}
+.rcv details.rcv-details > summary svg {
+  transition: transform 420ms var(--rcv-ease);
+}
+html.reduce-motion .rcv details.rcv-details::details-content {
+  transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rcv details.rcv-details::details-content {
+    transition: none;
+  }
+}
+/* Charts draw at a fallback width until they measure themselves; on a 320px
+   phone that first frame pushed the page sideways. */
+.rcv-plot > svg {
+  max-width: 100%;
+}

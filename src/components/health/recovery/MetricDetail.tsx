@@ -471,7 +471,12 @@ export function MetricDetail({
                   7-day average
                 </span>
               )}
-              <span style={{ marginLeft: 'auto' }}>
+              <span
+                className={
+                  count < win || data.historyError || data.sampleHistoryError ? undefined : 'rcv-sr'
+                }
+                style={{ marginLeft: 'auto' }}
+              >
                 {count}/{win} days
                 {data.historyError || data.sampleHistoryError
                   ? ' · some sources could not refresh'
