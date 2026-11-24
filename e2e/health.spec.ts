@@ -29,6 +29,7 @@ const css =
   readFileSync('src/components/health/health.css', 'utf8') +
   readFileSync('src/components/health/health-entry.css', 'utf8') +
   readFileSync('src/components/health/health-import.css', 'utf8') +
+  readFileSync('src/components/health/recovery/recovery.css', 'utf8') +
   fonts
 
 async function render(
@@ -50,16 +51,20 @@ async function render(
   await page.evaluate(() => document.fonts.ready)
 }
 
+const noOverflow = (page: import('@playwright/test').Page) =>
+  page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)
+
 for (const width of [320, 390, 430, 768, 1280])
   for (const light of [false, true]) {
     test(`overview ${width}px ${light ? 'light' : 'dark'}`, async ({ page }, info) => {
       const errors: string[] = []
       page.on('pageerror', (error) => errors.push(error.message))
       await render(page, { width, light })
-      await expect(page.locator('#sleep').getByText('7h 18m', { exact: true })).toBeVisible()
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
-        true
-      )
+      await expect(page.getByRole('heading', { level: 1, name: 'Recovery' })).toBeVisible()
+      await expect(page.locator('#sleep')).toHaveAttribute('aria-label', /^Sleep 7h 18m, score 81/)
+      await expect(page.getByRole('img', { name: /^Charge \d+ of 100/ })).toBeVisible()
+      await expect(page.getByRole('heading', { name: 'Vitals' })).toBeVisible()
+      expect(await noOverflow(page)).toBe(true)
       await page.screenshot({
         path: info.outputPath(`health-${width}-${light ? 'light' : 'dark'}.png`),
         fullPage: true
@@ -78,20 +83,22 @@ for (const state of ['disconnected', 'partial', 'delayed', 'error', 'loading']) 
     }
     if (state === 'disconnected')
       await expect(page.getByRole('link', { name: 'Connect Garmin', exact: true })).toBeVisible()
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    if (state === 'partial') await expect(page.locator('#sleep')).toContainText('No sleep recorded')
+    expect(await noOverflow(page)).toBe(true)
     await page.screenshot({ path: info.outputPath(`${state}.png`), fullPage: true })
   })
 }
 for (const view of ['sleep', 'metric'])
-  test(`${view} detail and large text`, async ({ page }, info) => {
-    await render(page, { view, large: true, width: 390, light: true })
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-    await expect(page.locator('.health-topline').getByRole('link', { name: 'Health', exact: true })).toHaveAttribute(
-      'href',
-      '/progress/health?date=2026-11-16'
-    )
-    await page.screenshot({ path: info.outputPath(`${view}-large.png`), fullPage: true })
-  })
+  for (const width of [390, 1280])
+    test(`${view} detail at ${width}px and large text`, async ({ page }, info) => {
+      await render(page, { view, large: width === 390, width, light: width === 390 })
+      expect(await noOverflow(page)).toBe(true)
+      await expect(page.getByRole('link', { name: 'Back to Recovery' })).toHaveAttribute(
+        'href',
+        '/progress/health?date=2026-11-16'
+      )
+      await page.screenshot({ path: info.outputPath(`${view}-${width}.png`), fullPage: true })
+    })
 test('Garmin trends display coverage and keyboard controls on a narrow screen', async ({ page }) => {
   await render(page, { state: 'garmin', width: 320 })
   const section = page.getByRole('region', { name: 'Garmin Connect measurements' })
@@ -105,26 +112,42 @@ test('Garmin trends display coverage and keyboard controls on a narrow screen', 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 })
 
-test('date navigation, stage keyboard, table alternatives and editable Coach suggestion', async ({
-  page
-}) => {
+test('day strip, calendar, drivers and an editable Coach suggestion', async ({ page }) => {
   await render(page)
-  await page.getByRole('button', { name: 'Previous day' }).click()
+  const strip = page.getByRole('navigation', { name: 'Choose a day' })
+  await expect(strip.locator('[aria-pressed="true"]')).toHaveCount(1)
+  await strip.getByRole('button', { name: /Nov 15/ }).click()
   await page.getByRole('button', { name: 'Choose health date' }).click()
   await expect(page.getByLabel('Selected health date')).toHaveValue('2026-11-15')
   await page.getByRole('button', { name: 'Close date picker' }).click()
-  await page.getByRole('button', { name: 'Next day' }).click()
-  await page.getByRole('button', { name: 'Ask Coach' }).click()
+  await strip.getByRole('button', { name: /Nov 16/ }).click()
+  const driver = page.getByRole('region', { name: 'What moved it' }).getByRole('button').first()
+  await expect(driver).toHaveAttribute('aria-expanded', 'false')
+  await driver.click()
+  await expect(driver).toHaveAttribute('aria-expanded', 'true')
+  await page.getByRole('button', { name: /^Ask Coach about/ }).click()
   expect(await page.evaluate(() => window.healthFixture.draft)).toContain('2026-11-16')
   expect(await page.evaluate(() => window.healthFixture.sent)).toBeUndefined()
-  const stage = page.getByRole('group', { name: /Sleep stages/ })
-  await stage.focus()
-  await stage.press('ArrowRight')
-  await expect(page.locator('.health-chart-reading').first()).toContainText('Light')
-  await page.getByText('Stages', { exact: true }).click()
+})
+test('sleep stages are read by keyboard and have a table', async ({ page }) => {
+  await render(page, { view: 'sleep' })
+  const stages = page.getByRole('group', { name: /^Sleep stages from/ })
+  await stages.focus()
+  await stages.press('Home')
+  await stages.press('ArrowRight')
+  await expect(page.locator('.rcv-readout').first()).toContainText('Light')
+  await page.getByText('Stage table', { exact: true }).click()
   await expect(page.getByRole('table').first()).toBeVisible()
+})
+test('metric trend windows, chips and coverage', async ({ page }) => {
+  await render(page, { view: 'metric' })
+  await expect(page.getByRole('heading', { level: 1, name: 'Resting HR' })).toBeVisible()
   await page.getByRole('button', { name: '90 days', exact: true }).click()
-  await expect(page.getByText('90/90 days', { exact: true })).toBeVisible()
+  await expect(page.getByText('90/90 days', { exact: false })).toBeVisible()
+  const chips = page.getByRole('group', { name: 'Measurement' })
+  await expect(chips.getByRole('link', { name: 'Resting HR' })).toHaveAttribute('aria-current', 'page')
+  expect(await chips.evaluate((el) => !!el.closest('[data-swipe-ignore]'))).toBe(false)
+  expect(await chips.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true)
 })
 test('charts are read by dragging, with no slider', async ({ page }) => {
   await render(page)
@@ -134,8 +157,8 @@ test('charts are read by dragging, with no slider', async ({ page }) => {
   })
   await plot.scrollIntoViewIfNeeded()
   const box = (await plot.boundingBox())!
-  const reading = plot.getByRole('status')
-  const y = box.y + box.height / 2
+  const reading = page.locator('#day .rcv-readout')
+  const y = box.y + box.height / 3
   await page.mouse.move(box.x + box.width * 0.2, y)
   await page.mouse.down()
   await page.mouse.move(box.x + box.width * 0.3, y, { steps: 5 })
@@ -143,35 +166,12 @@ test('charts are read by dragging, with no slider', async ({ page }) => {
   await page.mouse.move(box.x + box.width * 0.7, y, { steps: 10 })
   await page.mouse.up()
   expect(await reading.innerText()).not.toEqual(early)
-  await expect(reading).toContainText('Energy')
-})
-test('the lower chart shows the readings above its selected point', async ({ page }) => {
-  await render(page, { width: 1280 })
-  await page.setViewportSize({ width: 1280, height: 370 })
-  const day = page.locator('#day')
-  const stress = day.getByRole('group', { name: /^Physiological stress chart/ })
-  await stress.scrollIntoViewIfNeeded()
-  const box = (await stress.getByRole('img').boundingBox())!
-  const x = box.x + box.width * (8 + (56 / 95) * (360 - 16)) / 360
-  await page.mouse.move(x, box.y + box.height / 2)
-  const reading = stress.getByRole('status')
-  await expect(reading).toContainText('14:00')
-  await expect(reading).toContainText('Energy')
   await expect(reading).toContainText('Stress')
-  await expect(reading).toBeInViewport()
-  await expect(day.getByRole('status')).toHaveCount(1)
-  const dot = (await stress.locator('.health-focus').boundingBox())!
-  const callout = (await reading.boundingBox())!
-  expect(callout.y + callout.height).toBeLessThan(dot.y)
-  expect(dot.x + dot.width / 2).toBeGreaterThan(callout.x)
-  expect(dot.x + dot.width / 2).toBeLessThan(callout.x + callout.width)
-  await stress.focus()
-  await stress.press('ArrowRight')
-  await expect(reading).toContainText('14:15')
-  await expect(day.locator('.health-plot-accent .health-cursor')).toHaveAttribute(
-    'x1',
-    (await stress.locator('.health-cursor').getAttribute('x1'))!
-  )
+  await plot.focus()
+  await plot.press('End')
+  await expect(reading).toContainText('8:00 PM')
+  await plot.press('ArrowLeft')
+  await expect(reading).toContainText('7:45 PM')
 })
 test('touch drag scrubs a chart', async ({ browser }) => {
   const context = await browser.newContext({
@@ -185,14 +185,14 @@ test('touch drag scrubs a chart', async ({ browser }) => {
   })
   await plot.scrollIntoViewIfNeeded()
   const box = (await plot.boundingBox())!
-  const reading = plot.getByRole('status')
+  const reading = page.locator('#day .rcv-readout')
   const client = await context.newCDPSession(page)
   const touch = (type: 'touchStart' | 'touchMove' | 'touchEnd', x: number, y: number) =>
     client.send('Input.dispatchTouchEvent', {
       type,
       touchPoints: type === 'touchEnd' ? [] : [{ x, y }]
     })
-  const y = box.y + box.height / 2
+  const y = box.y + box.height / 3
   await touch('touchStart', box.x + box.width * 0.15, y)
   const first = await reading.innerText()
   for (let i = 1; i <= 12; i++) await touch('touchMove', box.x + box.width * (0.15 + i * 0.05), y)
@@ -200,33 +200,13 @@ test('touch drag scrubs a chart', async ({ browser }) => {
   expect(await reading.innerText()).not.toEqual(first)
   await context.close()
 })
-
-test('horizontal pill rows and the date strip can scroll and are not swipe-ignored', async ({
-  page
-}) => {
-  await render(page, { width: 360 })
-  for (const selector of ['.health-chips-scroll', '.health-strip']) {
-    const row = page.locator(selector).first()
-    await row.scrollIntoViewIfNeeded()
-    // The app's iOS haptic layer refuses to forward scrolls inside data-swipe-ignore.
-    expect(await row.evaluate((el) => !!el.closest('[data-swipe-ignore]'))).toBe(false)
-    expect(await row.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true)
-    const moved = await row.evaluate((el) => {
-      el.scrollLeft = 0
-      el.scrollLeft += 120
-      return el.scrollLeft
-    })
-    expect(moved).toBeGreaterThan(0)
-  }
-})
-test('chart axis labels line up with the plot, not the y-label gutter', async ({ page }) => {
+test('the Progress card shows Charge, the week and opens Recovery', async ({ page }, info) => {
   await render(page, { width: 390 })
-  const plot = page.locator('.health-plot').first()
-  const axis = page.locator('.health-axis-plot').first()
-  const svg = plot.locator('svg').first()
-  await svg.scrollIntoViewIfNeeded()
-  const [s, a] = await Promise.all([svg.boundingBox(), axis.locator('span').first().boundingBox()])
-  expect(Math.abs(a!.x - s!.x)).toBeLessThan(10)
+  const entry = page.locator('.rcv-entry')
+  await expect(entry).toHaveAttribute('href', '/progress/health')
+  await expect(entry).toHaveAttribute('aria-label', /^Recovery: Charge \d+/)
+  await expect(entry.locator('.rcv-bars > i')).toHaveCount(7)
+  await entry.screenshot({ path: info.outputPath('progress-card.png') })
 })
 
 test('Settings: a Garmin export zip is previewed and imported in batches through the RPC', async ({
@@ -337,14 +317,13 @@ test('readiness trend: usual band, picked reading, status and empty state', asyn
 })
 
 test('the Energy link spans the same width as the cards around it', async ({ page }) => {
-  // Narrow enough that its text no longer fills the row on its own.
   await render(page, { width: 390 })
   const entry = page.locator('.energy-entry')
   await expect(entry).toBeVisible()
-  const [box, above] = await entry.evaluate((el) => [
+  const [box, below] = await entry.evaluate((el) => [
     el.getBoundingClientRect().toJSON(),
-    (el.previousElementSibling as HTMLElement).getBoundingClientRect().toJSON()
+    (el.nextElementSibling as HTMLElement).getBoundingClientRect().toJSON()
   ])
-  expect(Math.round(box.x)).toBe(Math.round(above.x))
-  expect(Math.round(box.width)).toBe(Math.round(above.width))
+  expect(Math.round(box.x)).toBe(Math.round(below.x))
+  expect(Math.round(box.width)).toBe(Math.round(below.width))
 })

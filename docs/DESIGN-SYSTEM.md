@@ -99,37 +99,44 @@ Three rules that are easy to get wrong:
 CSS at the 768px breakpoint shows exactly one — there is no JS width detection.
 Both share `UnitContext`, so the kg/lbs toggle stays in sync across them.
 
-## Health
+## Health (Recovery)
 
-`src/components/health/health.css` extends the existing theme with sleep-stage
-mark tokens (`--sleep-awake`, `--sleep-rem`, `--sleep-light`, `--sleep-deep`),
-with separate light-theme values. Named lanes and interval tables communicate
-the stages independently of color. Health uses rem-based readable text,
-tabular values, 16px panels and static SVG charts. Plot gaps remain gaps;
-energy and stress use separate scales. No continuously animated charts or
-duplicate large score rings. The nested routes retain Progress navigation.
+The Health destination is presented as **Recovery**. Its screens live in
+`src/components/health/recovery/` (`Overview`, `SleepDetail`, `MetricDetail`,
+`Chrome` for the header/day strip/Coach button, `model.ts` for pure display
+logic, `motion.ts` for the count-up, width and scrub hooks) and are styled by
+`recovery.css`, which extends the theme with band tokens: `--rcv-primed`
+(the lime fill), `--rcv-steady` (amber), `--rcv-easy` (blue), each with a
+`*-text` variant for light mode, plus `--rcv-held` for inputs that held Charge
+back. Set `data-band` on an element to get `--band` / `--band-text`.
+`src/components/health/health.css` still provides the sleep-stage tokens
+(`--sleep-*`) and styles the secondary panels (Body signals, Readiness,
+Garmin details, sources).
 
-Mobile reading patterns (Health redesign): a 21-day date strip (dots = records)
-sits under the prev/next/calendar controls; "Your metrics" are tappable tiles with
-a 14-day sparkline and a plain "In your usual range / Above / Below usual" line
-(from `metricBaseline`, never a good/bad verdict, and volume metrics like steps
-say "Daily total"); sleep shows a proportional stage bar plus a legend before the
-drag-to-read hypnogram; trend charts draw the personal usual range as a shaded
-band and show Low/Average/High. The overview keeps exactly one large ring
-(Recovery), so the brief uses numbers, not a second ring. Every chart still has
-its table alternative, and numbers use JetBrains Mono.
+Layout: the overview leads with the answer, one large Charge ring with a
+count-up and zone arcs, the headline for its band and "Today's call"
+(Easy/Steady/Push with an RPE). Then "What moved it" (each Charge input as a
+bar left/right of neutral, tap for the sentence), last night's sleep, the day
+chart (Body Battery / HR / steps with the stress strip), vitals tiles (a dot on
+a track against the personal usual band from `metricBaseline`, never a
+good/bad verdict; volume metrics say "Daily total"), VO₂ max, then the
+secondary panels and a "Data & sources" drawer. A 7-day strip under the title
+shows each morning's Charge as a bar and opens the calendar. At ≥1024px the
+overview becomes a three-column grid with the hero column sticky; sleep and
+metric details become two columns. The Progress card (`HealthEntry`) and the
+Home strip (`ChargeRing`) reuse the same band language.
 
-Charts on Health are read by dragging, never with a slider: a tap reads that
-point, a horizontal drag scrubs (pointer capture), and a vertical drag is left to
-the page so scrolling over a chart still works. Plots carry `data-swipe-ignore`
-so the tab swipe navigator never steals the gesture. The page's bottom padding is
-small on purpose: `.app-main` already clears the nav and home indicator.
+Motion: entrances use `.rcv-rise` (indexed with `--i`), lines draw in with
+`.rcv-draw` and redraw when their data key changes, segmented controls slide a
+thumb, and the ring halo, sync dot and "now" dot pulse continuously. All of it
+stops under Reduce Motion (in-app class and OS query); `useCountUp` returns the
+target immediately when motion is reduced.
 
-Refinement rules for Health (keep when adding to it): the date appears once in
-the pill (a "Today" badge marks today) and once as the selected day in the strip;
-sync state, source details and Refresh share one status bar; metric tiles sit on
-the page under a section label instead of inside a second card; durations use
-large numbers with quiet units (`7h 18m`), and anything under an hour reads
-`42m`; the hypnogram draws connectors between stage changes; and all panel body
-copy is 14px so only data is large.
-
+Charts are read by dragging, never with a slider: a tap reads that point, a
+horizontal drag scrubs (pointer capture), a vertical drag is left to the page
+(`touch-action: pan-y`), and every plot is a focusable group read with the
+arrow keys, Home and End (`useScrub`). Plots carry `data-swipe-ignore`; chip
+rows do not. Charts draw at their measured pixel width (`useWidth`) so marks
+never stretch. Every chart keeps a table alternative (stage table, the metric's
+"Data and source coverage" table). Gaps in a series stay gaps. Numbers use
+JetBrains Mono; durations read `7h 18m` with quiet units.
