@@ -267,7 +267,11 @@ export default function HealthImportSettings() {
   const scriptEnv = `pip install "garminconnect>=0.3,<0.4"
 export GRIND_URL="${origin}"
 export GRIND_TOKEN="${token || 'gwt_… (create a token above)'}"
-python3 garmin-sleep-sync.py --days 14`
+python3 garmin-sleep-sync.py --days 7 --require-hrv`
+  const windowsScriptEnv = `py -m pip install "garminconnect>=0.3,<0.4"
+$env:GRIND_URL = "${origin}"
+$env:GRIND_TOKEN = "${token || "gwt_… (create a token above)"}"
+py .\\garmin-sleep-sync.py --days 7 --require-hrv`
 
   return (
     <div id="health-import" className="hi">
@@ -419,12 +423,14 @@ python3 garmin-sleep-sync.py --days 14`
             Download garmin-sleep-sync.py
           </a>{' '}
           then run it where Python 3 is installed (a Mac, PC or a small always-on box). Schedule it
-          each morning with cron or launchd for a near-daily catch-up.
+          each morning with Windows Task Scheduler, cron or launchd. Add{' '}
+          <code>--non-interactive</code> to scheduled runs after the first sign-in.
         </p>
-        <CopyBlock text={scriptEnv} label="Setup and run commands" />
+        <CopyBlock text={scriptEnv} label="macOS or Linux commands" />
+        <CopyBlock text={windowsScriptEnv} label="Windows PowerShell commands" />
         <p className="hi-note">
-          Written to the community library’s documented behavior and not verified against a live
-          account. Run it once with <code>--dry-run</code> and compare a night with Garmin Connect.
+          Use <code>--dry-run --require-hrv</code> to check Garmin first without a GRIND token or an upload.
+          The script prints which dates have overnight HRV.
         </p>
       </details>
 
