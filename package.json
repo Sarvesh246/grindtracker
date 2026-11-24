@@ -10,7 +10,7 @@
     "coach:eval": "tsx --env-file=.env.local scripts/coach-eval/run.ts",
     "replab": "node --env-file=.env.local watch/tools/replab.mjs",
     "watchreport": "node --env-file=.env.local watch/tools/watchreport.mjs",
-    "test": "tsx --test scripts/__tests__/*.test.ts src/lib/utils/__tests__/*.test.ts src/lib/coach/__tests__/*.test.ts src/lib/cache/__tests__/*.test.ts src/lib/supabase/__tests__/*.test.ts src/components/coach/__tests__/*.test.ts src/components/onboarding/__tests__/*.test.ts src/lib/hooks/__tests__/*.test.ts src/lib/watch/__tests__/*.test.ts src/lib/body/__tests__/*.test.ts src/lib/reps/__tests__/*.test.ts src/lib/health/__tests__/*.test.ts src/lib/energy/__tests__/*.test.ts",
+    "test": "tsx --test scripts/__tests__/*.test.ts src/lib/utils/__tests__/*.test.ts src/lib/coach/__tests__/*.test.ts src/lib/cache/__tests__/*.test.ts src/lib/supabase/__tests__/*.test.ts src/components/coach/__tests__/*.test.ts src/components/onboarding/__tests__/*.test.ts src/components/health/recovery/__tests__/*.test.tssrc/lib/hooks/__tests__/*.test.ts src/lib/watch/__tests__/*.test.ts src/lib/body/__tests__/*.test.ts src/lib/reps/__tests__/*.test.ts src/lib/health/__tests__/*.test.ts src/lib/energy/__tests__/*.test.ts",
     "test:e2e": "playwright test",
     "migrations:check": "tsx --env-file=.env.local scripts/check-migrations.ts",
     "test:sql-parity": "tsx --test src/lib/utils/__tests__/sqlParity.test.ts src/lib/watch/__tests__/watchApi.db.test.ts",

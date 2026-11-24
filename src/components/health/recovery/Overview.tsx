@@ -448,7 +448,9 @@ export function DayCard({
   const values = Array.from({ length: 96 }, (_, i) => sets[active][i] ?? null)
   const stress = Array.from({ length: 96 }, (_, i) => row?.stress_series?.[i] ?? null)
   const last = lastIndex(values)
-  const max = last >= 0 ? last : 95
+  // Stress bars stay visible past the selected series' last reading, so the
+  // scrubber has to reach them too.
+  const max = Math.max(last, lastIndex(stress)) >= 0 ? Math.max(last, lastIndex(stress)) : 95
   const scrub = useScrub(96, { max, resetKey: `${date}:${active}` })
   if (!row || (!options.length && !stress.some((v) => v != null)))
     return (

@@ -14,7 +14,7 @@ import {
 import { ChevronRight } from '@/components/ui/Icons'
 import { ChevronDownSmall, CoachButton, MoonIcon } from './Chrome'
 import { Duration, STAGE_COLOR, STAGES, thumbStyle } from './Overview'
-import { clockMinutes, hm, reading, sleepSourcesNote, STAGE_LANE, stageUsual } from './model'
+import { hm, reading, sleepSourcesNote, sleepSpan, STAGE_LANE, stageUsual } from './model'
 import { useScrub, useWidth } from './motion'
 
 const LANE_H = 34
@@ -215,8 +215,9 @@ function Rhythm({ data, date, sleep }: { data: HealthSummary; date: string; slee
   }))
   const logged = nights.filter((n): n is { day: string; night: SleepSession } => !!n.night)
   if (logged.length < 2) return null
-  const beds = logged.map((n) => clockMinutes(n.night.start_at, n.night.timezone))
-  const wakes = logged.map((n) => clockMinutes(n.night.end_at, n.night.timezone))
+  const spans = logged.map((n) => sleepSpan(n.night))
+  const beds = spans.map((s) => s.bed)
+  const wakes = spans.map((s) => s.wake)
   const lo = Math.floor((Math.min(...beds) - 30) / 60) * 60
   const hi = Math.ceil((Math.max(...wakes) + 30) / 60) * 60
   const longest = Math.max(...logged.map((n) => n.night.duration_seconds), 8 * 3600)
@@ -273,8 +274,7 @@ function Rhythm({ data, date, sleep }: { data: HealthSummary; date: string; slee
       </div>
       <div className="rcv-nights" role="list">
         {nights.map(({ day, night }, i) => {
-          const b = night ? clockMinutes(night.start_at, night.timezone) : 0
-          const e = night ? clockMinutes(night.end_at, night.timezone) : 0
+          const { bed: b, wake: e } = night ? sleepSpan(night) : { bed: 0, wake: 0 }
           return (
             <div
               key={day}

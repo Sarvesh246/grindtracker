@@ -260,6 +260,21 @@ export function clockMinutes(iso: string, timeZone: string): number {
   return m >= 720 ? m - 1440 : m
 }
 
+/**
+ * Bed and wake on one continuous timeline: bed is folded like clockMinutes,
+ * wake is bed plus the real elapsed time, so a 23:00-12:00 sleep stays
+ * -60..720 instead of folding the wake into the previous evening.
+ */
+export function sleepSpan(night: {
+  start_at: string
+  end_at: string
+  timezone: string
+}): { bed: number; wake: number } {
+  const bed = clockMinutes(night.start_at, night.timezone)
+  const elapsed = (new Date(night.end_at).getTime() - new Date(night.start_at).getTime()) / 60000
+  return { bed, wake: bed + Math.max(0, Math.round(elapsed)) }
+}
+
 const FIELD_NAME = {
   stages: 'stage timeline',
   stage_totals: 'stage totals',
