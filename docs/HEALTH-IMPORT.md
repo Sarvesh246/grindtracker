@@ -24,6 +24,15 @@ combines them per night.
    Sleep screens say so ("Garmin data export · stage timeline from Apple Health").
 4. The winner's own values are never overwritten, and values are never averaged.
 
+## Check Garmin sync before scheduling it
+
+Run the downloaded script with `--days 7 --dry-run --require-hrv`. The first
+run prompts for Garmin sign-in and saves the local session. Check the printed
+HRV dates against Garmin Connect. The dry run needs no GRIND token and sends
+nothing to GRIND. Then run with a GRIND URL and device token and omit
+`--dry-run`. Scheduled jobs should use `--non-interactive --require-hrv` so a
+missing session or missing HRV results in a failed job and a readable message.
+
 ## Safety and privacy decisions
 
 - **No Garmin credentials are stored by GRIND.** The script logs in on the owner's
