@@ -2247,9 +2247,6 @@ html.reduce-motion .grind-sheet-backdrop[data-closing='true'] {
 }
 .settings-card > [id] { scroll-margin-top: 96px; }
 .settings-card > #health-import { padding-bottom: 0; margin-bottom: 0; border-bottom: 0; }
-.garmin-scopes { display: grid; gap: 0.65rem; border: 0; padding: 0; margin: 1rem 0; min-width: 0; }
-.garmin-scopes legend { margin-bottom: 0.55rem; }
-.garmin-scopes label { display: flex; align-items: center; gap: 0.55rem; min-height: 2rem; }
 .home-garmin-morning, .progress-garmin-entry {
   display: grid;
   gap: 0.35rem;
