@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getBodySummary } from '@/lib/body/queries'
+import { readGarminHealth } from './garmin/queries'
 import {
   mainSleep,
   shiftDate,
@@ -35,7 +36,7 @@ export async function getHealthSummary(
   date: string,
   timeZone: string
 ) {
-  const [body, sleep, history, samples, connections, workouts] = await Promise.all([
+  const [body, sleep, history, samples, connections, workouts, garmin] = await Promise.all([
     getBodySummary(client, userId, date),
     client
       .from('sleep_sessions')
@@ -69,7 +70,8 @@ export async function getHealthSummary(
       .eq('local_date', date)
       .not('completed_at', 'is', null)
       .order('started_at')
-      .limit(6)
+      .limit(6),
+    readGarminHealth(client, userId, date).catch((): Awaited<ReturnType<typeof readGarminHealth>> => ({ history: [], selected: {} }))
   ])
   const sleepState: SleepReadState = !sleep.error
     ? 'ready'
@@ -109,6 +111,7 @@ export async function getHealthSummary(
   })
   return {
     body,
+    garmin,
     sleeps,
     sleepState,
     history: canonicalHistory,

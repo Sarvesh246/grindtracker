@@ -2038,6 +2038,14 @@ html.reduce-motion .health-refresh-btn svg[data-spin='true'] {
   color: var(--danger);
 }
 .body-signal-record { margin: 0; }
+
+.garmin-activities { list-style: none; display: grid; gap: 0.7rem; padding: 0; margin: 0; }
+.garmin-activities a { display: grid; gap: 0.35rem; text-decoration: none; color: inherit; }
+.garmin-activities small, .garmin-activities span { color: var(--text-secondary); }
+.garmin-detail-grid { grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); }
+.garmin-route { width: 100%; height: auto; max-height: 19rem; color: var(--accent); background: var(--surface); border-radius: 0.6rem; }
+.garmin-trend-select { display: flex; align-items: center; flex-wrap: wrap; gap: 0.6rem; margin-block: 0.65rem; }
+.garmin-trend-select select { font: inherit; min-height: 2.5rem; max-width: 100%; }
 @media (max-width: 520px) {
   .body-signal-list li {
     grid-template-columns: minmax(0, 1fr) auto;

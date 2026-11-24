@@ -286,6 +286,7 @@ interface Props {
   displayName: string
   username: string | null
   coachDevUnlimited: boolean
+  garminPersonalAvailable?: boolean
 }
 
 export default function SettingsView({
@@ -294,6 +295,7 @@ export default function SettingsView({
   displayName,
   username,
   coachDevUnlimited,
+  garminPersonalAvailable,
 }: Props) {
   const router = useRouter()
   const { demoMode, toggleDemoMode } = useDemoMode()
@@ -1300,7 +1302,7 @@ export default function SettingsView({
           <WatchDevices supabase={supabase} />
         </Section>
         <Section label="Sleep & health sources">
-          <HealthImportSettings />
+          <HealthImportSettings garminPersonalAvailable={garminPersonalAvailable} />
         </Section>
       </div>
       <div className="settings-stack">

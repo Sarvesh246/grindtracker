@@ -86,6 +86,7 @@ const body = {
   readiness: summarizeReadiness(readinessChecks, date)
 }
 export const data: HealthSummary = {
+  garmin: { history: [], selected: {} },
   body,
   sleeps: [sleep],
   sleepState: 'ready',

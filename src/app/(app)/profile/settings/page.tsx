@@ -1,6 +1,7 @@
 import { createClient, getAuthUser } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { isAdminEmail } from '@/lib/utils/admin'
+import { garminPersonalConfig } from '@/lib/health/garmin/config'
 import SettingsView from './SettingsView'
 
 export default async function ProfileSettingsPage() {
@@ -29,6 +30,7 @@ export default async function ProfileSettingsPage() {
     <SettingsView
       recurringRestDays={(restDayRows ?? []).map(r => r.day_of_week)}
       isAdmin={isAdminEmail(user.email)}
+      garminPersonalAvailable={garminPersonalConfig()?.userId === user.id}
       displayName={displayName}
       username={profile?.username ?? null}
       coachDevUnlimited={profile?.coach_dev_unlimited ?? false}

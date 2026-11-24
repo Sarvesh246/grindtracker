@@ -50,8 +50,11 @@ const sampleSchema = z
     if (Date.parse(s.end_at) < Date.parse(s.start_at))
       ctx.addIssue({ code: 'custom', message: 'Interval ends before it starts' })
   })
-export const sleepSchema = z
-  .object({
+export const sleepSchema = makeSleepSchema(0)
+const garminPersonalSleepSchema = makeSleepSchema(10)
+
+function makeSleepSchema(stageRoundingSeconds: number) {
+  return z.object({
     provider_id: z.string().min(1).max(160),
     wake_date: date,
     provider_date: date,
@@ -108,10 +111,13 @@ export const sleepSchema = z
       previous = to
     }
     const total = Object.values(s.stage_totals ?? {}).reduce((n, v) => n + v, 0)
-    if (total * 1000 > end - start)
+    if (total * 1000 > end - start + stageRoundingSeconds * 1000)
       ctx.addIssue({ code: 'custom', message: 'Stage totals exceed time in bed' })
   })
-const healthBatchSchema = z
+}
+
+function createHealthBatchSchema(allowGarminRounding: boolean) {
+  return z
   .object({
     version: z.literal(1),
     batch_id: z.uuid(),
@@ -119,7 +125,7 @@ const healthBatchSchema = z
     source,
     captured_at: timestamp,
     samples: z.array(sampleSchema).max(256),
-    sleeps: z.array(sleepSchema).max(14)
+    sleeps: z.array(allowGarminRounding ? garminPersonalSleepSchema : sleepSchema).max(14)
   })
   .strict()
   .superRefine((batch, ctx) => {
@@ -137,9 +143,14 @@ const healthBatchSchema = z
       sleeps.add(sleep.provider_id)
     }
   })
+}
+
+const healthBatchSchema = createHealthBatchSchema(false)
+const garminPersonalBatchSchema = createHealthBatchSchema(true)
 
 export function validateHealthBatch(input: unknown, now: Date) {
-  return healthBatchSchema
+  const isGarminPersonal = input != null && typeof input === 'object' && 'source' in input && input.source === 'garmin_personal'
+  return (isGarminPersonal ? garminPersonalBatchSchema : healthBatchSchema)
     .superRefine((batch, ctx) => {
       const earliest = now.getTime() - 180 * 86400000,
         latest = now.getTime() + 5 * 60000

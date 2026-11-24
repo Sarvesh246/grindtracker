@@ -1,9 +1,14 @@
-# Sleep and health import (no Garmin API key)
+# Sleep and health import
 
-Garmin's official cloud API needs partner approval, so GRIND takes sleep through
-three owner-run routes. All three end in the same validated, revision-aware
-ingestion (`health_ingest_batch`, migration 61) via migration 64, and the app
-combines them per night.
+GRIND supports one owner-configured Garmin Connect Personal connection. It syncs after Garmin receives the watch data and reuses the validated health ingestion pipeline. The file, Shortcut, and local script imports also use that pipeline.
+
+## Garmin Connect Personal
+
+Apply migration 82. In Vercel Production set `GARMIN_PERSONAL_OWNER_ID` to the intended GRIND account's Auth UUID, store `GARMIN_PERSONAL_API_KEY` as a sensitive server-only value, and set `GARMIN_PERSONAL_ENABLED=true`. The owner can check coverage and connect in **Settings → Sleep & health sources**. The cron driver from migration 82 reuses the existing Supabase Vault URL and cron credentials. The connector checks recent records every 30 minutes and runs smaller resumable backfill jobs for up to 90 days. It can be paused without losing previously imported history.
+
+Review the first 14 days of morning outcomes before setting `GARMIN_PERSONAL_PUSH_PILOT_VERIFIED=true`. Turning it on exposes a separate push opt-in. Food logs, cycle or pregnancy records, and GPS routes each require their own opt-in and are removed when that opt-in is turned off. Garmin's chartable history depends on the device and the records returned for the account.
+
+## Other import sources
 
 | Route | Source id | Gives | Freshness | Where |
 | --- | --- | --- | --- | --- |
@@ -35,7 +40,7 @@ missing session or missing HRV results in a failed job and a readable message.
 
 ## Safety and privacy decisions
 
-- **No Garmin credentials are stored by GRIND.** The script logs in on the owner's
+- **The local script keeps its own session.** It logs in on the owner's
   computer (MFA prompt included) and keeps a refreshable session only in
   `~/.garmin-grind`. The Shortcut and script authenticate with a normal GRIND
   device token (shown once, stored hashed, revocable under Watch, rate limited).

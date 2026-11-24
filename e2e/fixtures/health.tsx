@@ -32,7 +32,13 @@ function Fixture() {
         }
       : state === 'partial'
         ? { ...data, sleeps: [], sleepState: 'not_enabled' as const }
-        : data
+        : state === 'garmin' ? {
+          ...data,
+          garmin: {
+            history: [{ local_date: date, overnight_hrv: 49, weight_kg: 80, sleep_spo2: 96 }],
+            selected: { hrv_status: 'BALANCED', hrv_baseline_low: 45, hrv_baseline_high: 55 }
+          }
+        } : data
   return (
     <div className="page health-page">
       <p className="health-muted" style={{ marginBottom: 16 }}>

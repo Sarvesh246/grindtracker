@@ -202,7 +202,7 @@ function totalsFromStages(stages: SleepStage[]) {
 /** One Garmin night: a Connect `dailySleepData` response or one object from the export. */
 export function parseGarminNight(
   input: unknown,
-  source: 'garmin_export' | 'garmin_unofficial',
+  source: 'garmin_export' | 'garmin_unofficial' | 'garmin_personal',
   opts: { now?: Date; fallbackZone?: string } = {}
 ): Parsed {
   const root = rec(input)
@@ -306,7 +306,7 @@ const inRange = (v: number | null, lo: number, hi: number) =>
   v != null && v >= lo && v <= hi ? v : null
 
 /** One entry of an export day's `napList`. Naps carry no stages, score or vitals. */
-function parseGarminNap(
+export function parseGarminNap(
   input: unknown,
   opts: { now?: Date; fallbackZone?: string } = {}
 ): Parsed {

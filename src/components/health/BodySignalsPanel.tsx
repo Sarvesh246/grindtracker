@@ -42,6 +42,13 @@ function Deviation({ signal }: { signal: Signal }) {
   )
 }
 
+function localDateTime(value?: string | null) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (!Number.isFinite(date.getTime())) return ''
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
+}
+
 export function BodySignalsPanel({
   signals,
   record,
@@ -56,10 +63,21 @@ export function BodySignalsPanel({
   const [tags, setTags] = useState<string[]>(signals.labels)
   const [saving, setSaving] = useState(false)
   const [failed, setFailed] = useState(false)
+  const [onset, setOnset] = useState(() => localDateTime(signals.symptomsOnsetAt))
 
   async function toggle(id: string) {
     if (saving || labelsError) return
     const next = tags.includes(id) ? tags.filter(t => t !== id) : [...tags.filter(t => !(id === 'fine' || t === 'fine')), id]
+    await save(next, next.includes('sick') ? onset : '', new Date())
+  }
+
+  async function save(next: string[], noticed: string, submittedAt: Date) {
+    if (saving || labelsError) return
+    const time = noticed ? new Date(noticed) : null
+    if (time && (!Number.isFinite(time.getTime()) || time.getTime() > submittedAt.getTime())) {
+      setFailed(true)
+      return
+    }
     const prev = tags
     setTags(next)
     setSaving(true)
@@ -72,12 +90,17 @@ export function BodySignalsPanel({
       : next.length
       ? await supabase
           .from('body_signal_labels')
-          .upsert({ user_id: userId, local_date: signals.date, tags: next, updated_at: new Date().toISOString() }, { onConflict: 'user_id,local_date' })
+          .upsert({
+            user_id: userId, local_date: signals.date, tags: next, updated_at: submittedAt.toISOString(),
+            ...(signals.source === 'garmin_personal' ? { symptoms_onset_at: time?.toISOString() ?? null } : {})
+          }, { onConflict: 'user_id,local_date' })
       : await supabase.from('body_signal_labels').delete().eq('user_id', userId).eq('local_date', signals.date)
     setSaving(false)
     if (error) {
       setTags(prev)
       setFailed(true)
+    } else if (!next.includes('sick')) {
+      setOnset('')
     }
   }
 
@@ -103,7 +126,7 @@ export function BodySignalsPanel({
         </ul>
       )}
 
-      {signals.level !== 'learning' && (
+      {(signals.level !== 'learning' || signals.source === 'garmin_personal') && (
         <div className="body-signal-tags">
           <p className="health-eyebrow">How was this morning?</p>
           {labelsError && (
@@ -123,6 +146,15 @@ export function BodySignalsPanel({
               </button>
             ))}
           </div>
+          {signals.source === 'garmin_personal' && tags.includes('sick') && (
+            <form onSubmit={event => { event.preventDefault(); void save(tags, onset, new Date()) }}>
+              <label className="garmin-trend-select">First noticed symptoms
+                <input type="datetime-local" value={onset} onChange={event => setOnset(event.target.value)}
+                  disabled={saving || labelsError} />
+              </label>
+              <button type="submit" disabled={saving || labelsError} className="press">Save time</button>
+            </form>
+          )}
           {failed && <p className="body-signal-error" role="alert">Couldn&apos;t save that. Try again.</p>}
         </div>
       )}
