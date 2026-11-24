@@ -198,7 +198,37 @@ test('touch drag scrubs a chart', async ({ browser }) => {
   for (let i = 1; i <= 12; i++) await touch('touchMove', box.x + box.width * (0.15 + i * 0.05), y)
   await touch('touchEnd', 0, 0)
   expect(await reading.innerText()).not.toEqual(first)
+  // The drag leaves its reading up; a tap back on that line puts it away.
+  const line = page.locator('#day .rcv-plot svg line[y1="0"]')
+  await expect(line).toHaveCount(1)
+  const endX = box.x + box.width * 0.75
+  await touch('touchStart', endX + 8, y)
+  await touch('touchEnd', 0, 0)
+  await expect(line).toHaveCount(0)
+  // A tap somewhere else reads that point instead of clearing.
+  await touch('touchStart', box.x + box.width * 0.3, y)
+  await touch('touchEnd', 0, 0)
+  await expect(line).toHaveCount(1)
   await context.close()
+})
+test('clicking the point being read clears it, and moving away brings it back', async ({ page }) => {
+  await render(page)
+  const plot = page.getByRole('group', {
+    name: 'Body Battery chart. Use left and right arrow keys to read values.'
+  })
+  await plot.scrollIntoViewIfNeeded()
+  const box = (await plot.boundingBox())!
+  const line = page.locator('#day .rcv-plot svg line[y1="0"]')
+  const y = box.y + box.height / 3
+  await page.mouse.move(box.x + box.width * 0.4, y)
+  await expect(line).toHaveCount(1)
+  await page.mouse.down()
+  await page.mouse.up()
+  await expect(line).toHaveCount(0)
+  await page.mouse.move(box.x + box.width * 0.4 + 3, y)
+  await expect(line).toHaveCount(0)
+  await page.mouse.move(box.x + box.width * 0.6, y)
+  await expect(line).toHaveCount(1)
 })
 test('the Progress card shows Charge, the week and opens Recovery', async ({ page }, info) => {
   await render(page, { width: 390 })

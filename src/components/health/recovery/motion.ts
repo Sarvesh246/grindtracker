@@ -53,10 +53,16 @@ export function useWidth<T extends HTMLElement>(fallback: number) {
   return [setNode, width] as const
 }
 
+/** Movement under this (px) is a tap, not a drag. */
+const TAP_SLOP = 6
+/** How close (px) a tap must land to the reading's line to count as tapping it. */
+const TAP_REACH = 22
+
 /**
  * Read a chart by dragging, hovering or with the arrow keys. A horizontal drag
  * scrubs (pointer capture), a vertical one is left to the page (`touch-action:
- * pan-y` on the plot), a tap reads one point. Returns the picked index or null.
+ * pan-y` on the plot), a tap reads one point and a tap back on that point
+ * clears it. Returns the picked index or null.
  */
 export function useScrub(
   count: number,
@@ -73,6 +79,16 @@ export function useScrub(
   const [picked, setPicked] = useState<{ key: string; index: number } | null>(null)
   const index = picked?.key === resetKey ? picked.index : null
   const touch = useRef(false)
+  // A tap (no drag) back on the point already being read puts the chart away,
+  // so the whole line is visible again. `down` is where the press started and
+  // what was picked before it; `dismissed` keeps a mouse from re-picking on
+  // its next nudge, until it moves off that spot.
+  const down = useRef<{
+    x: number
+    before: number | null
+    moved: boolean
+  } | null>(null)
+  const dismissedAt = useRef<number | null>(null)
   const at = useCallback(
     (e: PointerEvent<HTMLElement>) => {
       const r = e.currentTarget.getBoundingClientRect()
@@ -87,6 +103,15 @@ export function useScrub(
     },
     [bars, count, inset, max, locate]
   )
+  /** Whether the press landed on the point being read (same item, or within a fingertip of its line). */
+  const onSelected = (e: PointerEvent<HTMLElement>, before: number) => {
+    if (at(e) === before) return true
+    if (locate || bars) return false
+    const r = e.currentTarget.getBoundingClientRect()
+    const width = r.width - inset[0] - inset[1]
+    const lineX = r.left + inset[0] + (before / Math.max(1, count - 1)) * width
+    return Math.abs(e.clientX - lineX) <= TAP_REACH
+  }
   const set = useCallback(
     (i: number | null) => setPicked(i == null ? null : { key: resetKey, index: i }),
     [resetKey]
@@ -99,14 +124,38 @@ export function useScrub(
       onPointerDown: (e: PointerEvent<HTMLElement>) => {
         touch.current = e.pointerType !== 'mouse'
         if (e.pointerType !== 'mouse') e.currentTarget.setPointerCapture?.(e.pointerId)
+        down.current = { x: e.clientX, before: index, moved: false }
+        dismissedAt.current = null
         set(at(e))
       },
       onPointerMove: (e: PointerEvent<HTMLElement>) => {
-        if (e.pointerType === 'mouse' || e.currentTarget.hasPointerCapture?.(e.pointerId))
-          set(at(e))
+        if (down.current && Math.abs(e.clientX - down.current.x) > TAP_SLOP)
+          down.current.moved = true
+        if (e.pointerType === 'mouse') {
+          if (dismissedAt.current != null) {
+            if (Math.abs(e.clientX - dismissedAt.current) <= TAP_REACH) return
+            dismissedAt.current = null
+          }
+        } else if (!e.currentTarget.hasPointerCapture?.(e.pointerId)) return
+        set(at(e))
+      },
+      onPointerUp: (e: PointerEvent<HTMLElement>) => {
+        const press = down.current
+        down.current = null
+        if (!press || press.moved || press.before == null) return
+        if (onSelected(e, press.before)) {
+          dismissedAt.current = e.clientX
+          set(null)
+        }
+      },
+      onPointerCancel: () => {
+        down.current = null
       },
       onPointerLeave: (e: PointerEvent<HTMLElement>) => {
-        if (e.pointerType === 'mouse') set(null)
+        if (e.pointerType === 'mouse') {
+          dismissedAt.current = null
+          set(null)
+        }
       },
       onBlur: () => {
         if (!touch.current) set(null)
