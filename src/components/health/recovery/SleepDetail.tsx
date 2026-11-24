@@ -253,8 +253,8 @@ function Rhythm({ data, date, sleep }: { data: HealthSummary; date: string; slee
       style={{ '--i': 6 } as CSSProperties}
       aria-labelledby="rcv-rhythm"
     >
-      <div className="rcv-card-head" style={{ alignItems: 'flex-start', flexWrap: 'wrap' }}>
-        <div>
+      <div className="rcv-card-head" style={{ alignItems: 'flex-start' }}>
+        <div style={{ flex: 1 }}>
           <h2 id="rcv-rhythm" className="rcv-label rcv-label--strong">
             Rhythm · 7 nights
           </h2>
@@ -262,7 +262,7 @@ function Rhythm({ data, date, sleep }: { data: HealthSummary; date: string; slee
             {logged.length >= 4 ? (
               <>
                 Bedtime varies{' '}
-                <b className="rcv-mono" style={{ fontWeight: 500 }}>
+                <b className="rcv-mono" style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>
                   ±{spread} min
                 </b>
               </>
@@ -271,7 +271,7 @@ function Rhythm({ data, date, sleep }: { data: HealthSummary; date: string; slee
             )}
           </p>
         </div>
-        <div className="rcv-seg" role="group" aria-label="Show" style={{ width: 150 }}>
+        <div className="rcv-seg" role="group" aria-label="Show" style={{ width: 140, flex: 'none' }}>
           <span className="rcv-seg-thumb" aria-hidden="true" style={thumbStyle(isWin ? 0 : 1, 2)} />
           <button
             type="button"
@@ -307,8 +307,7 @@ function Rhythm({ data, date, sleep }: { data: HealthSummary; date: string; slee
             >
               <span aria-hidden="true">
                 {new Date(`${day}T12:00:00`)
-                  .toLocaleDateString('en-US', { weekday: 'short' })
-                  .slice(0, 2)}
+                  .toLocaleDateString('en-US', { weekday: 'narrow' })}
               </span>
               <span className="rcv-win" aria-hidden="true">
                 {night && (
@@ -610,7 +609,7 @@ export function SleepDetail({
             </h2>
             {naps.map((nap) => (
               <p key={nap.provider_id} style={{ fontSize: 14 }}>
-                <b className="rcv-mono" style={{ fontWeight: 500 }}>
+                <b className="rcv-mono" style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>
                   {hm(nap.duration_seconds)}
                 </b>{' '}
                 <span className="rcv-muted">
