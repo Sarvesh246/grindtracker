@@ -21,7 +21,10 @@ import {
   COACH_FAB_SIZE,
   dockFromRelease,
   dockPixelPosition,
+  isNavDock,
+  navSlotAt,
 } from './dockGeometry'
+import { haptic } from '@/lib/utils/haptics'
 
 /**
  * Tap vs drag — older / clumsier taps often jitter 8–12px.
@@ -31,6 +34,13 @@ const DRAG_THRESHOLD = 16
 const DRAG_ACTIVATE_MS = 120
 /** Skip the hold delay once movement clearly isn't a tap */
 const DRAG_FAST_THRESHOLD = 32
+/**
+ * Leaving the nav bar should feel free: from a nav dock the orb lifts after a
+ * small, tap-safe move with no hold.
+ */
+const NAV_DRAG_THRESHOLD = 6
+/** How strongly the bar pulls the orb into its slot (0 = none, 1 = locked). */
+const NAV_PULL = 0.82
 
 const VEL_EMA = 0.78
 /** Release glow fade (ms) — sustained hold uses --pressed, not this timer */
@@ -70,6 +80,11 @@ export default function CoachFab() {
   const [pressed, setPressed] = useState(false)
   const [glowing, setGlowing] = useState(false)
   const [ghost, setGhost] = useState<{ x: number; y: number } | null>(null)
+  /** Where the orb was last drawn, so a release springs from there. */
+  const ghostRef = useRef<{ x: number; y: number } | null>(null)
+  useEffect(() => {
+    ghostRef.current = ghost
+  }, [ghost])
 
   const pointerId = useRef<number | null>(null)
   const start = useRef<{ x: number; y: number } | null>(null)
@@ -83,6 +98,14 @@ export default function CoachFab() {
   const springTarget = useRef({ x: 0, y: 0 })
   const pendingDock = useRef<CoachDockId | null>(null)
   const glowTimer = useRef<number | null>(null)
+  /** Finger offset inside the orb, so it doesn't jump to center on lift. */
+  const grab = useRef({ x: COACH_FAB_SIZE / 2, y: COACH_FAB_SIZE / 2 })
+  /** Drag began docked in the nav bar: no pull until the finger leaves it. */
+  const fromNav = useRef(false)
+  /** The bar may pull the orb in (armed once the finger is clear of it). */
+  const magnet = useRef(false)
+  /** Slot the orb is currently stuck to, for a one-shot haptic on entry. */
+  const stuck = useRef<'bl' | 'br' | null>(null)
 
   const cancelSpring = useCallback(() => {
     if (rafRef.current != null) {
@@ -236,6 +259,11 @@ export default function CoachFab() {
       lastTs.current = now
       vel.current = { x: 0, y: 0 }
       moved.current = false
+      const box = e.currentTarget.getBoundingClientRect()
+      grab.current = { x: e.clientX - box.left, y: e.clientY - box.top }
+      fromNav.current = isNavDock(dock)
+      magnet.current = !fromNav.current
+      stuck.current = fromNav.current ? (dock as 'bl' | 'br') : null
       // Pressed-for-drag: suppress nav haptics immediately (before threshold).
       setFabGesture(true)
       // Sustained press/glow immediately — not a flash that dies mid-hold.
@@ -247,7 +275,7 @@ export default function CoachFab() {
         // ignore
       }
     },
-    [cancelSpring, clearGlowTimer, open, setFabGesture, settling],
+    [cancelSpring, clearGlowTimer, dock, open, setFabGesture, settling],
   )
 
   const onPointerMove = useCallback(
@@ -257,12 +285,16 @@ export default function CoachFab() {
       const dy = e.clientY - start.current.y
       if (!moved.current) {
         const dist = Math.hypot(dx, dy)
-        if (dist < DRAG_THRESHOLD) return
-        const held = performance.now() - startTs.current
-        // Distance alone isn't enough for short shaky taps; a clear flick
-        // (≥ fast threshold) activates immediately so intentional drags
-        // don't feel sticky.
-        if (held < DRAG_ACTIVATE_MS && dist < DRAG_FAST_THRESHOLD) return
+        if (fromNav.current) {
+          if (dist < NAV_DRAG_THRESHOLD) return
+        } else {
+          if (dist < DRAG_THRESHOLD) return
+          const held = performance.now() - startTs.current
+          // Distance alone isn't enough for short shaky taps; a clear flick
+          // (≥ fast threshold) activates immediately so intentional drags
+          // don't feel sticky.
+          if (held < DRAG_ACTIVATE_MS && dist < DRAG_FAST_THRESHOLD) return
+        }
         moved.current = true
         setDragging(true)
         // Drop haptic host sync so MutationObserver detaches the iOS switch
@@ -294,8 +326,21 @@ export default function CoachFab() {
       lastTs.current = now
       lastPos.current = { x: e.clientX, y: e.clientY }
 
-      const x = e.clientX - COACH_FAB_SIZE / 2
-      const y = e.clientY - COACH_FAB_SIZE / 2
+      let x = e.clientX - grab.current.x
+      let y = e.clientY - grab.current.y
+      const slot = navSlotAt(e.clientX, e.clientY)
+      // Starting in the bar, the orb follows the finger 1:1 until it is clear
+      // of the bar — no pull back while lifting off.
+      if (!slot) magnet.current = true
+      if (slot && magnet.current) {
+        const target = dockPixelPosition(slot)
+        x += (target.x - x) * NAV_PULL
+        y += (target.y - y) * NAV_PULL
+        if (stuck.current !== slot) haptic('light')
+        stuck.current = slot
+      } else {
+        stuck.current = null
+      }
       setGhost({ x, y })
     },
     [],
@@ -322,18 +367,16 @@ export default function CoachFab() {
       releaseGlow()
 
       if (wasDrag && pos) {
-        const centerX = pos.x
-        const centerY = pos.y
+        const centerX = pos.x - grab.current.x + COACH_FAB_SIZE / 2
+        const centerY = pos.y - grab.current.y + COACH_FAB_SIZE / 2
         const speed = Math.hypot(vel.current.x, vel.current.y)
-        const flicked = speed >= FLICK_VELOCITY_PX_S
-        const next = dockFromRelease(
-          centerX,
-          centerY,
-          vel.current.x,
-          vel.current.y,
-          FLICK_VELOCITY_PX_S,
-        )
-        const from = {
+        // Released over the bar: it stays there, whatever the flick.
+        const slot = magnet.current || fromNav.current ? navSlotAt(pos.x, pos.y) : null
+        const flicked = !slot && speed >= FLICK_VELOCITY_PX_S
+        const next =
+          slot ??
+          dockFromRelease(centerX, centerY, vel.current.x, vel.current.y, FLICK_VELOCITY_PX_S)
+        const from = ghostRef.current ?? {
           x: centerX - COACH_FAB_SIZE / 2,
           y: centerY - COACH_FAB_SIZE / 2,
         }
@@ -418,6 +461,8 @@ export default function CoachFab() {
         }${pressed ? ' coach-fab--pressed' : ''}${
           alive ? ' coach-fab--alive' : ''
         }${glowing && !pressed ? ' coach-fab--glow' : ''}${
+          !dragging && !settling && isNavDock(dock) ? ' coach-fab--in-nav' : ''
+        }${
           capped ? ' coach-fab--capped' : ''
         }`}
         data-onboard="coach-fab"

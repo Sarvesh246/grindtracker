@@ -7750,3 +7750,11 @@ html.light .progress-tabs-thumb { background: var(--surface-elevated); box-shado
   /* The sidebar Recovery card wrapped "8h 9m" at 280px. */
   .progress-layout { grid-template-columns: clamp(260px, 24vw, 320px) minmax(0, 1fr); }
 }
+
+/* Docked in the phone's bottom nav, the orb is part of the bar: no idle bob,
+   no floating shadow. Dragging it out restores both. */
+.coach-fab--in-nav .coach-fab__float,
+.coach-fab--in-nav.coach-fab--alive .coach-fab__float {
+  animation: none;
+  box-shadow: none;
+}

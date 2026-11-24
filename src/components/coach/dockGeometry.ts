@@ -155,3 +155,29 @@ export function dockFromRelease(
   }
   return nearestDock(x, y)
 }
+
+/** How far above the bottom nav (px) the orb starts being pulled into it. */
+const NAV_CAPTURE = 28
+
+/** Phone widths where the bottom docks sit inside the bottom nav bar. */
+export function navDocking(): boolean {
+  if (typeof window === 'undefined') return false
+  const w = window.innerWidth
+  return !isDesktop() && w >= 320 && w <= 767
+}
+
+export const isNavDock = (dock: CoachDockId): dock is 'bl' | 'br' =>
+  navDocking() && (dock === 'bl' || dock === 'br')
+
+/**
+ * The nav-bar slot a point is over (or just above), by side; null when the
+ * point is clear of the bar or the bar doesn't host docks at this width.
+ */
+export function navSlotAt(x: number, y: number): 'bl' | 'br' | null {
+  if (!navDocking() || typeof document === 'undefined') return null
+  const nav = document.querySelector('.bottom-nav')
+  if (!nav) return null
+  const top = nav.getBoundingClientRect().top
+  if (y < top - NAV_CAPTURE) return null
+  return x < window.innerWidth / 2 ? 'bl' : 'br'
+}
