@@ -139,6 +139,18 @@ describe('Garmin overnight outliers', () => {
     assert.equal(garminSignals(past, date).hrTwoNights, true)
   })
 
+  it('uses recorded training and short sleep as context without counting them as vital signs', () => {
+    const past = history(21)
+    for (const n of past.values()) n.sleep_duration_seconds = 8 * 3600
+    const sessions = [{ local_date: shiftDate(date, -1), started_at: null, completed_at: null,
+      zone_seconds: [0, 0, 0, 20 * 60, 0] }]
+    past.set(date, night(date, { sleep_avg_hr: 62, sleep_duration_seconds: 6 * 3600 }))
+    assert.equal(garminSignals(past, date, [], sessions).level, 'clear')
+    past.set(date, night(date, { sleep_avg_hr: 62, overnight_hrv: 41, sleep_duration_seconds: 6 * 3600 }))
+    assert.deepEqual(garminSignals(past, date, [], sessions).explanations,
+      ['20 min in zones 4–5 yesterday', 'less sleep than usual'])
+  })
+
   it('suppresses stale, provisional and device-switch alerts without looking ahead', () => {
     const past = history(13)
     past.set(date, night(date, { sleep_avg_hr: 89, overnight_hrv: 20 }))

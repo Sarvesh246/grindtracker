@@ -1,5 +1,6 @@
 import { shiftDate } from '@/lib/health/model'
-import { robustDeviation, labelText, type BodySignals, type Signal, type SignalLabel } from './signals'
+import { robustDeviation, labelText, recentTrainingContext, type BodySignals, type Signal, type SignalLabel } from './signals'
+import type { LoadSession } from './types'
 
 export interface GarminSignalNight {
   local_date: string
@@ -10,6 +11,9 @@ export interface GarminSignalNight {
   sleep_avg_respiration: number | null
   overnight_hrv: number | null
   sleep_spo2: number | null
+  sleep_duration_seconds?: number | null
+  sleep_stress?: number | null
+  body_battery_charged?: number | null
 }
 
 const specs = [
@@ -31,7 +35,8 @@ function reading(night: GarminSignalNight, spec: typeof specs[number]) {
     ? value : null
 }
 
-export function garminSignals(nights: Map<string, GarminSignalNight>, date: string, labels: SignalLabel[] = []): BodySignals {
+export function garminSignals(nights: Map<string, GarminSignalNight>, date: string, labels: SignalLabel[] = [],
+  sessions: LoadSession[] = []): BodySignals {
   const tonight = nights.get(date)
   const signals: Signal[] = []
   let coverage = 0
@@ -74,6 +79,23 @@ export function garminSignals(nights: Map<string, GarminSignalNight>, date: stri
   const alert = off.length >= 2 || hrTwoNights
   const checkIn = labels.find(l => l.local_date === date)
   const datedLabels = checkIn?.tags ?? []
+  const context = alert ? recentTrainingContext(date, { sessions }) : []
+  if (alert && validNight(tonight)) {
+    for (const [field, direction, difference, description] of [
+      ['sleep_duration_seconds', -1, 3600, 'less sleep than usual'],
+      ['sleep_stress', 1, 10, 'higher overnight stress than usual'],
+      ['body_battery_charged', -1, 10, 'less Body Battery charge yesterday'],
+    ] as const) {
+      const currentDate = field === 'body_battery_charged' ? yesterday : date
+      const current = nights.get(currentDate)?.[field]
+      if (current == null) continue
+      const earlier = Array.from({ length: 28 }, (_, i) => nights.get(shiftDate(currentDate, -1 - i)))
+        .filter(r => validNight(r) && r.sleep_device === tonight.sleep_device)
+        .map(r => r?.[field]).filter((v): v is number => typeof v === 'number' && Number.isFinite(v))
+      if (earlier.length >= 14 && direction * (current - robustDeviation(earlier, 0).center) >= difference)
+        context.push(description)
+    }
+  }
   return {
     date, source: 'garmin_personal', level: alert ? 'mild' : signals.length ? 'clear' : 'learning',
     signals, nights: coverage, hrTwoNights, short: alert ? 'Overnight outliers' : null,
@@ -84,13 +106,15 @@ export function garminSignals(nights: Map<string, GarminSignalNight>, date: stri
             : off.length ? 'One overnight reading was outside your usual range'
               : 'Compared overnight readings are in range',
     advice: alert
-      ? off.map(s => s.phrase).join('. ') + '. Check how you feel today.'
+      ? off.map(s => s.phrase).join('. ') + '. ' +
+        (context.length ? 'Also recorded ' + new Intl.ListFormat('en', { type: 'conjunction' }).format(context) + '. ' : '') +
+        'Check how you feel today.'
       : off.length ? off[0].phrase + '.'
         : signals.length ? 'These readings are within your usual range.'
           : 'Each reading needs at least 14 comparable nights from the past 28 days.',
     labels: datedLabels,
     symptomsOnsetAt: checkIn?.symptoms_onset_at,
-    explanations: datedLabels.filter(t => !['sick', 'fine'].includes(t)).map(labelText)
+    explanations: [...context, ...datedLabels.filter(t => !['sick', 'fine'].includes(t)).map(labelText)]
   }
 }
 

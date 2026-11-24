@@ -218,7 +218,7 @@ function capitalize(s: string): string {
 
 /** Ordinary reasons for overnight strain found in the data: a long or hard
  *  session the day before, or what you already said about the morning. */
-function explain(date: string, extras: SignalExtras): string[] {
+export function recentTrainingContext(date: string, extras: Pick<SignalExtras, 'sessions'>): string[] {
   const out: string[] = []
   const yesterday = shiftDate(date, -1)
   for (const s of extras.sessions ?? []) {
@@ -323,7 +323,7 @@ function signalsFor(date: string, extras: SignalExtras, lookup: NightLookup): Bo
   }
 
   const labels = (extras.labels ?? []).find(l => l.local_date === date)?.tags ?? []
-  const explanations = explain(date, extras)
+  const explanations = recentTrainingContext(date, extras)
 
   let level: SignalLevel
   if (core.size >= 2 && (support.size >= 3 || farOff || hrTwoNights)) level = 'strong'

@@ -9,7 +9,7 @@ const bodyFields = [
   'overnight_hrv', 'sleep_spo2', 'resting_hr', 'stress', 'body_battery', 'body_battery_min',
   'body_battery_max', 'body_battery_charged', 'steps', 'floors', 'spo2', 'vo2_max',
   'intensity_moderate', 'intensity_vigorous', 'day_end', 'battery_observed_at',
-  'sleep_duration_seconds', 'sleep_score'
+  'sleep_duration_seconds', 'sleep_score', 'sleep_stress'
 ]
 
 export const garminTrends = [

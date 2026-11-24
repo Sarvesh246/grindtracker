@@ -270,7 +270,7 @@ export async function getBodySummary(supabase: SupabaseClient, userId: string, t
       // A failed consent read must never silently re-enable Coach health access.
       syncs,
       todayHrRange,
-      signals: garminNights.size ? garminSignals(garminNights, today, labels)
+      signals: garminNights.size ? garminSignals(garminNights, today, labels, sessions)
         : hasWatch || sleepNights.size > 0 ? computeSignals(days, today, signalExtras) : null,
       signalRecord: garminNights.size ? garminSignalRecord(garminNights, today, labels)
         : hasWatch || sleepNights.size > 0 ? signalTrackRecord(days, today, signalExtras) : null,
