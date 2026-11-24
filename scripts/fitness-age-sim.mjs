@@ -241,7 +241,6 @@ const rows = []
 for (const [name, over] of scenarios) {
   const sc = { ...base, ...over }
   const R = { naive: { c: stat(), s: stat(), r: stat(), g: stat(), ape: 0 }, final: { c: stat(), s: stat(), r: stat(), g: stat(), ape: 0 }, garmin: stat(), nf: stat(), gnf: stat(), snf: stat(), rnf: stat(), floor: 0, pct: 0 }
-  let gN = 0
   for (let i = 0; i < N; i++) {
     const p = simulatePerson(sc)
     const obs = observe(p, sc)
@@ -254,7 +253,7 @@ for (const [name, over] of scenarios) {
       add(r.r, e.recovery, tru.recovery, e.rLo, e.rHi)
       add(r.g, e.grind, tru.grind, e.gLo, e.gHi)
       r.ape += Math.abs(e.vHat - tru.v) / tru.v
-      if (k === 'final' && e.garminOnly != null) { add(R.garmin, e.garminOnly, tru.cardio); gN++ }
+      if (k === 'final' && e.garminOnly != null) add(R.garmin, e.garminOnly, tru.cardio)
       if (k === 'final') {
         if (tru.cardio > 18.5) add(R.nf, e.cardio, tru.cardio, e.cardioLo, e.cardioHi); else R.floor++
         if (tru.grind > 18.5) add(R.gnf, e.grind, tru.grind, e.gLo, e.gHi)
