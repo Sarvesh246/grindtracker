@@ -101,6 +101,7 @@ for (const view of ['sleep', 'metric'])
     })
 test('Garmin trends display coverage and keyboard controls on a narrow screen', async ({ page }) => {
   await render(page, { state: 'garmin', width: 320 })
+  await page.getByText('More from your watch').click()
   const section = page.getByRole('region', { name: 'Garmin Connect measurements' })
   await expect(section).toBeVisible()
   await section.getByLabel('Measurement').selectOption('overnight_hrv')
@@ -136,8 +137,7 @@ test('sleep stages are read by keyboard and have a table', async ({ page }) => {
   await stages.press('Home')
   await stages.press('ArrowRight')
   await expect(page.locator('.rcv-readout').first()).toContainText('Light')
-  await page.getByText('Stage table', { exact: true }).click()
-  await expect(page.getByRole('table').first()).toBeVisible()
+  await expect(page.getByRole('table', { name: 'Stage table' })).toHaveCount(1)
 })
 test('metric trend windows, chips and coverage', async ({ page }) => {
   await render(page, { view: 'metric' })
@@ -304,6 +304,7 @@ test('Settings: a Garmin export zip is previewed and imported in batches through
 test('readiness trend: usual band, picked reading, status and empty state', async ({ page }, info) => {
   for (const width of [390, 1280]) {
     await render(page, { width })
+    await page.getByText('More from your watch').click()
     const panel = page.locator('#readiness')
     await expect(panel.getByText('HRV (RMSSD)')).toBeVisible()
     await expect(panel.getByText(/This morning: 47 ms, below your usual/)).toBeVisible()
@@ -318,6 +319,7 @@ test('readiness trend: usual band, picked reading, status and empty state', asyn
 
 test('the Energy link spans the same width as the cards around it', async ({ page }) => {
   await render(page, { width: 390 })
+  await page.getByText('More from your watch').click()
   const entry = page.locator('.energy-entry')
   await expect(entry).toBeVisible()
   const [box, below] = await entry.evaluate((el) => [

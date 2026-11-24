@@ -5,10 +5,29 @@ import type { BodySummary } from '@/lib/body/queries'
 import { dateLabel } from '@/lib/health/model'
 import { setUiState } from '@/lib/cache/appDataCache'
 import { ChevronRight } from '@/components/ui/Icons'
-import { BAND, drivers, hm, weekCharges } from './recovery/model'
+import { BAND, drivers, hm, weekCharges, type Driver } from './recovery/model'
 import { useCountUp } from './recovery/motion'
 import './health-entry.css'
 import './recovery/recovery.css'
+
+/** "Woke at 88", "HRV above usual": the card's reason line, two at most. */
+function shortReason(d: Driver): string {
+  const up = d.effect === 'helped'
+  switch (d.key) {
+    case 'body_battery':
+      return `Woke at ${d.value}`
+    case 'hrv':
+      return `HRV ${up ? 'above' : 'below'} usual`
+    case 'recovery':
+      return d.value.startsWith('0') ? 'Fully recovered' : `${d.value} recovery left`
+    case 'resting_hr':
+      return `Resting HR ${d.value}`
+    case 'respiration':
+      return `Breathing ${up ? 'calm' : 'fast'}`
+    default:
+      return `Load ${up ? 'in range' : 'running high'}`
+  }
+}
 
 const RING_R = 39.5
 const RING_C = 2 * Math.PI * RING_R
@@ -64,7 +83,7 @@ export function HealthEntry({ body }: { body: BodySummary | null }) {
   const reasons = drivers(charge.inputs)
     .filter((d) => d.effect !== 'neutral')
     .slice(0, 2)
-    .map((d) => `${d.label} ${d.value}`)
+    .map((d) => shortReason(d))
   const hrv = body.overnightHrv?.[body.today]
   const minis = [
     body.garminMorning && {

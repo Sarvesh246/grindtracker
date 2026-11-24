@@ -168,9 +168,7 @@ export function RecoveryHeader({
           <ChevronLeft size={20} />
         </Link>
         <div className="rcv-title">
-          {eyebrow ? (
-            <p className="rcv-label">{eyebrow}</p>
-          ) : calendar ? (
+          {calendar ? (
             <button
               type="button"
               className="rcv-label rcv-date-btn"
@@ -179,10 +177,10 @@ export function RecoveryHeader({
               onClick={() => setOpen(true)}
             >
               {deskPrefix && <span className="rcv-only-desk">{deskPrefix} · </span>}
-              {when}
+              {eyebrow ?? when}
             </button>
           ) : (
-            <p className="rcv-label">{when}</p>
+            <p className="rcv-label">{eyebrow ?? when}</p>
           )}
           <h1>{title}</h1>
         </div>

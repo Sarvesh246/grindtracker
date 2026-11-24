@@ -63,10 +63,12 @@ const ZONES = [
 export function ChargeHero({
   charge,
   coachDraft,
+  coachLabel = 'Ask Coach about today',
   connect = false
 }: {
   charge: Charge | null
   coachDraft: string
+  coachLabel?: string
   /** No watch and no sleep yet: lead with the connection instead. */
   connect?: boolean
 }) {
@@ -169,7 +171,7 @@ export function ChargeHero({
           <p className="rcv-call-text">{meta.call}</p>
         </section>
       )}
-      <CoachButton className="rcv-coach--desk" label="Ask Coach" draft={coachDraft} />
+      <CoachButton className="rcv-coach--desk" label={coachLabel} draft={coachDraft} />
     </div>
   )
 }
@@ -997,7 +999,7 @@ export function LongGame({ data, date }: { data: HealthSummary; date: string }) 
   const gap = fitness ? Math.round(fitness.actual) - Math.round(fitness.age) : 0
   return (
     <section
-      className="rcv-card rcv-card-pad rcv-a-long rcv-rise"
+      className="rcv-card rcv-card-pad rcv-a-long rcv-rise rcv-only-mobile"
       style={{ '--i': 8 } as CSSProperties}
       aria-label="Fitness age and VO₂ max"
     >
@@ -1078,11 +1080,19 @@ export function LongGame({ data, date }: { data: HealthSummary; date: string }) 
   )
 }
 
+/** Everything beyond the designed screen, folded into one row so the page ends where the design does. */
 export function MoreSection({ children }: { children: ReactNode }) {
   return (
-    <div className="rcv-more rcv-a-more rcv-rise" style={{ '--i': 9 } as CSSProperties}>
-      {children}
-    </div>
+    <details
+      className="rcv-card rcv-details rcv-a-more rcv-rise"
+      style={{ '--i': 9 } as CSSProperties}
+    >
+      <summary>
+        More from your watch
+        <ChevronDownSmall />
+      </summary>
+      <div>{children}</div>
+    </details>
   )
 }
 

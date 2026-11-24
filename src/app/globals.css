@@ -7720,3 +7720,6 @@ html.reduce-motion .body-breathe { animation: none !important; }
   .progress-tabs { display: none; }
 }
 html.light .progress-tabs-thumb { background: var(--surface-elevated); box-shadow: var(--card-shadow, none); }
+@media (max-width: 767px) {
+  .progress-workspace .progress-heading h1 { font-size: 40px; }
+}

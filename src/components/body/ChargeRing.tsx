@@ -82,6 +82,7 @@ const CALL_ICON = {
 } as const
 const CALL_DAY = { primed: 'Push day', steady: 'Steady day', easy: 'Easy day' } as const
 const CALL_LEVEL = { primed: 2, steady: 1, easy: 0 } as const
+const CALL_RPE = { primed: 'RPE 8–9', steady: 'RPE 7–8', easy: 'RPE ≤ 6' } as const
 
 /** Home: today's call above Up Next. The verdict reads first; tapping opens the Today sheet. */
 export default function ChargeRing({ charge, onOpen }: { charge: Charge | null; onOpen: () => void }) {
@@ -109,11 +110,8 @@ export default function ChargeRing({ charge, onOpen }: { charge: Charge | null; 
             <i key={i} data-on={i === CALL_LEVEL[charge.band]} />
           ))}
         </span>
-        <span>{adviceBody(charge)}</span>
       </span>
-      <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-        <polyline points="9 18 15 12 9 6" />
-      </svg>
+      <span className="rcv-strip-rpe" aria-hidden="true">{CALL_RPE[charge.band]}</span>
     </button>
   )
 }

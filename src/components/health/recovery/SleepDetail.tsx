@@ -12,9 +12,17 @@ import {
   type SleepSession
 } from '@/lib/health/model'
 import { ChevronRight } from '@/components/ui/Icons'
-import { ChevronDownSmall, CoachButton, MoonIcon } from './Chrome'
+import { CoachButton, MoonIcon } from './Chrome'
 import { Duration, STAGE_COLOR, STAGES, thumbStyle } from './Overview'
-import { hm, reading, sleepSourcesNote, sleepSpan, STAGE_LANE, stageUsual } from './model'
+import {
+  clockMinutes,
+  hm,
+  reading,
+  sleepSourcesNote,
+  sleepSpan,
+  STAGE_LANE,
+  stageUsual
+} from './model'
 import { useScrub, useWidth } from './motion'
 
 const LANE_H = 34
@@ -54,11 +62,17 @@ function Hypnogram({ sleep }: { sleep: SleepSession }) {
   })
   const picked = scrub.index == null ? null : blocks[scrub.index]
   const x = (f: number) => f * plotW
-  const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) =>
-    clockLabel(new Date(start + total * f).toISOString(), sleep.timezone)
-      .replace(':00', '')
-      .replace(/\s?([AP])M/i, '$1')
-  )
+  // Round hours, every other one, placed where they fall: "11P 1A 3A 5A 7A".
+  const offset = clockMinutes(sleep.start_at, sleep.timezone)
+  const ticks: { left: number; label: string }[] = []
+  for (let m = Math.ceil(offset / 60) * 60; m <= offset + total / 60000; m += 120) {
+    const h = (((m / 60) % 24) + 24) % 24
+    ticks.push({
+      left: ((m - offset) * 60000) / total,
+      label: `${h % 12 || 12}${h < 12 ? 'A' : 'P'}`
+    })
+  }
+  const firstDeep = blocks.find((b) => b.stage === 'deep')
   return (
     <>
       <div
@@ -146,9 +160,17 @@ function Hypnogram({ sleep }: { sleep: SleepSession }) {
             )}
           </svg>
         </div>
-        <div className="rcv-axis" style={{ paddingLeft: 54 }} aria-hidden="true">
-          {ticks.map((t, i) => (
-            <span key={i}>{t}</span>
+        <div className="rcv-axis rcv-axis--placed" style={{ marginLeft: 54 }} aria-hidden="true">
+          {ticks.map((t) => (
+            <span
+              key={t.label}
+              style={{
+                left: `${t.left * 100}%`,
+                transform: `translateX(${t.left < 0.06 ? 0 : t.left > 0.94 ? -100 : -50}%)`
+              }}
+            >
+              {t.label}
+            </span>
           ))}
         </div>
       </div>
@@ -174,35 +196,32 @@ function Hypnogram({ sleep }: { sleep: SleepSession }) {
         <span className="rcv-mono">
           {picked
             ? hm((Date.parse(picked.end) - Date.parse(picked.start)) / 1000)
-            : `${blocks.length} stages`}
+            : firstDeep
+              ? `${hm((Date.parse(firstDeep.start) - start) / 1000)} to deep`
+              : `${blocks.length} stages`}
         </span>
       </div>
-      <details className="rcv-details" style={{ margin: '0 -18px -18px' }}>
-        <summary>
-          Stage table
-          <ChevronDownSmall />
-        </summary>
-        <div className="rcv-table-wrap">
-          <table className="rcv-table">
-            <thead>
-              <tr>
-                <th>Start</th>
-                <th>Stage</th>
-                <td>Length</td>
+      <div className="rcv-sr">
+        <table>
+          <caption>Stage table</caption>
+          <thead>
+            <tr>
+              <th>Start</th>
+              <th>Stage</th>
+              <th>Length</th>
+            </tr>
+          </thead>
+          <tbody>
+            {blocks.map((b, i) => (
+              <tr key={i}>
+                <td>{clockLabel(b.start, sleep.timezone)}</td>
+                <td>{STAGE_NAMES[b.stage]}</td>
+                <td>{hm((Date.parse(b.end) - Date.parse(b.start)) / 1000)}</td>
               </tr>
-            </thead>
-            <tbody>
-              {blocks.map((b, i) => (
-                <tr key={i}>
-                  <th>{clockLabel(b.start, sleep.timezone)}</th>
-                  <th>{STAGE_NAMES[b.stage]}</th>
-                  <td>{hm((Date.parse(b.end) - Date.parse(b.start)) / 1000)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </details>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </>
   )
 }
@@ -327,7 +346,15 @@ function Rhythm({ data, date, sleep }: { data: HealthSummary; date: string; slee
   )
 }
 
-export function SleepDetail({ data, date }: { data: HealthSummary; date: string }) {
+export function SleepDetail({
+  data,
+  date,
+  today
+}: {
+  data: HealthSummary
+  date: string
+  today: string
+}) {
   const sleep = mainSleep(data.sleeps, date)
   const naps = data.sleeps.filter((s) => s.wake_date === date && s.kind === 'nap')
   if (!sleep)
@@ -463,7 +490,7 @@ export function SleepDetail({ data, date }: { data: HealthSummary; date: string 
         ) : null}
         <CoachButton
           className="rcv-coach--desk"
-          label="Ask Coach about this night"
+          label={date === today ? 'Ask Coach about last night' : 'Ask Coach about this night'}
           draft={`Explain my sleep for the night ending ${date}: duration, stages, timing and overnight HRV compared with my usual, and what it means for training today.`}
         />
       </div>
@@ -597,7 +624,7 @@ export function SleepDetail({ data, date }: { data: HealthSummary; date: string 
         <p className="rcv-source">{sleepSourcesNote(sleep)}</p>
         <CoachButton
           className="rcv-coach--mobile"
-          label="Ask Coach about this night"
+          label={date === today ? 'Ask Coach about last night' : 'Ask Coach about this night'}
           draft={`Explain my sleep for the night ending ${date}: duration, stages, timing and overnight HRV compared with my usual, and what it means for training today.`}
         />
       </div>

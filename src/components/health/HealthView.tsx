@@ -14,7 +14,6 @@ import { CoachButton, RecoveryHeader, WeekStrip, type SyncState } from './recove
 import { weekCharges } from './recovery/model'
 import {
   ChargeHero,
-  DataSources,
   DayCard,
   DriversCard,
   LongGame,
@@ -65,7 +64,25 @@ function syncState(
   if (!data) return { state: 'ok', label: 'Health' }
   const synced = relativeTime(latestSync(data.connections, data.body.days), now)
   if (!data.body.hasWatch && !data.connections.length) return { state: 'ok', label: 'No watch yet' }
-  return { state: 'ok', label: synced ? `Synced ${synced}` : 'No recent sync' }
+  if (!synced) return { state: 'ok', label: 'No recent sync' }
+  return {
+    state: 'ok',
+    label: `Synced ${synced.replace(/ min ago$/, 'm ago').replace(/ h ago$/, 'h ago')}`
+  }
+}
+
+/** "Mon night · Nov 23–24": the night that ended on the wake date. */
+function nightLabel(wake: string): string {
+  const end = new Date(`${wake}T12:00:00`)
+  const start = new Date(end)
+  start.setDate(end.getDate() - 1)
+  const month = (d: Date) => d.toLocaleDateString('en-US', { month: 'short' })
+  const weekday = start.toLocaleDateString('en-US', { weekday: 'short' })
+  const range =
+    month(start) === month(end)
+      ? `${month(start)} ${start.getDate()}–${end.getDate()}`
+      : `${month(start)} ${start.getDate()} – ${month(end)} ${end.getDate()}`
+  return `${weekday} night · ${range}`
 }
 
 function HealthSourceStatus({ data, date }: { data: HealthSummary; date: string }) {
@@ -189,11 +206,11 @@ export function HealthView({
         backLabel={view === 'overview' ? 'Progress' : 'Recovery'}
         sync={syncState(data, error, updating, now)}
         onRefresh={onRefresh}
-        eyebrow={view === 'metric' ? 'Vitals' : undefined}
+        eyebrow={view === 'metric' ? 'Vitals' : view === 'sleep' ? nightLabel(date) : undefined}
         deskPrefix={view === 'overview' ? 'Progress' : undefined}
         calendar={view === 'metric' ? undefined : { availableDates, onDate }}
       >
-        {view !== 'metric' && (
+        {view === 'overview' && (
           <WeekStrip
             date={date}
             today={today}
@@ -218,18 +235,18 @@ export function HealthView({
         )
       ) : view === 'sleep' ? (
         <>
-          <SleepDetail data={data} date={date} />
-          <DataSources>
-            <HealthSourceStatus data={data} date={date} />
-          </DataSources>
+          <SleepDetail data={data} date={date} today={today} />
         </>
       ) : view === 'metric' && metric ? (
-        <MetricDetail data={data} date={date} metric={metric} />
+        <MetricDetail data={data} date={date} today={today} metric={metric} />
       ) : (
         <div className="rcv-overview">
           <ChargeHero
             charge={data.body.charge}
             coachDraft={coachDraft}
+            coachLabel={
+              date === today ? 'Ask Coach about today' : `Ask Coach about ${dateLabel(date)}`
+            }
             connect={!data.body.hasWatch && !data.sleeps.length && data.sleepState !== 'error'}
           />
           {data.body.charge && <DriversCard charge={data.body.charge} />}
@@ -259,62 +276,69 @@ export function HealthView({
             draft={coachDraft}
           />
           <MoreSection>
-            {data.sleeps.length > 0 && (
-              <Link
-                href="/progress/health/energy"
-                className="energy-entry press-card"
-                data-haptic="light"
-              >
-                <span className="energy-entry-wave" aria-hidden="true">
-                  <svg width="44" height="28" viewBox="0 0 44 28" fill="none">
-                    <path
-                      d="M2 20C7 20 9 6 15 6s7 14 12 14 7-10 15-12"
-                      stroke="currentColor"
-                      strokeWidth="2.4"
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                </span>
-                <span className="energy-entry-body">
-                  <strong>Energy</strong>
-                  <span>Your peaks, dips and wind-down today</span>
-                </span>
-                <ChevronRight size={20} className="health-arrow" />
-              </Link>
-            )}
-            {body?.signals && (date === today || body.signals.source === 'garmin_personal') && (
-              <section className="health-panel" id="signals" style={{ '--i': 0 } as CSSProperties}>
-                <div className="health-section-head">
-                  <h2>Body signals</h2>
-                </div>
-                <BodySignalsPanel
-                  key={body.signals.date}
-                  signals={body.signals}
-                  record={body.signalRecord}
-                  labelsError={body.labelsError}
-                />
+            <div className="rcv-more">
+              {data.sleeps.length > 0 && (
+                <Link
+                  href="/progress/health/energy"
+                  className="energy-entry press-card"
+                  data-haptic="light"
+                >
+                  <span className="energy-entry-wave" aria-hidden="true">
+                    <svg width="44" height="28" viewBox="0 0 44 28" fill="none">
+                      <path
+                        d="M2 20C7 20 9 6 15 6s7 14 12 14 7-10 15-12"
+                        stroke="currentColor"
+                        strokeWidth="2.4"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  </span>
+                  <span className="energy-entry-body">
+                    <strong>Energy</strong>
+                    <span>Your peaks, dips and wind-down today</span>
+                  </span>
+                  <ChevronRight size={20} className="health-arrow" />
+                </Link>
+              )}
+              {body?.signals && (date === today || body.signals.source === 'garmin_personal') && (
+                <section
+                  className="health-panel"
+                  id="signals"
+                  style={{ '--i': 0 } as CSSProperties}
+                >
+                  <div className="health-section-head">
+                    <h2>Body signals</h2>
+                  </div>
+                  <BodySignalsPanel
+                    key={body.signals.date}
+                    signals={body.signals}
+                    record={body.signalRecord}
+                    labelsError={body.labelsError}
+                  />
+                </section>
+              )}
+              {body?.hasWatch && (
+                <section
+                  className="health-panel"
+                  id="readiness"
+                  style={{ '--i': 0 } as CSSProperties}
+                >
+                  <div className="health-section-head">
+                    <h2>Readiness</h2>
+                  </div>
+                  <ReadinessTrend
+                    checks={body.readinessChecks}
+                    date={date}
+                    failed={body.readinessError}
+                  />
+                </section>
+              )}
+              <GarminHealthDetails data={data.garmin} date={date} />
+              <section className="rcv-card rcv-card-pad">
+                <h2 className="rcv-label rcv-label--strong">Data &amp; sources</h2>
+                <HealthSourceStatus data={data} date={date} />
               </section>
-            )}
-            {body?.hasWatch && (
-              <section
-                className="health-panel"
-                id="readiness"
-                style={{ '--i': 0 } as CSSProperties}
-              >
-                <div className="health-section-head">
-                  <h2>Readiness</h2>
-                </div>
-                <ReadinessTrend
-                  checks={body.readinessChecks}
-                  date={date}
-                  failed={body.readinessError}
-                />
-              </section>
-            )}
-            <GarminHealthDetails data={data.garmin} date={date} />
-            <DataSources>
-              <HealthSourceStatus data={data} date={date} />
-            </DataSources>
+            </div>
           </MoreSection>
         </div>
       )}

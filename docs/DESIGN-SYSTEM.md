@@ -140,3 +140,10 @@ rows do not. Charts draw at their measured pixel width (`useWidth`) so marks
 never stretch. Every chart keeps a table alternative (stage table, the metric's
 "Data and source coverage" table). Gaps in a series stay gaps. Numbers use
 JetBrains Mono; durations read `7h 18m` with quiet units.
+
+The screens match the "GRIND Recovery Redesign" canvas: anything the canvas
+doesn't show (Energy, Body signals, Readiness, Garmin details, data sources)
+lives in one collapsed "More from your watch" row at the end of the overview,
+and chart tables for screen readers are visually hidden (`.rcv-sr`) rather than
+shown as extra rows. On phones Progress splits into Lifts / Recovery / Body tabs
+(`.progress-tabs`, `data-tab` on `.progress-layout`); desktop shows all three.

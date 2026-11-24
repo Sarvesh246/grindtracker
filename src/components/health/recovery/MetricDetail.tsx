@@ -18,6 +18,21 @@ import { formatMetric, isVolume, linePath, reading, shortUnit } from './model'
 import { useScrub, useWidth } from './motion'
 
 const WINDOWS = [7, 28, 90] as const
+/** What one reading is, said short: the hero's eyebrow. */
+const SUB: Record<HealthMetric, string> = {
+  resting_hr: 'Morning resting heart rate',
+  overnight_hrv: 'Overnight average',
+  steps: 'Daily total',
+  recovery_hours: 'Recovery time left',
+  bb_latest: 'Latest reading',
+  stress_avg: 'Daily average',
+  active_minutes: 'Daily total',
+  floors: 'Daily total',
+  spo2: 'Latest reading',
+  vo2max: 'Latest estimate'
+}
+const monthDay = (key: string) =>
+  new Date(`${key}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 const DOW = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 const DOW_LONG = [
   'Sundays',
@@ -32,10 +47,12 @@ const DOW_LONG = [
 export function MetricDetail({
   data,
   date,
+  today,
   metric
 }: {
   data: HealthSummary
   date: string
+  today: string
   metric: HealthMetric
 }) {
   const [win, setWin] = useState<(typeof WINDOWS)[number]>(28)
@@ -159,7 +176,7 @@ export function MetricDetail({
             aria-label={`${METRICS[metric].label} on ${dateLabel(date)}`}
           >
             <span className="rcv-label rcv-label--strong">
-              {METRICS[metric].label} · {dateLabel(date)}
+              {SUB[metric]} · {date === today ? 'Today' : dateLabel(date)}
             </span>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
               <strong>{now.value == null ? '—' : fmt(now.value)}</strong>
@@ -202,7 +219,7 @@ export function MetricDetail({
                 role="group"
                 aria-label={`${METRICS[metric].label} chart. Use left and right arrow keys to read values.`}
                 data-swipe-ignore="true"
-                style={{ paddingTop: 48 }}
+                style={{ paddingTop: 54 }}
                 {...scrub.props}
               >
                 {picked != null && (
@@ -392,9 +409,9 @@ export function MetricDetail({
                   )}
                 </svg>
                 <div className="rcv-axis" aria-hidden="true">
-                  <span>{dateLabel(rows[0].date)}</span>
-                  <span>{dateLabel(rows[Math.floor((win - 1) / 2)].date)}</span>
-                  <span>{dateLabel(date)}</span>
+                  <span>{monthDay(rows[0].date)}</span>
+                  <span>{monthDay(rows[Math.floor((win - 1) / 2)].date)}</span>
+                  <span>{date === today ? 'Today' : monthDay(date)}</span>
                 </div>
               </div>
             ) : (
@@ -530,50 +547,36 @@ export function MetricDetail({
               </div>
             </div>
           </section>
-          <details className="rcv-card rcv-details rcv-rise" style={{ '--i': 6 } as CSSProperties}>
-            <summary>
-              Data and source coverage
-              <ChevronDownSmall />
-            </summary>
-            <div>
-              {coverage.size > 0 && (
-                <ul
-                  style={{
-                    margin: '0 0 12px',
-                    paddingLeft: 18,
-                    fontSize: 13,
-                    color: 'var(--text-secondary)'
-                  }}
-                >
-                  {[...coverage].map(([name, days]) => (
-                    <li key={name}>
-                      {name} · {days}/{win} days
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <div className="rcv-table-wrap">
-                <table className="rcv-table">
-                  <thead>
-                    <tr>
-                      <th>Date</th>
-                      <td>
-                        {METRICS[metric].short} ({METRICS[metric].unit})
-                      </td>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {[...rows].reverse().map((r) => (
-                      <tr key={r.date}>
-                        <th>{dateLabel(r.date)}</th>
-                        <td>{r.value == null ? 'No reading' : fmt(r.value)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </details>
+          <p className="rcv-source rcv-rise" style={{ '--i': 6 } as CSSProperties}>
+            {coverage.size ? `From ${[...coverage.keys()].join(' and ')}` : 'From your watch'}
+            {band ? ' · usual = the middle of your last 28 days' : ''}
+            {data.historyError || data.sampleHistoryError
+              ? ' · some sources could not refresh'
+              : ''}
+          </p>
+          <div className="rcv-sr">
+            <table>
+              <caption>
+                {METRICS[metric].label} for the last {win} days
+              </caption>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>
+                    {METRICS[metric].short} ({METRICS[metric].unit})
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...rows].reverse().map((r) => (
+                  <tr key={r.date}>
+                    <th>{dateLabel(r.date)}</th>
+                    <td>{r.value == null ? 'No reading' : fmt(r.value)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </>
