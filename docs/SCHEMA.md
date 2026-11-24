@@ -47,6 +47,13 @@ Moved out of [CLAUDE.md](../CLAUDE.md) to keep that file short; its text is unch
   One row per calendar day; `BodyWeightCard` upserts on that pair. See Body
   weight editing below.
 - user_profiles — id (= auth uid), username (unique), display_name, avatar_url
+- fitness_profile — user_id PK, birth_date, sex ('male'|'female'), height_cm.
+  fitness_calibrations — id, user_id, measured_on, kind ('run_5k'|'cooper'|
+  'lab_cpet'|'grip'), value (VO2max mL/kg/min, or grip kg), raw, source
+  ('manual'|'auto'), activity_id (Garmin activity for auto rows; unique per
+  user), status ('accepted'|'rejected'). Both owner-only RLS, migration `84`.
+  Read by `src/lib/body/fitnessAge` via `/api/fitness-age`; display only, never
+  XP, streaks, PRs or the leaderboard ([FITNESS-AGE-RESEARCH.md](FITNESS-AGE-RESEARCH.md)).
 - friendships — requester_id, addressee_id, status ('pending' | 'accepted')
 - user_day_categories — (user_id, day_key) → category ('push'|'pull'|'legs'|'other'),
   maps custom day names to leaderboard tabs.
