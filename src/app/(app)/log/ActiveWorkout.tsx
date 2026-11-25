@@ -2914,6 +2914,9 @@ export default function ActiveWorkout({ day }: { day: string }) {
   const syncLabel = storageError ? 'Some edits aren’t saved' : issue ? 'Sync needs attention'
     : finishState ? 'Finish saved on device' : (queued.length || noteState) ? 'Saved on device'
     : checked > 0 && !demoMode ? 'Synced' : ''
+  const restStatus = (restTimer.paused ? 'Rest paused' : restTimer.done ? 'Rest done'
+    : `Rest until ${new Date(restTimer.startedAt + restTimer.durationMs).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`)
+    + (syncLabel ? ` · ${syncLabel}` : '')
 
   return (
     <>
@@ -3273,16 +3276,13 @@ export default function ActiveWorkout({ day }: { day: string }) {
         </div>
       )}
 
-      {restTimer.active && (
-        <div className="wo-rest-sync" role="status">
-          {restTimer.paused ? 'Rest paused' : restTimer.done ? 'Rest done' :
-            `Rest until ${new Date(restTimer.startedAt + restTimer.durationMs).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })}`}
-          {syncLabel && ` · ${syncLabel}`}
-        </div>
+      {restTimer.active && !restTimer.exerciseId && (
+        <div className="wo-rest-sync wo-rest-sync--floating" role="status">{restStatus}</div>
       )}
       {/* Rest timer owns the lower controls while it is running. */}
       {restTimer.active && restTimer.exerciseId && (
         <RestTimerBar
+          status={restStatus}
           exerciseId={restTimer.exerciseId}
           exerciseName={exercises.find(e => e.id === restTimer.exerciseId)?.name ?? ''}
           sessionId={sessionId}
@@ -4055,17 +4055,17 @@ function ExerciseCard({
         {/* Column headers. The two leading spacers mirror the SET label and W columns
            so LBS/REPS sit centered over their inputs. Plate calc lives in the
            Warm-up / plates / Add set row below — not here, where it crowded the labels. */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0 16px 6px' }}>
+        <div className="wo-cols" style={{ display: 'flex', alignItems: 'center', gap: 'var(--wo-gap)', padding: '0 var(--wo-pad-x) 6px' }}>
           <span aria-hidden style={{ minWidth: '38px', flexShrink: 0 }} />
           <span aria-hidden="true" style={{
-            width: '44px', flexShrink: 0, textAlign: 'center',
+            width: '44px', flexShrink: 0, marginRight: '2px', textAlign: 'center',
             fontSize: '10px', fontWeight: 600, letterSpacing: '0.5px',
             textTransform: 'uppercase', color: 'var(--text-muted)',
             fontFamily: "'DM Sans', sans-serif",
           }}>WU</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div className="wo-set-inputs" style={{ display: 'flex', alignItems: 'center', gap: 'var(--wo-input-gap)', minWidth: 0 }}>
             <span style={{
-              width: '56px', textAlign: 'center',
+              flex: '0 1 56px', minWidth: '44px', textAlign: 'center',
               fontSize: '10px', fontWeight: 600, letterSpacing: '0.5px',
               textTransform: 'uppercase', color: 'var(--text-muted)',
               fontFamily: "'DM Sans', sans-serif",
@@ -4073,7 +4073,7 @@ function ExerciseCard({
               {unitLabel}
             </span>
             <span style={{
-              width: '56px', textAlign: 'center',
+              flex: '0 1 56px', minWidth: '44px', textAlign: 'center',
               fontSize: '10px', fontWeight: 600, letterSpacing: '0.5px',
               textTransform: 'uppercase', color: 'var(--text-muted)',
               fontFamily: "'DM Sans', sans-serif",
@@ -4081,6 +4081,10 @@ function ExerciseCard({
               reps
             </span>
           </div>
+          {/* Mirrors the skip / check buttons so the inputs column above
+              shrinks exactly like the one in each set row. */}
+          <span aria-hidden style={{ width: '44px', flexShrink: 0 }} />
+          <span aria-hidden style={{ width: '44px', flexShrink: 0 }} />
         </div>
         {setNumbers.map((setNum) => {
           const key = `${exercise.id}-${setNum}`
@@ -4537,7 +4541,7 @@ function SetRow({
         backgroundColor: inEdit ? 'var(--accent-wash)' : 'transparent',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px' }}>
+      <div className="wo-cols" style={{ display: 'flex', alignItems: 'center', gap: 'var(--wo-gap)', padding: '8px var(--wo-pad-x)' }}>
         {/* Set label + note chevron: tapping toggles the per-set note input. */}
         <button
           type="button"
@@ -4628,7 +4632,7 @@ function SetRow({
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '10px',
+            gap: 'var(--wo-input-gap)',
             minWidth: 0,
           }}
         >
@@ -4678,7 +4682,7 @@ function SetRow({
             aria-invalid={needsWeight}
             title={needsWeight ? 'Enter a weight to complete this set' : undefined}
             style={{
-              width: '56px', flexShrink: 0, height: '40px',
+              flex: '0 1 56px', minWidth: '44px', height: '40px', padding: 0,
               backgroundColor: 'var(--surface-elevated)',
               border: `1px solid ${needsWeight ? 'var(--danger)' : inputsLocked ? 'var(--border)' : 'var(--border-strong)'}`,
               borderRadius: '8px',
@@ -4693,7 +4697,7 @@ function SetRow({
               pointerEvents: logEntry.skipped ? 'none' : 'auto',
             }}
           />
-          <div style={{ position: 'relative', width: '56px', flexShrink: 0, overflow: 'visible' }}>
+          <div style={{ position: 'relative', flex: '0 1 56px', minWidth: '44px', overflow: 'visible' }}>
           <input
             ref={repsRef}
             type="text"
@@ -4735,7 +4739,7 @@ function SetRow({
             aria-invalid={needsReps}
             title={needsReps ? 'Enter a rep count to complete this set' : undefined}
             style={{
-              width: '56px', flexShrink: 0, height: '40px',
+              width: '100%', height: '40px', padding: 0,
               backgroundColor: 'var(--surface-elevated)',
               border: `1px solid ${needsReps ? 'var(--danger)' : inputsLocked ? 'var(--border)' : 'var(--border-strong)'}`,
               borderRadius: '8px',

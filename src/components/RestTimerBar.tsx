@@ -15,6 +15,8 @@ interface Props {
   onResume: () => void
   /** Apply a newly picked default to the running countdown. */
   onDefaultChange?: (sec: number) => void
+  /** Small line pinned just above the bar ("Rest until 5:30 PM · Synced"). */
+  status?: React.ReactNode
 }
 
 const ADJUST_OPTIONS: { label: string; sec: number }[] = [
@@ -45,6 +47,7 @@ export default function RestTimerBar({
   onPause,
   onResume,
   onDefaultChange,
+  status,
 }: Props) {
   const [open, setOpen] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
@@ -92,6 +95,10 @@ export default function RestTimerBar({
         zIndex: 90,
       }}
     >
+      {/* Rides on the bar so it can never end up underneath it — as a
+          separate fixed pill it hid behind the bar on phones and poked out
+          past its edge on desktop. */}
+      {status && <div className="wo-rest-sync">{status}</div>}
       <div
         style={{
           height: '3px',
