@@ -287,6 +287,9 @@ interface Props {
   username: string | null
   coachDevUnlimited: boolean
   garminPersonalAvailable?: boolean
+  /** `?tab=` read on the server, so a deep link renders its panel first
+   *  instead of flashing General and swapping after hydration. */
+  initialTab?: string | null
 }
 
 export default function SettingsView({
@@ -296,6 +299,7 @@ export default function SettingsView({
   username,
   coachDevUnlimited,
   garminPersonalAvailable,
+  initialTab = null,
 }: Props) {
   const router = useRouter()
   const { demoMode, toggleDemoMode } = useDemoMode()
@@ -308,7 +312,7 @@ export default function SettingsView({
   const { prefReduceMotion, toggleReduceMotion } = useMotionPref()
   const toast = useToast()
 
-  const [tab, setTab] = useState<SettingsTab>('general')
+  const [tab, setTab] = useState<SettingsTab>(() => (isSettingsTab(initialTab) ? initialTab : 'general'))
   const navRef = useRef<HTMLElement>(null)
   const navSentinelRef = useRef<HTMLDivElement>(null)
   const [pendingAnchor, setPendingAnchor] = useState<string | null>(null)

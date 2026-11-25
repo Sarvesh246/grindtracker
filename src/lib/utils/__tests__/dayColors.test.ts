@@ -4,6 +4,8 @@ import {
   NAMED_DAY_COLORS,
   NAMED_DAY_COLORS_LIGHT,
   DAY_COLOR_PRESETS,
+  EXTRA_DAY_COLORS,
+  EXTRA_DAY_COLORS_LIGHT,
   calendarCellBackground,
   categoryColorKey,
   joinDayTypes,
@@ -32,7 +34,7 @@ describe('dayColors', () => {
   it('maps custom types from the light extra pool', () => {
     const extras = ['abs', 'cardio']
     assert.equal(resolveDayColor('abs', extras, true), '#7c3aed')
-    assert.equal(resolveDayColor('cardio', extras, true), '#db2777')
+    assert.equal(resolveDayColor('cardio', extras, true), '#be185d')
   })
 
   it('lets a custom hex override the derived palette', () => {
@@ -76,6 +78,36 @@ describe('normalizeDayColor / presets', () => {
   it('picks dark text on light fills and light text on dark fills', () => {
     assert.equal(onDayFill('#c8f135'), '#0f0f0f')
     assert.equal(onDayFill('#1e3a8a'), '#f0f0f0')
+  })
+
+  it('puts dark text on mid-tone fills where white falls under 4.5:1', () => {
+    // Light-mode sky blue: white read 3.6:1, near-black clears 5:1.
+    assert.equal(onDayFill('#0284c7'), '#0f0f0f')
+  })
+
+  it('gives every built-in fill an UP NEXT label of at least 4.5:1', () => {
+    const lum = (hex: string) => {
+      const n = parseInt(hex.slice(1), 16)
+      const [r, g, b] = [n >> 16, (n >> 8) & 255, n & 255].map((v) => {
+        const s = v / 255
+        return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
+      })
+      return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!
+    }
+    const ratio = (a: string, b: string) => {
+      const [x, y] = [lum(a), lum(b)]
+      return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05)
+    }
+    const fills = [
+      ...Object.values(NAMED_DAY_COLORS),
+      ...Object.values(NAMED_DAY_COLORS_LIGHT),
+      ...EXTRA_DAY_COLORS,
+      ...EXTRA_DAY_COLORS_LIGHT,
+      ...DAY_COLOR_PRESETS,
+    ]
+    for (const hex of fills) {
+      assert.ok(ratio(hex, onDayFill(hex)) >= 4.5, `${hex} label is ${ratio(hex, onDayFill(hex)).toFixed(2)}:1`)
+    }
   })
 
   it('uses leaderboard category as the default color key', () => {

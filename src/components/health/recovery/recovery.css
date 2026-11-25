@@ -15,9 +15,11 @@
 }
 html.light {
   --rcv-steady: #e0a12a;
-  --rcv-steady-text: #8a5a06;
+  /* Band text sits on its own 14% band wash (chips) over the page as well
+     as on cards; these clear 4.5:1 on both. #8a5a06 / #1d5fa8 read 3.9 / 4.1. */
+  --rcv-steady-text: #7a4f05;
   --rcv-easy: #3d8fe0;
-  --rcv-easy-text: #1d5fa8;
+  --rcv-easy-text: #1a5596;
   --rcv-held: #d9541f;
   --rcv-card: var(--surface);
   --rcv-line: var(--border);
@@ -1517,6 +1519,12 @@ html.light .rcv-halo {
 }
 .rcv-bars > i[data-current='true'] {
   opacity: 1;
+}
+/* Past days fade to half strength against black; on paper the same fade left
+   amber bars at barely 1.5:1 against the card, so they hold more colour. */
+html.light .rcv-bars > i:not([data-current='true']),
+html.light .rcv-day .rcv-col > i {
+  opacity: 0.75;
 }
 .rcv-open {
   display: inline-flex;

@@ -149,7 +149,9 @@ html.light {
   --accent: #a8c428;
   --accent-dim: #7a9420;
   --accent-deep: #5a7a1a;
-  --accent-text: #4f6612;
+  /* Olive lime text. #4f6612 fell to 3.96:1 on its own --accent-wash over the
+     page background (selected chips, pills); this clears 4.9:1 there. */
+  --accent-text: #435710;
   --focus-ring: var(--accent-text);
   --accent-wash: rgba(95, 122, 22, 0.14);
   --accent-border: color-mix(in srgb, var(--accent) 40%, transparent);
@@ -167,7 +169,8 @@ html.light {
     0 4px 16px rgba(40, 36, 28, 0.07);
   /* Olive chart marks + darkened medals — neon lime/gold vanish on paper. */
   --chart-mark: #4f6612;
-  --medal-1: #a16207;
+  /* #a16207 read 4.2:1 on --surface; one step deeper keeps it gold. */
+  --medal-1: #8f5806;
   --medal-2: #57534e;
   --medal-3: #9a3412;
   /* Zones on paper: greys a step darker, lime follows the softened fill,
@@ -1072,7 +1075,9 @@ html.reduce-motion .dlg-backdrop[data-closing='true'] .dlg-panel--pop {
   background: none;
   border: none;
   cursor: pointer;
-  opacity: 0.5;
+  /* Quieter than the exercise name, but at 0.5 the 10px SKIP label read
+     2.5:1 (light) / 2.7:1 (dark); 0.8 clears 4.5:1 in both themes. */
+  opacity: 0.8;
   display: flex;
   align-items: center;
   justify-content: center;

@@ -4,7 +4,12 @@ import { isAdminEmail } from '@/lib/utils/admin'
 import { garminPersonalConfig } from '@/lib/health/garmin/config'
 import SettingsView from './SettingsView'
 
-export default async function ProfileSettingsPage() {
+export default async function ProfileSettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string | string[] }>
+}) {
+  const { tab } = await searchParams
   const supabase = await createClient()
 
   const user = await getAuthUser()
@@ -34,6 +39,7 @@ export default async function ProfileSettingsPage() {
       displayName={displayName}
       username={profile?.username ?? null}
       coachDevUnlimited={profile?.coach_dev_unlimited ?? false}
+      initialTab={typeof tab === 'string' ? tab : null}
     />
   )
 }

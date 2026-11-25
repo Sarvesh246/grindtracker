@@ -44,13 +44,15 @@ export const EXTRA_DAY_COLORS = [
 ]
 
 /** Mid-tone fills for custom days in light mode. */
+// Pink, amber, red and fuchsia sit one step deeper than their -600 shades:
+// at -600 neither near-black nor near-white text cleared 4.5:1 on the UP NEXT pill.
 export const EXTRA_DAY_COLORS_LIGHT = [
   '#7c3aed',
-  '#db2777',
+  '#be185d',
   '#059669',
-  '#b45309',
-  '#dc2626',
-  '#c026d3',
+  '#a34a07',
+  '#b91c1c',
+  '#a21caf',
 ]
 
 /** Dark accessible variants for EXTRA_DAY_COLORS (same order). */
@@ -152,12 +154,23 @@ function relativeLuminance(hex: string): number {
   return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
 }
 
+const ON_FILL_DARK = '#0f0f0f'
+const ON_FILL_LIGHT = '#f0f0f0'
+
+function contrast(a: string, b: string): number {
+  const la = relativeLuminance(a)
+  const lb = relativeLuminance(b)
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05)
+}
+
 /**
- * Text/icon color that contrasts against a filled day color (UP NEXT pill).
- * Light fills get dark text; dark fills get white.
+ * Text/icon color that contrasts against a filled day color (UP NEXT pill):
+ * whichever of near-black / near-white actually reads better. A fixed 0.45
+ * luminance cut-off put white on mid-tone fills (light-mode Pull blue was
+ * 3.6:1) where near-black clears 5:1.
  */
 export function onDayFill(hex: string): string {
-  return relativeLuminance(hex) > 0.45 ? '#0f0f0f' : '#f0f0f0'
+  return contrast(hex, ON_FILL_DARK) >= contrast(hex, ON_FILL_LIGHT) ? ON_FILL_DARK : ON_FILL_LIGHT
 }
 
 /** Vibrant fill color used for backgrounds, borders, and dots. */

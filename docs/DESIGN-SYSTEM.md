@@ -26,8 +26,14 @@ so there's no flash. Toggle UI: circular sun/moon `ThemeToggle` beside the kg/lb
 toggle in TopNav and Profile settings.
 **Convention:** the lime `--accent` is a FILL, unchanged in both themes. For lime
 TEXT/icons that must read on white, use `--accent-text` (lime in dark, olive
-`#5f7a16` in light) — never `--accent` for text color. Faint accent panel
-backgrounds use `--accent-wash`; cards read `--card-shadow` (none in dark). The
+`#435710` in light) — never `--accent` for text color. Faint accent panel
+backgrounds use `--accent-wash`; cards read `--card-shadow` (none in dark).
+Light-mode text tokens are tuned so `--accent-text` (and the Recovery
+`--rcv-*-text` band colors) still clear 4.5:1 sitting on their own wash over
+the page background, which is the hardest case (selected chips, band pills).
+Day-color pills pick their label with `onDayFill()`, which takes whichever of
+near-black / near-white has more contrast; every built-in fill is tested to
+reach 4.5:1. The
 leaderboard ShareCard and the favicon stay dark-branded (`.share-card-dark` pins
 the dark tokens regardless of theme).
 
