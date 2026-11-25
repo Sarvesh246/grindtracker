@@ -6,7 +6,7 @@ import { useDemoMode } from '@/lib/contexts/DemoModeContext'
 import { demoSafeClient } from '@/lib/demoMode/demoSafeSupabase'
 import { Session, UserStats } from '@/lib/types'
 import { getLevel, getXpInCurrentLevel, getXpRequiredForLevel, getXpToNextLevel } from '@/lib/utils/gamification'
-import { formatShortDate, localDateKey } from '@/lib/utils/formatting'
+import { formatShortDate, formatSyncTime, localDateKey } from '@/lib/utils/formatting'
 import { homeGreeting } from '@/lib/utils/homeGreeting'
 import { overdueDays } from '@/lib/utils/rotation'
 import {
@@ -1108,7 +1108,7 @@ export default function HomeDashboard({
 
       {statsUnavailable && cachedStatsAt && (
         <p className="home-cache-age" role="status">
-          Stats saved on this device · {new Date(cachedStatsAt).toLocaleString()}
+          Stats saved on this device · {formatSyncTime(cachedStatsAt)}
         </p>
       )}
 
@@ -1764,6 +1764,7 @@ export default function HomeDashboard({
             </div>
           </div>
         )}
+        {(body?.garminMorning || body?.charge) && <div className="home-body-row">
         {body?.garminMorning && (
           <Link className="home-garmin-morning" href="/progress/health#signals">
             <strong>{body.signals?.source === 'garmin_personal' && body.signals.level === 'mild' ? body.signals.headline : 'Last night'}</strong>
@@ -1775,12 +1776,13 @@ export default function HomeDashboard({
             <ChargeRing charge={body.charge} onOpen={() => setTodayOpen(true)} />
             <TodaySheet open={todayOpen} onClose={() => setTodayOpen(false)} summary={body} />
             {body.syncs[0] ? (
-              <p>Watch data received · {new Date(body.syncs[0].received_at).toLocaleString()}</p>
+              <p>Watch synced · {formatSyncTime(body.syncs[0].received_at)}</p>
             ) : body.todayRow?.synced_at && (
-              <p>Watch snapshot · {new Date(body.todayRow.synced_at).toLocaleString()}</p>
+              <p>Watch synced · {formatSyncTime(body.todayRow.synced_at)}</p>
             )}
           </div>
         )}
+        </div>}
       </div>{/* end last-workout band */}
 
       <div className="home-col hg-right stagger-auto" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>

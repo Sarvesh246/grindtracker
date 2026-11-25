@@ -409,7 +409,7 @@ export default function LeaderboardClient({ userId }: Props) {
                     fontSize: '12px',
                     color: 'var(--text-muted)',
                   }}>
-                    Lv {entry.level} · {entry.current_streak}d streak
+                    Lv {entry.level}{entry.current_streak > 0 ? ` · ${entry.current_streak}d streak` : ''}
                   </div>
                 </div>
 

@@ -2256,11 +2256,23 @@ html.reduce-motion .grind-sheet-backdrop[data-closing='true'] {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 0.8rem;
-  color: var(--text);
+  color: var(--text-primary);
   text-decoration: none;
 }
 .home-garmin-morning span { color: var(--text-secondary); font-size: 0.875rem; }
-.progress-garmin-entry { margin-block: 0.75rem; }
+.progress-garmin-entry {
+  margin-block: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 52px;
+  font-weight: 600;
+  border-radius: 16px;
+}
+.progress-garmin-entry > svg { color: var(--text-muted); }
+@media (hover: hover) {
+  .progress-garmin-entry:hover { border-color: var(--text-muted); }
+}
 .home-garmin-morning { margin-top: 16px; padding: 18px 24px; border-radius: 20px; }
 /* In the Recovery pane the grid gap already spaces it like its neighbours. */
 .progress-pane > .progress-garmin-entry { margin-block: 0; }
@@ -7673,6 +7685,17 @@ html.reduce-motion .body-breathe { animation: none !important; }
 }
 
 .home-recovery { margin-top: 16px; }
+/* Last night + Charge: stacked on a phone, side by side once there's room —
+   on desktop each was a full-width bar holding one line of text. */
+.home-body-row {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+.home-body-row > .home-garmin-morning,
+.home-body-row > .home-recovery { margin-top: 0; }
 .home-recovery > p, .home-cache-age { margin-top: 6px; color: var(--text-muted); font-size: 12px; }
 
 /* Progress tabs (phone): Lifts, Recovery and Body each take the screen. */

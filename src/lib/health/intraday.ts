@@ -1,4 +1,5 @@
 import { clockLabel } from './model'
+import { formatSyncTime } from '../utils/formatting'
 
 /** Pure helpers for the watch's all-day data (migration 69) on the Health page. */
 
@@ -37,7 +38,7 @@ export function receivedText(
   syncedAt: string | null
 ): string {
   const last = syncs[0]
-  if (!last) return syncedAt ? `Received ${new Date(syncedAt).toLocaleString()}` : 'Nothing received for this date'
+  if (!last) return syncedAt ? `Received ${formatSyncTime(syncedAt)}` : 'Nothing received for this date'
   const how = last.source === 'background' ? 'background' : 'watch app open'
   const bg = syncs.filter((s) => s.source === 'background').length
   const count = syncs.length === 1 ? '1 sync' : `${syncs.length} syncs`

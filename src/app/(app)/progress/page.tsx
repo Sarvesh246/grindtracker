@@ -18,6 +18,7 @@ import { useBodySummary } from '@/components/body/useBodySummary'
 import { HealthEntry } from '@/components/health/HealthEntry'
 import { CACHE_KEYS, getUiState, setUiState } from '@/lib/cache/appDataCache'
 import { useCachedQuery } from '@/lib/cache/useCachedQuery'
+import { ChevronRight } from '@/components/ui/Icons'
 
 type ProgressTab = 'lifts' | 'recovery' | 'body'
 const PROGRESS_TABS: { id: ProgressTab; label: string }[] = [
@@ -459,7 +460,7 @@ export default function ProgressPage() {
         </div>
 
         <div style={{ padding: '8px 16px' }}><HealthEntry body={body} />
-          {body?.hasGarminActivities && <Link href="/progress/garmin" className="progress-garmin-entry">Garmin activities</Link>}
+          {body?.hasGarminActivities && <Link href="/progress/garmin" className="progress-garmin-entry press-card">Garmin activities<ChevronRight size={16} /></Link>}
         </div>
         <div style={{
           display: 'flex', flexDirection: 'column', alignItems: 'center',
@@ -698,7 +699,7 @@ export default function ProgressPage() {
         <aside className="progress-related" aria-label="Photos and recovery">
           <div className="progress-pane" data-pane="recovery">
             <HealthEntry body={body} />
-            {body?.hasGarminActivities && <Link href="/progress/garmin" className="progress-garmin-entry">Garmin activities</Link>}
+            {body?.hasGarminActivities && <Link href="/progress/garmin" className="progress-garmin-entry press-card">Garmin activities<ChevronRight size={16} /></Link>}
             {body?.strength ? <LoadGauge load={body.strength} /> : body?.hasWatch && body.load && <LoadGauge load={body.load} />}
           </div>
           <div className="progress-pane" data-pane="body">

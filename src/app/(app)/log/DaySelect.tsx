@@ -771,11 +771,10 @@ export default function DaySelect() {
                         }}>
                           UP NEXT
                         </span>
-                      ) : (
-                        <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                          {activeExs.length} exercise{activeExs.length !== 1 ? 's' : ''}
-                        </span>
-                      )}
+                      ) : null}
+                      <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                        {activeExs.length} exercise{activeExs.length !== 1 ? 's' : ''}
+                      </span>
                     </div>
                   </div>
                   <div style={{ fontSize: '14px', color: 'var(--text-secondary)', lineHeight: 1.45 }}>

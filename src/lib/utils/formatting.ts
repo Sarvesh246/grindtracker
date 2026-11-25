@@ -19,6 +19,28 @@ export function formatShortDate(date: string | Date): string {
   }).toUpperCase()
 }
 
+/**
+ * A sync/receipt timestamp as a person reads it: "5:03 PM" today,
+ * "Yesterday, 5:03 PM", otherwise "Nov 23, 5:03 PM". No seconds, no
+ * numeric date — `toLocaleString()` printed "11/25/2026, 5:03:52 PM".
+ */
+export function formatSyncTime(value: string | number | Date, now: Date = new Date()): string {
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return ''
+  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+  const key = localDateKey(d)
+  if (key === localDateKey(now)) return time
+  const yesterday = new Date(now)
+  yesterday.setDate(now.getDate() - 1)
+  if (key === localDateKey(yesterday)) return `Yesterday, ${time}`
+  const date = d.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    ...(d.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' }),
+  })
+  return `${date}, ${time}`
+}
+
 export function formatHeaderDate(): string {
   return new Date().toLocaleDateString('en-US', {
     weekday: 'short',

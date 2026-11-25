@@ -6,6 +6,7 @@ import { list, number, object } from '@/lib/health/garmin/normalize'
 import { dateLabel, shiftDate } from '@/lib/health/model'
 import type { HealthSummary } from '@/lib/health/queries'
 import { SeriesPlot } from './HealthCharts'
+import { formatSyncTime } from '@/lib/utils/formatting'
 
 const selectedMetrics = [
   ['next_sleep_need_minutes', 'Next sleep need', 'min'], ['sleep_stress', 'Overnight stress', ''],
@@ -43,7 +44,7 @@ export function GarminHealthDetails({ data, date }: { data: HealthSummary['garmi
   return (
     <section className="health-panel" aria-label="Garmin Connect measurements">
       <h3>Garmin Connect</h3>
-      {typeof day.day_end === 'string' && <p className="health-muted">Daily measurements through {new Date(day.day_end).toLocaleString()}</p>}
+      {typeof day.day_end === 'string' && <p className="health-muted">Daily measurements through {formatSyncTime(day.day_end)}</p>}
       {metric && (
         <>
           <label className="garmin-trend-select">Measurement

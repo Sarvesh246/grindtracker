@@ -50,6 +50,13 @@
   color: var(--text-primary);
   text-align: right;
 }
+/* On a phone the label and "78 nights · latest Wed, Nov 25" both wrapped
+   mid-phrase side by side; stack them so each reads on one line. */
+@media (max-width: 520px) {
+  .hi-sources li { flex-direction: column; gap: 2px; }
+  .hi-sources li > span { color: var(--text-secondary); font-size: 13px; }
+  .hi-sources b { text-align: left; }
+}
 .hi-card {
   margin-top: 10px;
   border: 1px solid var(--border);

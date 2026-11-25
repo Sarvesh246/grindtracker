@@ -173,7 +173,11 @@ export default function BodyWeightChart({
               tickLine={false}
               axisLine={false}
               width={40}
-              domain={['dataMin - 2', 'dataMax + 2']}
+              // Whole-number bounds and three ticks: a fractional domain rounded
+              // per tick printed uneven steps (172/169/167/165) on a 120px plot.
+              domain={[(min: number) => Math.floor(min - 2), (max: number) => Math.ceil(max + 2)]}
+              allowDecimals={false}
+              tickCount={3}
               tickFormatter={(v: number) => String(Math.round(v))}
             />
             <Tooltip
