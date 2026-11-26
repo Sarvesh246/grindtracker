@@ -57,3 +57,11 @@ playwright-report/
 # local agent tooling state
 ruvector.db
 .claude-flow/
+agentdb.rvf
+agentdb.rvf.lock
+
+# local scratch: debug scripts/screenshots, browser-automation logs (can hold
+# signed-in page text), and design exports
+.dbg/
+.playwright-mcp/
+Claude outputs/
