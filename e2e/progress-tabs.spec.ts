@@ -41,6 +41,9 @@ const bundle = buildSync({
 }).outputFiles[0].text
 const css = readFileSync('src/app/globals.css', 'utf8')
 
+// The tabs are hidden at desktop widths, including in the main CI project.
+test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })
+
 test.beforeEach(async ({ page }) => {
   await page.goto('about:blank')
   await page.evaluate(() => {
@@ -202,30 +205,33 @@ test('the thumb rests on the selected tab once the spring settles', async ({ pag
 })
 
 test('a flick keeps its speed through the release instead of restarting', async ({ page }) => {
-  const trail = await page.evaluate(async () => {
+  const { initialStretch, trail } = await page.evaluate(async () => {
     const host = document.querySelectorAll<HTMLElement>('.progress-tabs button')[0]!
     const target = host.querySelector('[data-haptic-overlay]') ?? host
     const box = host.getBoundingClientRect()
     const x0 = box.left + box.width / 2, y0 = box.top + box.height / 2
-    const send = (type: string, x: number) => {
+    const send = (type: string, x: number, timestamp: number) => {
       const touch = { identifier: 4, target, clientX: x, clientY: y0 }
       const e = new Event(type, { bubbles: true, cancelable: true })
+      Object.defineProperty(e, 'timeStamp', { value: timestamp })
       Object.defineProperty(e, 'touches', { value: type === 'touchend' ? [] : [touch] })
       Object.defineProperty(e, 'changedTouches', { value: [touch] })
       target.dispatchEvent(e)
     }
     const thumb = document.querySelector<HTMLElement>('.progress-tabs-thumb')!
     const x = () => new DOMMatrix(getComputedStyle(thumb).transform).m41
-    send('touchstart', x0)
-    for (let i = 1; i <= 3; i++) { await new Promise(r => setTimeout(r, 14)); send('touchmove', x0 + i * 15) }
-    send('touchend', x0 + 45)
-    const out: number[] = []
-    for (let i = 0; i < 4; i++) { await new Promise(r => requestAnimationFrame(() => r(null))); out.push(x()) }
-    return out
+    send('touchstart', x0, 0)
+    for (let i = 1; i <= 3; i++) send('touchmove', x0 + i * 15, i * 14)
+    send('touchend', x0 + 45, 42)
+    const initialStretch = new DOMMatrix(getComputedStyle(thumb).transform).a
+    const trail: number[] = []
+    for (let i = 0; i < 4; i++) { await new Promise(r => requestAnimationFrame(() => r(null))); trail.push(x()) }
+    return { initialStretch, trail }
   })
-  // Released at ~45px moving fast: the very next frames are already further
-  // on, not easing out of a standstill.
-  expect(trail[0]).toBeGreaterThan(45)
+  // Stretch is painted from release velocity before the first animation frame.
+  // A browser can deliver that first frame with zero elapsed time.
+  expect(initialStretch).toBeGreaterThan(1.02)
+  expect(trail[3]).toBeGreaterThan(45)
   expect(trail[3]).toBeGreaterThan(trail[0]!)
   await expect.poll(() => selected(page)).toBe('recovery')
 })
