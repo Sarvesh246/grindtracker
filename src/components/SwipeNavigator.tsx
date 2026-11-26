@@ -88,9 +88,12 @@ export default function SwipeNavigator({ children }: { children: React.ReactNode
     // started on a button (vertical scroll is JS-forwarded by the overlay;
     // horizontal page-swipe has to come from this navigator). Still honor
     // strip/dialog/chart exclusions so a day-pill drag scrolls the row.
+    // [data-tab-slider]: a segmented control you can drag (Progress tabs)
+    // owns horizontal drags; it isn't [data-swipe-ignore] so iOS still
+    // forwards vertical scrolls that start on it.
     const ignoreSel = target.closest('[data-haptic-overlay]')
-      ? '.recharts-wrapper, [role="dialog"], [role="alertdialog"], [data-swipe-ignore], .scrollbar-hide'
-      : 'input, textarea, select, [contenteditable="true"], .recharts-wrapper, [role="dialog"], [role="alertdialog"], [data-swipe-ignore], .scrollbar-hide'
+      ? '.recharts-wrapper, [role="dialog"], [role="alertdialog"], [data-swipe-ignore], [data-tab-slider], .scrollbar-hide'
+      : 'input, textarea, select, [contenteditable="true"], .recharts-wrapper, [role="dialog"], [role="alertdialog"], [data-swipe-ignore], [data-tab-slider], .scrollbar-hide'
     if (target.closest(ignoreSel)) {
       return
     }

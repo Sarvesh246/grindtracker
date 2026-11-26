@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useMemo, useState, type CSSProperties, type KeyboardEvent } from 'react'
+import { useEffect, useMemo, useState, type KeyboardEvent } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -19,6 +19,7 @@ import { HealthEntry } from '@/components/health/HealthEntry'
 import { CACHE_KEYS, getUiState, setUiState } from '@/lib/cache/appDataCache'
 import { useCachedQuery } from '@/lib/cache/useCachedQuery'
 import { ChevronRight } from '@/components/ui/Icons'
+import ProgressTabs from './ProgressTabs'
 
 type ProgressTab = 'lifts' | 'recovery' | 'body'
 const PROGRESS_TABS: { id: ProgressTab; label: string }[] = [
@@ -543,23 +544,7 @@ export default function ProgressPage() {
         <TodayLabel />
       </header>
 
-      <nav className="progress-tabs" role="tablist" aria-label="Progress sections" data-onboard="progress-tabs">
-        <span className="progress-tabs-thumb" aria-hidden="true" style={{ '--tab': PROGRESS_TABS.findIndex(t => t.id === tab) } as CSSProperties} />
-        {PROGRESS_TABS.map(t => (
-          <button
-            key={t.id}
-            type="button"
-            role="tab"
-            id={`progress-tab-${t.id}`}
-            aria-selected={tab === t.id}
-            className="press"
-            data-haptic="light"
-            onClick={() => pickTab(t.id)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </nav>
+      <ProgressTabs tabs={PROGRESS_TABS} value={tab} onChange={pickTab} />
 
       <div className="progress-layout" data-tab={tab}>
         <section className="progress-filters" data-onboard="progress-selector" aria-label="Chart filters">

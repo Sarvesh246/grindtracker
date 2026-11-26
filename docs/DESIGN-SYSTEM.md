@@ -153,3 +153,9 @@ lives in one collapsed "More from your watch" row at the end of the overview,
 and chart tables for screen readers are visually hidden (`.rcv-sr`) rather than
 shown as extra rows. On phones Progress splits into Lifts / Recovery / Body tabs
 (`.progress-tabs`, `data-tab` on `.progress-layout`); desktop shows all three.
+The tab bar (`ProgressTabs.tsx`) can be tapped or dragged: the thumb follows
+the finger via a transform written in rAF and springs to the nearest tab (a
+flick carries on). It is marked `data-tab-slider`, which SwipeNavigator
+ignores so a sideways drag there never changes page. Use that marker, not
+`data-swipe-ignore`, for any future draggable segmented control: on iOS
+`data-swipe-ignore` also stops the haptic overlay forwarding vertical scroll.
