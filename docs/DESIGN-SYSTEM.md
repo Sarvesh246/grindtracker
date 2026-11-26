@@ -153,9 +153,14 @@ lives in one collapsed "More from your watch" row at the end of the overview,
 and chart tables for screen readers are visually hidden (`.rcv-sr`) rather than
 shown as extra rows. On phones Progress splits into Lifts / Recovery / Body tabs
 (`.progress-tabs`, `data-tab` on `.progress-layout`); desktop shows all three.
-The tab bar (`ProgressTabs.tsx`) can be tapped or dragged: the thumb follows
-the finger via a transform written in rAF and springs to the nearest tab (a
-flick carries on). It is marked `data-tab-slider`, which SwipeNavigator
+The tab bar (`ProgressTabs.tsx`) can be tapped or dragged. All thumb motion
+is a JS spring (no CSS transition): the thumb tracks the finger 1:1 with
+iOS-style rubber banding past the ends, release hands it to a spring seeded
+with the finger's speed (measured over the last ~100ms), a flick picks
+between the two tabs the thumb is between (never skips one), taps use the
+same spring, and a moving thumb can be caught. Labels crossfade via a
+per-frame `--lit`; no React render happens during a drag or spring, and the
+content swap runs in `startTransition`. It is marked `data-tab-slider`, which SwipeNavigator
 ignores so a sideways drag there never changes page; the haptic overlay
 also treats its buttons as drag-owned (like the Coach orb).
 

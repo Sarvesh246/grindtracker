@@ -7744,17 +7744,24 @@ html.reduce-motion .body-breathe { animation: none !important; }
   border: 0;
   border-radius: 10px;
   background: transparent;
-  color: var(--text-muted);
+  /* --lit (0..1) blends muted -> primary. At rest it follows aria-selected;
+     while the thumb moves, ProgressTabs writes it every frame from the
+     thumb's position, so labels crossfade instead of flipping at halfway. */
+  --lit: 0;
+  color: color-mix(in srgb, var(--text-primary) calc(var(--lit) * 100%), var(--text-muted));
   font: 600 13px var(--font-sans);
   cursor: pointer;
   touch-action: none;
   transition: color 200ms ease;
 }
-/* data-lit follows the thumb while it's dragged; otherwise it is the tab. */
-.progress-tabs button[data-lit='true'] { color: var(--text-primary); }
-.progress-tabs[data-dragging] { cursor: grabbing; }
-.progress-tabs[data-dragging] button { cursor: grabbing; }
-.progress-tabs[data-dragging] button.press:active { transform: none; }
+.progress-tabs button[aria-selected='true'] { --lit: 1; }
+/* Per-frame values must not be smoothed a second time by the transition. */
+.progress-tabs[data-moving] button { transition: none; }
+.progress-tabs[data-moving] button.press:active { transform: none; }
+@media (pointer: fine) {
+  .progress-tabs[data-moving] { cursor: grabbing; }
+  .progress-tabs[data-moving] button { cursor: grabbing; }
+}
 .progress-tabs-thumb {
   position: absolute;
   top: 4px;
@@ -7763,11 +7770,11 @@ html.reduce-motion .body-breathe { animation: none !important; }
   width: calc((100% - 16px) / 3);
   border-radius: 10px;
   background: var(--surface-elevated);
-  /* transform (not left) so the slide and the drag stay on the compositor.
-     A percentage translate is the thumb's own width; + 4px is the gap. */
+  /* Resting position from --tab. All motion (drag, release, taps) is a JS
+     spring in ProgressTabs writing an inline transform, so there is no CSS
+     transition here to fight it. */
   transform: translate3d(calc(var(--tab, 0) * (100% + 4px)), 0, 0);
   will-change: transform;
-  transition: transform 420ms cubic-bezier(0.3, 1.3, 0.5, 1);
 }
 .progress-pane { display: grid; gap: 14px; }
 .progress-pane:empty { display: none; }

@@ -57,6 +57,16 @@ test.beforeEach(async ({ page }) => {
 })
 
 const selected = (page: Page) => page.locator('#app').getAttribute('data-tab')
+/** Wait for the spring by waiting on frames from inside the page: headless
+ *  Chromium only produces frames while something is waiting on one, so a
+ *  timer-based poll can watch a spring that never gets a frame. */
+const settled = (page: Page) =>
+  page.locator('.progress-tabs').evaluate(async el => {
+    for (let i = 0; i < 240 && el.hasAttribute('data-moving'); i++) {
+      await new Promise(r => requestAnimationFrame(() => r(null)))
+    }
+    return !el.hasAttribute('data-moving')
+  })
 const thumbX = (page: Page) =>
   page.locator('.progress-tabs-thumb').evaluate(el => Math.round(new DOMMatrix(getComputedStyle(el).transform).m41))
 
@@ -92,11 +102,11 @@ test('switch overlays are attached, so this is the iOS path', async ({ page }) =
 
 test('a slow touch drag slides the thumb and picks the tab it lands on', async ({ page }) => {
   await touchDrag(page, 0, 120, 0)
-  expect(await selected(page)).toBe('recovery')
+  await expect.poll(() => selected(page)).toBe('recovery')
   await touchDrag(page, 1, 120, 0)
-  expect(await selected(page)).toBe('body')
+  await expect.poll(() => selected(page)).toBe('body')
   await touchDrag(page, 2, -240, 0)
-  expect(await selected(page)).toBe('lifts')
+  await expect.poll(() => selected(page)).toBe('lifts')
 })
 
 test('the thumb follows the finger while it is down', async ({ page }) => {
@@ -117,19 +127,30 @@ test('the thumb follows the finger while it is down', async ({ page }) => {
     await new Promise(r => requestAnimationFrame(() => r(null)))
     const thumb = document.querySelector<HTMLElement>('.progress-tabs-thumb')!
     const pos = Math.round(new DOMMatrix(getComputedStyle(thumb).transform).m41)
-    const lit = document.querySelector('.progress-tabs button[data-lit="true"]')?.textContent
+    const lits = [...document.querySelectorAll<HTMLElement>('.progress-tabs button')].map(b => Number(getComputedStyle(b).getPropertyValue('--lit')))
     send('touchend', x0 + 80)
-    return { pos, lit }
+    return { pos, lits }
   })
   expect(midway.pos).toBeGreaterThanOrEqual(70)
-  expect(midway.lit).toBe('Recovery')
+  // 80px of a ~113px step: the labels are mid-crossfade, Recovery leading.
+  expect(midway.lits[1]).toBeGreaterThan(midway.lits[0]!)
+  expect(midway.lits[0]).toBeGreaterThan(0.1)
+  expect(midway.lits[1]).toBeLessThan(0.95)
+  expect(midway.lits[2]).toBe(0)
 })
 
 test('a short drag springs back; a quick flick carries to the next tab', async ({ page }) => {
   await touchDrag(page, 0, 40, 0, { steps: 6, pause: 150 })
-  expect(await selected(page)).toBe('lifts')
+  await expect.poll(() => selected(page)).toBe('lifts')
   await touchDrag(page, 0, 45, 0, { steps: 3, pause: 0 })
-  expect(await selected(page)).toBe('recovery')
+  await expect.poll(() => selected(page)).toBe('recovery')
+  // Even a very fast flick moves one tab, never skips to the far end.
+  expect(await settled(page)).toBe(true)
+  await touchDrag(page, 1, 60, 0, { steps: 2, pause: 0 })
+  await expect.poll(() => selected(page)).toBe('body')
+  expect(await settled(page)).toBe(true)
+  await touchDrag(page, 2, -30, 0, { steps: 2, pause: 0 })
+  await expect.poll(() => selected(page)).toBe('recovery')
 })
 
 test('touch moves on the bar are claimed so the switch cannot slide-toggle', async ({ page }) => {
@@ -157,7 +178,7 @@ test('touch moves on the bar are claimed so the switch cannot slide-toggle', asy
 
 test('a vertical drag that starts on the bar scrolls the page instead', async ({ page }) => {
   await touchDrag(page, 1, 0, -150, { pause: 150 })
-  expect(await selected(page)).toBe('lifts')
+  await expect.poll(() => selected(page)).toBe('lifts')
   const scrolled = await page.locator('.app-main').evaluate(el => el.scrollTop)
   expect(scrolled).toBeGreaterThanOrEqual(140)
 })
@@ -174,10 +195,106 @@ test('overlays come back after a drag so taps still tick', async ({ page }) => {
 
 test('the thumb rests on the selected tab once the spring settles', async ({ page }) => {
   await touchDrag(page, 0, 240, 0)
-  expect(await selected(page)).toBe('body')
-  // Let the 420ms spring finish: wait on the transition itself, not a guess.
-  await page.locator('.progress-tabs-thumb').evaluate(el =>
-    Promise.all(el.getAnimations().map(a => a.finished.catch(() => null))))
+  await expect.poll(() => selected(page)).toBe('body')
+  expect(await settled(page)).toBe(true)
   const step = await page.locator('.progress-tabs-thumb').evaluate(el => (el as HTMLElement).offsetWidth + 4)
   expect(Math.abs((await thumbX(page)) - 2 * step)).toBeLessThanOrEqual(1)
+})
+
+test('a flick keeps its speed through the release instead of restarting', async ({ page }) => {
+  const trail = await page.evaluate(async () => {
+    const host = document.querySelectorAll<HTMLElement>('.progress-tabs button')[0]!
+    const target = host.querySelector('[data-haptic-overlay]') ?? host
+    const box = host.getBoundingClientRect()
+    const x0 = box.left + box.width / 2, y0 = box.top + box.height / 2
+    const send = (type: string, x: number) => {
+      const touch = { identifier: 4, target, clientX: x, clientY: y0 }
+      const e = new Event(type, { bubbles: true, cancelable: true })
+      Object.defineProperty(e, 'touches', { value: type === 'touchend' ? [] : [touch] })
+      Object.defineProperty(e, 'changedTouches', { value: [touch] })
+      target.dispatchEvent(e)
+    }
+    const thumb = document.querySelector<HTMLElement>('.progress-tabs-thumb')!
+    const x = () => new DOMMatrix(getComputedStyle(thumb).transform).m41
+    send('touchstart', x0)
+    for (let i = 1; i <= 3; i++) { await new Promise(r => setTimeout(r, 14)); send('touchmove', x0 + i * 15) }
+    send('touchend', x0 + 45)
+    const out: number[] = []
+    for (let i = 0; i < 4; i++) { await new Promise(r => requestAnimationFrame(() => r(null))); out.push(x()) }
+    return out
+  })
+  // Released at ~45px moving fast: the very next frames are already further
+  // on, not easing out of a standstill.
+  expect(trail[0]).toBeGreaterThan(45)
+  expect(trail[3]).toBeGreaterThan(trail[0]!)
+  await expect.poll(() => selected(page)).toBe('recovery')
+})
+
+test('dragging past the ends resists more the further you pull', async ({ page }) => {
+  const pulls = await page.evaluate(async () => {
+    const host = document.querySelectorAll<HTMLElement>('.progress-tabs button')[0]!
+    const target = host.querySelector('[data-haptic-overlay]') ?? host
+    const box = host.getBoundingClientRect()
+    const x0 = box.left + box.width / 2, y0 = box.top + box.height / 2
+    const send = (type: string, x: number) => {
+      const touch = { identifier: 5, target, clientX: x, clientY: y0 }
+      const e = new Event(type, { bubbles: true, cancelable: true })
+      Object.defineProperty(e, 'touches', { value: type === 'touchend' ? [] : [touch] })
+      Object.defineProperty(e, 'changedTouches', { value: [touch] })
+      target.dispatchEvent(e)
+    }
+    const thumb = document.querySelector<HTMLElement>('.progress-tabs-thumb')!
+    const x = () => new DOMMatrix(getComputedStyle(thumb).transform).m41
+    send('touchstart', x0)
+    const at: number[] = []
+    for (const d of [-20, -40, -60, -80]) {
+      send('touchmove', x0 + d)
+      await new Promise(r => requestAnimationFrame(() => r(null)))
+      await new Promise(r => requestAnimationFrame(() => r(null)))
+      at.push(x())
+    }
+    send('touchend', x0 - 80)
+    return at
+  })
+  // Moves left, never as far as the finger, and each 20px buys less.
+  for (let i = 0; i < pulls.length; i++) expect(pulls[i]).toBeLessThan(0)
+  expect(Math.abs(pulls[3]!)).toBeLessThan(40)
+  expect(Math.abs(pulls[1]! - pulls[0]!)).toBeGreaterThan(Math.abs(pulls[3]! - pulls[2]!))
+  expect(await settled(page)).toBe(true)
+  expect(await thumbX(page)).toBe(0)
+})
+
+test('a tap springs the thumb over, and a moving thumb can be caught', async ({ page }) => {
+  const result = await page.evaluate(async () => {
+    const nav = document.querySelector<HTMLElement>('.progress-tabs')!
+    const thumb = document.querySelector<HTMLElement>('.progress-tabs-thumb')!
+    const x = () => new DOMMatrix(getComputedStyle(thumb).transform).m41
+    document.querySelectorAll<HTMLElement>('.progress-tabs button')[2]!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    // A few frames into the spring (frames, not a timer: headless timing varies).
+    for (let i = 0; i < 4; i++) await new Promise(r => requestAnimationFrame(() => r(null)))
+    const movingAfterTap = nav.hasAttribute('data-moving')
+    const inFlight = x()
+    // Grab it mid-flight: it should hold where it is, not jump to a tab.
+    const host = document.querySelectorAll<HTMLElement>('.progress-tabs button')[1]!
+    const target = host.querySelector('[data-haptic-overlay]') ?? host
+    const touch = { identifier: 6, target, clientX: host.getBoundingClientRect().left + 10, clientY: host.getBoundingClientRect().top + 10 }
+    const e = new Event('touchstart', { bubbles: true, cancelable: true })
+    Object.defineProperty(e, 'touches', { value: [touch] })
+    Object.defineProperty(e, 'changedTouches', { value: [touch] })
+    target.dispatchEvent(e)
+    for (let i = 0; i < 4; i++) await new Promise(r => requestAnimationFrame(() => r(null)))
+    const held = x()
+    const end = new Event('touchend', { bubbles: true, cancelable: true })
+    Object.defineProperty(end, 'touches', { value: [] })
+    Object.defineProperty(end, 'changedTouches', { value: [touch] })
+    target.dispatchEvent(end)
+    return { movingAfterTap, inFlight, held, step: thumb.offsetWidth + 4 }
+  })
+  expect(result.movingAfterTap).toBe(true)
+  expect(result.inFlight).toBeGreaterThan(5)
+  expect(result.inFlight).toBeLessThan(2 * result.step - 5)
+  expect(Math.abs(result.held - result.inFlight)).toBeLessThan(2)
+  expect(await settled(page)).toBe(true)
+  await expect.poll(() => selected(page)).toBe('body')
+  expect(Math.abs((await thumbX(page)) - 2 * result.step)).toBeLessThanOrEqual(1)
 })
