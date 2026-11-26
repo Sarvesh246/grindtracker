@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
-import { haptic } from '@/lib/utils/haptics'
+import { haptic, nearestScrollParent, startMomentum, stopMomentum } from '@/lib/utils/haptics'
 
 /**
  * Phone-only Lifts / Recovery / Body segmented control. Tap a tab, or drag
@@ -14,10 +14,16 @@ import { haptic } from '@/lib/utils/haptics'
  * React only re-renders when the highlighted third changes.
  *
  * Page swipe: the bar carries `data-tab-slider`, which SwipeNavigator ignores,
- * so a sideways drag here never flips to another page. It is deliberately not
- * `data-swipe-ignore`: on iOS that marker also stops the haptic overlay from
- * forwarding vertical pans, and a scroll that starts on the bar should still
- * scroll the page.
+ * so a sideways drag here never flips to another page.
+ *
+ * iOS: each tab wears the haptic switch overlay (touch-action: none). The
+ * overlay used to preventDefault horizontal touchmoves, which killed this
+ * drag on iPhone; `data-tab-slider` now makes it treat the bar as
+ * drag-owned (like the Coach orb) and leave pans alone. That also means no
+ * native vertical scroll starts on a tab there, so a vertical drag is
+ * forwarded to the page here, with the same release glide the overlay uses.
+ * Where the browser does pan natively (Android, the bar's gaps), it sends
+ * pointercancel first and nothing is forwarded twice.
  */
 
 const AXIS_DEADZONE = 6
@@ -36,8 +42,11 @@ type Drag = {
   axis: 'x' | 'y' | null
   pos: number
   lastX: number
+  lastY: number
   lastT: number
   velocity: number
+  scroller: HTMLElement | null
+  samples: { t: number; y: number }[]
 }
 
 export default function ProgressTabs<T extends string>({
@@ -89,6 +98,8 @@ export default function ProgressTabs<T extends string>({
     if (e.button !== 0 || !e.isPrimary) return
     const thumb = thumbRef.current
     if (!thumb) return
+    // A finger landing stops any glide still running from a previous flick.
+    stopMomentum()
     const step = thumb.offsetWidth + 4 // thumb width + grid gap
     dragRef.current = {
       pointerId: e.pointerId,
@@ -99,10 +110,16 @@ export default function ProgressTabs<T extends string>({
       axis: null,
       pos: index * step,
       lastX: e.clientX,
+      lastY: e.clientY,
       lastT: e.timeStamp,
       velocity: 0,
+      scroller: null,
+      samples: [],
     }
   }
+
+  const scrollerFor = (el: HTMLElement): HTMLElement | null =>
+    nearestScrollParent(el, 'y') ?? (document.scrollingElement as HTMLElement | null)
 
   const onPointerMove = (e: ReactPointerEvent<HTMLElement>) => {
     const drag = dragRef.current
@@ -110,12 +127,27 @@ export default function ProgressTabs<T extends string>({
     const dx = e.clientX - drag.startX
     const dy = e.clientY - drag.startY
 
+    if (drag.axis === 'y') {
+      // Only reached when the browser didn't pan natively (iOS overlay).
+      if (drag.scroller) drag.scroller.scrollTop -= e.clientY - drag.lastY
+      drag.lastY = e.clientY
+      drag.samples.push({ t: performance.now(), y: e.clientY })
+      if (drag.samples.length > 12) drag.samples.shift()
+      return
+    }
+
     if (!drag.axis) {
       if (Math.abs(dx) < AXIS_DEADZONE && Math.abs(dy) < AXIS_DEADZONE) return
       drag.axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y'
       if (drag.axis === 'y') {
-        // A scroll that happened to start on the bar: let the page have it.
-        dragRef.current = null
+        // A scroll that started on the bar. Count the dead zone so the page
+        // doesn't lag the finger by those first pixels.
+        drag.scroller = scrollerFor(e.currentTarget)
+        if (drag.scroller) drag.scroller.scrollTop -= dy
+        drag.lastY = e.clientY
+        drag.samples = [{ t: performance.now(), y: e.clientY }]
+        // Keep the moves coming once the finger leaves the 46px bar.
+        try { e.currentTarget.setPointerCapture(e.pointerId) } catch {}
         return
       }
       navRef.current?.setAttribute('data-dragging', '')
@@ -148,6 +180,11 @@ export default function ProgressTabs<T extends string>({
   const onPointerUp = (e: ReactPointerEvent<HTMLElement>) => {
     const drag = dragRef.current
     if (!drag || e.pointerId !== drag.pointerId) return
+    if (drag.axis === 'y') {
+      if (drag.scroller) startMomentum(drag.scroller, 'y', drag.samples)
+      dragRef.current = null
+      return
+    }
     if (drag.axis !== 'x') {
       dragRef.current = null
       return
@@ -163,7 +200,13 @@ export default function ProgressTabs<T extends string>({
   }
 
   const onPointerCancel = () => {
-    if (!dragRef.current) return
+    const drag = dragRef.current
+    if (!drag) return
+    if (drag.axis !== 'x') {
+      // The browser took a vertical pan natively; nothing of ours to undo.
+      dragRef.current = null
+      return
+    }
     settle(index)
     setTimeout(() => { suppressClickRef.current = false }, 0)
   }

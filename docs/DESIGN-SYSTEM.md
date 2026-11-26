@@ -157,5 +157,10 @@ The tab bar (`ProgressTabs.tsx`) can be tapped or dragged: the thumb follows
 the finger via a transform written in rAF and springs to the nearest tab (a
 flick carries on). It is marked `data-tab-slider`, which SwipeNavigator
 ignores so a sideways drag there never changes page. Use that marker, not
-`data-swipe-ignore`, for any future draggable segmented control: on iOS
-`data-swipe-ignore` also stops the haptic overlay forwarding vertical scroll.
+`data-swipe-ignore`, for any future draggable segmented control. On iOS the
+marker also makes the haptic switch overlay treat its buttons as drag-owned
+(like the Coach orb): the overlay's own pan handling preventDefaults
+horizontal touchmoves and killed the drag on iPhone. Because the overlay is
+`touch-action: none`, the control forwards vertical drags to the page itself
+(`nearestScrollParent` + `startMomentum` from `haptics.ts`). This only shows
+on a real iPhone — the overlay never attaches in desktop Chromium.

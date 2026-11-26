@@ -174,6 +174,10 @@ function hostIsDisabled(host: HTMLElement): boolean {
  */
 function hostOwnsDragGesture(host: HTMLElement): boolean {
   if (host.classList.contains('coach-fab')) return true
+  // A draggable segmented control (Progress tabs). Its overlay's touchmove
+  // preventDefault on horizontal pans killed the drag on iOS; the control
+  // forwards vertical pans to the page itself.
+  if (host.closest('[data-tab-slider]')) return true
   try {
     return getComputedStyle(host).touchAction === 'none'
   } catch {
@@ -252,7 +256,7 @@ function resolveHapticHost(fallback: HTMLElement): HTMLElement | null {
 }
 
 /** Nearest ancestor that can scroll on the given axis (overflow + overflow size). */
-function nearestScrollParent(
+export function nearestScrollParent(
   from: HTMLElement,
   axis: 'x' | 'y',
 ): HTMLElement | null {
@@ -311,11 +315,11 @@ function hostIsSwipeSurface(host: HTMLElement): boolean {
 // ─── Inertia for JS-forwarded scrolling ───────────────────────────────────────
 // Only one glide runs at a time; any new touch cancels it.
 let momentumRaf = 0
-function stopMomentum() {
+export function stopMomentum() {
   if (momentumRaf) cancelAnimationFrame(momentumRaf)
   momentumRaf = 0
 }
-function startMomentum(el: HTMLElement, axis: 'x' | 'y', samples: { t: number; y: number }[]) {
+export function startMomentum(el: HTMLElement, axis: 'x' | 'y', samples: { t: number; y: number }[]) {
   stopMomentum()
   const now = performance.now()
   // Use only the release window, not the start of a long drag or a reversal.
