@@ -32,33 +32,6 @@ export function watchJson(body: unknown, status = 200, headers: Record<string, s
   return Response.json(body, { status, headers: { ...NO_STORE, ...headers } })
 }
 
-/**
- * The request body as text, read no further than `maxBytes`. Content-Length is
- * checked first, but a chunked body has none, so the stream is counted as it
- * arrives and cut off the moment it passes the cap. `ok: false` = too large.
- */
-export async function readBodyText(
-  request: Request,
-  maxBytes: number,
-): Promise<{ ok: true; text: string } | { ok: false }> {
-  if (Number(request.headers.get('content-length') ?? '0') > maxBytes) return { ok: false }
-  const reader = request.body?.getReader()
-  if (!reader) return { ok: true, text: '' }
-  const chunks: Uint8Array[] = []
-  let bytes = 0
-  for (;;) {
-    const { value, done } = await reader.read()
-    if (done) break
-    bytes += value.byteLength
-    if (bytes > maxBytes) {
-      await reader.cancel()
-      return { ok: false }
-    }
-    chunks.push(value)
-  }
-  return { ok: true, text: Buffer.concat(chunks).toString('utf8') }
-}
-
 export function watchError(
   status: number,
   code: WatchErrorCode,

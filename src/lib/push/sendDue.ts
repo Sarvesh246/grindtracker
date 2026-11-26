@@ -47,13 +47,11 @@ export async function sendDueNotifications(
   if (error) throw error
 
   const claimed = (rows || []) as ClaimedRow[]
-  const goneEndpoints = new Set<string>()
   let sent = 0
   let gone = 0
   let errors = 0
 
   for (const row of claimed) {
-    if (goneEndpoints.has(row.endpoint)) continue
     const payload = (row.payload && typeof row.payload === 'object' ? row.payload : {}) as Record<
       string,
       unknown
@@ -68,8 +66,8 @@ export async function sendDueNotifications(
     if (result === 'ok') sent++
     else if (result === 'gone') {
       gone++
-      goneEndpoints.add(row.endpoint)
-      await supabase.from('push_subscriptions').delete().eq('endpoint', row.endpoint)
+      await supabase.from('push_subscriptions').delete()
+        .eq('endpoint', row.endpoint).eq('user_id', row.user_id).eq('p256dh', row.p256dh).eq('auth', row.auth)
     } else errors++
   }
 

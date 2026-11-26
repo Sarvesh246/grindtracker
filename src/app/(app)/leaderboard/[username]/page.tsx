@@ -37,9 +37,8 @@ export default async function FriendProfilePage({
   }
 
   const { data: targetProfile } = await supabase
-    .from('user_profiles')
+    .rpc('grind_profile_directory', { p_username: username })
     .select('id')
-    .eq('username', username)
     .maybeSingle()
 
   // Viewing your own row from the leaderboard — send to the real (editable)

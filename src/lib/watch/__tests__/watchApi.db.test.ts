@@ -287,6 +287,62 @@ describe('watch API against the real schema', { skip: !baseUrl && 'set PARITY_DA
     bobToken = mint(BOB, 'Forerunner')
   })
 
+  describe('account security across database roles', () => {
+    it('keeps profile settings private while allowing authenticated directory lookups', () => {
+      assert.equal(asUser(ALICE, 'select count(*) from user_profiles'), '1')
+      assert.equal(asUser(BOB, `select count(*) from user_profiles where id = '${ALICE}'`), '0')
+      assert.equal(asUser(BOB, `select id from grind_profile_directory(p_ids => array['${ALICE}']::uuid[])`), ALICE)
+      assert.equal(asUser(BOB, `select id from grind_profile_directory(p_username => 'alice_${ALICE.slice(0, 8)}')`), ALICE)
+      assert.equal(asUser(BOB, "select count(*) from grind_profile_directory(p_search => 'alice_')") !== '0', true)
+      assert.equal(asUser(BOB, "select count(*) from grind_profile_directory(p_search => '%')"), '0')
+      assert.throws(() => db('set role anon; select * from grind_profile_directory()'), /permission denied/)
+      assert.throws(() => asUser(BOB, 'select setup_completed_at from grind_profile_directory()'), /does not exist/)
+    })
+
+    it('allows only the intended addressee to accept an unmodified friend request', () => {
+      const friendship = randomUUID()
+      asUser(ALICE, `insert into friendships (id, requester_id, addressee_id) values ('${friendship}', '${ALICE}', '${BOB}')`)
+      asUser(ALICE, `update friendships set status = 'accepted' where id = '${friendship}'`)
+      assert.equal(asUser(BOB, `select status from friendships where id = '${friendship}'`), 'pending')
+      assert.throws(() => asUser(BOB, `update friendships set requester_id = '${randomUUID()}', status = 'accepted' where id = '${friendship}'`), /permission denied/)
+      asUser(BOB, `update friendships set status = 'accepted' where id = '${friendship}'`)
+      assert.equal(asUser(ALICE, `select status from friendships where id = '${friendship}'`), 'accepted')
+      asUser(ALICE, `delete from friendships where id = '${friendship}'`)
+    })
+
+    it('binds a Coach message to a conversation owned by its author', () => {
+      const thread = randomUUID()
+      asUser(ALICE, `insert into coach_conversations (id, user_id, title) values ('${thread}', '${ALICE}', 'Training')`)
+      const add = (user: string) => asUser(user, `insert into coach_messages (user_id, role, content, conversation_id)
+        values ('${user}', 'user', 'First message', '${thread}')`)
+      assert.throws(() => add(BOB), /coach_messages_conversation_owner_fkey/)
+      add(ALICE)
+      assert.equal(asUser(ALICE, `select count(*) from coach_messages where conversation_id = '${thread}'`), '1')
+    })
+
+    it('restricts push destinations and requires matching keys for account switches', () => {
+      const endpoint = `https://web.push.apple.com/${randomUUID()}`
+      const key = 'A'.repeat(87)
+      const auth = 'B'.repeat(22)
+      const register = (user: string, url: string, secret = auth) =>
+        asUser(user, `select upsert_push_subscription(${lit(url)}, '${key}', '${secret}')`)
+
+      assert.throws(() => register(ALICE, 'https://unsupported.example/token'), /push_subscriptions_provider_check/)
+      assert.throws(() => asUser(ALICE, `insert into push_subscriptions (user_id, endpoint, p256dh, auth) values ('${ALICE}', '${endpoint}', '${key}', '${auth}')`), /permission denied/)
+      register(ALICE, endpoint)
+      assert.throws(() => register(BOB, endpoint, 'C'.repeat(22)), /SUBSCRIPTION_CONFLICT/)
+      assert.equal(asUser(ALICE, `select count(*) from push_subscriptions where endpoint = '${endpoint}'`), '1')
+      register(BOB, endpoint, auth + '==')
+      assert.equal(asUser(BOB, `select count(*) from push_subscriptions where endpoint = '${endpoint}'`), '1')
+      assert.equal(asUser(ALICE, `select count(*) from push_subscriptions where endpoint = '${endpoint}'`), '0')
+    })
+
+    it('removes anonymous and trigger-only RPC grants', () => {
+      assert.equal(db("select has_function_privilege('anon', 'public.is_grind_admin()', 'execute')"), 'f')
+      assert.equal(db("select has_function_privilege('authenticated', 'public.enforce_coach_rate_limit()', 'execute')"), 'f')
+    })
+  })
+
   describe('health import end to end (token → importer → real schema)', () => {
     const body = (tz = 'America/Chicago') => ({
       kind: 'apple_health',

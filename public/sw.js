@@ -192,7 +192,7 @@ function safeAppPath(url) {
   if (typeof url !== 'string') return '/home'
   const trimmed = url.trim()
   if (!trimmed.startsWith('/') || trimmed.startsWith('//')) return '/home'
-  if (trimmed.includes('\\') || trimmed.includes('://')) return '/home'
+  if (trimmed.includes('\\') || trimmed.includes('://') || /[\t\r\n]/.test(trimmed)) return '/home'
   return trimmed
 }
 

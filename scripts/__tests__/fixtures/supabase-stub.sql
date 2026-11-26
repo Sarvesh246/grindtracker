@@ -164,5 +164,10 @@ drop policy if exists "stub own badges" on public.user_badges;
 create policy "stub own badges" on public.user_badges
   for select using (auth.uid() = user_id);
 drop policy if exists "stub profiles" on public.user_profiles;
-create policy "stub profiles" on public.user_profiles
-  for select using (true);
+alter table public.user_profiles enable row level security;
+drop policy if exists profiles_read_all on public.user_profiles;
+create policy profiles_read_all on public.user_profiles
+  for select to authenticated using (true);
+drop policy if exists profiles_write_own on public.user_profiles;
+create policy profiles_write_own on public.user_profiles
+  for all to authenticated using (auth.uid() = id);

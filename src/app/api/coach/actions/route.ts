@@ -12,6 +12,7 @@ import {
   type CoachActionPayload,
 } from '@/lib/coach/actions'
 import { invalidateCoachContextCache } from '@/lib/coach/contextCache'
+import { readBoundedJson } from '@/lib/utils/requestBody'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -29,12 +30,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  let body: Record<string, unknown>
-  try {
-    body = await request.json()
-  } catch {
+  const input = await readBoundedJson(request, 4096).catch(() => null)
+  if (input === null || typeof input !== 'object' || Array.isArray(input)) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
+  const body = input as Record<string, unknown>
 
   const proposalId =
     typeof body.proposalId === 'string' ? body.proposalId.trim() : ''

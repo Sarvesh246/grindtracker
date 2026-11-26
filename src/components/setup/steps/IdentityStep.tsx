@@ -66,9 +66,8 @@ export default function IdentityStep({
     const gen = ++checkGenRef.current
     debounceRef.current = setTimeout(async () => {
       const { data } = await supabase
-        .from('user_profiles')
+        .rpc('grind_profile_directory', { p_username: trimmed })
         .select('id')
-        .eq('username', trimmed)
         .maybeSingle()
       if (gen !== checkGenRef.current) return
       setChecking(false)

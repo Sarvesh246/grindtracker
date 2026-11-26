@@ -1,4 +1,5 @@
 import webpush from 'web-push'
+import { isPushEndpoint } from './subscription'
 
 let configured = false
 
@@ -18,6 +19,7 @@ export async function sendPushToSubscription(
   sub: { endpoint: string; p256dh: string; auth: string },
   payload: Record<string, unknown>,
 ): Promise<'ok' | 'gone' | 'error'> {
+  if (!isPushEndpoint(sub.endpoint)) return 'gone'
   configureWebPush()
   try {
     await webpush.sendNotification(
@@ -26,12 +28,13 @@ export async function sendPushToSubscription(
         keys: { p256dh: sub.p256dh, auth: sub.auth },
       },
       JSON.stringify(payload),
+      { timeout: 5_000 },
     )
     return 'ok'
   } catch (err: unknown) {
     const status = (err as { statusCode?: number })?.statusCode
     if (status === 404 || status === 410) return 'gone'
-    console.error('[grind] web-push send failed', err)
+    console.error('[grind] web-push send failed', { status })
     return 'error'
   }
 }

@@ -6,6 +6,6 @@ export function safeAppPath(url: unknown, fallback = '/home'): string {
   if (typeof url !== 'string') return fallback
   const trimmed = url.trim()
   if (!trimmed.startsWith('/') || trimmed.startsWith('//')) return fallback
-  if (trimmed.includes('\\') || trimmed.includes('://')) return fallback
+  if (trimmed.includes('\\') || trimmed.includes('://') || /[\t\r\n]/.test(trimmed)) return fallback
   return trimmed
 }

@@ -146,9 +146,8 @@ export default function ProfileDashboard({
     setUsernameChecking(true)
     debounceRef.current = setTimeout(async () => {
       const { data } = await supabase
-        .from('user_profiles')
+        .rpc('grind_profile_directory', { p_username: trimmed })
         .select('id')
-        .eq('username', trimmed)
         .maybeSingle()
       setUsernameChecking(false)
       setUsernameAvailable(!data)

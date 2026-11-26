@@ -5,6 +5,8 @@ import { garminPersonalConfig } from '@/lib/health/garmin/config'
 import { probeGarmin, scopes, type GarminScope } from '@/lib/health/garmin/collect'
 import { syncGarmin } from '@/lib/health/garmin/sync'
 import { z } from 'zod'
+import { readBoundedJson } from '@/lib/utils/requestBody'
+import { requestOrigin } from '@/lib/utils/requestOrigin'
 
 export const maxDuration = 60
 
@@ -42,13 +44,10 @@ export async function GET() {
 export async function POST(request: Request) {
   const config = await owner()
   if (!config) return response({ status: 'unavailable' }, 404)
-  if (request.headers.get('origin') !== new URL(request.url).origin ||
+  if (request.headers.get('origin') !== requestOrigin(request) ||
       request.headers.get('content-type')?.split(';')[0] !== 'application/json')
     return response({ status: 'forbidden' }, 403)
-  const text = await request.text()
-  if (text.length > 1024) return response({ status: 'invalid' }, 400)
-  let input: unknown
-  try { input = JSON.parse(text) } catch { return response({ status: 'invalid' }, 400) }
+  const input = await readBoundedJson(request, 1024).catch(() => null)
   const parsed = action.safeParse(input)
   if (!parsed.success) return response({ status: 'invalid' }, 400)
   const { data } = parsed

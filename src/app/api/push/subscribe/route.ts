@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { parsePushSubscription } from '@/lib/push/subscription'
+import { readBoundedJson } from '@/lib/utils/requestBody'
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -10,40 +12,25 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  let body: {
-    endpoint?: string
-    keys?: { p256dh?: string; auth?: string }
-    expirationTime?: number | null
+  const subscription = parsePushSubscription(await readBoundedJson(request, 8192).catch(() => null))
+  if (!subscription) {
+    return NextResponse.json({ error: 'Invalid subscription' }, { status: 400 })
   }
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
-  }
-
-  const endpoint = body.endpoint?.trim()
-  const p256dh = body.keys?.p256dh?.trim()
-  const auth = body.keys?.auth?.trim()
-  if (!endpoint || !p256dh || !auth) {
-    return NextResponse.json({ error: 'Missing subscription fields' }, { status: 400 })
-  }
-
-  const expiration_time =
-    typeof body.expirationTime === 'number' && Number.isFinite(body.expirationTime)
-      ? new Date(body.expirationTime).toISOString()
-      : null
 
   // Security-definer RPC transfers endpoint ownership on account switch;
   // a plain RLS upsert cannot update another user's unique(endpoint) row.
   const { error } = await supabase.rpc('upsert_push_subscription', {
-    p_endpoint: endpoint,
-    p_p256dh: p256dh,
-    p_auth: auth,
-    p_expiration_time: expiration_time,
+    p_endpoint: subscription.endpoint,
+    p_p256dh: subscription.p256dh,
+    p_auth: subscription.auth,
+    p_expiration_time: subscription.expires,
   })
 
+  if (error?.code === '42501') {
+    return NextResponse.json({ error: 'Subscription could not be verified' }, { status: 409 })
+  }
   if (error) {
-    console.error('[grind] push subscribe upsert', error)
+    console.error('[grind] push subscribe upsert', { code: error.code })
     return NextResponse.json({ error: 'Failed to save subscription' }, { status: 500 })
   }
 
@@ -59,16 +46,11 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  let body: { endpoint?: string }
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
-  }
-
-  const endpoint = body.endpoint?.trim()
-  if (!endpoint) {
-    return NextResponse.json({ error: 'Missing endpoint' }, { status: 400 })
+  const body = await readBoundedJson(request, 8192).catch(() => null) as { endpoint?: unknown } | null
+  const endpoint = body?.endpoint
+  // Allow removal of legacy subscriptions with a provider we no longer accept.
+  if (typeof endpoint !== 'string' || !endpoint || Buffer.byteLength(endpoint) > 4096) {
+    return NextResponse.json({ error: 'Invalid endpoint' }, { status: 400 })
   }
 
   const { error } = await supabase
@@ -78,7 +60,7 @@ export async function DELETE(request: Request) {
     .eq('endpoint', endpoint)
 
   if (error) {
-    console.error('[grind] push unsubscribe', error)
+    console.error('[grind] push unsubscribe', { code: error.code })
     return NextResponse.json({ error: 'Failed to remove subscription' }, { status: 500 })
   }
 

@@ -9,6 +9,7 @@ import {
 } from '@/lib/setup/profileCookie'
 import { isTransientAuthError } from '@/lib/supabase/authErrors'
 import { withDeadline } from '@/lib/supabase/deadline'
+import { isCrossOriginMutation } from '@/lib/utils/requestOrigin'
 
 /**
  * Bound everything the proxy asks of Supabase. It runs in front of EVERY page
@@ -77,7 +78,11 @@ function isSetupPath(pathname: string): boolean {
 }
 
 export async function proxy(request: NextRequest) {
-  if (request.nextUrl.pathname === '/offline-workout') return NextResponse.next()
+  const { pathname } = request.nextUrl
+  if (pathname === '/offline-workout') return NextResponse.next()
+  if (pathname.startsWith('/api/') && !isPublicPath(pathname) && isCrossOriginMutation(request)) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
   let supabaseResponse = NextResponse.next({ request })
 
   const supabase = createServerClient(
@@ -118,8 +123,6 @@ export async function proxy(request: NextRequest) {
     AUTH_CHECK_TIMED_OUT as unknown as Awaited<ReturnType<typeof supabase.auth.getClaims>>,
   )
   const userId = claims?.claims?.sub ?? null
-
-  const { pathname } = request.nextUrl
 
   // "Couldn't reach Supabase" is not "signed out": redirecting would bounce an
   // established user to /login on every flaky launch. But letting the request

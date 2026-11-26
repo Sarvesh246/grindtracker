@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import { isAdminEmail } from '@/lib/utils/admin'
+import { readBoundedJson } from '@/lib/utils/requestBody'
 import {
   localDateKeyInTimeZone,
   parseClientLocalDate,
@@ -144,12 +145,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  let body: Record<string, unknown>
-  try {
-    body = await request.json()
-  } catch {
+  const input = await readBoundedJson(request, 1024 * 1024).catch(() => null)
+  if (input === null || typeof input !== 'object' || Array.isArray(input)) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
+  const body = input as Record<string, unknown>
 
   const message =
     typeof body.message === 'string' ? body.message.trim() : ''
