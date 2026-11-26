@@ -68,10 +68,15 @@ export const watchSessionSchema = z
     calories: z.int().min(0).max(20000).nullish(),
     hr: watchHrSchema.nullish(),
     batch_upload: z.boolean().optional(),
+    saved_upload: z.literal(true).optional(),
+    expected_sets: z.int().min(1).max(512).optional(),
     sensor_retry: z.boolean().optional(),
     sets: z.array(watchSetSchema).max(MAX_SETS_PER_REQUEST).default([]),
   })
   .superRefine((s, ctx) => {
+    if (s.expected_sets !== undefined && (!s.saved_upload || !s.ended_at || s.expected_sets < s.sets.length)) {
+      ctx.addIssue({ code: 'custom', path: ['expected_sets'], message: 'expected_sets requires a final saved workout batch' })
+    }
     const ids = new Set<string>()
     const slots = new Set<string>()
     s.sets.forEach((set, i) => {

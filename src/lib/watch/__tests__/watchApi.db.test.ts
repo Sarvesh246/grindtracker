@@ -516,6 +516,44 @@ describe('watch API against the real schema', { skip: !baseUrl && 'set PARITY_DA
       assert.ok(Number(db(`select xp_earned from sessions where id = '${S1}'`)) >= before)
     })
 
+    it('finalizes only complete saved batches and treats uploaded sets as immutable on retry', async () => {
+      const sid = id('background-workout')
+      const age = 8 * 24 * 60
+      const base = { id: sid, workout_id: 'push', started_at: iso(age + 60), utc_offset_seconds: 0, saved_upload: true }
+      const first = set('background-first', id('bench'), 1, 125, age + 55)
+      const second = set('background-second', id('bench'), 2, 125, age + 45)
+      const final = { ...base, ended_at: iso(age + 35), expected_sets: 2, sets: [second] }
+      const send = (body: object, token = aliceToken) => watchSessions(request('/sessions?compact=1', token, body), deps)
+      const missing = await send(final)
+      assert.equal(missing.status, 409)
+      assert.equal(await codeOf(missing), 'incomplete_batch')
+      assert.equal(db(`select count(*) from sessions where id = '${sid}'`), '0')
+
+      const staged = await send({ ...base, sets: [first] })
+      assert.equal(staged.status, 201)
+      assert.equal((await staged.json()).ok, true)
+      const refused = await send({ ...final, sets: [{ ...second, exercise_id: randomUUID() }] })
+      assert.equal(refused.status, 422)
+      assert.equal(await codeOf(refused), 'saved_set_refused')
+      assert.equal(db(`select count(*) from sessions where id = '${sid}'`), '0')
+
+      const completed = await send(final)
+      assert.equal(completed.status, 201)
+      const receipt = await completed.json()
+      assert.equal(receipt.ok, true)
+      assert.equal(receipt.count, 2)
+      assert.equal(receipt.session.completed_now, true)
+
+      db(`set grind.allow_session_complete = '1'; update session_logs set reps = 11 where id = '${second.id}'`)
+      const retry = await send(final)
+      assert.equal(retry.status, 200)
+      assert.equal((await retry.json()).ok, true)
+      assert.equal(db(`select reps from session_logs where id = '${second.id}'`), '11')
+      assert.equal((await send(final, bobToken)).status, 409)
+      assert.throws(() => asUser(ALICE, `select public.watch_ingest_saved_session('${ALICE}', '{}')`))
+      db(`delete from sessions where id = '${sid}'`)
+    })
+
     it('editing a finished watch workout in Log → Past keeps its real times and per-set watch data (migration 83)', async () => {
       // A separate, older workout so the sessions the other tests share stay as they are.
       const S2 = id('s2-past-edit')

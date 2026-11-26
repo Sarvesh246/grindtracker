@@ -241,6 +241,19 @@ Also rejected with `validation_failed`: unknown fields, two sets with the same
 more than 5 minutes in the future or more than 730 days old. The body must be at
 most 64 KB (≈ 200 sets).
 
+### Saved watch workouts
+
+Current GRIND watch builds send `saved_upload: true` for their immutable
+local sets. A replay acknowledges stored set IDs without changing a completed
+workout, including after a phone edit. A background final packet includes
+`expected_sets` so the server can require all batches before completing the
+session. If a batch went missing, `409 incomplete_batch` tells the watch to
+start from the first packet.
+
+Background requests use `POST /sessions?compact=1`. The receipt returns
+`ok`, the number of acknowledged sets, session status and streak. Heart-rate
+traces and Rep Lab data use the foreground retry queue.
+
 ### Response
 
 `201` when this request created the session, `200` when it already existed:

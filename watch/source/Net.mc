@@ -37,6 +37,7 @@ class Net {
     var nextAt = 0;      // epoch secs before which we don't retry uploads
     var todayAt = 0;     // same, for re-fetching a missing workout
     var dailyRetryAt = 0;
+    var cachedDayAttempts = [];
     var dayWant = null;  // day id being fetched for the picker
     var upSid = null;
     var upSets = null;
@@ -148,7 +149,11 @@ class Net {
         System.println("today -> " + code + " " + errCode(data));
         busy = false;
         if (code == 200 && data instanceof Lang.Dictionary && data["date"] != null) {
-            if (Store.cacheToday(data)) { Store.put("ls", now()); }
+            if (Store.cacheToday(data)) {
+                Store.put("ls", now());
+                var wk = Store.today();
+                cachedDayAttempts = wk != null && wk["id"] != null ? [wk["id"]] : [];
+            }
         } else if (code == 401) {
             authError = true;
         }
@@ -175,12 +180,29 @@ class Net {
             && id != null && id.equals(data["workout"]["id"]);
         if (ok) {
             ok = Store.cacheDay(data);
+            if (ok && cachedDayAttempts.indexOf(id) < 0) { cachedDayAttempts.add(id); }
         } else if (code == 401) {
             authError = true;
         }
         Pick.arrived(id, ok);
         WatchUi.requestUpdate();
         flush();
+    }
+
+    // Fill the offline roster one routine at a time, behind workout uploads.
+    // A failure is retried on the next full refresh, so one bad day cannot
+    // block the rest of the roster or repeatedly occupy the connection.
+    function cacheNextDay() {
+        var days = Store.days();
+        if (days == null) { return false; }
+        for (var i = 0; i < days.size(); i++) {
+            var id = days[i]["id"];
+            if (cachedDayAttempts.indexOf(id) < 0) {
+                cachedDayAttempts.add(id);
+                return fetchDay(id);
+            }
+        }
+        return false;
     }
 
     // --- sync queue -----------------------------------------------------
@@ -193,6 +215,8 @@ class Net {
             flush();
         } else if (Store.today() == null && now() >= todayAt) {
             refresh();
+        } else if (!Workout.active() && cacheNextDay()) {
+            return;
         } else if (labDue()) {
             lab();
         } else if (!Workout.active()) {
@@ -237,8 +261,13 @@ class Net {
     }
 
     function flush() {
-        if (busy || authError || !connected() || now() < nextAt) { return; }
+        if (busy) { return; }
         var q = Store.queue();
+        if (q.size() > 0) {
+            var queuedMeta = Store.meta(q[0]);
+            if (queuedMeta != null && reconcileBackground(q[0], queuedMeta)) { return; }
+        }
+        if (authError || !connected() || now() < nextAt) { return; }
         if (q.size() == 0) {
             if (sensorDue()) { sendSensor(); }
             else if (labDue()) { lab(); }
@@ -258,8 +287,40 @@ class Net {
         upSets = sets;
         var heart = Logic.pendingCount(sets) <= Config.SYNC_BATCH ? Store.heart(sid) : null;
         upPayload = Logic.buildPayload(meta, sets, Config.SYNC_BATCH, heart);
-        upPayload["batch_upload"] = true;
+        upPayload["saved_upload"] = true;
         request("/sessions", upPayload, true, method(:onUpload));
+    }
+
+    function reconcileBackground(sid, meta) {
+        var receipt = Store.get("bd_" + sid);
+        if (!(receipt instanceof Lang.Dictionary)) { return false; }
+        for (var i = 0; true; i++) {
+            var packet = Store.get("bu_" + sid + "_" + i);
+            if (packet == null) { break; }
+            var batch = packet["sets"];
+            for (var j = 0; j < batch.size(); j++) {
+                var set = batch[j];
+                if (set["hr_peak"] != null || set["hr_end"] != null || set["hr_rest_drop_60"] != null) {
+                    packet["sensor_retry"] = true;
+                    Store.keepSensor(batch[0]["id"], packet);
+                    break;
+                }
+            }
+        }
+        var sensor = Logic.buildPayload(meta, [], Config.SYNC_BATCH, Store.heart(sid));
+        if (sensor["hr"] != null) {
+            sensor["sensor_retry"] = true;
+            Store.keepSensor(sid, sensor);
+        }
+        keepResult(sid, receipt);
+        if (receipt["at"] != null) { Store.put("ls", Logic.latest(Store.get("ls"), receipt["at"])); }
+        retire(sid, []);
+        if (Store.queue().size() == 0) {
+            Pick.reset();
+            refresh();
+        }
+        WatchUi.requestUpdate();
+        return true;
     }
 
     function retire(sid, sets) {
@@ -519,8 +580,9 @@ class Net {
         if (Store.dead().indexOf(sid) >= 0) { return "Needs attention"; }
         if (Store.queue().indexOf(sid) < 0) { return Store.sensorPending(sid) ? "Sets synced · HR pending" : "Synced to GRIND"; }
         if (authError) { return "Auth error"; }
+        if (Store.get("bd_" + sid) != null) { return "Sets synced to GRIND"; }
         if (busy && sid.equals(upSid)) { return "Syncing to GRIND…"; }
-        return connected() ? "Waiting to sync" : "Open GRIND with phone";
+        return connected() ? "Waiting to sync" : "Waiting for phone";
     }
 
     // Longer form for Home. The last contact of any kind: a workout upload

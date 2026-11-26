@@ -363,6 +363,8 @@ export function watchRepLab(request: Request, deps: WatchDeps): Promise<Response
 
 /** Sync-RPC refusals → HTTP. Everything else is a 500. */
 const SYNC_ERRORS: Array<[prefix: string, status: number, code: Parameters<typeof watchError>[1], message: string]> = [
+  ['WATCH_SAVED_SET_REFUSED', 422, 'saved_set_refused', 'A set was rejected. Open GRIND on the watch to review the workout.'],
+  ['WATCH_INCOMPLETE_BATCH', 409, 'incomplete_batch', 'Some workout batches are missing. Retry from the first batch.'],
   ['WATCH_SESSION_ID_CONFLICT', 409, 'session_id_conflict', 'This session id is already used. Generate a new UUID.'],
   ['WATCH_UNKNOWN_WORKOUT', 422, 'unknown_workout', 'workout_id does not match any of your GRIND days.'],
   ['WATCH_WORKOUT_REQUIRED', 422, 'workout_required', 'Send workout_id, or at least one set with a known exercise_id, when creating a session.'],
@@ -440,9 +442,12 @@ export function watchSessions(request: Request, deps: WatchDeps): Promise<Respon
       return watchJson({ sensor: { status: 'stored' } }, 200)
     }
 
-    const { data, error } = await deps.rpc(parsed.data.batch_upload ? 'watch_ingest_session' : 'watch_sync_session', {
+    const rpc = parsed.data.saved_upload ? 'watch_ingest_saved_session'
+      : parsed.data.batch_upload ? 'watch_ingest_session' : 'watch_sync_session'
+    const { data, error } = await deps.rpc(rpc, {
       p_user: auth.userId,
       p_session: toSyncPayload(parsed.data),
+      ...(parsed.data.expected_sets === undefined ? {} : { p_expected_count: parsed.data.expected_sets }),
     })
     if (error) {
       const known = SYNC_ERRORS.find(([prefix]) => error.message.includes(prefix))
@@ -472,6 +477,22 @@ export function watchSessions(request: Request, deps: WatchDeps): Promise<Respon
         completedAt: result.session.completed_at,
       })
     }
-    return watchJson({ ...result, sensor }, result.session.created ? 201 : 200)
+    const status = result.session.created ? 201 : 200
+    if (new URL(request.url).searchParams.get('compact') === '1') {
+      const response = data as {
+        sets?: { accepted?: string[]; duplicate?: string[]; updated?: string[]; rejected?: unknown[] }
+        stats?: { current_streak?: number }
+      }
+      const sets = response.sets
+      const acknowledged = new Set([...(sets?.accepted ?? []), ...(sets?.duplicate ?? []), ...(sets?.updated ?? [])])
+      return watchJson({
+        ok: sets != null && (!sets.rejected || sets.rejected.length === 0)
+          && parsed.data.sets.every(set => acknowledged.has(set.id)),
+        count: acknowledged.size,
+        session: result.session,
+        stats: response.stats ? { current_streak: response.stats.current_streak } : undefined,
+      }, status)
+    }
+    return watchJson({ ...result, sensor }, status)
   })
 }

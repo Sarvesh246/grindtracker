@@ -7704,6 +7704,41 @@ html.reduce-motion .body-breathe { animation: none !important; }
   body .coach-fab[data-dock='bl'] { left: 6px; }
 }
 
+.home-next-loads {
+  margin-top: 16px;
+  padding: 16px 20px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--surface);
+}
+.home-next-loads h2 { margin: 0 0 8px; color: var(--text-primary); font-size: 15px; }
+.home-next-load {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 12px 0;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+.home-next-load + .home-next-load { border-top: 1px solid var(--border); }
+.home-next-load p, .home-next-load details { margin: 3px 0 0; color: var(--text-muted); font-size: 13px; }
+.home-next-load summary { cursor: pointer; padding-block: 6px; }
+.home-next-load label { display: flex; gap: 8px; align-items: center; }
+.home-next-load input, .home-next-load button {
+  min-height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-elevated);
+  color: var(--text-primary);
+  padding: 4px 10px;
+}
+.home-next-load input { width: 84px; font-size: 16px; }
+.home-next-load button { color: var(--accent-text); font-weight: 650; }
+.home-next-load button:disabled { opacity: 0.65; }
+.home-next-load .home-next-load-status { flex-basis: 100%; }
+
 .home-recovery { margin-top: 16px; }
 /* Last night + Charge: stacked on a phone, side by side once there's room —
    on desktop each was a full-width bar holding one line of text. */
