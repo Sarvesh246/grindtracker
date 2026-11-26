@@ -340,6 +340,7 @@ describe('watch API against the real schema', { skip: !baseUrl && 'set PARITY_DA
     it('removes anonymous and trigger-only RPC grants', () => {
       assert.equal(db("select has_function_privilege('anon', 'public.is_grind_admin()', 'execute')"), 'f')
       assert.equal(db("select has_function_privilege('authenticated', 'public.enforce_coach_rate_limit()', 'execute')"), 'f')
+      assert.equal(db("select has_function_privilege('authenticated', 'public.grind_dates_connected(uuid,date,date)', 'execute')"), 'f')
     })
   })
 
