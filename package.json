@@ -15,7 +15,8 @@
     "migrations:check": "tsx --env-file=.env.local scripts/check-migrations.ts",
     "test:sql-parity": "tsx --test src/lib/utils/__tests__/sqlParity.test.ts src/lib/watch/__tests__/watchApi.db.test.ts",
     "typecheck": "tsc --noEmit",
-    "test:scroll": "playwright test --config=e2e/scrolling.config.ts"
+    "test:scroll": "playwright test --config=e2e/scrolling.config.ts",
+    "test:tabs": "playwright test --config=e2e/progress-tabs.config.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.42",

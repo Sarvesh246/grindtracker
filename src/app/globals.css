@@ -7728,10 +7728,14 @@ html.reduce-motion .body-breathe { animation: none !important; }
   margin-bottom: 16px;
   border-radius: 14px;
   background: var(--surface);
-  /* Vertical pans still scroll the page; horizontal ones slide the thumb. */
-  touch-action: pan-y;
+  /* ProgressTabs owns both axes (horizontal slides the thumb, vertical is
+     forwarded to the page), so no native pan may start here — on iOS the tabs'
+     switch overlays are touch-action:none anyway, and mixing that with pan-y
+     gaps made the bar behave differently depending on where the finger hit. */
+  touch-action: none;
   user-select: none;
   -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 .progress-tabs button {
   position: relative;
@@ -7743,7 +7747,7 @@ html.reduce-motion .body-breathe { animation: none !important; }
   color: var(--text-muted);
   font: 600 13px var(--font-sans);
   cursor: pointer;
-  touch-action: pan-y;
+  touch-action: none;
   transition: color 200ms ease;
 }
 /* data-lit follows the thumb while it's dragged; otherwise it is the tab. */

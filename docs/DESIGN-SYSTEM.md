@@ -156,11 +156,18 @@ shown as extra rows. On phones Progress splits into Lifts / Recovery / Body tabs
 The tab bar (`ProgressTabs.tsx`) can be tapped or dragged: the thumb follows
 the finger via a transform written in rAF and springs to the nearest tab (a
 flick carries on). It is marked `data-tab-slider`, which SwipeNavigator
-ignores so a sideways drag there never changes page. Use that marker, not
-`data-swipe-ignore`, for any future draggable segmented control. On iOS the
-marker also makes the haptic switch overlay treat its buttons as drag-owned
-(like the Coach orb): the overlay's own pan handling preventDefaults
-horizontal touchmoves and killed the drag on iPhone. Because the overlay is
-`touch-action: none`, the control forwards vertical drags to the page itself
-(`nearestScrollParent` + `startMomentum` from `haptics.ts`). This only shows
-on a real iPhone — the overlay never attaches in desktop Chromium.
+ignores so a sideways drag there never changes page; the haptic overlay
+also treats its buttons as drag-owned (like the Coach orb).
+
+**Fingers must be read from touch events, not pointer events.** On iOS a
+finger on a `data-haptic` button lands on the native `<input switch>`
+overlay, and WebKit can stop sending `pointermove` while `touchmove` keeps
+reporting the finger — a pointer-only drag worked in desktop Chromium (no
+overlay there) and did nothing in the iPhone app. ProgressTabs binds native
+`touchstart/move/end` (non-passive `touchmove`, `preventDefault` on every
+move so the switch can't slide-toggle), keeps pointer events for mouse/pen
+only, disables the overlays in place during a drag (never removes them: the
+touch's events stay targeted at that node), and is `touch-action: none` with
+vertical drags forwarded to the page (`nearestScrollParent` +
+`startMomentum`). `npm run test:tabs` runs it in emulated iPhone WebKit with
+the real overlays and touch-only input; the old pointer version fails it.
