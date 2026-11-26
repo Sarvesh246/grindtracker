@@ -1,3 +1,4 @@
+import { getLoadSuggestion, type LoadSuggestion } from '@/lib/utils/loadProgression'
 import { performance as serverClock } from 'node:perf_hooks'
 import { cookies } from 'next/headers'
 import { enabledDayKeys } from '@/lib/utils/dayKeys'
@@ -153,12 +154,13 @@ export default async function HomePage() {
   const lastLogsPromise = lastSession
     ? supabase
         .from('session_logs')
-        .select('weight, reps, is_warmup, is_skipped, exercise_id, set_number, created_at, exercises(name)')
+        .select('weight, reps, is_warmup, is_skipped, exercise_id, set_number, created_at, exercises(name, day_type, active, sets_target, reps_target, weight_target)')
         .eq('session_id', lastSession.id)
         .order('created_at', { ascending: true })
     : Promise.resolve({ data: null })
 
   let lastSessionLogs: { exercise_name: string; weight: number | null; sets: number; reps: number | null }[] = []
+  const loadSuggestions: LoadSuggestion[] = []
   if (lastSession) {
     const { data: logs } = await lastLogsPromise
 
@@ -171,9 +173,19 @@ export default async function HomePage() {
         firstLoggedAt: string
       }
       const byExercise: Record<string, LogRow> = {}
+      const workingSets = new Map<string, Parameters<typeof getLoadSuggestion>[1]>()
+      const exercisePlans = new Map<string, Parameters<typeof getLoadSuggestion>[0]>()
       for (const log of logs) {
-        const exercises = log.exercises as unknown as { name: string }[] | { name: string } | null
-        const name = (Array.isArray(exercises) ? exercises[0]?.name : exercises?.name) ?? 'Unknown'
+        const exercises = log.exercises as unknown as
+          (Parameters<typeof getLoadSuggestion>[0] & { day_type: string; active: boolean }) | null
+        const exercise = Array.isArray(exercises) ? exercises[0] : exercises
+        const name = exercise?.name ?? 'Unknown'
+        if (!demoMode && !log.is_warmup && exercise?.active && exercise.day_type === lastSession.day_type) {
+          const rows = workingSets.get(log.exercise_id) ?? []
+          rows.push(log)
+          workingSets.set(log.exercise_id, rows)
+          exercisePlans.set(log.exercise_id, { ...exercise, id: log.exercise_id })
+        }
         if (!byExercise[log.exercise_id]) {
           byExercise[log.exercise_id] = {
             exercise_name: name,
@@ -193,6 +205,11 @@ export default async function HomePage() {
           entry.reps = log.reps
         }
       }
+      for (const [id, exercise] of exercisePlans) {
+        const suggestion = getLoadSuggestion(exercise, workingSets.get(id) ?? [])
+        if (suggestion) loadSuggestions.push(suggestion)
+      }
+
       // Drop exercises that only had skips/warm-ups (sets === 0).
       lastSessionLogs = Object.values(byExercise)
         .filter(row => row.sets > 0)
@@ -290,6 +307,7 @@ export default async function HomePage() {
       activeSessions={demoMode ? [] : activeSessions}
       lastSession={demoMode ? demoLastSession() : (lastSession ?? null)}
       lastSessionLogs={demoMode ? DEMO_LAST_SESSION_LOGS : lastSessionLogs}
+      loadSuggestions={loadSuggestions}
       nextDay={nextDay}
       nextDayExercises={(nextDayExercises ?? []).map(e => e.name)}
       hasDays={dayKeys.length > 0}

@@ -266,9 +266,10 @@ installing the build.
 Home's "synced … ago" is the last successful contact of any kind, a workout
 upload or a day snapshot, so it matches the Health page.
 
-Logged workouts still upload only while the app is open: the upload path is
-too big for the 64 KB a background process gets, and a finished workout is
-saved on the watch until then anyway.
+Saved workout sets can upload on the next background wake with the phone
+connected. Larger workouts may take more than one wake. Opening GRIND with
+the phone connected still syncs sooner, reconciles the receipt on the watch,
+and retries heart-rate traces and Rep Lab records.
 
 > **Gotcha:** `source/Secrets.mc` must carry the `(:background)` annotation
 > (the example file has it), or the background service can't read the token.
@@ -281,9 +282,18 @@ SHA-256 fingerprint for the signed `watch/bin/grind-release.prg`. This file uses
 your watch token, so keep it local. Copy it as `GARMIN/APPS/grind.prg` with the
 same signing key as the installed app.
 
+The watch caches enabled routines one at a time while idle and connected.
+Use **Saved workouts** from Home or its menu to pick a downloaded routine
+when offline, even if it was saved on an earlier date. The menu shows its
+saved date and the workout uses the watch clock for the actual start.
+
+`grind.TXT` logs the AUTO count, saved count, and set ID together.
+With Rep Lab enabled, `npm run replab -- --set <id>` also shows the AUTO
+number displayed before an on-watch correction.
+
 Open **MENU → Workout sync** to review recent workouts, retry pending uploads and
-see rejected sets. Keep GRIND open with the phone connected while workout uploads
-run. Health snapshots can sync with GRIND closed. A workout may show **Sets
+see rejected sets. Open GRIND with the phone connected to sync immediately.
+A workout may show **Sets
 synced · HR pending** while the watch retries its optional heart-rate data.
 
 For the next physical workout, record the **Build** shown in MENU, count known

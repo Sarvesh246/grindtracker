@@ -21,6 +21,8 @@ type WatchErrorCode =
   | 'session_not_found'
   | 'collection_paused'
   | 'setup_required'
+  | 'incomplete_batch'
+  | 'saved_set_refused'
   | 'service_unavailable'
   | 'internal_error'
 

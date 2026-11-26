@@ -111,7 +111,9 @@ class HomeView extends WatchUi.View {
             var did = Pick.currentId();
             if (wk == null) {
                 Draw.line(dc, 0.42, title, "No workout", Config.FG);
-                Draw.line(dc, 0.555, sub, gNet.connected() ? "MENU to load" : "Connect phone to load", Config.DIM);
+                var hasSaved = Store.hasSavedPlans();
+                Draw.line(dc, 0.555, sub, hasSaved ? "START for saved workouts" : (gNet.connected() ? "MENU to load" : "Connect phone to load"), Config.DIM);
+                startable = hasSaved;
             } else if (did == null) {
                 // Rest day or no plan, and nothing chosen.
                 var rest = wk["reason"] != null && wk["reason"].equals("rest_day");
@@ -136,7 +138,10 @@ class HomeView extends WatchUi.View {
                     startable = n > 0;
                 }
                 else if (Pick.want || gNet.busy) { info = "loading..."; }
-                else if (!gNet.connected()) { info = "Connect phone to load"; }
+                else if (!gNet.connected()) {
+                    startable = Store.hasSavedPlans();
+                    info = startable ? "START for saved workouts" : "Connect phone to load";
+                }
                 else { info = "START to load"; startable = true; }
                 Draw.fit(dc, 0.555, sub, [info, plan != null ? plan["ex"].size() + " exercises" : info], Config.DIM);
             }
@@ -183,7 +188,10 @@ class HomeDelegate extends WatchUi.BehaviorDelegate {
             return true;
         }
         var did = Pick.currentId();
-        if (did == null) { return true; }
+        if (did == null) {
+            if (Store.today() == null && Store.hasSavedPlans()) { showSavedWorkouts(); }
+            return true;
+        }
         var plan = Store.planFor(did);
         if (plan != null) {
             if (plan["ex"].size() > 0) { Pick.begin(plan); }
@@ -191,7 +199,7 @@ class HomeDelegate extends WatchUi.BehaviorDelegate {
             // Not downloaded yet: fetch it and start the moment it lands.
             Pick.want = true;
             onSettled();
-        }
+        } else if (Store.hasSavedPlans()) { showSavedWorkouts(); }
         return true;
     }
 
@@ -235,6 +243,9 @@ class HomeDelegate extends WatchUi.BehaviorDelegate {
         var m = new WatchUi.Menu2({ :title => "GRIND" });
         m.addItem(new WatchUi.MenuItem("Readiness check", "1 min HRV, sitting still", :ready, null));
         m.addItem(new WatchUi.MenuItem("Refresh", null, :refresh, null));
+        if (!Workout.active() && Store.hasSavedPlans()) {
+            m.addItem(new WatchUi.MenuItem("Saved workouts", "Start from a saved plan", :saved, null));
+        }
         m.addItem(Menus.repToggle());
         m.addItem(Menus.labToggle());
         m.addItem(new WatchUi.MenuItem("Workout sync", "Recent workouts & retry", :sync, null));
@@ -283,10 +294,35 @@ class HomeMenuDelegate extends WatchUi.Menu2InputDelegate {
         }
         if (item.getId() == :sync) {
             showWorkoutSync();
+        } else if (item.getId() == :saved) {
+            showSavedWorkouts();
         } else if (item.getId() == :refresh) {
             gNet.refresh();
         }
         WatchUi.requestUpdate();
+    }
+}
+
+function showSavedWorkouts() {
+    var roster = Store.savedDays();
+    var menu = new WatchUi.Menu2({ :title => "Saved workouts" });
+    for (var i = 0; i < roster.size(); i++) {
+        var id = roster[i]["id"];
+        var plan = Store.savedPlan(id);
+        if (plan != null) {
+            menu.addItem(new WatchUi.MenuItem(plan["name"], "Saved " + plan["date"], id, null));
+        }
+    }
+    WatchUi.pushView(menu, new SavedWorkoutDelegate(), WatchUi.SLIDE_UP);
+}
+
+class SavedWorkoutDelegate extends WatchUi.Menu2InputDelegate {
+    function initialize() { Menu2InputDelegate.initialize(); }
+
+    function onSelect(item) {
+        var plan = Store.savedPlan(item.getId());
+        WatchUi.popView(WatchUi.SLIDE_IMMEDIATE);
+        if (plan != null && !Workout.active()) { Pick.begin(plan); }
     }
 }
 

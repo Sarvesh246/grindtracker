@@ -119,7 +119,7 @@ const line = s => `exact ${s.exact}/${s.n} (${pct(s.exact, s.n)})  over ${s.over
 
 function detail(r) {
   console.log(`\n${r.id}  ${r.exercise_name} set ${r.set_number}  ${r.weight ?? ''} ${r.unit ?? ''}`)
-  console.log(`logged ${r.logged_reps}${r.corrected ? ' (corrected)' : ''}  auto ${r.auto_reps ?? '-'}  shown ${r.auto_shown}  typed ${r.typed}  replay ${replay(r) ?? '-'}`)
+  console.log(`logged ${r.logged_reps}${r.corrected ? ' (corrected)' : ''}  auto ${r.auto_reps ?? '-'}  displayed ${r.diag?.shown_reps ?? (r.auto_shown ? r.auto_reps : null) ?? '-'}  used ${r.auto_shown}  typed ${r.typed}  replay ${replay(r) ?? '-'}`)
   console.log(`samples ${r.motion_x?.length ?? 0}  compass ${r.mag_x?.length ?? 0}  hr ${(r.hr ?? []).join(' ')}  beats ${r.beats?.length ?? 0}`)
   console.log('timeline:')
   for (const e of r.events ?? []) {
@@ -151,7 +151,9 @@ function accuracy(rows) {
     if (!byBuildExercise.has(key)) byBuildExercise.set(key, { ...blank(), times: [] })
     const group = byBuildExercise.get(key)
     const firstOffer = (r.events ?? []).find(event => event[1] === 2 && event[2] > 0)
-    const shown = firstOffer?.[2] ?? (r.auto_shown ? r.auto_reps : null)
+    const shown = r.diag && 'shown_reps' in r.diag
+      ? r.diag.shown_reps
+      : firstOffer?.[2] ?? (r.auto_shown ? r.auto_reps : null)
     const offerTime = shown != null ? latency(r.events) : null
     if (offerTime != null) group.times.push(offerTime)
     if (!fromAuto) {

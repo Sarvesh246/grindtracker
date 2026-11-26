@@ -29,12 +29,13 @@ class GrindApp extends Application.AppBase {
     // A background run finished while the app was open (or since it last
     // was): its result is already in storage, this just logs it.
     function onBackgroundData(data) {
-        System.println("bg daily -> " + data);
+        System.println("bg sync -> " + data);
     }
 
     function boot() {
         fg = true;
         gNet = new Net();
+        if (!Config.DEMO_DATA) { Store.put("fg", Time.now().value()); }
         Workout.load();
         Health.boot();
         if (Config.DEMO_DATA && !Workout.active()) {
@@ -70,6 +71,7 @@ class GrindApp extends Application.AppBase {
             Hr.sample(Time.now().value());
         }
         if (ticks % Config.SYNC_EVERY_TICKS == 0) {
+            if (!Config.DEMO_DATA) { Store.put("fg", Time.now().value()); }
             if (ticks % 900 == 0) { Probe.log("tick"); } // every 15 min while open
             gNet.tick();
             WatchUi.requestUpdate();
@@ -95,6 +97,7 @@ class GrindApp extends Application.AppBase {
 
     function onStop(state) {
         if (!fg) { return; }
+        Store.del("fg");
         if (timer != null) { timer.stop(); }
         if (tour != null) { tour.stop(); }
         // Closing mid-workout drops the Garmin recording instead of saving

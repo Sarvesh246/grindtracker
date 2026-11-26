@@ -39,6 +39,8 @@ import ChargeRing from '@/components/body/ChargeRing'
 import Link from 'next/link'
 import { durationShort } from '@/lib/health/model'
 import TodaySheet from '@/components/body/TodaySheet'
+import NextWorkoutLoads from './NextWorkoutLoads'
+import type { LoadSuggestion } from '@/lib/utils/loadProgression'
 import { useBodySummary } from '@/components/body/useBodySummary'
 
 // "This week"/"this month" start in the VIEWER's local timezone — computed here
@@ -116,6 +118,7 @@ interface Props {
   restDataUnavailable?: boolean
   activeSessions: ActiveSession[]
   lastSession: Session | null
+  loadSuggestions: LoadSuggestion[]
   lastSessionLogs: { exercise_name: string; weight: number | null; sets: number; reps: number | null }[]
   nextDay: string
   nextDayExercises: string[]
@@ -174,6 +177,7 @@ export default function HomeDashboard({
   activeSessions: activeSessionsProp,
   lastSession,
   lastSessionLogs,
+  loadSuggestions,
   nextDay: nextDayProp,
   nextDayExercises: nextDayExercisesProp,
   hasDays,
@@ -1763,6 +1767,9 @@ export default function HomeDashboard({
               </div>
             </div>
           </div>
+        )}
+        {!demoMode && lastSession && loadSuggestions.length > 0 && (
+          <NextWorkoutLoads key={lastSession.id} userId={userId} suggestions={loadSuggestions} />
         )}
         {(body?.garminMorning || body?.charge) && <div className="home-body-row">
         {body?.garminMorning && (

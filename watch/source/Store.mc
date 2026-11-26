@@ -16,6 +16,10 @@ using Toybox.Time;
 //   pl          plan snapshot the active workout was started from
 //   m_<sid>     session meta
 //   t_<sid>_<i> one logged set, i = 0,1,2...
+//   bu_<sid>_n  compact set upload packets, prepared before enqueue
+//   bt_<sid>    total set count and commit marker for those packets
+//   ba_<sid>    next packet to send in the background
+//   bd_<sid>    completed background receipt for foreground reconciliation
 //   q           session ids waiting for the server to confirm them
 //   qd          session ids the server refused for good (kept, not retried)
 //   dl          epoch secs of the last /daily snapshot (foreground or background)
@@ -171,7 +175,7 @@ module Store {
 
     // Plans kept under wk_<day>, newest DAY_KEEP (list "wkk"). Older ones are
     // removed here, so picking many days never grows storage without bound.
-    const DAY_KEEP = 8;
+    const DAY_KEEP = 14;
     function putDay(id, out) {
         put("wk_" + id, out);
         var old = list("wkk");
@@ -201,6 +205,33 @@ module Store {
         if (w == null) { return null; }
         var d = w["dy"];
         return d instanceof Lang.Array && d.size() > 0 ? d : null;
+    }
+
+    // Use the most recently fetched roster even if its date has rolled over.
+    // Today's readiness and rotation still use only today's data.
+    function savedDays() {
+        var w = get("wk");
+        return w instanceof Lang.Dictionary && w["dy"] instanceof Lang.Array ? w["dy"] : [];
+    }
+
+    function savedPlan(id) {
+        var roster = savedDays();
+        for (var i = 0; i < roster.size(); i++) {
+            if (id.equals(roster[i]["id"])) {
+                var plan = get("wk_" + id);
+                return plan instanceof Lang.Dictionary && Config.UNIT.equals(plan["unit"])
+                    && plan["ex"] instanceof Lang.Array && plan["ex"].size() > 0 ? plan : null;
+            }
+        }
+        return null;
+    }
+
+    function hasSavedPlans() {
+        var roster = savedDays();
+        for (var i = 0; i < roster.size(); i++) {
+            if (savedPlan(roster[i]["id"]) != null) { return true; }
+        }
+        return false;
     }
 
     // The plan for one day if we hold it for today's date, else null.
@@ -287,11 +318,45 @@ module Store {
         return out;
     }
 
+    // Prebuild small set packets in the foreground. The lightweight service
+    // can upload them without loading workout code, motion data or HR traces.
+    function stageBackground(meta, rows) {
+        if (Config.DEMO_DATA) { return; }
+        var sid = meta["id"];
+        var pending = [];
+        for (var i = 0; i < rows.size(); i++) {
+            if (rows[i]["y"] == 0) { pending.add(rows[i]); }
+        }
+        if (pending.size() == 0 || pending.size() > 512) { return; }
+        try {
+            var chunkSize = 8;
+            for (var i = 0; i < pending.size(); i += chunkSize) {
+                var last = i + chunkSize >= pending.size();
+                var payload = Logic.buildPayload(meta, pending.slice(i, last ? null : i + chunkSize), chunkSize, null);
+                if (!last) { payload.remove("ended_at"); }
+                payload["saved_upload"] = true;
+                if (payload["ended_at"] != null) { payload["expected_sets"] = pending.size(); }
+                put("bu_" + sid + "_" + (i / chunkSize), payload);
+            }
+            put("bt_" + sid, pending.size());
+        } catch (e) {
+            System.println("could not stage background workout: " + e.getErrorMessage());
+        }
+    }
+
+    function clearBackground(sid) {
+        del("bt_" + sid);
+        del("ba_" + sid);
+        del("bd_" + sid);
+        dropSequence("bu_" + sid + "_");
+    }
+
     function dropSession(sid) {
         dropSequence("t_" + sid + "_");
         dropSequence("hc_" + sid + "_");
         del("h_" + sid);
         del("m_" + sid);
+        clearBackground(sid);
     }
 
     // Deleting from the tail keeps the remaining prefix discoverable if
@@ -306,6 +371,7 @@ module Store {
     function dequeue(sid) { put("q", Logic.qRemove(queue(), sid)); }
 
     function bury(sid) {
+        clearBackground(sid);
         put("qd", Logic.qAdd(dead(), sid));
         dequeue(sid);
     }

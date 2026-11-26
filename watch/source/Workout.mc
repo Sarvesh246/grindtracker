@@ -46,7 +46,10 @@ module Workout {
         }
         if (meta["en"] != null) {
             // Save was interrupted after stamping the workout as finished.
-            Store.enqueue(cur["sid"]);
+            if (Store.queue().indexOf(cur["sid"]) < 0) {
+                Store.stageBackground(meta, Store.sets(cur["sid"]));
+                Store.enqueue(cur["sid"]);
+            }
             clear();
             return;
         }
@@ -192,6 +195,7 @@ module Workout {
         cur["setAt"] = null;
         cur.remove("setEnd");
         cur.remove("reviewAuto");
+        cur.remove("correctedAuto");
         Reps.stop();
         Reps.reset();
     }
@@ -232,6 +236,7 @@ module Workout {
             cur["w"] = Logic.clamp(cur["w"] + dir * Config.WEIGHT_STEP, 0.0, 2000.0);
         } else {
             var reps = Reps.manual || displayedOffer == null ? cur["r"] : displayedOffer;
+            if (setRunning() && !Reps.manual && displayedOffer != null) { cur["correctedAuto"] = displayedOffer; }
             cur["r"] = Logic.clamp(reps + dir, 0, 1000);
             cur.remove("reviewAuto");
             Reps.takeOver(); // your number wins for the rest of this set
@@ -253,18 +258,20 @@ module Workout {
         var loggedAt = now();
         var endedAt = setEnded() ? cur["setEnd"] : loggedAt;
         // `ra`: what the rep counter made of this set (null: no confident
-        // count). Kept on the watch only, to measure the counter against
-        // what was logged; never uploaded.
+        // count). Rep Lab records it separately from the saved reps.
+        var displayed = offered != null ? offered : cur["correctedAuto"];
+        var estimated = displayed != null ? displayed : Reps.count;
         var s = {
             "id" => Logic.uuid4(), "e" => e["id"], "n" => cur["sn"], "r" => reps, "w" => cur["w"],
-            "t" => endedAt, "rs" => cur["rs"], "y" => 0, "ra" => Reps.count == null ? offered : Reps.count, "ar" => offered != null
+            "t" => endedAt, "rs" => cur["rs"], "y" => 0, "ra" => estimated, "ar" => offered != null
         };
-        System.println("reps auto=" + Reps.count + " logged=" + reps + " typed=" + Reps.manual
+        System.println("reps auto=" + estimated + " logged=" + reps + " typed=" + Reps.manual
+            + " shown=" + (displayed != null) + " set=" + s["id"]
             + " " + e["name"] + Reps.diagnostics());
         Store.putSet(cur["sid"], sets.size(), s);
         sets.add(s);
         // Rep lab: the live window is still open here; it closes below.
-        Lab.capture(cur["sid"], s, e, offered != null, cur["setAt"], meta["u"]);
+        Lab.capture(cur["sid"], s, e, displayed, cur["setAt"], meta["u"]);
         Hr.onSetLogged(sets.size() - 1, endedAt, loggedAt);
         Health.mark("logged");
         var done = advanceAfterSet(e, s["t"]);
@@ -512,6 +519,7 @@ module Workout {
             meta["te"] = Recorder.trainingEffect();
             Hr.end(true);
             Store.putMeta(meta);
+            Store.stageBackground(meta, sets);
             Store.enqueue(sid);
             Recorder.saveCompletedCounts(meta["en"]);
             Probe.log("save");

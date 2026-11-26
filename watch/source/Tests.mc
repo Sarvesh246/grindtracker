@@ -1072,7 +1072,8 @@ function testDisplayedRepCorrections(logger) {
     input.bump(1);
     ok = T.ck(logger, "second press before redraw increments again", Workout.cur["r"] == 10) && ok;
     Workout.logDisplayedSet(8);
-    ok = T.ck(logger, "finish before redraw saves latest manual edit", Workout.sets[0]["r"] == 10) && ok;
+    ok = T.ck(logger, "finish before redraw preserves displayed AUTO and saves latest edit",
+        Workout.sets[0]["r"] == 10 && Workout.sets[0]["ra"] == 8 && !Workout.sets[0]["ar"]) && ok;
     Workout.logDisplayedSet(8);
     ok = T.ck(logger, "duplicate finish cannot log the next zero-rest set", Workout.sets.size() == 1) && ok;
     Workout.beginSet();
@@ -1331,7 +1332,11 @@ function testSavedWorkoutSyncTakesPriority(logger) {
     Workout.finish(true);
     var ok = T.ck(logger, "save queues offline and clears earlier backoff",
         Store.queue().indexOf(sid) >= 0 && net.nextAt == 0 && net.path == null
-        && net.workoutStatus(sid).equals("Open GRIND with phone"));
+        && net.workoutStatus(sid).equals("Waiting for phone"));
+    var packet = Store.get("bu_" + sid + "_0");
+    ok = T.ck(logger, "save stages a compact final packet with the same set ID",
+        packet != null && packet["saved_upload"] && packet["expected_sets"] == 1
+        && packet["sets"][0]["id"].equals(id) && packet["hr"] == null) && ok;
     net.online = true;
     net.busy = true;
     net.labKey = "lh-test";
@@ -1357,7 +1362,12 @@ function testSavedWorkoutSyncTakesPriority(logger) {
     net.online = true;
     net.busy = false;
     ok = T.ck(logger, "reconnect poll picks up another offline save", net.tickUploads() && net.upSid.equals(second)) && ok;
-    Store.dropSession(second);
+    net.busy = false;
+    net.upSid = null;
+    Store.put("bd_" + second, { "at" => net.now(), "session" => { "status" => "completed" } });
+    ok = T.ck(logger, "background receipt retires the local workout without replaying its sets",
+        net.tickUploads() && Store.queue().indexOf(second) < 0 && Store.meta(second) == null
+        && Store.get("bu_" + second + "_0") == null && net.path.equals("/ping")) && ok;
     if (queue == null) { Store.del("q"); } else { Store.put("q", queue); }
     if (sync == null) { Store.del("ls"); } else { Store.put("ls", sync); }
     Store.put("receipts", receipts);
@@ -1933,6 +1943,56 @@ function testSummaryBeforeSummaryScreen(logger) {
     var ok = T.ck(logger, "summary without an end time", s != null && s["dur"] >= 0 && s["sets"] == 0);
     Workout.finish(false);
     Workout.saved = false;
+    return ok;
+}
+
+(:test)
+class TestGrindService extends GrindService {
+    function initialize() { GrindService.initialize(); }
+    function sendWorkout() { return false; }
+    function sendDaily() { }
+}
+
+(:test)
+function testBackgroundWorkoutAcknowledgments(logger) {
+    var sid = "background-test";
+    Store.put("bu_" + sid + "_0", {});
+    Store.put("bu_" + sid + "_1", {});
+    Store.put("bt_" + sid, 9);
+    var bg = new TestGrindService();
+    bg.sid = sid;
+    bg.onWorkout(201, { "ok" => true });
+    var ok = T.ck(logger, "first acknowledgment advances the cursor only",
+        Store.get("ba_" + sid) == 1 && Store.get("bd_" + sid) == null);
+    bg.ended = true;
+    bg.onWorkout(409, { "error" => { "code" => "incomplete_batch" } });
+    ok = T.ck(logger, "missing staging resets the packet cursor",
+        Store.get("ba_" + sid) == 0 && Store.get("bd_" + sid) == null) && ok;
+    bg.onWorkout(201, { "ok" => true, "count" => 9, "session" => { "status" => "completed", "completed_now" => true } });
+    ok = T.ck(logger, "only final completion leaves a receipt", Store.get("bd_" + sid) != null) && ok;
+    Store.clearBackground(sid);
+    return ok;
+}
+
+(:test)
+function testSavedPlanSurvivesRollover(logger) {
+    var wk = Store.get("wk");
+    var key = "wk_offline-test";
+    var cached = Store.get(key);
+    var plan = { "id" => "offline-test", "name" => "Pull", "date" => "2000-01-01", "unit" => Config.UNIT,
+        "ex" => [{ "id" => "row", "sets" => 1, "weight" => 100, "reps" => 8 }] };
+    Store.put(key, plan);
+    Store.put("wk", { "date" => plan["date"], "dy" => [{ "id" => plan["id"], "name" => plan["name"] }] });
+    var ok = T.ck(logger, "stale plan remains an explicit saved workout",
+        Store.today() == null && Store.planFor("offline-test") == null && Store.hasSavedPlans()
+        && Store.savedPlan("offline-test")["date"].equals("2000-01-01"));
+    Workout.start(Store.savedPlan("offline-test"));
+    ok = T.ck(logger, "actual start time comes from the watch clock", Workout.meta["st"] >= Workout.now() - 2) && ok;
+    Workout.finish(false);
+    Store.put("wk", { "date" => Logic.localDate(), "dy" => [] });
+    ok = T.ck(logger, "latest roster hides disabled routines", !Store.hasSavedPlans()) && ok;
+    if (wk == null) { Store.del("wk"); } else { Store.put("wk", wk); }
+    if (cached == null) { Store.del(key); } else { Store.put(key, cached); }
     return ok;
 }
 
