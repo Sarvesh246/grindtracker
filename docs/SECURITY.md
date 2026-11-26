@@ -24,6 +24,17 @@ Moved out of [CLAUDE.md](../CLAUDE.md) to keep that file short; its text is unch
   one. `watch_sync_session` re-checks that every exercise and set id belongs to
   that user. Tokens are 244-bit random and stored as SHA-256 only; the proxy
   lets `/api/watch/` through without a session.
+- **Never tell "API caller" from "definer RPC" with `session_user`.** PostgREST
+  logs in as `authenticator` and `SET ROLE`s to `authenticated`, so
+  `current_user <> session_user` is true for *every* REST call.
+  `grind_guard_session_write` relied on it and let anyone insert pre-completed
+  sessions with arbitrary XP (fixed in `88`). Gate on
+  `current_user in ('authenticated', 'anon')` — definer RPCs run as their owner,
+  watch routes as `service_role`.
+- **Client-chosen URLs the server fetches need an allowlist.** Push endpoints are
+  limited to the browser push services by `push_subscriptions_provider_check`
+  and `src/lib/push/subscription.ts`, so the notification cron can't be used as
+  an SSRF relay (`85`).
 - Security headers (CSP, HSTS, `frame-ancestors 'none'`) live in `next.config.ts`.
 - `src/proxy.ts` uses `getClaims()` (local JWKS verification) rather than
   `getUser()` (a network round trip per request), and caches the "profile exists"

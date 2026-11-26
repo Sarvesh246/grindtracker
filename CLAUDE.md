@@ -91,7 +91,7 @@ file and are authoritative.
   `grind_migrations` (created by `00-migration-tracking.sql`); copy that line into
   any new migration, add its row to `docs/SQL.md`, and run
   `npm run migrations:check` against production after pasting. Apply the SQL
-  *before* deploying code that calls new RPCs. Next free number: `85`.
+  *before* deploying code that calls new RPCs. Next free number: `89`.
 - **Rotation pointer:** every write goes through `rotationStore.ts`, never a bare
   `user_rotation` upsert (WORKOUT-LOGIC).
 - **Offline sync is deliberately gentle:** no polling, no per-set requests
